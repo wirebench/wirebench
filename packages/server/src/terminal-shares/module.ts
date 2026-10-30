@@ -113,7 +113,7 @@ export function terminalSharesModule(options: TerminalSharesOptions = {}): Serve
         async (request, reply) => {
           const caller = callerOf(request);
           const body = request.body as TerminalShareCreateRequest;
-          const user = await findUserById(db, caller.id);
+          const user = await findUserById(ctx.tenancy.db(request.tenant), caller.id);
           const shareId = registry.create({
             workspaceId: request.workspaceAccess!.workspaceId,
             hostName: body.hostName,
@@ -153,7 +153,7 @@ export function terminalSharesModule(options: TerminalSharesOptions = {}): Serve
         const ip = auditIp(request.ip);
         runShareSocket(socket, {
           registry,
-          authenticate: (token) => callerForToken({ db, settings, now }, token),
+          authenticate: (token) => callerForToken({ db: ctx.tenancy.db(request.tenant), settings, now }, token),
           tokenMaxMs: settings.tokenMaxMs,
           featureOn: async () => (await ctx.license.state()).features.includes('terminal-sharing'),
           canView,

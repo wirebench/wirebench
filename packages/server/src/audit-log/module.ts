@@ -36,7 +36,7 @@ export function auditLogModule(options: AuditLogOptions = {}): ServerModule {
       // Built first: a CA file that cannot be read refuses the start (ConfigError) before anything is wired.
       const sink = await sinkFromConfig(ctx.config);
       ctx.hooks.audit.push(auditHook(now, { forward: sink !== undefined }));
-      ctx.hooks.licenseChanged.push(licenseListener({ db: ctx.db, hooks: ctx.hooks, log: ctx.log }));
+      ctx.hooks.licenseChanged.push(licenseListener({ tenancy: ctx.tenancy, hooks: ctx.hooks, log: ctx.log }));
       ctx.meta.addCapability('audit-log');
       // The workspace `recordDesktopActivity` setting (#211); a server without it ignores the field, so the desktop hides the switch.
       ctx.meta.addCapability('desktop-activity');

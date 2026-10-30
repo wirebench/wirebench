@@ -57,7 +57,7 @@ export const memberRoutes =
       async (request, reply) => {
         const { teamId } = request.params as { readonly teamId: string };
         const body = request.body as MemberAddRequest;
-        const user = await findUserByEmail(db, emailLower(body.email));
+        const user = await findUserByEmail(env.ctx.tenancy.db(request.tenant), emailLower(body.email));
         if (user === undefined) throw userUnknown();
         try {
           await db.transaction(async (tx) => {

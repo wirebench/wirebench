@@ -5,6 +5,7 @@ import {
   type WirebenchError,
 } from '@wirebench/engine';
 import type { FastifyInstance } from 'fastify';
+import type { TenantScope } from '../../tenancy/scope.js';
 import { ANONYMOUS_SOURCE, announce, auditSource, recordAudit, type AuditSource } from '../../context.js';
 import { jsonSchema } from '../../schema.js';
 import { tenantUrl } from '../../tenancy/urls.js';
@@ -34,21 +35,25 @@ export type LocalCheck =
  */
 export async function checkLocalCredentials(
   env: IdentityEnv,
+  scope: TenantScope,
   source: AuditSource,
   email: string,
   password: string,
 ): Promise<LocalCheck> {
-  const user = await repo.findUserByEmail(env.ctx.db, emailLower(email));
-  const credential = user === undefined ? undefined : await repo.credentialOf(env.ctx.db, user.id);
+  const db = env.ctx.tenancy.db(scope);
+  const user = await repo.findUserByEmail(db, emailLower(email));
+  const credential = user === undefined ? undefined : await repo.credentialOf(db, user.id);
   const verdict = await verifyPassword(password, credential?.passwordHash ?? (await decoyHash()));
   const failed = (reason: string) =>
-    recordAudit(env.ctx.hooks, env.ctx.db, {
-      ...source,
-      ...ANONYMOUS_SOURCE,
-      action: 'auth.sign_in_failed',
-      target: { kind: 'server' },
-      details: { method: 'local', reason, emailLower: emailLower(email) },
-    });
+    db.transaction((tx) =>
+      recordAudit(env.ctx.hooks, tx, {
+        ...source,
+        ...ANONYMOUS_SOURCE,
+        action: 'auth.sign_in_failed',
+        target: { kind: 'server' },
+        details: { method: 'local', reason, emailLower: emailLower(email) },
+      }),
+    );
   if (user === undefined || credential === undefined || !verdict.ok) {
     await failed('identity-invalid-credentials');
     return { ok: false, error: invalidCredentials() };
@@ -57,7 +62,7 @@ export async function checkLocalCredentials(
     await failed('identity-user-disabled');
     return { ok: false, error: userDisabled() };
   }
-  if (verdict.rehash) await repo.upsertCredential(env.ctx.db, user.id, await hashPassword(password), env.now());
+  if (verdict.rehash) await repo.upsertCredential(db, user.id, await hashPassword(password), env.now());
   return { ok: true, user };
 }
 
@@ -77,9 +82,9 @@ export const authLocalRoutes =
         if (!env.settings.local) throw methodDisabled();
         const body = request.body as LocalSignInRequest;
         const source = auditSource(request);
-        const checked = await checkLocalCredentials(env, source, body.email, body.password);
+        const checked = await checkLocalCredentials(env, request.tenant, source, body.email, body.password);
         if (!checked.ok) throw checked.error;
-        return reply.code(201).send(await signIn(env, checked.user, 'local', body.device.name, source));
+        return reply.code(201).send(await signIn(env, request.tenant, checked.user, 'local', body.device.name, source));
       },
     );
 
@@ -92,7 +97,7 @@ export const authLocalRoutes =
         throw unauthenticated();
       }
       const caller = request.caller;
-      await env.ctx.db.transaction(async (tx) => {
+      await env.ctx.tenancy.db(request.tenant).transaction(async (tx) => {
         await repo.revokeToken(tx, caller.tokenId, env.now());
         await recordAudit(env.ctx.hooks, tx, {
           ...auditSource(request),
@@ -101,7 +106,7 @@ export const authLocalRoutes =
           details: { tokenId: caller.tokenId },
         });
       });
-      announce(env.ctx.hooks.sessionEnded, { tokenId: caller.tokenId }, request.log);
+      announce(env.ctx.hooks.sessionEnded, { tenantId: request.tenant.tenantId, tokenId: caller.tokenId }, request.log);
       // A browser session also loses its cookie (hosted spec §17.2); a desktop's reply carries none.
       if (caller.via === 'cookie') clearSessionCookie(reply, url);
       return reply.code(204).send();

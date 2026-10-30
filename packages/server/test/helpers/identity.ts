@@ -1,4 +1,5 @@
 import { join } from 'node:path';
+import { directoryOf } from '../../src/tenancy/tenancy.js';
 import type { FastifyInstance } from 'fastify';
 import type { GitCli } from '@wirebench/engine';
 import { loadConfig, type ServerConfig } from '../../src/config.js';
@@ -11,7 +12,9 @@ import { mintToken, newId } from '../../src/identity/tokens.js';
 import { NO_HOOKS_DIR, RepoStore } from '../../src/repos/repo-store.js';
 import { buildServer } from '../../src/server.js';
 import type { TenantResolver } from '../../src/tenancy/resolve.js';
+import type { TenantDb } from '../../src/tenancy/tenant-db.js';
 import { testContext } from './context.js';
+import { loggedTenancy, scopedFor, type StatementLog } from './tenancy.js';
 import { testDatabase } from './database.js';
 import { mkTempDir, removeTempDir, testGit } from './git.js';
 
@@ -30,6 +33,15 @@ export interface IdentityHarness {
   /** A real repository store over `dataDir`: teams-access creates repositories through it. */
   readonly repos: RepoStore;
   readonly dataDir: string;
+  /** The shared context, for a test that calls a module's functions directly (the sweep). */
+  readonly ctx: ServerContext;
+  /** The default tenant's database: what a test writes fixtures through, as identity's repository needs. */
+  readonly tdb: TenantDb;
+  /**
+   * Every statement sent through `ctx.tenancy`, with the tenant its unit set first (plan, Part B). Identity is
+   * registered with `scopedContext`, so its `ctx.db` throws; `expectAllScoped` reads this.
+   */
+  readonly statements: StatementLog;
   close(): Promise<void>;
 }
 
@@ -79,6 +91,8 @@ export async function identityHarness(
     /** The hosted tenant map, for a test that changes a tenant behind the directory's back. */
     readonly onTenantResolver?: (resolver: TenantResolver) => void;
     readonly beforeBuild?: (db: Awaited<ReturnType<typeof testDatabase>>, ctx: ServerContext) => Promise<void>;
+    /** Modules moved into a tenant besides identity, registered with `scopedContext` too. */
+    readonly scoped?: readonly ServerModule['name'][];
   } = {},
 ): Promise<IdentityHarness> {
   const db = options.db ?? (await testDatabase());
@@ -118,11 +132,15 @@ export async function identityHarness(
   // R13: ctx.git (and the commit store's ctx.git.withPlumbing()) gets the same hermetic client as the
   // repository store, so no developer gitconfig or hook reaches a server test. `options.git` still
   // overrides only the store, for tests that force RepoStore.create to fail.
-  const ctx = await testContext({ dataDir, db, config, repos, git: testGit(join(dataDir, NO_HOOKS_DIR)) });
-  await ctx.tenancy.directory.load();
+  const { tenancy, log: statements } = loggedTenancy(db);
+  const ctx = await testContext({ dataDir, db, config, repos, git: testGit(join(dataDir, NO_HOOKS_DIR)), tenancy });
+  const directory = directoryOf(ctx.tenancy);
+  await directory.load();
   await options.beforeBuild?.(db, ctx);
   const app = await buildServer(ctx, {
     modules,
+    // Identity is moved into a tenant (tenancy Task 8): it may not reach `ctx.db`.
+    contextFor: scopedFor('identity', ...(options.scoped ?? [])),
     ...(options.logStream !== undefined ? { logStream: options.logStream } : {}),
     ...(options.onTenantResolver !== undefined ? { onTenantResolver: options.onTenantResolver } : {}),
   });
@@ -133,6 +151,9 @@ export async function identityHarness(
     hooks: ctx.hooks,
     repos,
     dataDir,
+    ctx,
+    tdb: ctx.tenancy.db(directory.defaultScope()),
+    statements,
     close: async () => {
       await app.close();
       if (options.db === undefined) await db.close();
@@ -162,7 +183,7 @@ export async function signedInUser(
   },
 ): Promise<SignedInUser> {
   const at = harness.clock.now;
-  const user = await repo.insertUser(harness.db, {
+  const user = await repo.insertUser(harness.tdb, {
     id: newId(),
     email: input.email,
     displayName: input.email.split('@')[0] ?? input.email,
@@ -170,11 +191,11 @@ export async function signedInUser(
     at,
   });
   if (input.password !== undefined)
-    await repo.upsertCredential(harness.db, user.id, await hashPassword(input.password), at);
-  if (input.disabled === true) await repo.setDisabled(harness.db, user.id, at);
+    await repo.upsertCredential(harness.tdb, user.id, await hashPassword(input.password), at);
+  if (input.disabled === true) await repo.setDisabled(harness.tdb, user.id, at);
   const { token, hash } = mintToken();
   const tokenId = newId();
-  await repo.insertToken(harness.db, {
+  await repo.insertToken(harness.tdb, {
     id: tokenId,
     userId: user.id,
     tokenHash: hash,

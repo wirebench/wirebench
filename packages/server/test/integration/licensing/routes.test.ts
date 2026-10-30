@@ -1,7 +1,7 @@
 // packages/server/test/integration/licensing/routes.test.ts
 import type { LicenseState } from '@wirebench/engine';
 import { afterEach, expect, it } from 'vitest';
-import type { LicenseChanged, ServerModule } from '../../../src/context.js';
+import type { LicenseChangedEvent, ServerModule } from '../../../src/context.js';
 import { requireServerAdmin } from '../../../src/identity/guard.js';
 import * as repo from '../../../src/licensing/repo.js';
 import { describeDb } from '../../helpers/database.js';
@@ -34,12 +34,12 @@ async function setUp(): Promise<{
   h: IdentityHarness;
   admin: SignedInUser;
   member: SignedInUser;
-  events: LicenseChanged[];
+  events: LicenseChangedEvent[];
 }> {
   h = await licensingHarness(keys, { extra: () => [probe] });
   const admin = await signedInUser(h, { email: 'admin@example.com', serverAdmin: true });
   const member = await signedInUser(h, { email: 'member@example.com' });
-  const events: LicenseChanged[] = [];
+  const events: LicenseChangedEvent[] = [];
   h.hooks.licenseChanged.push((event) => events.push(event));
   return { h, admin, member, events };
 }
@@ -77,7 +77,13 @@ describeDb('the license endpoints (licensing spec §3.6, §13)', () => {
       licenseId: PAYLOAD.id,
     });
     expect(events).toEqual([
-      { action: 'installed', licenseId: PAYLOAD.id, edition: 'team', actorUserId: admin.user.id },
+      {
+        action: 'installed',
+        licenseId: PAYLOAD.id,
+        edition: 'team',
+        actorUserId: admin.user.id,
+        tenant: h.tdb.scope,
+      },
     ]);
     const meta = (await call<Record<string, unknown>>(h, undefined, 'GET', '/meta')).body;
     expect(meta['edition']).toBe('team');
@@ -125,7 +131,12 @@ describeDb('the license endpoints (licensing spec §3.6, §13)', () => {
     await call(h, admin, 'PUT', '/license', { license: license(keys) });
     expect((await call(h, admin, 'DELETE', '/license')).status).toBe(204);
     expect((await call<LicenseState>(h, admin, 'GET', '/license')).body.status).toBe('none');
-    expect(events.at(-1)).toEqual({ action: 'removed', licenseId: PAYLOAD.id, actorUserId: admin.user.id });
+    expect(events.at(-1)).toEqual({
+      action: 'removed',
+      licenseId: PAYLOAD.id,
+      actorUserId: admin.user.id,
+      tenant: h.tdb.scope,
+    });
     events.length = 0;
     expect((await call(h, admin, 'DELETE', '/license')).status).toBe(204);
     expect(events).toEqual([]); // nothing was stored, so nothing changed

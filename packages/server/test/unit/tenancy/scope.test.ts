@@ -1,9 +1,13 @@
+import type { FastifyBaseLogger } from 'fastify';
 import { describe, expect, it, vi } from 'vitest';
 import type { Database, Querier, ServerContext } from '../../../src/context.js';
 import { checkAppRole, checkPostgresVersion } from '../../../src/tenancy/checks.js';
 import { forEachTenant } from '../../../src/tenancy/jobs.js';
 import { scopeOf, type TenantScope } from '../../../src/tenancy/scope.js';
 import { SET_TENANT, tenantDbFactory } from '../../../src/tenancy/tenant-db.js';
+import { announce } from '../../../src/context.js';
+import { TenantDirectory } from '../../../src/tenancy/directory.js';
+import { directoryOf } from '../../../src/tenancy/tenancy.js';
 import { testContext } from '../../helpers/context.js';
 import { expectNoRawStatementsOn, rawStatementsOf, scopedContext, statementLog } from '../../helpers/tenancy.js';
 
@@ -370,6 +374,60 @@ describe('scopedContext (plan, Global Constraints)', () => {
     expect(scoped.log).toBe(log);
     expect(scoped.tenancy).toBe(shared.tenancy);
     expect(scoped.config).toBe(shared.config);
+  });
+
+  it("hands a module no tenant directory, so no scope but the request's or the job loop's (Task 6 review m2)", async () => {
+    const scoped = scopedContext(await testContext());
+    expect(Object.keys(scoped.tenancy).sort()).toEqual(['db', 'forEachTenant']);
+    expect('directory' in scoped.tenancy).toBe(false);
+    // The start-up, the resolver and the admin command line reach it through `directoryOf` alone.
+    expect(directoryOf(scoped.tenancy)).toBeInstanceOf(TenantDirectory);
+    expect(() => directoryOf({ ...scoped.tenancy })).toThrow(expect.objectContaining({ code: 'tenancy-not-loaded' }));
+  });
+});
+
+describe('announcements run outside the tenant unit (Task 6 re-review R4)', () => {
+  /** A database whose `select 1` takes a while, as a real one's does: the unit ends before it answers. */
+  const slowDatabase = (): Database => {
+    const querier: Querier = {
+      query: (text: string) =>
+        new Promise((resolve) => {
+          setTimeout(() => resolve({ rows: [], rowCount: 0 }), text === 'select 1' ? 20 : 0);
+        }),
+    };
+    return { ...querier, transaction: (fn) => fn(querier), close: () => Promise.resolve() };
+  };
+  /** A listener that queries in `A` and does not wait: what a hub or audit listener does. */
+  const querying = (tenancy: ReturnType<typeof tenantDbFactory>) => (): void => {
+    void tenancy(A).query('select 1');
+  };
+
+  it('a listener reaching the tenant database inside a unit runs in a unit of its own', async () => {
+    const db = slowDatabase();
+    const log = statementLog();
+    const tenancy = tenantDbFactory(db, { onStatement: log.onStatement });
+    const warn = vi.fn();
+    await tenancy(A).transaction(async (tx) => {
+      await tx.query('select 0');
+      announce([querying(tenancy)], {}, { warn } as unknown as FastifyBaseLogger);
+    });
+    await vi.waitFor(() => {
+      expect(log.entries.filter((entry) => entry.text === 'select 1')).toHaveLength(1);
+    });
+    const units = new Set(log.entries.filter((entry) => entry.kind === 'statement').map((entry) => entry.unit));
+    expect(units.size).toBe(2);
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('without that, the same listener joins the unit and rolls it back (the control)', async () => {
+    const db = slowDatabase();
+    const tenancy = tenantDbFactory(db);
+    await expect(
+      tenancy(A).transaction(async (tx) => {
+        await tx.query('select 0');
+        querying(tenancy)();
+      }),
+    ).rejects.toThrow(expect.objectContaining({ code: 'tenancy-unawaited' }));
   });
 });
 

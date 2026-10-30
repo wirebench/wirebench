@@ -56,7 +56,7 @@ export const keyRequestRoutes =
         if (Buffer.byteLength(body.content, 'utf8') > TEAM_SECRETS_KEY_REQUEST_MAX_BYTES) {
           throw teamSecretsRequestTooLarge();
         }
-        const user = await findUserById(db, request.caller!.id);
+        const user = await findUserById(env.ctx.tenancy.db(request.tenant), request.caller!.id);
         if (user === undefined) throw unauthenticated();
         const path = keyRequestPath(body.keyId);
         const subject = `Request team secrets access for ${user.displayName.replace(CONTROL_CHARACTERS, ' ')}`;

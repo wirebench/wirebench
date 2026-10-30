@@ -287,13 +287,15 @@ it.runIf(OUT !== undefined)(
       });
       expect(accepted.status, JSON.stringify(accepted.body)).toBeLessThan(300);
       note('users', accepted.body.user.id);
-      await identityRepo.insertOidcIdentity(h.db, {
+      // Run at `e9bdc5af1`, whose repository takes a plain querier; this tree's takes a tenant one, so the
+      // harness's database is cast for both to compile.
+      await identityRepo.insertOidcIdentity(h.db as never, {
         issuer: 'https://idp.example.test',
         subject: 'oidc-subject-editor',
         userId: editor.user.id,
         at,
       });
-      await identityRepo.insertFlow(h.db, {
+      await identityRepo.insertFlow(h.db as never, {
         id: newId(),
         codeChallenge: sha256('verifier-0019'),
         loopbackPort: 53682,

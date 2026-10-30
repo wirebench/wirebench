@@ -16,6 +16,7 @@ import type { ServerConfig } from './config.js';
 import { requireFeature } from './licensing/gate.js';
 import type { RepoStore } from './repos/repo-store.js';
 import type { TenantScope } from './tenancy/scope.js';
+import { outsideTenantUnit, type TenantQuerier } from './tenancy/tenant-db.js';
 import type { Tenancy } from './tenancy/tenancy.js';
 
 declare module 'fastify' {
@@ -48,7 +49,8 @@ export interface InvitationAccepted {
   readonly userId: string;
 }
 
-export type InvitationAcceptedHook = (tx: Querier, accepted: InvitationAccepted) => Promise<void>;
+/** Runs in identity's accepting unit, in the invitation's tenant. */
+export type InvitationAcceptedHook = (tx: TenantQuerier, accepted: InvitationAccepted) => Promise<void>;
 
 /**
  * A push moved a workspace's main (live-updates spec §3.2). `tokenId` is the pushing session, whose
@@ -74,6 +76,12 @@ export interface AccessChanged {
 
 /** One device token ended, or every token of a user except `exceptTokenId` (live-updates spec §3.2). */
 export type SessionEnded = { readonly tokenId: string } | { readonly userId: string; readonly exceptTokenId?: string };
+
+/**
+ * `sessionEnded` as identity announces it: with the tenant the token or user belongs to (hosted edition spec
+ * §19.8 guard 5). The listeners read it from Task 11.
+ */
+export type SessionEndedEvent = SessionEnded & { readonly tenantId: string };
 
 /** A catch URL stored a capture (webhook-capture spec §3.6); fired after the insert's transaction committed. */
 export interface CaptureReceived {
@@ -116,6 +124,12 @@ export interface LicenseChanged {
   /** `null` from the command line, which has no user. */
   readonly actorUserId: string | null;
 }
+
+/**
+ * `licenseChanged` as the routes announce it: with the request's tenant, a scope rather than a bare id since
+ * the audit module's listener writes its event in that tenant's unit (hosted edition spec §19.8 guard 6).
+ */
+export type LicenseChangedEvent = LicenseChanged & { readonly tenant: TenantScope };
 
 /**
  * The server's license (licensing spec §5.1). Read at request time, never at registration: identity
@@ -193,10 +207,10 @@ export interface ServerHooks {
   readonly audit: AuditHook[];
   readonly headMoved: Announcement<HeadMoved>[];
   readonly accessChanged: Announcement<AccessChanged>[];
-  readonly sessionEnded: Announcement<SessionEnded>[];
+  readonly sessionEnded: Announcement<SessionEndedEvent>[];
   readonly captureReceived: Announcement<CaptureReceived>[];
   readonly hooksChanged: Announcement<HooksChanged>[];
-  readonly licenseChanged: Announcement<LicenseChanged>[];
+  readonly licenseChanged: Announcement<LicenseChangedEvent>[];
   readonly scheduleRunFinished: Announcement<ScheduleRunFinished>[];
   readonly agentUnpaired: Announcement<AgentUnpaired>[];
 }
@@ -223,7 +237,7 @@ export function serverHooks(): ServerHooks {
 /** Runs every `invitationAccepted` hook in registration order; the first throw propagates. */
 export async function runInvitationAccepted(
   hooks: ServerHooks,
-  tx: Querier,
+  tx: TenantQuerier,
   accepted: InvitationAccepted,
 ): Promise<void> {
   for (const hook of hooks.invitationAccepted) await hook(tx, accepted);
@@ -279,8 +293,18 @@ const ANNOUNCEMENT_FAILED = 'an announcement listener failed';
  * at warn and swallowed, and the next listener still runs. A listener that returns a promise anyway
  * has its rejection caught the same way, so it can never become an unhandled rejection. Never throws
  * and never awaits: a push or an access change must not fail or wait because of the hub (§12).
+ *
+ * The listeners run outside any tenant unit (Task 6 re-review R4): nobody awaits them, so a listener that
+ * queried through `ctx.tenancy.db` from inside a running unit would join it and make the unit fail with
+ * `tenancy-unawaited`.
  */
 export function announce<E>(listeners: readonly Announcement<E>[], event: E, log: FastifyBaseLogger): void {
+  outsideTenantUnit(() => {
+    callListeners(listeners, event, log);
+  });
+}
+
+function callListeners<E>(listeners: readonly Announcement<E>[], event: E, log: FastifyBaseLogger): void {
   for (const listener of listeners) {
     try {
       const returned: unknown = listener(event);

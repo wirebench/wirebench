@@ -98,7 +98,7 @@ describeDb('OIDC sign-in from the browser (hosted spec §17.2)', () => {
       const me = await h.app.inject({ method: 'GET', url: '/api/v1/me', headers: { cookie: `${COOKIE}=${token}` } });
       expect(me.statusCode).toBe(200);
       expect(me.json<{ user: { id: string } }>().user.id).toBe(alice.user.id);
-      expect((await repo.tokensOfUser(h.db, alice.user.id)).map((t) => t.kind).sort()).toEqual(['browser', 'device']);
+      expect((await repo.tokensOfUser(h.tdb, alice.user.id)).map((t) => t.kind).sort()).toEqual(['browser', 'device']);
       expect(events.filter((e) => e.action === 'auth.signed_in').map((e) => e.details?.['method'])).toEqual(['oidc']);
       expect((await h.db.query('select 1 from browser_flows')).rowCount).toBe(0);
     });
@@ -141,7 +141,7 @@ describeDb('OIDC sign-in from the browser (hosted spec §17.2)', () => {
       expect(done.statusCode, done.body).toBe(303);
       expect(cookieValue(done, COOKIE)).toMatch(/^wbs_/);
       // The session the cookie held ends, so no token outlives the cookie that carried it.
-      const tokens = await repo.tokensOfUser(h.db, alice.user.id);
+      const tokens = await repo.tokensOfUser(h.tdb, alice.user.id);
       expect(tokens.map((t) => t.id)).not.toContain(alice.tokenId);
     });
 

@@ -7,7 +7,11 @@
  *   route or a module that reached for the default tenant, or branded a scope of its own, would pass every
  *   one-tenant test and serve the wrong tenant in hosted mode, so the name itself is refused, not only a call.
  *   Listing the files inside `src/tenancy/` too keeps a wrapper from re-exporting either. The admin command
- *   line's self-hosted default (§19.11) joins the list when Task 16 writes it.
+ *   line's self-hosted default (§19.11) is on the list: `identity/cli.ts` serves the default tenant until
+ *   Task 16 adds `--tenant`.
+ * - **No `directoryOf` outside the files {@link SCOPE_MINTS} names** (Task 6 review m2): the directory's
+ *   `list()`, `get(id)` and `resolvable()` hand out scopes, so it is kept off `ctx.tenancy`, and only the
+ *   start-up, the resolver's registration and the admin command line reach it.
  * - **No read of the configured public URL** (§19.5) outside {@link PUBLIC_URL_ALLOWED} (`config.ts` and
  *   `tenancy/urls.ts`, file by file, so a second wrapper in `src/tenancy/` is caught too): no `.publicUrl`,
  *   `['publicUrl']`, `'publicUrl'` (a `Pick` that would carry it), destructuring of it, or its variable
@@ -35,9 +39,19 @@ export const SOURCE_ROOT = 'packages/server/src';
 export const URLS_FILE = 'packages/server/src/tenancy/urls.ts';
 
 /** The two ways to get a `TenantScope` without a request or the job loop, and the only files that may name them. */
-export const SCOPE_MINTS: Readonly<Record<'defaultScope' | 'scopeOf', readonly string[]>> = {
-  defaultScope: ['packages/server/src/tenancy/directory.ts', 'packages/server/src/tenancy/resolve.ts'],
+export const SCOPE_MINTS: Readonly<Record<'defaultScope' | 'scopeOf' | 'directoryOf', readonly string[]>> = {
+  defaultScope: [
+    'packages/server/src/tenancy/directory.ts',
+    'packages/server/src/tenancy/resolve.ts',
+    'packages/server/src/identity/cli.ts',
+  ],
   scopeOf: ['packages/server/src/tenancy/scope.ts', 'packages/server/src/tenancy/directory.ts'],
+  directoryOf: [
+    'packages/server/src/tenancy/tenancy.ts',
+    'packages/server/src/server.ts',
+    'packages/server/src/serve.ts',
+    'packages/server/src/identity/cli.ts',
+  ],
 };
 
 /** Where the configured URL may be read: the config itself, and the tenant URL functions. */
@@ -70,7 +84,7 @@ export interface ScopeHit {
   readonly line: number;
   readonly text: string;
   /** Which rule it broke. */
-  readonly rule: 'default-scope' | 'scope-of' | 'public-url' | 'operator-url' | 'url-without-scope';
+  readonly rule: 'default-scope' | 'scope-of' | 'directory-of' | 'public-url' | 'operator-url' | 'url-without-scope';
 }
 
 const PUBLIC_URL = 'publicUrl';
@@ -114,7 +128,7 @@ export function findUrlReads(file: string, content: string): ScopeHit[] {
   return hits;
 }
 
-/** Every identifier or string naming `defaultScope` or `scopeOf` in `content`, unless `file` may name it. */
+/** Every identifier or string naming one of {@link SCOPE_MINTS} in `content`, unless `file` may name it. */
 export function findScopeMints(file: string, content: string): ScopeHit[] {
   const source = ts.createSourceFile(file, content, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
   const hits: ScopeHit[] = [];
@@ -128,7 +142,7 @@ export function findScopeMints(file: string, content: string): ScopeHit[] {
           file,
           line: line + 1,
           text: (lines[line] ?? '').trim(),
-          rule: name === 'defaultScope' ? 'default-scope' : 'scope-of',
+          rule: name === 'defaultScope' ? 'default-scope' : name === 'scopeOf' ? 'scope-of' : 'directory-of',
         });
       }
     }
@@ -164,6 +178,7 @@ if (process.argv[1] !== undefined && fileURLToPath(import.meta.url) === process.
     const WHAT = {
       'default-scope': 'defaultScope outside the files that may name it',
       'scope-of': 'scopeOf outside the files that may name it',
+      'directory-of': 'directoryOf outside the files that may name it',
       'public-url': 'a read of the configured public URL; use tenantUrl(config, request)',
       'operator-url': 'operatorPublicUrl outside main.ts and serve.ts',
       'url-without-scope': 'urlWithoutScope outside its allowed callers',

@@ -104,13 +104,19 @@ export function chargeKeys(limiter: RateLimiter, keys: readonly (string | undefi
   return retryAfter;
 }
 
+/**
+ * Every key leads with the request's tenant (hosted edition spec §19.8 guard 5), so one tenant's attempts
+ * never use up another's: an address behind one proxy, or one email, can reach several tenants.
+ */
+type KeyedRequest = Pick<FastifyRequest, 'tenant' | 'ip' | 'body' | 'caller'>;
+
 /** The per-IP key; `request.ip` already honours `trustProxy`. */
-export const ipKey = (request: FastifyRequest): string => `ip:${request.ip}`;
+export const ipKey = (request: KeyedRequest): string => `${request.tenant.tenantId}:ip:${request.ip}`;
 /** The per-email key of a body that carries one, lower-cased so case cannot dodge the bucket. */
-export const emailKey = (request: FastifyRequest): string | undefined => {
+export const emailKey = (request: KeyedRequest): string | undefined => {
   const email = (request.body as { readonly email?: unknown } | undefined)?.email;
-  return typeof email === 'string' ? `email:${email.trim().toLowerCase()}` : undefined;
+  return typeof email === 'string' ? `${request.tenant.tenantId}:email:${email.trim().toLowerCase()}` : undefined;
 };
 /** The per-caller key of an authenticated request; `undefined` before identity's guard has run. */
-export const callerKey = (request: FastifyRequest): string | undefined =>
-  request.caller === undefined ? undefined : `user:${request.caller.id}`;
+export const callerKey = (request: KeyedRequest): string | undefined =>
+  request.caller === undefined ? undefined : `${request.tenant.tenantId}:user:${request.caller.id}`;

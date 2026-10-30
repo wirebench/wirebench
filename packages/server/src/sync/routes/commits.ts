@@ -74,7 +74,7 @@ export const commitRoutes =
         // No file body is parsed: the paths alone say whether the access log changes.
         if (role !== 'admin' && touchesAccessLog(body)) throw teamSecretsAdminOnly();
         // R2, §6: the author is the account, never anything in the body; request.caller has no name.
-        const user = await findUserById(db, request.caller!.id);
+        const user = await findUserById(env.ctx.tenancy.db(request.tenant), request.caller!.id);
         if (user === undefined) throw unauthenticated();
         const author = { name: user.displayName, email: user.email };
         const result = await repos.withLock(workspaceId, async () => {

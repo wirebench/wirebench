@@ -125,6 +125,7 @@ async function answerResponse(
   const { claims } = mapped;
   const linked = await linkClaims(
     env,
+    request.tenant,
     { ...claims, emailVerified: claims.email !== undefined },
     auditSource(request),
     SAML_LINKS,
@@ -309,9 +310,11 @@ export const authSamlRoutes =
           throw flowInvalid();
         // Single use, whatever happens next: only the request that removed the row goes on.
         if (!(await repo.claimGrantedSamlFlow(env.ctx.db, flow.id, flow.grantHash))) throw flowInvalid();
-        const user = await identityRepo.findUserById(env.ctx.db, flow.userId);
+        const user = await identityRepo.findUserById(env.ctx.tenancy.db(request.tenant), flow.userId);
         if (user === undefined || user.disabledAt !== null) throw flowInvalid();
-        return reply.code(201).send(await signIn(env, user, 'saml', flow.deviceName, auditSource(request)));
+        return reply
+          .code(201)
+          .send(await signIn(env, request.tenant, user, 'saml', flow.deviceName, auditSource(request)));
       },
     );
 

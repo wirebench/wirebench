@@ -91,6 +91,8 @@ export function refusedStatement(text: string): WirebenchError | undefined {
 }
 
 interface ActiveUnit {
+  /** The factory that opened the unit: a unit of another factory counts as none. */
+  readonly factory: object;
   readonly scope: TenantScope;
   readonly tx: TenantQuerier;
   readonly ended: () => boolean;
@@ -98,15 +100,26 @@ interface ActiveUnit {
   readonly track: <T>(work: () => Promise<T>) => Promise<T>;
 }
 
+// The unit the current async call chain runs in. A timer a unit started may outlive it: an ended unit counts
+// as none. One store for every factory, so `outsideTenantUnit` can leave whichever unit is running.
+const active = new AsyncLocalStorage<ActiveUnit>();
+
+/**
+ * Runs `fn` outside any tenant unit (Task 6 re-review R4). For work that starts in a unit but is not part of
+ * it: an announcement's listeners, which nobody awaits. A listener that reached `ctx.tenancy.db` from inside
+ * the unit would join it, and the unit would then fail with `tenancy-unawaited` and roll back.
+ */
+export function outsideTenantUnit<T>(fn: () => T): T {
+  return active.exit(fn);
+}
+
 export function tenantDbFactory(db: Database, options: TenancyDbOptions = {}): TenantDbFactory {
   let units = 0;
-  // The unit the current async call chain runs in. A timer a unit started may outlive it: an ended unit counts
-  // as none.
-  const active = new AsyncLocalStorage<ActiveUnit>();
+  const factory = {};
   let savepoints = 0;
   const outerFor = (scope: TenantScope): ActiveUnit | undefined => {
     const outer = active.getStore();
-    if (outer === undefined || outer.ended()) return undefined;
+    if (outer === undefined || outer.factory !== factory || outer.ended()) return undefined;
     if (outer.scope.tenantId !== scope.tenantId) {
       throw new WirebenchError(
         'tenancy-nested',
@@ -178,7 +191,7 @@ export function tenantDbFactory(db: Database, options: TenancyDbOptions = {}): T
           },
         } as TenantQuerier;
         try {
-          const result = await active.run({ scope, tx, ended: () => ended, track }, () => fn(tx));
+          const result = await active.run({ factory, scope, tx, ended: () => ended, track }, () => fn(tx));
           if (inFlight > 0) {
             throw new WirebenchError(
               'tenancy-unawaited',

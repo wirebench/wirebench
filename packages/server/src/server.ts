@@ -12,6 +12,7 @@ import { toProblem } from './problem.js';
 import { healthRoutes } from './routes/health.js';
 import { metaRoutes } from './routes/meta.js';
 import { registerTenantResolution, type TenantResolver } from './tenancy/resolve.js';
+import { directoryOf } from './tenancy/tenancy.js';
 
 export interface BuildServerOptions {
   readonly modules: readonly ServerModule[];
@@ -90,7 +91,7 @@ export async function buildServer(ctx: ServerContext, options: BuildServerOption
   const context: ServerContext = { ...ctx, log: app.log };
 
   // First, so it runs ahead of every module's hooks, on the API, the public routes and every upgrade.
-  const resolver = await registerTenantResolution(app, ctx.config, ctx.tenancy.directory);
+  const resolver = await registerTenantResolution(app, ctx.config, directoryOf(ctx.tenancy));
   if (resolver !== undefined) options.onTenantResolver?.(resolver);
 
   app.addHook('onSend', async (request, reply) => {

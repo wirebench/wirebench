@@ -13,9 +13,21 @@ import type { ServerHost } from '../../../src/host/host-runtime.js';
 import { HostInstances, type HostSession, type HostSocketHandle } from '../../../src/host/instances.js';
 import { realTimer } from '../../../src/live/module.js';
 import { hostDirectories } from '../../../src/host/server-platform.js';
+import { scopeOf } from '../../../src/tenancy/scope.js';
 
-const ALICE = { id: '01JB3Z9K7Q4ZJ6X1V8W2M5N0AA', email: 'alice@example.com', serverUrl: 'https://wirebench.test' };
-const BOB = { id: '01JB3Z9K7Q4ZJ6X1V8W2M5N0BB', email: 'bob@example.com', serverUrl: 'https://wirebench.test' };
+const TENANT = scopeOf({ id: '00000000-0000-4000-8000-000000000001', slug: 'default' });
+const ALICE = {
+  id: '01JB3Z9K7Q4ZJ6X1V8W2M5N0AA',
+  email: 'alice@example.com',
+  serverUrl: 'https://wirebench.test',
+  tenant: TENANT,
+};
+const BOB = {
+  id: '01JB3Z9K7Q4ZJ6X1V8W2M5N0BB',
+  email: 'bob@example.com',
+  serverUrl: 'https://wirebench.test',
+  tenant: TENANT,
+};
 const IDLE_MS = 30 * 60_000;
 
 function fakeHost(): ServerHost & { disposed: number } {

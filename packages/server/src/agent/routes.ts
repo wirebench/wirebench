@@ -42,7 +42,8 @@ import {
   type AgentRedeemResponse,
 } from '@wirebench/engine';
 import type { FastifyInstance, FastifyReply, FastifyRequest, preHandlerHookHandler } from 'fastify';
-import { announce, auditSource, recordAudit, type AuditInput, type Querier, type ServerContext } from '../context.js';
+import { announce, auditSource, recordAudit, type AuditInput, type ServerContext } from '../context.js';
+import type { TenantQuerier } from '../tenancy/tenant-db.js';
 import { tenantUrl } from '../tenancy/urls.js';
 import { isUniqueViolation } from '../db/errors.js';
 import { unauthenticated } from '../identity/errors.js';
@@ -149,8 +150,11 @@ export function agentRoutes(env: AgentRoutesEnv): (app: FastifyInstance) => Prom
     agentHeaders(request.headers) !== undefined ? ipKey(request) : undefined,
   ]);
 
-  /** The pairing's user as the actor of what its agent did (the agent acts for them). */
-  const asUser = async (tx: Querier, userId: string): Promise<AuditInput['actor']> => {
+  /**
+   * The pairing's user as the actor of what its agent did (the agent acts for them). In the request's tenant
+   * unit, since identity's repository takes one (tenancy Task 8; the rest of this module moves in Task 15).
+   */
+  const asUser = async (tx: TenantQuerier, userId: string): Promise<AuditInput['actor']> => {
     const user = await findUserById(tx, userId);
     return user === undefined ? { kind: 'anonymous' } : { kind: 'user', userId, email: user.email };
   };
@@ -212,7 +216,7 @@ export function agentRoutes(env: AgentRoutesEnv): (app: FastifyInstance) => Prom
       throw refused === 'unknown-pairing' ? pairingUnknown() : signatureInvalid();
     }
     const signer = verified.pairing;
-    await db.transaction(async (tx) =>
+    await ctx.tenancy.db(request.tenant).transaction(async (tx) =>
       recordAudit(hooks, tx, {
         ...auditSource(request),
         // The signature held for `signer`: its user is the actor, as for any verified refusal.
@@ -283,7 +287,7 @@ export function agentRoutes(env: AgentRoutesEnv): (app: FastifyInstance) => Prom
         if (parseAgentPublicKey(body.publicKey) === undefined) {
           throw problem('invalid-request', 'The public key is not an Ed25519 key in base64 SPKI DER.', 400);
         }
-        const paired = await db.transaction(async (tx) => {
+        const paired = await ctx.tenancy.db(request.tenant).transaction(async (tx) => {
           const userId = await repo.takeCode(tx, hashCode(code), now());
           if (userId === undefined) return undefined;
           const user = await findUserById(tx, userId);
@@ -378,7 +382,7 @@ export function agentRoutes(env: AgentRoutesEnv): (app: FastifyInstance) => Prom
         // Charged only now the signature holds, so no one else can spend this pairing's allowance.
         const retryAfter = chargeKeys(redeemPerPairing, [`pairing:${pairing.id}`]);
         if (retryAfter > 0) return reply.header('retry-after', String(retryAfter)).code(429).send(RATE_LIMITED);
-        const redeemed = await db.transaction(async (tx) => {
+        const redeemed = await ctx.tenancy.db(request.tenant).transaction(async (tx) => {
           const userId = await repo.takeNonce(tx, { nonceHash: hashSecret(nonce), pairingId: pairing.id, now: now() });
           if (userId === undefined) return { refused: 'nonce' as const };
           const user = await findUserById(tx, userId);
@@ -397,7 +401,7 @@ export function agentRoutes(env: AgentRoutesEnv): (app: FastifyInstance) => Prom
         if ('refused' in redeemed) {
           const reason = redeemed.refused;
           // The signature held, so the refusal is the pairing's user's.
-          await db.transaction(async (tx) =>
+          await ctx.tenancy.db(request.tenant).transaction(async (tx) =>
             recordAudit(hooks, tx, {
               ...auditSource(request),
               actor: await asUser(tx, pairing.userId),
@@ -427,7 +431,7 @@ export function agentRoutes(env: AgentRoutesEnv): (app: FastifyInstance) => Prom
           if (pairing === undefined || pairing.userId !== caller.id) throw pairingUnknown();
           by = 'user';
         }
-        const removed = await db.transaction(async (tx) => {
+        const removed = await ctx.tenancy.db(request.tenant).transaction(async (tx) => {
           const row = await repo.deletePairing(tx, id);
           if (row === undefined) return undefined;
           await recordAudit(hooks, tx, {
@@ -459,7 +463,7 @@ export function agentRoutes(env: AgentRoutesEnv): (app: FastifyInstance) => Prom
         const { id } = request.params as { id: string };
         const { port } = request.body as AgentPortRequest;
         const pairing = await verifiedRequest(request, 'PATCH', id);
-        await db.transaction(async (tx) => {
+        await ctx.tenancy.db(request.tenant).transaction(async (tx) => {
           await repo.setPort(tx, id, port, now());
           // The agent tells its port at every start; only a move is worth an audit row.
           if (pairing.port === port) return;

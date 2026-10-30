@@ -34,6 +34,7 @@ import {
 import { describeDb, testDatabase } from '../../helpers/database.js';
 import { mkTempDir, removeTempDir } from '../../helpers/git.js';
 import { signedInUser } from '../../helpers/identity.js';
+import { asTenantQuerier, defaultTenantDb } from '../../helpers/tenancy.js';
 import { license, licensingHarness, testKeys } from '../../helpers/licensing.js';
 
 /** Where the rollback test cuts 0020: the foreign keys are gone, no key is rebuilt yet. */
@@ -348,8 +349,8 @@ describeDb('migration 0020 on the frozen 0019 fixture (hosted spec §19.3, §19.
         return { rows: [] as R[], rowCount: 0 };
       },
     };
-    await tokenByHash(explaining, 'no-such-hash');
-    await findUserByEmail(explaining, 'admin@example.com');
+    await tokenByHash(asTenantQuerier(explaining), 'no-such-hash');
+    await findUserByEmail(asTenantQuerier(explaining), 'admin@example.com');
     await chainHead(explaining);
     await listAuditEvents(explaining, {}, { limit: 50 });
     await deleteCapturesBefore(explaining, new Date(), 100);
@@ -486,7 +487,7 @@ describeDb('migration 0020 on the frozen 0019 fixture (hosted spec §19.3, §19.
     const at = new Date('2026-10-30T12:00:00.000Z');
     const { admin } = fixture.users;
     // identity: local_credentials, by (tenant_id, user_id); the admin has a password in the fixture.
-    await upsertCredential(db, admin, 'scrypt$replaced', at);
+    await upsertCredential(await defaultTenantDb(db), admin, 'scrypt$replaced', at);
     expect((await db.query('select password_hash from local_credentials where user_id = $1', [admin])).rows).toEqual([
       { password_hash: 'scrypt$replaced' },
     ]);

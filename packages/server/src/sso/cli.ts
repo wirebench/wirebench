@@ -11,12 +11,13 @@ import { createScimToken, revokeScimToken } from './scim-tokens.js';
 import { listGroupSummaries, scimGroupNotFound, setGroupLink } from './group-links.js';
 import * as teamsRepo from '../teams/repo.js';
 import { teamNotFound } from '../teams/errors.js';
+import type { TenantScope } from '../tenancy/scope.js';
 
 export type ScimTokenCommand = Extract<ServerCommand, { command: `admin-scim-token-${string}` }>;
 export type ScimGroupCommand = Extract<ServerCommand, { command: `admin-scim-group-${string}` }>;
 
 export interface ScimCliEnv {
-  readonly ctx: Pick<ServerContext, 'db' | 'hooks'> & { readonly license: Pick<LicenseService, 'state'> };
+  readonly ctx: Pick<ServerContext, 'db' | 'tenancy' | 'hooks'> & { readonly license: Pick<LicenseService, 'state'> };
   readonly now: () => Date;
 }
 
@@ -65,7 +66,13 @@ async function teamIdOf(env: ScimCliEnv, value: string): Promise<string> {
   return found.id;
 }
 
-export async function runScimGroupCommand(command: ScimGroupCommand, env: ScimCliEnv, io: ServerIo): Promise<number> {
+/** `scope` is the admin command line's tenant (`identity/cli.ts`). */
+export async function runScimGroupCommand(
+  command: ScimGroupCommand,
+  env: ScimCliEnv,
+  scope: TenantScope,
+  io: ServerIo,
+): Promise<number> {
   if (!(await env.ctx.license.state()).features.includes('sso-provisioning')) throw featureRequired('sso-provisioning');
   switch (command.command) {
     case 'admin-scim-group-list': {
@@ -80,6 +87,7 @@ export async function runScimGroupCommand(command: ScimGroupCommand, env: ScimCl
     case 'admin-scim-group-link': {
       const linked = await setGroupLink(
         env,
+        scope,
         await groupIdOf(env, command.group),
         await teamIdOf(env, command.team),
         SYSTEM_SOURCE,
@@ -88,7 +96,7 @@ export async function runScimGroupCommand(command: ScimGroupCommand, env: ScimCl
       return ExitCode.Ok;
     }
     case 'admin-scim-group-unlink': {
-      const unlinked = await setGroupLink(env, await groupIdOf(env, command.group), null, SYSTEM_SOURCE);
+      const unlinked = await setGroupLink(env, scope, await groupIdOf(env, command.group), null, SYSTEM_SOURCE);
       io.stdout.write(`Unlinked ${unlinked.displayName}\n`);
       return ExitCode.Ok;
     }

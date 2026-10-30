@@ -33,6 +33,7 @@ import { signedInUser } from '../../helpers/identity.js';
 import { workspaceSnapshot } from '../../helpers/schedule-runs.js';
 import { seedSyncWorkspace } from '../../helpers/sync.js';
 import { call, seedTeam } from '../../helpers/teams.js';
+import type { Database } from '../../../src/context.js';
 
 const AT = '2026-09-24T12:00:00.000Z';
 
@@ -637,23 +638,29 @@ describeDb('the host socket (hosted edition spec §17.3)', () => {
 
   it('closes 4401 when the token was revoked between the identity check and the socket', async () => {
     const alice = await browserUser(h, 'alice@example.com');
-    const db = h.db as unknown as { query: (text: string, params?: readonly unknown[]) => Promise<unknown> };
-    const query = db.query.bind(db);
+    // Both lookups run in tenant units, so the units' transactions are where the revoke is slipped in.
+    const db = h.db as unknown as { transaction: Database['transaction'] };
+    const transaction = db.transaction.bind(db);
     let lookups = 0;
-    db.query = async (text, params) => {
-      // The identity check's lookup is the first; revoke the token before the host module's own.
-      if (text.includes('from device_tokens t join users u') && ++lookups === 2) {
-        await query('update device_tokens set revoked_at = now() where id = $1', [alice.tokenId]);
-      }
-      return await query(text, params);
-    };
+    db.transaction = (fn) =>
+      transaction((tx) =>
+        fn({
+          query: async (text, params) => {
+            // The identity check's lookup is the first; revoke the token before the host module's own.
+            if (text.includes('from device_tokens t join users u') && ++lookups === 2) {
+              await h.db.query('update device_tokens set revoked_at = now() where id = $1', [alice.tokenId]);
+            }
+            return await tx.query(text, params);
+          },
+        }),
+      );
     try {
       const client = await openHost(h, alice);
       expect(await client.closed).toEqual({ code: HOST_CLOSE.unauthenticated });
       expect(client.frames.filter((frame) => frame.type === 'hello')).toEqual([]);
       expect(lookups).toBeGreaterThanOrEqual(2);
     } finally {
-      db.query = query;
+      db.transaction = transaction;
     }
   });
 

@@ -102,7 +102,7 @@ async function tearDown(c: Cast): Promise<void> {
 async function secondDevice(c: Cast, user: SignedInUser): Promise<SignedInUser> {
   const { token, hash } = mintToken();
   const tokenId = newId();
-  await identityRepo.insertToken(c.h.db, {
+  await identityRepo.insertToken(c.h.tdb, {
     id: tokenId,
     userId: user.user.id,
     tokenHash: hash,
@@ -378,7 +378,9 @@ describeDb('announcements from identity (§3.2, R4)', () => {
     expect((await call(c.h, c.editor, 'POST', '/auth/sign-out')).status).toBe(204);
     await expectEnded(laptop);
     await expectOpen(other, bystander);
-    expect(c.heard.take()).toEqual([{ hook: 'sessionEnded', event: { tokenId: c.editor.tokenId } }]);
+    expect(c.heard.take()).toEqual([
+      { hook: 'sessionEnded', event: { tenantId: c.h.tdb.scope.tenantId, tokenId: c.editor.tokenId } },
+    ]);
   });
 
   it('removing a device ends that device’s sockets only (§3.1)', async () => {
@@ -389,7 +391,9 @@ describeDb('announcements from identity (§3.2, R4)', () => {
     expect((await call(c.h, c.editor, 'DELETE', `/me/devices/${phone.tokenId}`)).status).toBe(204);
     await expectEnded(removed);
     await expectOpen(laptop);
-    expect(c.heard.take()).toEqual([{ hook: 'sessionEnded', event: { tokenId: phone.tokenId } }]);
+    expect(c.heard.take()).toEqual([
+      { hook: 'sessionEnded', event: { tenantId: c.h.tdb.scope.tenantId, tokenId: phone.tokenId } },
+    ]);
   });
 
   it('a password change ends every other device of the user and keeps the one that changed it (§3.1)', async () => {
@@ -406,7 +410,10 @@ describeDb('announcements from identity (§3.2, R4)', () => {
     await expectEnded(other);
     await expectOpen(laptop, bystander);
     expect(c.heard.take()).toEqual([
-      { hook: 'sessionEnded', event: { userId: c.editor.user.id, exceptTokenId: c.editor.tokenId } },
+      {
+        hook: 'sessionEnded',
+        event: { tenantId: c.h.tdb.scope.tenantId, userId: c.editor.user.id, exceptTokenId: c.editor.tokenId },
+      },
     ]);
   });
 
@@ -420,7 +427,9 @@ describeDb('announcements from identity (§3.2, R4)', () => {
     await expectEnded(laptop);
     await expectEnded(other);
     await expectOpen(bystander);
-    expect(c.heard.take()).toEqual([{ hook: 'sessionEnded', event: { userId: c.editor.user.id } }]);
+    expect(c.heard.take()).toEqual([
+      { hook: 'sessionEnded', event: { tenantId: c.h.tdb.scope.tenantId, userId: c.editor.user.id } },
+    ]);
 
     expect((await call(c.h, c.root, 'PATCH', `/users/${c.editor.user.id}`, { disabled: false })).status).toBe(200);
     expect(c.heard.take()).toEqual([]);
@@ -429,7 +438,7 @@ describeDb('announcements from identity (§3.2, R4)', () => {
     expect(both.status).toBe(200);
     // The sockets close first, so the background access check finds none of them.
     expect(c.heard.take()).toEqual([
-      { hook: 'sessionEnded', event: { userId: c.viewer.user.id } },
+      { hook: 'sessionEnded', event: { tenantId: c.h.tdb.scope.tenantId, userId: c.viewer.user.id } },
       { hook: 'accessChanged', event: { userId: c.viewer.user.id } },
     ]);
     await expectEnded(bystander);
@@ -470,7 +479,9 @@ describeDb('announcements from identity (§3.2, R4)', () => {
     await expectEnded(laptop);
     await expectEnded(other);
     await expectOpen(bystander);
-    expect(c.heard.take()).toEqual([{ hook: 'sessionEnded', event: { userId: c.editor.user.id } }]);
+    expect(c.heard.take()).toEqual([
+      { hook: 'sessionEnded', event: { tenantId: c.h.tdb.scope.tenantId, userId: c.editor.user.id } },
+    ]);
   });
 
   it('refused identity calls announce nothing (§3.2)', async () => {

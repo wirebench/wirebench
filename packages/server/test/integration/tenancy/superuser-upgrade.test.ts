@@ -3,6 +3,7 @@
  * URL is the database's bootstrap superuser. It keeps starting, migrates to `0020`, warns that row-level security
  * does not apply to its role, and its accounts still sign in.
  */
+import { directoryOf } from '../../../src/tenancy/tenancy.js';
 import { EventEmitter } from 'node:events';
 import { Writable } from 'node:stream';
 import { afterAll, beforeAll, expect, it, vi } from 'vitest';
@@ -58,7 +59,7 @@ describeDb('a 0019 installation on one superuser URL (spec §19.4, owner ruling 
       'select max(version)::int as version from schema_migrations',
     );
     expect(applied.rows[0]!.version).toBe(20);
-    expect(server.ctx.tenancy.directory.defaultScope().slug).toBe('default');
+    expect(directoryOf(server.ctx.tenancy).defaultScope().slug).toBe('default');
   });
 
   it('logs the warning, naming the superuser', () => {

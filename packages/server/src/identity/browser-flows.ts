@@ -4,12 +4,13 @@
  * in, sets the session cookie and redirects. A flow is a `browser_flows` row that keeps only a hash
  * of its state, plus a flow cookie holding the state itself, so the callback can tell that the
  * browser presenting a state is the one that started the flow. Both last ten minutes, like the
- * desktop's flows. Used by identity (OIDC) and sso (SAML).
+ * desktop's flows. Used by identity (OIDC) and sso (SAML). Every flow and token lives in the request's
+ * tenant.
  */
 import { timingSafeEqual } from 'node:crypto';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { DEVICE_TOKEN_PATTERN } from '@wirebench/engine';
-import { announce, recordAudit, type AuditSource, type Querier, type ServerContext } from '../context.js';
+import { announce, recordAudit, type AuditSource, type ServerContext } from '../context.js';
 import { clearFlowCookie, flowCookie, sessionToken, setFlowCookie, setSessionCookie } from './cookies.js';
 import { identitySettings } from './env.js';
 import { emailUnverified, notInvited, userDisabled } from './errors.js';
@@ -17,6 +18,7 @@ import * as repo from './repo.js';
 import type { UserRow } from './repo.js';
 import { signIn } from './sessions.js';
 import { hashSecret, hashToken, mintSecret, newId } from './tokens.js';
+import type { TenantQuerier } from '../tenancy/tenant-db.js';
 import { tenantUrl } from '../tenancy/urls.js';
 
 /** §2 of the identity spec: a pending flow lives ten minutes. */
@@ -81,19 +83,21 @@ export async function startBrowserFlow(
 ): Promise<string> {
   const now = env.now();
   const state = mintSecret();
-  await env.ctx.db.query(
-    'insert into browser_flows (id, provider, state_hash, nonce, code_verifier, redirect_to, expires_at, created_at) values ($1, $2, $3, $4, $5, $6, $7, $8)',
-    [
-      newId(),
-      input.provider,
-      state.hash,
-      input.nonce ?? null,
-      input.codeVerifier ?? null,
-      input.redirectTo,
-      new Date(now.getTime() + BROWSER_FLOW_TTL_MS),
-      now,
-    ],
-  );
+  await env.ctx.tenancy
+    .db(request.tenant)
+    .query(
+      'insert into browser_flows (id, provider, state_hash, nonce, code_verifier, redirect_to, expires_at, created_at) values ($1, $2, $3, $4, $5, $6, $7, $8)',
+      [
+        newId(),
+        input.provider,
+        state.hash,
+        input.nonce ?? null,
+        input.codeVerifier ?? null,
+        input.redirectTo,
+        new Date(now.getTime() + BROWSER_FLOW_TTL_MS),
+        now,
+      ],
+    );
   setFlowCookie(reply, tenantUrl(env.ctx.config, request), state.secret, input.provider === 'saml');
   return state.secret;
 }
@@ -105,7 +109,11 @@ function sameText(a: string, b: string): boolean {
 }
 
 /** Deletes and returns the flow whose state hashes to `stateHash`: only one caller can ever get it. */
-async function claim(db: Querier, provider: BrowserFlowProvider, stateHash: string): Promise<BrowserFlow | undefined> {
+async function claim(
+  db: TenantQuerier,
+  provider: BrowserFlowProvider,
+  stateHash: string,
+): Promise<BrowserFlow | undefined> {
   const result = await db.query<{
     id: string;
     provider: BrowserFlowProvider;
@@ -146,7 +154,7 @@ export async function takeBrowserFlow(
   // Left alone on a mismatch, so a cross-site request carrying some other state cannot end a flow in progress.
   if (state === '' || cookie === undefined || !sameText(cookie, state)) return undefined;
   clearFlowCookie(reply, url);
-  const flow = await claim(env.ctx.db, provider, hashSecret(state));
+  const flow = await claim(env.ctx.tenancy.db(request.tenant), provider, hashSecret(state));
   if (flow === undefined || flow.expiresAt.getTime() <= env.now().getTime()) return undefined;
   return flow;
 }
@@ -160,10 +168,11 @@ export async function takeBrowserFlow(
 export async function endPresentedSession(env: FlowEnv, request: FastifyRequest, source: AuditSource): Promise<void> {
   const token = sessionToken(request, tenantUrl(env.ctx.config, request));
   if (token === undefined || !DEVICE_TOKEN_PATTERN.test(token)) return;
-  const found = await repo.tokenByHash(env.ctx.db, hashToken(token));
+  const db = env.ctx.tenancy.db(request.tenant);
+  const found = await repo.tokenByHash(db, hashToken(token));
   if (found === undefined || found.token.kind !== 'browser' || found.token.revokedAt !== null) return;
   const tokenId = found.token.id;
-  await env.ctx.db.transaction(async (tx) => {
+  await db.transaction(async (tx) => {
     await repo.revokeToken(tx, tokenId, env.now());
     await recordAudit(env.ctx.hooks, tx, {
       ...source,
@@ -177,7 +186,7 @@ export async function endPresentedSession(env: FlowEnv, request: FastifyRequest,
       details: { tokenId },
     });
   });
-  announce(env.ctx.hooks.sessionEnded, { tokenId }, request.log);
+  announce(env.ctx.hooks.sessionEnded, { tenantId: request.tenant.tenantId, tokenId }, request.log);
 }
 
 /**
@@ -196,7 +205,7 @@ export async function finishBrowserSignIn(
   const config = env.ctx.config;
   const url = tenantUrl(config, request);
   await endPresentedSession(env, request, source);
-  const { token } = await signIn(env, user, method, BROWSER_DEVICE_NAME, source, 'browser');
+  const { token } = await signIn(env, request.tenant, user, method, BROWSER_DEVICE_NAME, source, 'browser');
   setSessionCookie(reply, url, token, Math.floor(identitySettings(config).tokenMaxMs / 1000));
   return reply
     .code(303)

@@ -71,7 +71,7 @@ describeDb('the caller guard (§3.2)', () => {
     const idle = await signedInUser(h, { email: 'idle@example.com' });
     h.clock.advance(31 * DAY);
     expect((await get('/api/v1/probe/user', idle.headers.authorization)).statusCode).toBe(401);
-    expect(await repo.tokensOfUser(h.db, idle.user.id)).toHaveLength(0);
+    expect(await repo.tokensOfUser(h.tdb, idle.user.id)).toHaveLength(0);
 
     const old = await signedInUser(h, { email: 'old@example.com' });
     for (let day = 0; day < 181; day += 1) {
@@ -84,13 +84,13 @@ describeDb('the caller guard (§3.2)', () => {
 
   it('writes lastUsedAt at most once a minute', async () => {
     const alice = await signedInUser(h, { email: 'alice@example.com' });
-    const before = (await repo.tokensOfUser(h.db, alice.user.id))[0]!.lastUsedAt;
+    const before = (await repo.tokensOfUser(h.tdb, alice.user.id))[0]!.lastUsedAt;
     h.clock.advance(30_000);
     await get('/api/v1/probe/user', alice.headers.authorization);
-    expect((await repo.tokensOfUser(h.db, alice.user.id))[0]!.lastUsedAt).toBe(before);
+    expect((await repo.tokensOfUser(h.tdb, alice.user.id))[0]!.lastUsedAt).toBe(before);
     h.clock.advance(31_000);
     await get('/api/v1/probe/user', alice.headers.authorization);
-    expect((await repo.tokensOfUser(h.db, alice.user.id))[0]!.lastUsedAt).toBe(h.clock.now.toISOString());
+    expect((await repo.tokensOfUser(h.tdb, alice.user.id))[0]!.lastUsedAt).toBe(h.clock.now.toISOString());
   });
 });
 
@@ -113,7 +113,7 @@ describeDb('callerForToken (live-updates §3.3, §5.1)', () => {
       '0.0.0-test',
     ),
   );
-  const resolve = (token: string) => callerForToken({ db: h.db, settings, now: () => h.clock.now }, token);
+  const resolve = (token: string) => callerForToken({ db: h.tdb, settings, now: () => h.clock.now }, token);
   const UNAUTHENTICATED = { code: 'identity-unauthenticated', details: { status: 401 } };
 
   it('answers the caller, the display name and the token’s creation time for a valid token', async () => {
@@ -136,7 +136,7 @@ describeDb('callerForToken (live-updates §3.3, §5.1)', () => {
 
   it('refuses a malformed, an unknown and a revoked token with identity-unauthenticated', async () => {
     const alice = await signedInUser(h, { email: 'alice@example.com' });
-    await repo.revokeToken(h.db, alice.tokenId, h.clock.now);
+    await repo.revokeToken(h.tdb, alice.tokenId, h.clock.now);
     for (const token of ['not-a-token', mintToken().token, alice.token]) {
       await expect(resolve(token)).rejects.toMatchObject(UNAUTHENTICATED);
     }
@@ -147,12 +147,12 @@ describeDb('callerForToken (live-updates §3.3, §5.1)', () => {
     const old = await signedInUser(h, { email: 'old@example.com' });
     h.clock.advance(31 * DAY);
     await expect(resolve(idle.token)).rejects.toMatchObject(UNAUTHENTICATED);
-    expect(await repo.tokensOfUser(h.db, idle.user.id)).toEqual([]);
+    expect(await repo.tokensOfUser(h.tdb, idle.user.id)).toEqual([]);
 
     h.clock.advance(150 * DAY); // 181 days since creation
-    await repo.touchToken(h.db, old.tokenId, h.clock.now); // used just now, so only its age can expire it
+    await repo.touchToken(h.tdb, old.tokenId, h.clock.now); // used just now, so only its age can expire it
     await expect(resolve(old.token)).rejects.toMatchObject(UNAUTHENTICATED);
-    expect(await repo.tokensOfUser(h.db, old.user.id)).toEqual([]);
+    expect(await repo.tokensOfUser(h.tdb, old.user.id)).toEqual([]);
   });
 
   it('refuses a live token of a disabled user with identity-user-disabled and keeps the row', async () => {
@@ -161,12 +161,12 @@ describeDb('callerForToken (live-updates §3.3, §5.1)', () => {
       code: 'identity-user-disabled',
       details: { status: 403 },
     });
-    expect(await repo.tokensOfUser(h.db, alice.user.id)).toHaveLength(1);
+    expect(await repo.tokensOfUser(h.tdb, alice.user.id)).toHaveLength(1);
   });
 
   it('writes lastUsedAt at most once a minute, as a request does', async () => {
     const alice = await signedInUser(h, { email: 'alice@example.com' });
-    const lastUsed = async () => (await repo.tokensOfUser(h.db, alice.user.id))[0]?.lastUsedAt;
+    const lastUsed = async () => (await repo.tokensOfUser(h.tdb, alice.user.id))[0]?.lastUsedAt;
     const created = await lastUsed();
     h.clock.advance(30_000);
     await resolve(alice.token);

@@ -49,7 +49,7 @@ describeDb('users and password resets (§3.1)', () => {
     // Disabling revokes every token, and per spec §3.2 a revoked token is 401 identity-unauthenticated
     // (checked before the disabled-user case, which is for a still-valid token of a disabled user).
     expect((await h.app.inject({ method: 'GET', url: '/api/v1/me', headers: bob.headers })).statusCode).toBe(401);
-    expect((await repo.tokensOfUser(h.db, bob.user.id)).length).toBe(0);
+    expect((await repo.tokensOfUser(h.tdb, bob.user.id)).length).toBe(0);
     expect((await patch(bob.user.id, { disabled: false })).json<{ disabledAt?: string }>().disabledAt).toBeUndefined();
     expect((await patch(admin.user.id, { serverAdmin: false })).json<{ code: string }>().code).toBe(
       'identity-self-change',

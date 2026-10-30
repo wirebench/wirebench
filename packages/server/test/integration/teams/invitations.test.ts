@@ -47,7 +47,7 @@ describeDb('team invitations (§3.2, §3.4)', () => {
       expect.objectContaining({ id: res.body.id, email: 'Bob@example.com', role: 'member', createdBy: admin.user.id }),
     ]);
     expect(JSON.stringify(list.body)).not.toContain(secretOf(res.body.url));
-    expect((await identityRepo.invitationById(h.db, res.body.id))?.serverAdmin).toBe(false);
+    expect((await identityRepo.invitationById(h.tdb, res.body.id))?.serverAdmin).toBe(false);
   });
 
   it('refuses an existing user with the hint, a member with 403 and an outsider with 404', async () => {

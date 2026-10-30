@@ -88,7 +88,7 @@ export const authOidcRoutes =
         const state = mintSecret().secret;
         const nonce = mintSecret().secret;
         const expiresAt = new Date(now.getTime() + FLOW_TTL_MS);
-        await repo.insertFlow(env.ctx.db, {
+        await repo.insertFlow(env.ctx.tenancy.db(request.tenant), {
           id,
           codeChallenge: body.codeChallenge,
           loopbackPort: body.loopbackPort,
@@ -118,15 +118,18 @@ export const authOidcRoutes =
         const provider = env.provider;
         if (provider === undefined) throw methodDisabled();
         const query = request.query as OidcCallbackQuery;
+        const db = env.ctx.tenancy.db(request.tenant);
         const refused = (reason: string, email?: string) =>
-          recordAudit(env.ctx.hooks, env.ctx.db, {
-            ...auditSource(request),
-            ...ANONYMOUS_SOURCE,
-            action: 'auth.sign_in_failed',
-            target: { kind: 'server' },
-            details: { method: 'oidc', reason, emailLower: email?.toLowerCase() ?? null },
-          });
-        const flow = await repo.flowByState(env.ctx.db, query.state);
+          db.transaction((tx) =>
+            recordAudit(env.ctx.hooks, tx, {
+              ...auditSource(request),
+              ...ANONYMOUS_SOURCE,
+              action: 'auth.sign_in_failed',
+              target: { kind: 'server' },
+              details: { method: 'oidc', reason, emailLower: email?.toLowerCase() ?? null },
+            }),
+          );
+        const flow = await repo.flowByState(db, query.state);
         if (flow === undefined || flow.grantHash !== null || Date.parse(flow.expiresAt) <= env.now().getTime()) {
           return htmlPage(
             reply,
@@ -135,7 +138,7 @@ export const authOidcRoutes =
           );
         }
         if (query.code === undefined || query.error !== undefined) {
-          await repo.deleteFlow(env.ctx.db, flow.id);
+          await repo.deleteFlow(db, flow.id);
           await refused('identity-oidc-refused');
           return redirectToLoopback(reply, flow, { error: 'identity-oidc-refused' });
         }
@@ -148,23 +151,23 @@ export const authOidcRoutes =
           });
         } catch (error) {
           request.log.warn({ err: error, flowId: flow.id }, 'oidc code exchange failed');
-          await repo.deleteFlow(env.ctx.db, flow.id);
+          await repo.deleteFlow(db, flow.id);
           await refused('identity-oidc-failed');
           return redirectToLoopback(reply, flow, { error: 'identity-oidc-failed' });
         }
         if (claims.issuer !== provider.issuer) {
-          await repo.deleteFlow(env.ctx.db, flow.id); // §6: the issuer is pinned from configuration
+          await repo.deleteFlow(db, flow.id); // §6: the issuer is pinned from configuration
           await refused('identity-oidc-failed', claims.email);
           return redirectToLoopback(reply, flow, { error: 'identity-oidc-failed' });
         }
-        const linked = await linkClaims(env, claims, auditSource(request));
+        const linked = await linkClaims(env, request.tenant, claims, auditSource(request));
         if (!linked.ok) {
-          await repo.deleteFlow(env.ctx.db, flow.id);
+          await repo.deleteFlow(db, flow.id);
           await refused(linked.code, claims.email);
           return redirectToLoopback(reply, flow, { error: linked.code });
         }
         const grant = mintSecret();
-        await repo.grantFlow(env.ctx.db, flow.id, grant.hash, linked.user.id);
+        await repo.grantFlow(db, flow.id, grant.hash, linked.user.id);
         return redirectToLoopback(reply, flow, { grant: grant.secret });
       },
     );
@@ -186,13 +189,15 @@ export const authOidcRoutes =
           const flow = await takeBrowserFlow(env, request, reply, 'oidc', query.state);
           if (flow === undefined) return sendSignInPage(reply, env.ctx, { status: 400, message: FLOW_EXPIRED_MESSAGE });
           const refuse = async (status: number, reason: string, email?: string) => {
-            await recordAudit(env.ctx.hooks, env.ctx.db, {
-              ...auditSource(request),
-              ...ANONYMOUS_SOURCE,
-              action: 'auth.sign_in_failed',
-              target: { kind: 'server' },
-              details: { method: 'oidc', reason, emailLower: email?.toLowerCase() ?? null },
-            });
+            await env.ctx.tenancy.db(request.tenant).transaction((tx) =>
+              recordAudit(env.ctx.hooks, tx, {
+                ...auditSource(request),
+                ...ANONYMOUS_SOURCE,
+                action: 'auth.sign_in_failed',
+                target: { kind: 'server' },
+                details: { method: 'oidc', reason, emailLower: email?.toLowerCase() ?? null },
+              }),
+            );
             return sendSignInPage(reply, env.ctx, {
               status,
               message: refusalMessage(reason),
@@ -214,7 +219,7 @@ export const authOidcRoutes =
           }
           // §6: the issuer is pinned from configuration.
           if (claims.issuer !== provider.issuer) return refuse(502, 'identity-oidc-failed', claims.email);
-          const linked = await linkClaims(env, claims, auditSource(request));
+          const linked = await linkClaims(env, request.tenant, claims, auditSource(request));
           if (!linked.ok) return refuse(403, linked.code, claims.email);
           return finishBrowserSignIn(env, request, reply, linked.user, 'oidc', auditSource(request), flow.redirectTo);
         },
@@ -232,7 +237,8 @@ export const authOidcRoutes =
       async (request, reply) => {
         if (env.provider === undefined) throw methodDisabled();
         const body = request.body as OidcCompleteRequest;
-        const flow = await repo.flowById(env.ctx.db, body.flowId);
+        const db = env.ctx.tenancy.db(request.tenant);
+        const flow = await repo.flowById(db, body.flowId);
         if (
           flow === undefined ||
           flow.grantHash === null ||
@@ -246,10 +252,12 @@ export const authOidcRoutes =
         )
           throw flowInvalid();
         // Single use, whatever happens next: only the request that removed the row goes on.
-        if (!(await repo.claimGrantedFlow(env.ctx.db, flow.id, flow.grantHash))) throw flowInvalid();
-        const user = await repo.findUserById(env.ctx.db, flow.userId);
+        if (!(await repo.claimGrantedFlow(db, flow.id, flow.grantHash))) throw flowInvalid();
+        const user = await repo.findUserById(db, flow.userId);
         if (user === undefined || user.disabledAt !== null) throw flowInvalid();
-        return reply.code(201).send(await signIn(env, user, 'oidc', flow.deviceName, auditSource(request)));
+        return reply
+          .code(201)
+          .send(await signIn(env, request.tenant, user, 'oidc', flow.deviceName, auditSource(request)));
       },
     );
   };

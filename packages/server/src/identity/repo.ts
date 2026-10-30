@@ -1,10 +1,11 @@
 /**
- * Every SQL statement of the identity module (spec §4.2), one function each over a `Querier` so
- * a route can run several inside one `db.transaction`. Columns come back aliased to the
+ * Every SQL statement of the identity module (spec §4.2), one function each over a `TenantQuerier` so
+ * a route can run several inside one tenant unit (`ctx.tenancy.db(scope).transaction`; hosted edition spec
+ * §19.8 guard 2). A token is found by its hash within that tenant. Columns come back aliased to the
  * camelCase the module uses; `timestamptz` values arrive from pg as `Date` and leave here as
  * ISO-8601 strings, the only date shape the wire schemas know.
  */
-import type { Querier } from '../context.js';
+import type { TenantQuerier } from '../tenancy/tenant-db.js';
 
 export interface UserRow {
   readonly id: string;
@@ -92,19 +93,19 @@ const first = <T>(rows: readonly Raw[], dates: readonly string[]): T | undefined
 
 // ---- users -------------------------------------------------------------------------------
 
-export async function findUserByEmail(db: Querier, emailLower: string): Promise<UserRow | undefined> {
+export async function findUserByEmail(db: TenantQuerier, emailLower: string): Promise<UserRow | undefined> {
   return first(
     (await db.query(`select ${USER_COLUMNS} from users where email_lower = $1`, [emailLower])).rows,
     USER_DATES,
   );
 }
 
-export async function findUserById(db: Querier, id: string): Promise<UserRow | undefined> {
+export async function findUserById(db: TenantQuerier, id: string): Promise<UserRow | undefined> {
   return first((await db.query(`select ${USER_COLUMNS} from users where id = $1`, [id])).rows, USER_DATES);
 }
 
 export async function insertUser(
-  db: Querier,
+  db: TenantQuerier,
   input: {
     readonly id: string;
     readonly email: string;
@@ -122,24 +123,24 @@ export async function insertUser(
   return withDates<UserRow>(rows[0]!, USER_DATES);
 }
 
-export async function listUsers(db: Querier): Promise<readonly UserRow[]> {
+export async function listUsers(db: TenantQuerier): Promise<readonly UserRow[]> {
   return (await db.query(`select ${USER_COLUMNS} from users order by email_lower`)).rows.map((row) =>
     withDates<UserRow>(row, USER_DATES),
   );
 }
 
-export async function setServerAdmin(db: Querier, id: string, serverAdmin: boolean): Promise<void> {
+export async function setServerAdmin(db: TenantQuerier, id: string, serverAdmin: boolean): Promise<void> {
   await db.query('update users set server_admin = $2 where id = $1', [id, serverAdmin]);
 }
 
 /** `at: null` re-enables. */
-export async function setDisabled(db: Querier, id: string, at: Date | null): Promise<void> {
+export async function setDisabled(db: TenantQuerier, id: string, at: Date | null): Promise<void> {
   await db.query('update users set disabled_at = $2 where id = $1', [id, at]);
 }
 
 // ---- credentials and OIDC identities -------------------------------------------------------
 
-export async function credentialOf(db: Querier, userId: string): Promise<CredentialRow | undefined> {
+export async function credentialOf(db: TenantQuerier, userId: string): Promise<CredentialRow | undefined> {
   return first(
     (
       await db.query(
@@ -151,7 +152,12 @@ export async function credentialOf(db: Querier, userId: string): Promise<Credent
   );
 }
 
-export async function upsertCredential(db: Querier, userId: string, passwordHash: string, at: Date): Promise<void> {
+export async function upsertCredential(
+  db: TenantQuerier,
+  userId: string,
+  passwordHash: string,
+  at: Date,
+): Promise<void> {
   await db.query(
     'insert into local_credentials (user_id, password_hash, updated_at) values ($1, $2, $3) on conflict (tenant_id, user_id) do update set password_hash = excluded.password_hash, updated_at = excluded.updated_at',
     [userId, passwordHash, at],
@@ -159,7 +165,7 @@ export async function upsertCredential(db: Querier, userId: string, passwordHash
 }
 
 export async function oidcIdentityOf(
-  db: Querier,
+  db: TenantQuerier,
   issuer: string,
   subject: string,
 ): Promise<{ readonly userId: string } | undefined> {
@@ -173,7 +179,7 @@ export async function oidcIdentityOf(
 }
 
 export async function insertOidcIdentity(
-  db: Querier,
+  db: TenantQuerier,
   input: { readonly issuer: string; readonly subject: string; readonly userId: string; readonly at: Date },
 ): Promise<void> {
   await db.query('insert into oidc_identities (issuer, subject, user_id, linked_at) values ($1, $2, $3, $4)', [
@@ -191,7 +197,7 @@ export interface SignInMethods {
 
 /** The methods each of `userIds` can sign in with; a user with neither is still in the map. */
 export async function signInMethodsOf(
-  db: Querier,
+  db: TenantQuerier,
   userIds: readonly string[],
 ): Promise<ReadonlyMap<string, SignInMethods>> {
   const result = new Map<string, { local: boolean; oidc: { issuer: string }[] }>(
@@ -219,7 +225,7 @@ export async function signInMethodsOf(
 // ---- invitations ---------------------------------------------------------------------------
 
 export async function insertInvitation(
-  db: Querier,
+  db: TenantQuerier,
   input: {
     readonly id: string;
     readonly kind: 'invite' | 'reset';
@@ -255,7 +261,7 @@ export async function insertInvitation(
 
 /** The one open (unaccepted, unrevoked, unexpired) `invite` for an email, if any. */
 export async function openInvitationByEmail(
-  db: Querier,
+  db: TenantQuerier,
   emailLower: string,
   now: Date,
 ): Promise<InvitationRow | undefined> {
@@ -270,21 +276,24 @@ export async function openInvitationByEmail(
   );
 }
 
-export async function invitationBySecretHash(db: Querier, secretHash: string): Promise<InvitationRow | undefined> {
+export async function invitationBySecretHash(
+  db: TenantQuerier,
+  secretHash: string,
+): Promise<InvitationRow | undefined> {
   return first(
     (await db.query(`select ${INVITATION_COLUMNS} from invitations where secret_hash = $1`, [secretHash])).rows,
     INVITATION_DATES,
   );
 }
 
-export async function invitationById(db: Querier, id: string): Promise<InvitationRow | undefined> {
+export async function invitationById(db: TenantQuerier, id: string): Promise<InvitationRow | undefined> {
   return first(
     (await db.query(`select ${INVITATION_COLUMNS} from invitations where id = $1`, [id])).rows,
     INVITATION_DATES,
   );
 }
 
-export async function listInvitations(db: Querier): Promise<readonly InvitationRow[]> {
+export async function listInvitations(db: TenantQuerier): Promise<readonly InvitationRow[]> {
   return (
     await db.query(`select ${INVITATION_COLUMNS} from invitations where kind = 'invite' order by created_at desc`)
   ).rows.map((row) => withDates<InvitationRow>(row, INVITATION_DATES));
@@ -296,7 +305,7 @@ export async function listInvitations(db: Querier): Promise<readonly InvitationR
  * open-ness check `isOpen` makes in application code, so two concurrent accepts of the same
  * secret can never both flip `accepted_at`.
  */
-export async function acceptInvitation(db: Querier, id: string, at: Date): Promise<boolean> {
+export async function acceptInvitation(db: TenantQuerier, id: string, at: Date): Promise<boolean> {
   const result = await db.query(
     'update invitations set accepted_at = $2 where id = $1 and accepted_at is null and revoked_at is null and expires_at > $2',
     [id, at],
@@ -304,7 +313,7 @@ export async function acceptInvitation(db: Querier, id: string, at: Date): Promi
   return (result.rowCount ?? 0) > 0;
 }
 
-export async function revokeInvitation(db: Querier, id: string, at: Date): Promise<void> {
+export async function revokeInvitation(db: TenantQuerier, id: string, at: Date): Promise<void> {
   await db.query('update invitations set revoked_at = $2 where id = $1', [id, at]);
 }
 
@@ -313,7 +322,7 @@ export async function revokeInvitation(db: Querier, id: string, at: Date): Promi
  * `expires_at` (a partial index predicate must be immutable), so without this an expired link
  * would block a new invitation for the same person.
  */
-export async function revokeExpiredInvitesOf(db: Querier, emailLower: string, now: Date): Promise<void> {
+export async function revokeExpiredInvitesOf(db: TenantQuerier, emailLower: string, now: Date): Promise<void> {
   await db.query(
     "update invitations set revoked_at = $2 where kind = 'invite' and email_lower = $1 and accepted_at is null and revoked_at is null and expires_at <= $2",
     [emailLower, now],
@@ -321,7 +330,7 @@ export async function revokeExpiredInvitesOf(db: Querier, emailLower: string, no
 }
 
 /** Closes every open reset for a user, so a new reset link is the only one that works. */
-export async function revokeOpenResetsOf(db: Querier, userId: string, at: Date): Promise<void> {
+export async function revokeOpenResetsOf(db: TenantQuerier, userId: string, at: Date): Promise<void> {
   await db.query(
     "update invitations set revoked_at = $2 where kind = 'reset' and user_id = $1 and accepted_at is null and revoked_at is null",
     [userId, at],
@@ -331,7 +340,7 @@ export async function revokeOpenResetsOf(db: Querier, userId: string, at: Date):
 // ---- device tokens -------------------------------------------------------------------------
 
 export async function insertToken(
-  db: Querier,
+  db: TenantQuerier,
   input: {
     readonly id: string;
     readonly userId: string;
@@ -350,7 +359,7 @@ export async function insertToken(
 
 /** The token row and its user in one round trip: what every authenticated request costs. */
 export async function tokenByHash(
-  db: Querier,
+  db: TenantQuerier,
   tokenHash: string,
 ): Promise<{ readonly token: TokenRow; readonly user: UserRow } | undefined> {
   const rows = (
@@ -372,23 +381,28 @@ export async function tokenByHash(
   return { token: withDates<TokenRow>(token, TOKEN_DATES), user: withDates<UserRow>(user, USER_DATES) };
 }
 
-export async function touchToken(db: Querier, id: string, at: Date): Promise<void> {
+export async function touchToken(db: TenantQuerier, id: string, at: Date): Promise<void> {
   await db.query('update device_tokens set last_used_at = $2 where id = $1', [id, at]);
 }
 
-export async function revokeToken(db: Querier, id: string, at: Date): Promise<void> {
+export async function revokeToken(db: TenantQuerier, id: string, at: Date): Promise<void> {
   await db.query('update device_tokens set revoked_at = $2 where id = $1 and revoked_at is null', [id, at]);
 }
 
 /** Revokes every live token of a user except `exceptId` (the device doing the changing). */
-export async function revokeTokensOfUser(db: Querier, userId: string, at: Date, exceptId?: string): Promise<void> {
+export async function revokeTokensOfUser(
+  db: TenantQuerier,
+  userId: string,
+  at: Date,
+  exceptId?: string,
+): Promise<void> {
   await db.query(
     'update device_tokens set revoked_at = $2 where user_id = $1 and revoked_at is null and ($3::text is null or id <> $3)',
     [userId, at, exceptId ?? null],
   );
 }
 
-export async function tokensOfUser(db: Querier, userId: string): Promise<readonly TokenRow[]> {
+export async function tokensOfUser(db: TenantQuerier, userId: string): Promise<readonly TokenRow[]> {
   return (
     await db.query(
       `select ${TOKEN_COLUMNS} from device_tokens where user_id = $1 and revoked_at is null order by created_at`,
@@ -397,13 +411,13 @@ export async function tokensOfUser(db: Querier, userId: string): Promise<readonl
   ).rows.map((row) => withDates<TokenRow>(row, TOKEN_DATES));
 }
 
-export async function deleteToken(db: Querier, id: string): Promise<void> {
+export async function deleteToken(db: TenantQuerier, id: string): Promise<void> {
   await db.query('delete from device_tokens where id = $1', [id]);
 }
 
 /** The daily sweep (§3.5): expired by idleness, by age, or revoked more than a day ago. */
 export async function deleteExpiredTokens(
-  db: Querier,
+  db: TenantQuerier,
   input: { readonly idleBefore: Date; readonly createdBefore: Date; readonly revokedBefore: Date },
 ): Promise<number> {
   const result = await db.query(
@@ -416,7 +430,7 @@ export async function deleteExpiredTokens(
 // ---- OIDC flows ----------------------------------------------------------------------------
 
 export async function insertFlow(
-  db: Querier,
+  db: TenantQuerier,
   input: {
     readonly id: string;
     readonly codeChallenge: string;
@@ -443,20 +457,20 @@ export async function insertFlow(
   );
 }
 
-export async function flowById(db: Querier, id: string): Promise<FlowRow | undefined> {
+export async function flowById(db: TenantQuerier, id: string): Promise<FlowRow | undefined> {
   return first((await db.query(`select ${FLOW_COLUMNS} from oidc_flows where id = $1`, [id])).rows, FLOW_DATES);
 }
 
-export async function flowByState(db: Querier, state: string): Promise<FlowRow | undefined> {
+export async function flowByState(db: TenantQuerier, state: string): Promise<FlowRow | undefined> {
   return first((await db.query(`select ${FLOW_COLUMNS} from oidc_flows where state = $1`, [state])).rows, FLOW_DATES);
 }
 
 /** Records the IdP's answer: which user the flow resolved to and the one-time grant's hash. */
-export async function grantFlow(db: Querier, id: string, grantHash: string, userId: string): Promise<void> {
+export async function grantFlow(db: TenantQuerier, id: string, grantHash: string, userId: string): Promise<void> {
   await db.query('update oidc_flows set grant_hash = $2, user_id = $3 where id = $1', [id, grantHash, userId]);
 }
 
-export async function deleteFlow(db: Querier, id: string): Promise<void> {
+export async function deleteFlow(db: TenantQuerier, id: string): Promise<void> {
   await db.query('delete from oidc_flows where id = $1', [id]);
 }
 
@@ -464,16 +478,16 @@ export async function deleteFlow(db: Querier, id: string): Promise<void> {
  * Redeems a granted flow: `true` only for the one request whose `DELETE` removed the row, so two
  * concurrent completes with the same grant cannot both get a token.
  */
-export async function claimGrantedFlow(db: Querier, id: string, grantHash: string): Promise<boolean> {
+export async function claimGrantedFlow(db: TenantQuerier, id: string, grantHash: string): Promise<boolean> {
   const result = await db.query('delete from oidc_flows where id = $1 and grant_hash = $2', [id, grantHash]);
   return (result.rowCount ?? 0) > 0;
 }
 
-export async function deleteExpiredFlows(db: Querier, now: Date): Promise<number> {
+export async function deleteExpiredFlows(db: TenantQuerier, now: Date): Promise<number> {
   return (await db.query('delete from oidc_flows where expires_at < $1', [now])).rowCount ?? 0;
 }
 
 /** The browser's OIDC and SAML sign-ins that never came back (hosted spec §17.2). */
-export async function deleteExpiredBrowserFlows(db: Querier, now: Date): Promise<number> {
+export async function deleteExpiredBrowserFlows(db: TenantQuerier, now: Date): Promise<number> {
   return (await db.query('delete from browser_flows where expires_at < $1', [now])).rowCount ?? 0;
 }

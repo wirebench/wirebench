@@ -4,7 +4,9 @@
  * before `email_verified` is even consulted, and an unverified email can never link or create.
  */
 import { isWirebenchError } from '@wirebench/engine';
-import { recordAudit, runInvitationAccepted, type AuditSource, type Querier } from '../context.js';
+import { recordAudit, runInvitationAccepted, type AuditSource } from '../context.js';
+import type { TenantScope } from '../tenancy/scope.js';
+import type { TenantQuerier } from '../tenancy/tenant-db.js';
 import type { IdentityEnv } from './env.js';
 import type { OidcClaims } from './oidc.js';
 import * as repo from './repo.js';
@@ -53,9 +55,9 @@ export type LinkOutcome =
  */
 export interface IdentityLinks {
   readonly method: 'oidc' | 'saml';
-  find(db: Querier, issuer: string, subject: string): Promise<{ readonly userId: string } | undefined>;
+  find(db: TenantQuerier, issuer: string, subject: string): Promise<{ readonly userId: string } | undefined>;
   insert(
-    db: Querier,
+    db: TenantQuerier,
     input: { readonly issuer: string; readonly subject: string; readonly userId: string; readonly at: Date },
   ): Promise<void>;
 }
@@ -66,14 +68,15 @@ export const OIDC_LINKS: IdentityLinks = {
   insert: repo.insertOidcIdentity,
 };
 
-/** Looks up the facts for `claims`, decides, and writes what the decision needs. */
+/** Looks up the facts for `claims` in `scope`, decides, and writes what the decision needs there. */
 export async function linkClaims(
   env: Pick<IdentityEnv, 'ctx' | 'now'>,
+  scope: TenantScope,
   claims: OidcClaims,
   source: AuditSource,
   links: IdentityLinks = OIDC_LINKS,
 ): Promise<LinkOutcome> {
-  const db = env.ctx.db;
+  const db = env.ctx.tenancy.db(scope);
   const now = env.now();
   const identity = await links.find(db, claims.issuer, claims.subject);
   const identityUser = identity === undefined ? undefined : await repo.findUserById(db, identity.userId);

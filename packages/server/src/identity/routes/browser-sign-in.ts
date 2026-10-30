@@ -68,7 +68,7 @@ export const browserSignInRoutes =
         if (email === undefined || password === undefined)
           return sendSignInPage(reply, env.ctx, { status: 400, message: 'Enter your email and password.', redirectTo });
         const source = auditSource(request);
-        const checked = await checkLocalCredentials(env, source, email, password);
+        const checked = await checkLocalCredentials(env, request.tenant, source, email, password);
         if (!checked.ok)
           return sendSignInPage(reply, env.ctx, {
             status: toProblem(checked.error).status,

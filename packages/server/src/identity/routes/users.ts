@@ -10,6 +10,7 @@ import {
 import type { FastifyInstance } from 'fastify';
 import { announce, auditSource, recordAudit } from '../../context.js';
 import { jsonSchema } from '../../schema.js';
+import type { TenantQuerier } from '../../tenancy/tenant-db.js';
 import { tenantUrl } from '../../tenancy/urls.js';
 import type { IdentityEnv } from '../env.js';
 import { notFound, selfChange } from '../errors.js';
@@ -18,9 +19,9 @@ import { createPasswordReset } from '../invitations.js';
 import * as repo from '../repo.js';
 import { setUserDisabled } from '../user-state.js';
 
-async function summaries(env: IdentityEnv, users: readonly repo.UserRow[]): Promise<UserSummary[]> {
+async function summaries(db: TenantQuerier, users: readonly repo.UserRow[]): Promise<UserSummary[]> {
   const methods = await repo.signInMethodsOf(
-    env.ctx.db,
+    db,
     users.map((user) => user.id),
   );
   return users.map((user) => ({
@@ -41,7 +42,8 @@ export const userRoutes =
     app.get(
       '/users',
       { preHandler: requireServerAdmin, schema: { response: { 200: jsonSchema(usersResponseSchema) } } },
-      async () => summaries(env, await repo.listUsers(env.ctx.db)),
+      async (request) =>
+        env.ctx.tenancy.db(request.tenant).transaction(async (tx) => summaries(tx, await repo.listUsers(tx))),
     );
 
     app.patch(
@@ -59,10 +61,11 @@ export const userRoutes =
         const body = request.body as UserPatchRequest;
         // §3.1: never a way to lock yourself out, whatever the rest of the patch says.
         if (id === request.caller!.id && (body.serverAdmin === false || body.disabled === true)) throw selfChange();
-        const user = await repo.findUserById(env.ctx.db, id);
+        const db = env.ctx.tenancy.db(request.tenant);
+        const user = await repo.findUserById(db, id);
         if (user === undefined) throw notFound('User');
         const source = auditSource(request);
-        await env.ctx.db.transaction(async (tx) => {
+        await db.transaction(async (tx) => {
           // Re-read inside the transaction: a concurrent change since the read above must not skip the seat check or record a non-transition.
           const current = (await repo.findUserById(tx, id)) ?? user;
           const event = (action: 'user.admin_granted' | 'user.admin_revoked') =>
@@ -75,10 +78,11 @@ export const userRoutes =
           if (body.disabled !== undefined) await setUserDisabled(env, tx, id, body.disabled, source);
         });
         // Sockets first: a disabled user's sockets close before any access check could look at them.
-        if (body.disabled === true) announce(env.ctx.hooks.sessionEnded, { userId: id }, request.log);
+        if (body.disabled === true)
+          announce(env.ctx.hooks.sessionEnded, { tenantId: request.tenant.tenantId, userId: id }, request.log);
         // The server-admin flag is a role change that lives in identity (R4).
         if (body.serverAdmin !== undefined) announce(env.ctx.hooks.accessChanged, { userId: id }, request.log);
-        return (await summaries(env, [(await repo.findUserById(env.ctx.db, id))!]))[0];
+        return db.transaction(async (tx) => (await summaries(tx, [(await repo.findUserById(tx, id))!]))[0]);
       },
     );
 
@@ -93,13 +97,14 @@ export const userRoutes =
       },
       async (request, reply) => {
         const { id } = request.params as { id: string };
-        const user = await repo.findUserById(env.ctx.db, id);
+        const user = await repo.findUserById(env.ctx.tenancy.db(request.tenant), id);
         if (user === undefined) throw notFound('User');
         return reply
           .code(201)
           .send(
             await createPasswordReset(
               env,
+              request.tenant,
               user,
               request.caller!.id,
               auditSource(request),

@@ -77,6 +77,7 @@ export const teamInvitationRoutes =
           // §6: a team invitation can never mint a server admin.
           created = await createInvitation(
             env.invitations,
+            request.tenant,
             {
               email: body.email,
               serverAdmin: false,
@@ -109,7 +110,8 @@ export const teamInvitationRoutes =
       async (request, reply) => {
         const { teamId, id } = request.params as { readonly teamId: string; readonly id: string };
         if (!(await repo.isTeamInvitation(db, teamId, id))) throw invitationNotFound();
-        if (!(await revokeOpenInvitation(env.invitations, id, auditSource(request)))) throw invitationNotFound();
+        if (!(await revokeOpenInvitation(env.invitations, request.tenant, id, auditSource(request))))
+          throw invitationNotFound();
         return reply.code(204).send();
       },
     );

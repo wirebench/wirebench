@@ -17,7 +17,7 @@ export const invitePageRoutes =
         const { secret } = request.params as { secret: string };
         if (!SECRET_PATTERN.test(secret)) return reply.code(404).send({ code: 'not-found', message: 'No such page.' });
         const serverUrl = tenantUrl(env.ctx.config, request);
-        const row = await openInvitationBySecret(env, secret);
+        const row = await openInvitationBySecret(env, request.tenant, secret);
         const html =
           row === undefined
             ? renderInvitePage({ serverUrl, state: 'closed' })

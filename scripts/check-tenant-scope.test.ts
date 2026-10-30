@@ -67,6 +67,17 @@ describe('check:tenant-scope', () => {
     expect(findScopeMints('packages/server/src/tenancy/directory.ts', 'return rows.map(scopeOf);')).toEqual([]);
   });
 
+  it('keeps the tenant directory to start-up, the resolver and the admin command line (m2)', () => {
+    const leak =
+      "import { directoryOf } from '../tenancy/tenancy.js';\nconst all = await directoryOf(ctx.tenancy).list();";
+    expect(findScopeMints('packages/server/src/teams/routes/teams.ts', leak)).toMatchObject([
+      { line: 1, rule: 'directory-of' },
+      { line: 2, rule: 'directory-of' },
+    ]);
+    expect(findScopeMints('packages/server/src/server.ts', 'directoryOf(ctx.tenancy)')).toEqual([]);
+    expect(findScopeMints('packages/server/src/identity/cli.ts', 'directoryOf(t).defaultScope()')).toEqual([]);
+  });
+
   it('refuses a new raw read of the public URL, in any spelling', () => {
     const file = 'packages/server/src/teams/routes/teams.ts';
     const reads = [

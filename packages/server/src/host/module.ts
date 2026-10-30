@@ -166,7 +166,10 @@ export function hostModule(options: HostModuleOptions = {}): ServerModule {
             server: {
               url: user.serverUrl,
               send: injectSend(app, user.serverUrl, session, refused),
-              connectLive: () => liveBridge(runLive),
+              connectLive: () =>
+                liveBridge((connection) => {
+                  runLive(connection, user.tenant);
+                }),
               credential,
             },
             onSecret: (event) => {
@@ -214,7 +217,7 @@ export function hostModule(options: HostModuleOptions = {}): ServerModule {
           refuse(HOST_CLOSE.tooManySockets, 'too many host sockets');
           return;
         }
-        const user: HostUser = { id: caller.id, email: caller.email, serverUrl };
+        const user: HostUser = { id: caller.id, email: caller.email, serverUrl, tenant: request.tenant };
         /** Set once the socket runs, just below; `instances.open` calls nothing on the handle before then. */
         const running: { socket?: HostSocket } = {};
         const handle: HostSocketHandle = {
@@ -231,7 +234,7 @@ export function hostModule(options: HostModuleOptions = {}): ServerModule {
         // The session ends at its token's creation plus the maximum age, as a live socket's does.
         let deadline: { cancel(): void } | undefined;
         let closed = false;
-        const checked = tokenByHash(ctx.db, hashToken(token))
+        const checked = tokenByHash(ctx.tenancy.db(request.tenant), hashToken(token))
           .then((found) => {
             if (closed) return;
             // Revoked or deleted since identity's check: the session is over, so is this socket.

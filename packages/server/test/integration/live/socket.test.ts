@@ -13,6 +13,7 @@ import { LiveHub } from '../../../src/live/hub.js';
 import { liveHarness, openLive, rawUpgrade, type LiveHarness } from '../../helpers/live.js';
 import { freePort } from '../../helpers/net.js';
 import { seedTeam, seedWorkspace } from '../../helpers/teams.js';
+import { defaultTenantDb } from '../../helpers/tenancy.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -43,7 +44,7 @@ describeDb('GET /api/v1/live (live-updates §3.1, §5.1, §6)', () => {
     expect(await refused(mintToken().token)).toEqual({ code: LIVE_CLOSE.unauthenticated });
     const disabled = await signedInUser(h, { email: 'gone@example.com', disabled: true });
     expect(await refused(disabled.token)).toEqual({ code: LIVE_CLOSE.unauthenticated });
-    await identityRepo.revokeToken(h.db, viewer.tokenId, h.clock.now);
+    await identityRepo.revokeToken(h.tdb, viewer.tokenId, h.clock.now);
     expect(await refused(viewer.token)).toEqual({ code: LIVE_CLOSE.unauthenticated });
     h.clock.advance(31 * DAY_MS); // past the 30-day idle limit
     expect(await refused(stranger.token)).toEqual({ code: LIVE_CLOSE.unauthenticated });
@@ -174,7 +175,8 @@ describeDb('GET /api/v1/live (live-updates §3.1, §5.1, §6)', () => {
 async function seedAdmin(server: RunningServer): Promise<{ readonly token: string; readonly workspaceId: string }> {
   const { db, repos } = server.ctx;
   const at = new Date(); // startServer's identity runs on the real clock
-  const user = await identityRepo.insertUser(db, {
+  const tdb = await defaultTenantDb(db);
+  const user = await identityRepo.insertUser(tdb, {
     id: newId(),
     email: 'admin@example.com',
     displayName: 'admin',
@@ -182,7 +184,7 @@ async function seedAdmin(server: RunningServer): Promise<{ readonly token: strin
     at,
   });
   const { token, hash } = mintToken();
-  await identityRepo.insertToken(db, { id: newId(), userId: user.id, tokenHash: hash, deviceName: 'test device', at });
+  await identityRepo.insertToken(tdb, { id: newId(), userId: user.id, tokenHash: hash, deviceName: 'test device', at });
   const team = await teamsRepo.insertTeam(db, { id: newId(), name: 'Payments QA', at });
   await teamsRepo.insertMember(db, { teamId: team.id, userId: user.id, role: 'admin', at });
   const workspaceId = newId();
