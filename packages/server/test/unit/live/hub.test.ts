@@ -133,7 +133,7 @@ function fakeLog(warnings: unknown[][]): FastifyBaseLogger {
   return log as unknown as FastifyBaseLogger;
 }
 
-function fixture() {
+function fixture(options: { readonly hosted?: boolean } = {}) {
   const clock = fakeClock();
   const warnings: unknown[][] = [];
   const roles = new Map<string, WorkspaceRole>();
@@ -164,6 +164,7 @@ function fixture() {
     log: fakeLog(warnings),
     now: clock.now,
     setTimer: clock.setTimer,
+    ...(options.hosted !== undefined ? { hosted: options.hosted } : {}),
   });
   return {
     hub,
@@ -881,8 +882,8 @@ describe('LiveHub — scheduleRunFinished (scheduled-runs §3.5)', () => {
 
 describe('LiveHub — two tenants with the same ids (hosted edition spec §19.8 guard 5; tenancy Task 11)', () => {
   /** Ana in each tenant, same user and token ids, on a workspace of the same id. */
-  async function twoTenants() {
-    const f = fixture();
+  async function twoTenants(options: { readonly hosted?: boolean } = {}) {
+    const f = fixture(options);
     const one = await joined(f, ANA, 'tok-ana', WS_A);
     const two = await joined(f, ANA, 'tok-ana', WS_A, 'viewer', { tenant: TENANT_TWO });
     // The second Ana is someone else: she is not present in tenant one's room, nor the first in hers.
@@ -928,5 +929,32 @@ describe('LiveHub — two tenants with the same ids (hosted edition spec §19.8 
     await f.hub.idle();
     expect(two.take().map((m) => m.type)).toEqual(['access']);
     expect(one.take()).toEqual([]);
+  });
+
+  // The executor's run has no tenant until Task 13 runs it per tenant. Task 13 makes `tenantId` required and
+  // deletes this path, and with it these two cases (Task 11 review I1).
+  const RUN_ENDED = {
+    workspaceId: WS_A,
+    scheduleId: '01J8ZC5Q0V7R3T9XK2M4N6S001',
+    runId: '01J8ZC5Q0V7R3T9XK2M4N6R001',
+    status: 'passed',
+  } as const;
+
+  it('self-hosted: a run that names no tenant reaches the workspace id’s rooms in every tenant', async () => {
+    const { f, one, two } = await twoTenants();
+    f.hub.scheduleRunFinished(RUN_ENDED);
+    expect(one.take().map((m) => m.type)).toEqual(['schedule-run']);
+    expect(two.take().map((m) => m.type)).toEqual(['schedule-run']);
+  });
+
+  it('hosted: a run that names no tenant reaches no one, and is warned about once', async () => {
+    const { f, one, two } = await twoTenants({ hosted: true });
+    f.hub.scheduleRunFinished(RUN_ENDED);
+    f.hub.scheduleRunFinished(RUN_ENDED);
+    expect([...one.take(), ...two.take()]).toEqual([]);
+    expect(f.warnings).toHaveLength(1);
+    // One that names its tenant still goes through.
+    f.hub.scheduleRunFinished({ ...IN_TENANT, ...RUN_ENDED });
+    expect(one.take().map((m) => m.type)).toEqual(['schedule-run']);
   });
 });

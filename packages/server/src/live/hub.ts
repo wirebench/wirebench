@@ -62,6 +62,12 @@ export interface LiveHubDeps {
   readonly log: FastifyBaseLogger;
   readonly now: () => number;
   readonly setTimer: (fn: () => void, ms: number) => { cancel(): void };
+  /**
+   * Hosted mode: an announcement with no tenant fails closed, dropped with one warning, rather than reaching
+   * a workspace id's rooms in every tenant (Task 11 review I1). Only the executor's `scheduleRunFinished` has
+   * none, until Task 13.
+   */
+  readonly hosted?: boolean;
 }
 
 /** Node's `setTimeout` fires at once past 2^31 − 1 ms (about 24.8 days), and the default maximum token age is 180 days. */
@@ -111,6 +117,7 @@ export class LiveHub {
    */
   private rechecks: Promise<void> = Promise.resolve();
   private closed = false;
+  private warnedTenantless = false;
 
   constructor(private readonly deps: LiveHubDeps) {}
 
@@ -260,6 +267,16 @@ export class LiveHub {
   scheduleRunFinished(event: ScheduleRunFinishedEvent): void {
     if (this.closed) return;
     const { workspaceId, scheduleId, runId, status } = event;
+    if (event.tenantId === undefined && this.deps.hosted === true) {
+      if (!this.warnedTenantless) {
+        this.warnedTenantless = true;
+        this.deps.log.warn(
+          { workspaceId },
+          'a scheduled run ended with no tenant: hosted mode sends it nowhere until the executor runs per tenant',
+        );
+      }
+      return;
+    }
     const targets =
       event.tenantId !== undefined
         ? (this.byWorkspace.get(keyOf(event.tenantId, workspaceId)) ?? [])

@@ -96,6 +96,7 @@ export function liveModule(options: LiveOptions = {}): ServerModule {
         log: ctx.log,
         now: () => now().getTime(),
         setTimer,
+        hosted: ctx.config.mode === 'hosted',
       });
       let heartbeat: { cancel(): void } | undefined;
       // Re-armed before the work, so one failing beat cannot stop every later one: a socket that
