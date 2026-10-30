@@ -4,9 +4,9 @@
  * all) whose button shows how many are on, the "n of m" count, and Reset — which clears the filter
  * and is distinct from Clear, which empties the log. State lives in the exchanges store.
  */
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useId, useMemo, useState, type ReactNode } from 'react';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
-import { Check, ChevronDown } from 'lucide-react';
+import { Check, ChevronDown, XCircle } from 'lucide-react';
 import { Button } from '../../components/button.js';
 import type { StatusClass } from '../../state/exchanges.js';
 import { useExchangesStore } from '../../state/exchanges.js';
@@ -107,6 +107,7 @@ export interface LogFilterBarProps {
 }
 
 export function LogFilterBar({ shown, total, actions }: LogFilterBarProps) {
+  const invalidId = useId();
   const filter = useExchangesStore((state) => state.filter);
   const setFilter = useExchangesStore((state) => state.setFilter);
   const resetFilter = useExchangesStore((state) => state.resetFilter);
@@ -153,15 +154,29 @@ export function LogFilterBar({ shown, total, actions }: LogFilterBarProps) {
           placeholder="Search URL, headers, bodies, name"
           value={text}
           aria-invalid={invalid}
+          aria-describedby={invalid ? invalidId : undefined}
           title={invalid ? 'Not a valid regular expression' : undefined}
           onChange={(event) => {
             setText(event.currentTarget.value);
           }}
-          className={`h-row w-full rounded-md border bg-surface-raised pl-2 pr-12 font-mono text-xs text-fg-default placeholder:text-fg-faint ${
-            invalid ? 'border-status-danger' : 'border-hairline'
+          className={`h-row w-full rounded-md border bg-surface-raised pl-2 font-mono text-xs text-fg-default placeholder:text-fg-faint ${
+            invalid ? 'border-status-danger pr-16' : 'border-hairline pr-12'
           }`}
         />
         <div className="absolute right-1 flex items-center gap-0.5">
+          {/* The border alone would tell a bad pattern by colour only (#803): a cross says it too. */}
+          {invalid && (
+            <span
+              data-testid="http-log-filter-invalid"
+              title="Not a valid regular expression"
+              className="flex items-center px-0.5 text-status-danger"
+            >
+              <XCircle size={12} aria-hidden="true" />
+              <span id={invalidId} className="sr-only">
+                Invalid pattern
+              </span>
+            </span>
+          )}
           <SearchToggle
             label="Use regular expression"
             glyph=".*"

@@ -888,7 +888,8 @@ function TerminalPane({
     <div
       className={`flex h-full min-w-0 flex-col ${
         receiving
-          ? 'outline-2 -outline-offset-2 outline-status-danger'
+          ? // Dashed, so a receiving pane differs from the focused one by more than colour (#803).
+            'outline-2 -outline-offset-2 outline-dashed outline-status-danger'
           : split && focused
             ? 'outline-1 -outline-offset-1 outline-accent'
             : ''

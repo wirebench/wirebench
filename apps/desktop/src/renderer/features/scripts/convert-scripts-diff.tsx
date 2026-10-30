@@ -3,6 +3,7 @@
  * Wirebench script, and under it the checker's problems with the proposal. A chunk of its own, so
  * the review loads Monaco only once it opens.
  */
+import { AlertTriangle, XCircle } from 'lucide-react';
 import { DiffXmlEditor } from '../../editor/diff-xml-editor.js';
 import type { ScriptConversionWire } from '@shared/wire-base.js';
 
@@ -37,14 +38,24 @@ export function ConvertScriptsDiff({ level }: { readonly level: ScriptConversion
               <p className="mt-1 text-xs text-fg-subtle">No problems.</p>
             ) : (
               <ul className="mt-1 flex flex-col gap-0.5 text-xs">
-                {problems.map((problem, index) => (
-                  <li
-                    key={index}
-                    className={problem.severity === 'error' ? 'text-status-danger' : 'text-status-warning'}
-                  >
-                    {`Line ${String(problem.line)}: ${problem.message}`}
-                  </li>
-                ))}
+                {/* Errors and warnings differ by icon and word as well as colour (#803). */}
+                {problems.map((problem, index) => {
+                  const error = problem.severity === 'error';
+                  const Icon = error ? XCircle : AlertTriangle;
+                  return (
+                    <li
+                      key={index}
+                      data-severity={error ? 'error' : 'warning'}
+                      className={`flex items-start gap-1 ${error ? 'text-status-danger' : 'text-status-warning'}`}
+                    >
+                      <Icon size={11} aria-hidden="true" className="mt-px shrink-0" />
+                      <span>
+                        <span className="font-medium">{error ? 'Error' : 'Warning'}</span>
+                        {` · Line ${String(problem.line)}: ${problem.message}`}
+                      </span>
+                    </li>
+                  );
+                })}
               </ul>
             )}
           </section>

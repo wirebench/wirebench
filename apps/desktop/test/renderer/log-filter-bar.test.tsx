@@ -106,4 +106,19 @@ describe('LogFilterBar', () => {
     });
     expect(screen.getByRole('searchbox').className).toMatch(/border-status-danger/);
   });
+
+  it('an invalid regex also shows an icon and says so in words, not by the red border alone (#803)', async () => {
+    render(<LogFilterBar shown={1} total={1} />);
+    expect(screen.queryByTestId('http-log-filter-invalid')).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'Use regular expression' }));
+    await userEvent.type(screen.getByRole('searchbox'), '([[');
+    const mark = await screen.findByTestId('http-log-filter-invalid');
+    expect(mark.querySelector('svg')).not.toBeNull();
+    expect(screen.getByRole('searchbox', { description: 'Invalid pattern' })).toBeDefined();
+    await userEvent.clear(screen.getByRole('searchbox'));
+    await waitFor(() => {
+      expect(screen.queryByTestId('http-log-filter-invalid')).toBeNull();
+    });
+    expect(screen.getByRole('searchbox').getAttribute('aria-describedby')).toBeNull();
+  });
 });

@@ -59,7 +59,8 @@ import { openCatchUrlTab } from '../webhooks/webhooks-actions.js';
 import { useSyncStore } from '../../state/sync.js';
 import { useWebhooksStore } from '../../state/webhooks.js';
 import { scheduleStateOf, schedulesShown, useSchedulesStore } from '../../state/schedules.js';
-import { describeCron, STATE_DOT, STATE_LABEL } from '../schedules/schedule-format.js';
+import { describeCron } from '../schedules/schedule-format.js';
+import { ScheduleStateMark } from '../schedules/schedule-state-mark.js';
 import { openScheduleTab } from '../schedules/schedules-actions.js';
 import { useScriptValuesStore } from '../../state/script-values.js';
 import { ConvertScriptsDialog } from '../scripts/convert-scripts-dialog.js';
@@ -352,14 +353,7 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
           ) : node.data.kind === 'webhook-request' && node.data.method !== undefined ? (
             <MethodBadge method={node.data.method} title={`${node.data.method} ${label}`} compact />
           ) : node.data.kind === 'schedule' && node.data.scheduleState !== undefined ? (
-            <span
-              role="img"
-              data-testid="schedule-dot"
-              data-state={node.data.scheduleState}
-              aria-label={STATE_LABEL[node.data.scheduleState]}
-              title={STATE_LABEL[node.data.scheduleState]}
-              className={`mr-1 h-2 w-2 rounded-full ${STATE_DOT[node.data.scheduleState]}`}
-            />
+            <ScheduleStateMark state={node.data.scheduleState} />
           ) : (
             Icon !== undefined && <Icon size={13} />
           )}

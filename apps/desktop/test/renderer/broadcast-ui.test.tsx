@@ -170,6 +170,8 @@ describe('broadcast input', () => {
     expect(banner().textContent).toContain('Broadcasting to 3 of 3 panes');
     expect(banner().closest('[aria-live]')).not.toBeNull();
     expect(screen.getAllByTestId('ssh-pane').map((el) => el.dataset['broadcast'])).toEqual(['true', 'true', 'true']);
+    // A receiving pane's outline is dashed, so it differs from the focus outline by more than colour (#803).
+    for (const el of screen.getAllByTestId('ssh-pane')) expect(el.className).toContain('outline-dashed');
     expect(screen.getByRole('tab', { name: /Broadcasting/ })).toBeDefined();
     expect(screen.getAllByRole('checkbox', { name: /Receive broadcast/ })).toHaveLength(3);
   });

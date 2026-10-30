@@ -192,8 +192,14 @@ describe('SignInDialog', () => {
     await userEvent.type(screen.getByTestId('sign-in-confirm-password'), 'short');
     expect(screen.getByTestId('sign-in-accept').hasAttribute('disabled')).toBe(true);
     expect(screen.getByTestId('sign-in-password-hint').textContent).toContain('12');
+    // Too short is told by an icon and by the field's own state, not by the hint's colour alone (#803).
+    expect(screen.getByTestId('sign-in-password-hint').querySelector('svg')).not.toBeNull();
+    expect(screen.getByTestId('sign-in-new-password').getAttribute('aria-invalid')).toBe('true');
+    expect(screen.getByTestId('sign-in-new-password').getAttribute('aria-describedby')).toBe('sign-in-password-hint');
     await userEvent.clear(screen.getByTestId('sign-in-new-password'));
     await userEvent.type(screen.getByTestId('sign-in-new-password'), 'correct horse battery');
+    expect(screen.getByTestId('sign-in-password-hint').querySelector('svg')).toBeNull();
+    expect(screen.getByTestId('sign-in-new-password').getAttribute('aria-invalid')).toBe('false');
     await userEvent.clear(screen.getByTestId('sign-in-confirm-password'));
     await userEvent.type(screen.getByTestId('sign-in-confirm-password'), 'correct horse battery');
     await waitFor(() => expect(screen.getByTestId('sign-in-accept').hasAttribute('disabled')).toBe(false));

@@ -908,6 +908,11 @@ All notable changes to this project are documented here. The format follows
   (#635).
 
 ### Fixed
+- **Danger is no longer told by colour alone (#803).** A logged terminal shows a record glyph
+  rather than a red dot, a failing schedule in the explorer shows a cross, an invalid search pattern
+  in the HTTP log shows a cross beside the red border, a too-short password hint gains a cross, and
+  conversion problems read **Error** or **Warning** with their own icon. A pane receiving broadcast
+  input has a dashed outline, so it differs from the focused pane by more than its colour.
 - **The project menu is shorter (#686).** A project's six creators sit under one **New ▸** submenu,
   named alike: **New REST API…** (as on the Start page), **New gRPC API…**, **New WebSocket API…**,
   **New MCP server…**, **New Webhook…** and **New Sequence…**.
