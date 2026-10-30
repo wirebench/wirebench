@@ -14,6 +14,7 @@ import { applyInitialTheme } from './lib/theme.js';
 
 // Before the first paint, not in an effect: `system` on a light OS would otherwise render one
 // dark frame while `theme.get` is in flight. The preload bakes the OS scheme in at load time.
+// The colour theme (`data-palette`) is applied here too, so a chosen one never flashes Default.
 applyInitialTheme();
 
 const container = document.getElementById('root');

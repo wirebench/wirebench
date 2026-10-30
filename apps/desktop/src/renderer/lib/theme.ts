@@ -1,5 +1,7 @@
 import { useEffect, useSyncExternalStore } from 'react';
+import type { Palette } from '@shared/palettes.js';
 import type { ThemeOsWire } from '@shared/wire-base.js';
+import { useUiStore } from '../state/ui.js';
 import { readUi, type ThemePreference } from '../state/ui-state.js';
 
 /** The two concrete schemes a preference can resolve to. */
@@ -65,21 +67,39 @@ export function osThemeFromEnv(): ResolvedTheme | undefined {
 }
 
 /**
- * Applies the theme to `<html data-theme>` before React mounts, from the two things that are
- * knowable synchronously: the preference mirrored in `localStorage` and the OS scheme the
- * preload baked in. Called from `main.tsx` ahead of `createRoot`, so a `system` preference on a
- * light OS never paints a dark frame first.
+ * Puts the colour theme on `<html data-palette>`, which `tokens.css` switches on beside
+ * `data-theme`. `default` removes the attribute, so the Default look is the plain `:root` and
+ * `[data-theme]` cascade with nothing layered over it.
+ */
+export function applyPalette(palette: Palette): void {
+  const root = document.documentElement;
+  if (palette === 'default') {
+    delete root.dataset['palette'];
+  } else {
+    root.dataset['palette'] = palette;
+  }
+}
+
+/**
+ * Applies the theme to `<html data-theme>` and the colour theme to `<html data-palette>` before
+ * React mounts, from the things that are knowable synchronously: the preferences mirrored in
+ * `localStorage` and the OS scheme the preload baked in. Called from `main.tsx` ahead of
+ * `createRoot`, so a `system` preference on a light OS never paints a dark frame first, and a
+ * chosen colour theme never paints a Default frame first.
  *
  * @param preference - Defaults to the persisted UI mirror.
+ * @param palette - Defaults to the persisted UI mirror.
  * @returns the concrete theme that was applied.
  */
-export function applyInitialTheme(preference: ThemePreference = readUi().theme): ResolvedTheme {
+export function applyInitialTheme(preference?: ThemePreference, palette?: Palette): ResolvedTheme {
+  const stored = preference === undefined || palette === undefined ? readUi() : undefined;
   const fromEnv = osThemeFromEnv();
   if (fromEnv !== undefined) {
     setOsTheme(fromEnv);
   }
-  const resolved = resolveTheme(preference);
+  const resolved = resolveTheme(preference ?? stored?.theme ?? 'dark');
   document.documentElement.dataset['theme'] = resolved;
+  applyPalette(palette ?? stored?.palette ?? 'default');
   return resolved;
 }
 
@@ -148,14 +168,23 @@ export function useResolvedTheme(preference: ThemePreference): ResolvedTheme {
   return preference === 'system' ? os : preference;
 }
 
+/** The colour theme the window wears, as mirrored into the ui store from preferences. */
+export function usePalette(): Palette {
+  return useUiStore((state) => state.palette);
+}
+
 /**
- * Reflects the theme preference onto `<html data-theme>`, which is what `tokens.css` switches
- * on, and re-resolves when the OS flips while the preference is `system`.
+ * Reflects the theme preference onto `<html data-theme>` and the colour theme onto
+ * `<html data-palette>`, which are what `tokens.css` switches on, and re-resolves when the OS
+ * flips while the preference is `system`.
  */
-export function useTheme(preference: ThemePreference): void {
+export function useTheme(preference: ThemePreference, palette: Palette): void {
   useEffect(() => startOsThemeBridge(), []);
   const resolved = useResolvedTheme(preference);
   useEffect(() => {
     document.documentElement.dataset['theme'] = resolved;
   }, [resolved]);
+  useEffect(() => {
+    applyPalette(palette);
+  }, [palette]);
 }

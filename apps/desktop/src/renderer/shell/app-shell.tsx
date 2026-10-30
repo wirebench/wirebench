@@ -543,7 +543,7 @@ export function AppShell() {
     };
   }, [openPalette, openWorkspaceId]);
 
-  useTheme(theme);
+  useTheme(theme, palette);
 
   const context: CommandContext = useMemo(
     () => ({
