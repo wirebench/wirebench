@@ -1,31 +1,53 @@
+import { useId } from 'react';
 import {
   BooleanSetting,
   EnumSetting,
   NumberSetting,
   SettingsGroup,
+  SettingsRow,
   TextSetting,
 } from '../../../components/settings-grid.js';
+import { useResolvedTheme } from '../../../lib/theme.js';
+import { PaletteCards } from '../components/palette-cards.js';
 import type { SectionProps } from './section-props.js';
 import { PREFERENCE_LIMITS } from '../../../state/preference-limits.js';
 import { DEFAULT_PREFERENCES_WIRE } from '../../../state/preferences-defaults.js';
 
 /**
- * Settings → Appearance: how things look. The theme, Monaco's font, indent and wrapping, and the
+ * Settings → Appearance: how things look. The colour theme and the mode, Monaco's font, indent and wrapping, and the
  * layout a newly opened request gets. The fields still live in the `ui` and `editor` sections of
  * the preferences document; only where they are shown changed.
  */
 export function AppearanceSection({ preferences, update }: SectionProps) {
   const editor = preferences.editor;
   const ui = preferences.ui;
+  const paletteLabelId = useId();
+  const mode = useResolvedTheme(ui.theme);
   return (
     <>
       <SettingsGroup title="Theme">
+        <SettingsRow
+          label="Colour theme"
+          labelId={paletteLabelId}
+          setting="ui.palette"
+          hint="The colours of the whole window, in both modes."
+          block
+        >
+          <PaletteCards
+            value={ui.palette}
+            mode={mode}
+            labelledBy={paletteLabelId}
+            onChange={(palette) => {
+              update({ ui: { palette } });
+            }}
+          />
+        </SettingsRow>
         <EnumSetting
-          label="Theme"
+          label="Mode"
           value={ui.theme}
           testId="preferences-theme"
           setting="ui.theme"
-          hint="Follow the system, or pick one."
+          hint="Dark or light, or follow the system."
           options={[
             { value: 'system', label: 'System' },
             { value: 'light', label: 'Light' },

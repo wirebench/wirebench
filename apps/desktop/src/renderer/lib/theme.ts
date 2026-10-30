@@ -23,6 +23,17 @@ export const THEME_LABEL: Readonly<Record<ThemePreference, string>> = {
   system: 'System',
 };
 
+/** What Settings, the picker and the status bar call each colour theme, in `PALETTES` order. */
+export const PALETTE_LABEL: Readonly<Record<Palette, string>> = {
+  default: 'Default',
+  'field-kit': 'Field kit',
+  sandstone: 'Sandstone',
+  dusk: 'Dusk',
+  seed: 'Seed',
+  pith: 'Pith',
+  rind: 'Rind',
+};
+
 /**
  * The OS colour scheme as main last reported it. Kept in a module-level store rather than a
  * React context because non-React code (the Monaco theme lookup) reads it synchronously.

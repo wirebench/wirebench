@@ -21,9 +21,13 @@
  *   the dark block sets, or the dark value paints in light mode. `pnpm contrast:check` resolves
  *   every palette × mode the way the browser does and fails such a leak.
  * - A token a palette does not set keeps Default's value for the mode.
+ * - The Default block also matches any `[data-palette]` element, so a subtree can wear a palette
+ *   other than the window's — the Settings cards paint their swatches that way. Inside it the same
+ *   cascade runs again from Default's values; on `<html>` it changes nothing.
  */
 
-:root {
+:root,
+[data-palette] {
   color-scheme: dark;
 
   /* Surfaces, deepest to highest. */
