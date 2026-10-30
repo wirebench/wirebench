@@ -122,9 +122,11 @@ async function cookieTarget(): Promise<{ readonly base: string; close(): Promise
     .find((one) => one?.family === 'IPv4' && !one.internal)?.address;
   if (lan === undefined) throw new Error('the fixture needs a non-loopback IPv4 address to send to');
   const target: Server = createServer((request, response) => {
-    const cookie = request.url?.startsWith('/billing')
-      ? FIXTURE_PLAINTEXTS.cookies.billing
-      : FIXTURE_PLAINTEXTS.cookies.staging;
+    // The workspace is read from the path, so each jar gets its own synthetic cookie.
+    const workspace: keyof typeof FIXTURE_PLAINTEXTS.cookies = request.url?.startsWith('/billing')
+      ? 'billing'
+      : 'staging';
+    const cookie = FIXTURE_PLAINTEXTS.cookies[workspace];
     response.writeHead(200, { 'content-type': 'application/json', 'set-cookie': `${cookie}; Path=/; Max-Age=31536000` });
     response.end('{"ok":true}');
   });
