@@ -95,6 +95,16 @@ describe('check:tenant-scope', () => {
     ]);
   });
 
+  it('keeps stateWithoutScope to the jobs that do not run per tenant yet (tenancy Task 9)', () => {
+    const route = 'packages/server/src/teams/routes/workspaces.ts';
+    expect(findScopeMints(route, 'const s = await ctx.license.stateWithoutScope();')).toMatchObject([
+      { rule: 'license-without-scope' },
+    ]);
+    expect(
+      findScopeMints('packages/server/src/schedules/scheduler.ts', 'await this.env.license().stateWithoutScope();'),
+    ).toEqual([]);
+  });
+
   it('refuses a new raw read of the public URL, in any spelling', () => {
     const file = 'packages/server/src/teams/routes/teams.ts';
     const reads = [

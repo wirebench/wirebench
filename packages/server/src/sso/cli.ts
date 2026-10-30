@@ -21,8 +21,15 @@ export interface ScimCliEnv {
   readonly now: () => Date;
 }
 
-export async function runScimTokenCommand(command: ScimTokenCommand, env: ScimCliEnv, io: ServerIo): Promise<number> {
-  if (!(await env.ctx.license.state()).features.includes('sso-provisioning')) throw featureRequired('sso-provisioning');
+/** `scope` is the admin command line's tenant (`identity/cli.ts`), whose license decides. */
+export async function runScimTokenCommand(
+  command: ScimTokenCommand,
+  env: ScimCliEnv,
+  scope: TenantScope,
+  io: ServerIo,
+): Promise<number> {
+  if (!(await env.ctx.license.state(scope)).features.includes('sso-provisioning'))
+    throw featureRequired('sso-provisioning');
   switch (command.command) {
     case 'admin-scim-token-create': {
       const created = await createScimToken(env, command.name, null, SYSTEM_SOURCE);
@@ -58,8 +65,8 @@ async function groupIdOf(env: ScimCliEnv, value: string): Promise<string> {
 }
 
 /** A team by id, or by its name ignoring case. */
-async function teamIdOf(env: ScimCliEnv, value: string): Promise<string> {
-  const teams = await teamsRepo.allTeams(env.ctx.db);
+async function teamIdOf(env: ScimCliEnv, scope: TenantScope, value: string): Promise<string> {
+  const teams = await teamsRepo.allTeams(env.ctx.tenancy.db(scope));
   const found =
     teams.find((team) => team.id === value) ?? teams.find((team) => team.name.toLowerCase() === value.toLowerCase());
   if (found === undefined) throw teamNotFound();
@@ -73,7 +80,8 @@ export async function runScimGroupCommand(
   scope: TenantScope,
   io: ServerIo,
 ): Promise<number> {
-  if (!(await env.ctx.license.state()).features.includes('sso-provisioning')) throw featureRequired('sso-provisioning');
+  if (!(await env.ctx.license.state(scope)).features.includes('sso-provisioning'))
+    throw featureRequired('sso-provisioning');
   switch (command.command) {
     case 'admin-scim-group-list': {
       io.stdout.write(`${'id'.padEnd(26)}  ${'name'.padEnd(32)}  members  team\n`);
@@ -89,7 +97,7 @@ export async function runScimGroupCommand(
         env,
         scope,
         await groupIdOf(env, command.group),
-        await teamIdOf(env, command.team),
+        await teamIdOf(env, scope, command.team),
         SYSTEM_SOURCE,
       );
       io.stdout.write(`Linked ${linked.displayName} to ${linked.team!.name}\n`);

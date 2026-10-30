@@ -91,8 +91,8 @@ export function liveModule(options: LiveOptions = {}): ServerModule {
     async register(app: FastifyInstance, ctx: ServerContext): Promise<void> {
       const settings = identitySettings(ctx.config);
       const hub = new LiveHub({
-        effectiveRole: (userId, workspaceId) => effectiveRole(ctx.db, userId, workspaceId),
-        workspaceIdsOfTeam: (teamId) => workspaceIdsOfTeam(ctx.db, teamId),
+        effectiveRole: (userId, workspaceId, tenant) => effectiveRole(ctx.tenancy.db(tenant), userId, workspaceId),
+        workspaceIdsOfTeam: (teamId, tenant) => workspaceIdsOfTeam(ctx.tenancy.db(tenant), teamId),
         log: ctx.log,
         now: () => now().getTime(),
         setTimer,
@@ -150,6 +150,7 @@ export function liveModule(options: LiveOptions = {}): ServerModule {
         tokenMaxMs: settings.tokenMaxMs,
         setTimer,
         log: ctx.log,
+        tenant,
       });
       app.decorate('liveConnection', (connection: LiveConnection, tenant: TenantScope) => {
         runLiveSocket(connection, loopFor(tenant));

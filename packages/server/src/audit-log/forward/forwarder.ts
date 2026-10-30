@@ -110,7 +110,7 @@ export class AuditForwarder {
   private async pass(): Promise<ForwardPass> {
     if (this.stopped) return { outcome: 'stopped', sent: 0, nextDelayMs: 0 };
     try {
-      const state = await this.deps.license().state();
+      const state = await this.deps.license().stateWithoutScope();
       if (!state.features.includes('audit-log')) {
         if (!this.paused) this.deps.log.info('audit forwarding paused: the license does not include audit-log');
         this.paused = true;

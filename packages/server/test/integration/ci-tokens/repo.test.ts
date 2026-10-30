@@ -104,7 +104,7 @@ describeDb('ci_tokens (callback-assertion §3)', () => {
       createdBy: null,
       at: h.clock.now,
     });
-    await teamsRepo.deleteWorkspace(h.db, workspaceId);
+    await teamsRepo.deleteWorkspace(h.tdb, workspaceId);
     expect(await repo.ciTokenByHash(h.db, minted.hash)).toBeUndefined();
   });
 });

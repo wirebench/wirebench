@@ -12,8 +12,8 @@ import {
   type MemberAddRequest,
   type MemberRoleRequest,
 } from '@wirebench/engine';
-import type { FastifyInstance } from 'fastify';
-import { announce, auditSource, recordAudit } from '../../context.js';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
+import { announce, auditSource, recordAudit, tenantOf } from '../../context.js';
 import { isForeignKeyViolation } from '../../db/errors.js';
 import { findUserByEmail } from '../../identity/repo.js';
 import { emailLower } from '../../identity/sessions.js';
@@ -31,23 +31,24 @@ interface MemberParams {
 export const memberRoutes =
   (env: TeamsEnv) =>
   (app: FastifyInstance): void => {
-    const db = env.ctx.db;
+    // The request's tenant database (spec §19.8 guard 2).
+    const tdb = (request: FastifyRequest) => env.ctx.tenancy.db(request.tenant);
     const teamParams = jsonSchema(teamParamsSchema, { io: 'input' });
     const params = jsonSchema(memberParamsSchema, { io: 'input' });
 
     app.get(
       '/teams/:teamId/members',
       {
-        preHandler: requireTeamRole(db, 'member'),
+        preHandler: requireTeamRole(env.ctx.tenancy, 'member'),
         schema: { params: teamParams, response: { 200: jsonSchema(teamMembersResponseSchema) } },
       },
-      (request) => repo.listMembers(db, (request.params as { readonly teamId: string }).teamId),
+      (request) => repo.listMembers(tdb(request), (request.params as { readonly teamId: string }).teamId),
     );
 
     app.post(
       '/teams/:teamId/members',
       {
-        preHandler: requireTeamRole(db, 'admin'),
+        preHandler: requireTeamRole(env.ctx.tenancy, 'admin'),
         schema: {
           params: teamParams,
           body: jsonSchema(memberAddRequestSchema, { io: 'input' }),
@@ -60,7 +61,7 @@ export const memberRoutes =
         const user = await findUserByEmail(env.ctx.tenancy.db(request.tenant), emailLower(body.email));
         if (user === undefined) throw userUnknown();
         try {
-          await db.transaction(async (tx) => {
+          await tdb(request).transaction(async (tx) => {
             if (!(await repo.insertMember(tx, { teamId, userId: user.id, role: body.role, at: env.now() }))) {
               throw alreadyMember();
             }
@@ -79,15 +80,15 @@ export const memberRoutes =
           throw error;
         }
         // The team's default roles now reach them on every team workspace (§3.2).
-        announce(env.ctx.hooks.accessChanged, { teamId, userId: user.id }, request.log);
-        return reply.code(201).send(await repo.memberOf(db, teamId, user.id));
+        announce(env.ctx.hooks.accessChanged, { ...tenantOf(request), teamId, userId: user.id }, request.log);
+        return reply.code(201).send(await repo.memberOf(tdb(request), teamId, user.id));
       },
     );
 
     app.patch(
       '/teams/:teamId/members/:userId',
       {
-        preHandler: requireTeamRole(db, 'admin'),
+        preHandler: requireTeamRole(env.ctx.tenancy, 'admin'),
         schema: {
           params,
           body: jsonSchema(memberRoleRequestSchema, { io: 'input' }),
@@ -97,7 +98,7 @@ export const memberRoutes =
       async (request) => {
         const { teamId, userId } = request.params as MemberParams;
         const { role } = request.body as MemberRoleRequest;
-        await db.transaction(async (tx) => {
+        await tdb(request).transaction(async (tx) => {
           await repo.lockTeam(tx, teamId);
           const current = await repo.memberRole(tx, teamId, userId);
           if (current === undefined) throw memberNotFound();
@@ -114,19 +115,19 @@ export const memberRoutes =
           }
         });
         // Committed: a refused last-admin demotion threw inside the transaction and never gets here.
-        announce(env.ctx.hooks.accessChanged, { teamId, userId }, request.log);
-        return (await repo.memberOf(db, teamId, userId))!;
+        announce(env.ctx.hooks.accessChanged, { ...tenantOf(request), teamId, userId }, request.log);
+        return (await repo.memberOf(tdb(request), teamId, userId))!;
       },
     );
 
     app.delete(
       '/teams/:teamId/members/:userId',
-      { preHandler: requireTeamRole(db, 'member'), schema: { params } },
+      { preHandler: requireTeamRole(env.ctx.tenancy, 'member'), schema: { params } },
       async (request, reply) => {
         const { teamId, userId } = request.params as MemberParams;
         // §16 question 2: a member may leave; removing anyone else takes a team admin.
         if (request.teamAccess!.role !== 'admin' && userId !== request.caller!.id) throw forbidden();
-        await db.transaction(async (tx) => {
+        await tdb(request).transaction(async (tx) => {
           await repo.lockTeam(tx, teamId);
           const current = await repo.memberRole(tx, teamId, userId);
           if (current === undefined) throw memberNotFound();
@@ -142,7 +143,7 @@ export const memberRoutes =
             details: { role: current, self: userId === request.caller!.id },
           });
         });
-        announce(env.ctx.hooks.accessChanged, { teamId, userId }, request.log);
+        announce(env.ctx.hooks.accessChanged, { ...tenantOf(request), teamId, userId }, request.log);
         return reply.code(204).send();
       },
     );

@@ -212,7 +212,7 @@ describeDb('webhook-capture repository (§3.2, §3.4)', () => {
     expect((await h.db.query('select count(*)::int as n from captures')).rows[0]).toEqual({ n: 0 });
     const kept = await seedCatchUrl(h, workspaceId, 'Kept');
     await repo.insertCapture(h.db, newCapture(kept.id));
-    await teamsRepo.deleteWorkspace(h.db, workspaceId);
+    await teamsRepo.deleteWorkspace(h.tdb, workspaceId);
     expect(await repo.catchUrlsOfWorkspace(h.db, workspaceId)).toEqual([]);
     expect((await h.db.query('select count(*)::int as n from captures')).rows[0]).toEqual({ n: 0 });
   });

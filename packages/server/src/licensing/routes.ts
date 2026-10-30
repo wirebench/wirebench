@@ -7,7 +7,7 @@ import {
   type LicenseState,
 } from '@wirebench/engine';
 import type { FastifyInstance } from 'fastify';
-import { announce, type LicenseService, type ServerHooks } from '../context.js';
+import { announce, tenantOf, type LicenseService, type ServerHooks } from '../context.js';
 import { requireServerAdmin } from '../identity/guard.js';
 import { rateLimit, type RateLimiter } from '../identity/rate-limit.js';
 import { jsonSchema } from '../schema.js';
@@ -28,38 +28,33 @@ export const licenseRoutes =
     app.get(
       '/license',
       { preHandler: requireServerAdmin, schema: { response: { 200: state } } },
-      (): Promise<LicenseState> => env.service.state(),
+      (request): Promise<LicenseState> => env.service.state(request.tenant),
     );
 
     app.put(
       '/license',
       {
-        preHandler: [requireServerAdmin, rateLimit(env, (request) => [`license:${request.caller?.id ?? request.ip}`])],
+        preHandler: [
+          requireServerAdmin,
+          rateLimit(env, (request) => [`${request.tenant.tenantId}:license:${request.caller?.id ?? request.ip}`]),
+        ],
         schema: { body: jsonSchema(licenseInstallRequestSchema, { io: 'input' }), response: { 200: state } },
       },
       async (request): Promise<LicenseState> => {
         const { license } = request.body as LicenseInstallRequest;
-        const changed = await installLicense(env, license, request.caller!.id);
+        const changed = await installLicense(env, request.tenant, license, request.caller!.id);
         // The text is never logged; the id is (§6).
         request.log.info({ licenseId: changed.licenseId }, 'license installed');
-        announce(
-          env.hooks.licenseChanged,
-          { ...changed, tenantId: request.tenant.tenantId, tenant: request.tenant },
-          request.log,
-        );
-        return env.service.state();
+        announce(env.hooks.licenseChanged, { ...changed, ...tenantOf(request) }, request.log);
+        return env.service.state(request.tenant);
       },
     );
 
     app.delete('/license', { preHandler: requireServerAdmin }, async (request, reply) => {
-      const changed = await removeLicense(env, request.caller!.id);
+      const changed = await removeLicense(env, request.tenant, request.caller!.id);
       if (changed !== undefined) {
         request.log.info({ licenseId: changed.licenseId }, 'license removed');
-        announce(
-          env.hooks.licenseChanged,
-          { ...changed, tenantId: request.tenant.tenantId, tenant: request.tenant },
-          request.log,
-        );
+        announce(env.hooks.licenseChanged, { ...changed, ...tenantOf(request) }, request.log);
       }
       return reply.code(204).send();
     });

@@ -34,6 +34,7 @@ export function sessionLogsModule(options: SessionLogsOptions = {}): ServerModul
       ctx.meta.addCapability(SESSION_LOGS_CAPABILITY);
       sessionLogRoutes({
         db: ctx.db,
+        tenancy: ctx.tenancy,
         hooks: ctx.hooks,
         license: () => ctx.license,
         now,

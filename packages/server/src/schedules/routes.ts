@@ -26,9 +26,12 @@ import { scheduleLimit, scheduleNameTaken, scheduleNotFound } from './errors.js'
 import * as repo from './repo.js';
 import { alertTargetView, mergeSecrets, sealAlertTargets, secretSummaries } from './seal.js';
 import type { SchedulesSettings } from './settings.js';
+import type { Tenancy } from '../tenancy/tenancy.js';
 
 export interface ScheduleRoutesEnv {
   readonly db: Database;
+  /** The tenant databases: the role guard and teams' reads run in the request's tenant (tenancy Task 9). */
+  readonly tenancy: Pick<Tenancy, 'db'>;
   readonly hooks: ServerHooks;
   /** Read at request time: licensing replaces the service after registration. */
   readonly license: () => LicenseService;
@@ -78,8 +81,8 @@ export const scheduleRoutes =
       await env.license().requireFeature('scheduled-runs').call(this, request, reply);
     };
     // The role first, then the feature (licensing spec §3.5): a stranger learns nothing about the license.
-    const reader = [requireWorkspaceRole(db, 'viewer'), feature];
-    const writer = [requireWorkspaceRole(db, 'admin'), feature];
+    const reader = [requireWorkspaceRole(env.tenancy, 'viewer'), feature];
+    const writer = [requireWorkspaceRole(env.tenancy, 'admin'), feature];
     const workspaceParams = jsonSchema(teamWorkspaceParamsSchema, { io: 'input' });
     const scheduleParams = jsonSchema(scheduleParamsSchema, { io: 'input' });
     const nextRun = (cron: string, zone: string, enabled: boolean): Date | null =>

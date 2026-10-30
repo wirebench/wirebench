@@ -91,7 +91,7 @@ export async function identityHarness(
     /** The hosted tenant map, for a test that changes a tenant behind the directory's back. */
     readonly onTenantResolver?: (resolver: TenantResolver) => void;
     readonly beforeBuild?: (db: Awaited<ReturnType<typeof testDatabase>>, ctx: ServerContext) => Promise<void>;
-    /** Modules moved into a tenant besides identity, registered with `scopedContext` too. */
+    /** Modules moved into a tenant besides {@link MOVED_MODULES}, registered with `scopedContext` too. */
     readonly scoped?: readonly ServerModule['name'][];
   } = {},
 ): Promise<IdentityHarness> {
@@ -139,8 +139,8 @@ export async function identityHarness(
   await options.beforeBuild?.(db, ctx);
   const app = await buildServer(ctx, {
     modules,
-    // Identity is moved into a tenant (tenancy Task 8): it may not reach `ctx.db`.
-    contextFor: scopedFor('identity', ...(options.scoped ?? [])),
+    // The modules moved into a tenant so far (tenancy Tasks 8 and 9) may not reach `ctx.db`.
+    contextFor: scopedFor(...MOVED_MODULES, ...(options.scoped ?? [])),
     ...(options.logStream !== undefined ? { logStream: options.logStream } : {}),
     ...(options.onTenantResolver !== undefined ? { onTenantResolver: options.onTenantResolver } : {}),
   });
@@ -161,6 +161,9 @@ export async function identityHarness(
     },
   };
 }
+
+/** The modules moved into a tenant (tenancy plan, Part B): every harness registers them with `scopedContext`. */
+export const MOVED_MODULES: readonly ServerModule['name'][] = ['identity', 'licensing', 'teams-access'];
 
 export interface SignedInUser {
   readonly user: repo.UserRow;

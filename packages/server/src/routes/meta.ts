@@ -10,7 +10,7 @@ export const metaRoutes =
     app.get('/meta', { schema: { response: { 200: jsonSchema(metaResponseSchema) } } }, async (request) => {
       const hooks = ctx.meta.hooks();
       // licensing §3.6: the edition, and nothing else about the license, is public.
-      const { edition } = await ctx.license.state();
+      const { edition } = await ctx.license.state(request);
       return {
         name: SERVER_NAME,
         version: ctx.config.version,

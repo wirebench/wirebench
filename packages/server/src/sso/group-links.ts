@@ -54,6 +54,6 @@ export async function setGroupLink(
     if ((await teamsRepo.teamById(tx, teamId)) === undefined) throw teamNotFound();
     await linkGroup(env, tx, group, teamId, source, changes);
   });
-  if (log !== undefined) announceAccess(env, changes, log);
+  if (log !== undefined) announceAccess(env, scope, changes, log);
   return summaryOf(env, groupId);
 }

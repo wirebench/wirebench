@@ -19,6 +19,7 @@ import {
   type TerminalShareServerMessage,
 } from '@wirebench/engine';
 import type { AuditSource } from '../context.js';
+import type { TenantScope } from '../tenancy/scope.js';
 
 /** One socket, as the registry sees it. */
 export interface SharePeer {
@@ -50,8 +51,8 @@ export interface ShareAuditEvent {
 }
 
 export interface ShareRegistryDeps {
-  /** True while the user may still read the workspace (any role). */
-  readonly canView: (userId: string, workspaceId: string) => Promise<boolean>;
+  /** True while the user may still read the workspace (any role), in the share's tenant. */
+  readonly canView: (userId: string, workspaceId: string, tenant: TenantScope) => Promise<boolean>;
   readonly audit: (event: ShareAuditEvent) => void;
   readonly newShareId: () => string;
   readonly now: () => number;
@@ -77,6 +78,8 @@ interface Viewer extends Member {
 interface Share {
   readonly id: string;
   readonly workspaceId: string;
+  /** The tenant it was created in: its access re-checks run there. */
+  readonly tenant: TenantScope;
   readonly hostName: string;
   readonly ownerId: string;
   readonly ownerName: string;
@@ -144,11 +147,13 @@ export class ShareRegistry {
     readonly ownerId: string;
     readonly ownerName: string;
     readonly source: AuditSource;
+    readonly tenant: TenantScope;
   }): string {
     const id = this.deps.newShareId();
     const share: Share = {
       id,
       workspaceId: input.workspaceId,
+      tenant: input.tenant,
       hostName: input.hostName,
       ownerId: input.ownerId,
       ownerName: input.ownerName,
@@ -315,12 +320,15 @@ export class ShareRegistry {
   async recheck(): Promise<void> {
     for (const share of [...this.shares.values()]) {
       const owner = share.owner;
-      if (owner !== undefined && !(await this.deps.canView(owner.who.userId, share.workspaceId))) {
+      if (owner !== undefined && !(await this.deps.canView(owner.who.userId, share.workspaceId, share.tenant))) {
         if (this.shares.has(share.id)) this.end(share, 'access', owner.who.source);
         continue;
       }
       for (const viewer of [...share.viewers.values()]) {
-        if (!(await this.deps.canView(viewer.who.userId, share.workspaceId)) && share.viewers.has(viewer.peer)) {
+        if (
+          !(await this.deps.canView(viewer.who.userId, share.workspaceId, share.tenant)) &&
+          share.viewers.has(viewer.peer)
+        ) {
           this.dismiss(share, viewer, 'access', TERMINAL_SHARE_CLOSE.forbidden);
         }
       }

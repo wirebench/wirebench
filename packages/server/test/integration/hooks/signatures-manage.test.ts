@@ -27,7 +27,7 @@ async function setUp(env: Record<string, string> = {}): Promise<Cast> {
   const viewer = await signedInUser(h, { email: 'viewer@example.com' });
   const team = await seedTeam(h, { name: 'Payments QA', admins: [admin], members: [editor, viewer] });
   const workspaceId = await seedWorkspace(h, { team, name: 'Integration' });
-  await teamsRepo.upsertGrant(h.db, { workspaceId, userId: editor.user.id, role: 'editor', at: h.clock.now });
+  await teamsRepo.upsertGrant(h.tdb, { workspaceId, userId: editor.user.id, role: 'editor', at: h.clock.now });
   const hook = (await call<CatchUrl>(h, editor, 'POST', `/workspaces/${workspaceId}/hooks`, { name: 'Signed' })).body;
   return { h, editor, viewer, workspaceId, hook };
 }

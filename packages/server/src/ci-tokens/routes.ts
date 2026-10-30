@@ -19,9 +19,12 @@ import { requireWorkspaceRole } from '../teams/roles.js';
 import * as teamsRepo from '../teams/repo.js';
 import { ciTokenNameBlank, ciTokenNameTaken, ciTokenNotFound, ciTokenRequired } from './errors.js';
 import * as repo from './repo.js';
+import type { Tenancy } from '../tenancy/tenancy.js';
 
 export interface CiTokensEnv {
   readonly db: Database;
+  /** The tenant databases: the role guard and teams' reads run in the request's tenant (tenancy Task 9). */
+  readonly tenancy: Pick<Tenancy, 'db'>;
   readonly hooks: ServerHooks;
   readonly now: () => Date;
 }
@@ -50,7 +53,7 @@ export const ciRoutes =
     app.get('/ci/whoami', { schema: { response: { 200: jsonSchema(ciWhoamiResponseSchema) } } }, async (request) => {
       const ci = request.ciCaller;
       if (ci === undefined) throw request.caller === undefined ? unauthenticated() : ciTokenRequired();
-      const workspace = await teamsRepo.workspaceById(env.db, ci.workspaceId);
+      const workspace = await teamsRepo.workspaceById(env.tenancy.db(request.tenant), ci.workspaceId);
       // The token goes with its workspace (cascade), so this is a race with a delete at most.
       if (workspace === undefined) throw unauthenticated();
       return { workspaceId: ci.workspaceId, workspaceName: workspace.name, tokenName: ci.tokenName };
@@ -61,7 +64,7 @@ export const ciRoutes =
     app.post(
       '/workspaces/:workspaceId/ci-tokens',
       {
-        preHandler: requireWorkspaceRole(db, 'editor'),
+        preHandler: requireWorkspaceRole(env.tenancy, 'editor'),
         schema: {
           params: workspaceParams,
           body: jsonSchema(createBodySchema, { io: 'input' }),
@@ -104,7 +107,7 @@ export const ciRoutes =
     app.get(
       '/workspaces/:workspaceId/ci-tokens',
       {
-        preHandler: requireWorkspaceRole(db, 'editor'),
+        preHandler: requireWorkspaceRole(env.tenancy, 'editor'),
         schema: { params: workspaceParams, response: { 200: jsonSchema(ciTokensResponseSchema) } },
       },
       async (request): Promise<CiTokenSummary[]> =>
@@ -114,7 +117,7 @@ export const ciRoutes =
     app.delete(
       '/workspaces/:workspaceId/ci-tokens/:tokenId',
       {
-        preHandler: requireWorkspaceRole(db, 'editor'),
+        preHandler: requireWorkspaceRole(env.tenancy, 'editor'),
         schema: { params: jsonSchema(ciTokenParamsSchema, { io: 'input' }) },
       },
       async (request, reply) => {

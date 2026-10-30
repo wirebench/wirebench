@@ -90,7 +90,7 @@ describeDb('the license endpoints (licensing spec §3.6, §13)', () => {
     expect(meta['edition']).toBe('team');
     expect(JSON.stringify(meta)).not.toContain(PAYLOAD.id);
     expect(JSON.stringify(meta)).not.toContain('Example AG');
-    expect((await repo.storedLicense(h.db))?.installedBy).toBe(admin.user.id);
+    expect((await repo.storedLicense(h.tdb))?.installedBy).toBe(admin.user.id);
   });
 
   it('refuses an invalid file without touching the stored license', async () => {
@@ -115,7 +115,7 @@ describeDb('the license endpoints (licensing spec §3.6, §13)', () => {
     const bound = await call<LicenseState>(h, admin, 'PUT', '/license', { license: license(keys, { serverId: id }) });
     expect(bound.status).toBe(200);
     expect(bound.body.status).toBe('active');
-    const stored = (await repo.storedLicense(h.db))?.text;
+    const stored = (await repo.storedLicense(h.tdb))?.text;
     const foreign = '11111111-2222-4333-8444-555555555555';
     const res = await call<{ code: string; message: string }>(h, admin, 'PUT', '/license', {
       license: license(keys, { serverId: foreign, customer: 'Other AG' }),
@@ -124,7 +124,7 @@ describeDb('the license endpoints (licensing spec §3.6, §13)', () => {
     expect(res.body.code).toBe('licensing-invalid');
     expect(res.body.message).toContain(foreign);
     expect(res.body.message).toContain(id);
-    expect((await repo.storedLicense(h.db))?.text).toBe(stored);
+    expect((await repo.storedLicense(h.tdb))?.text).toBe(stored);
   });
 
   it('removes the license; the server is Community on the next request', async () => {
@@ -146,7 +146,7 @@ describeDb('the license endpoints (licensing spec §3.6, §13)', () => {
 
   it('reports a stored license that no longer verifies as invalid, and the server as Community', async () => {
     const { h, admin } = await setUp();
-    await repo.putLicense(h.db, { text: license(other), licenseId: PAYLOAD.id, installedBy: null, at: h.clock.now });
+    await repo.putLicense(h.tdb, { text: license(other), licenseId: PAYLOAD.id, installedBy: null, at: h.clock.now });
     expect((await call<LicenseState>(h, admin, 'GET', '/license')).body).toMatchObject({
       edition: 'community',
       status: 'invalid',

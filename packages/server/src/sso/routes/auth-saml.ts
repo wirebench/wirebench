@@ -105,7 +105,7 @@ async function answerResponse(
     readonly flowId: string;
   },
 ): Promise<Answer> {
-  if (!(await env.ctx.license.state()).features.includes('sso-provisioning'))
+  if (!(await env.ctx.license.state(request.tenant)).features.includes('sso-provisioning'))
     return { ok: false, code: 'licensing-feature-required' };
   let assertion: SamlAssertion;
   try {

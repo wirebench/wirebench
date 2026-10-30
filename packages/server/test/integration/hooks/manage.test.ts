@@ -29,7 +29,7 @@ async function setUp(env: Record<string, string> = {}): Promise<Cast> {
   const workspaceId = await seedWorkspace(h, { team, name: 'Integration' });
   const otherWorkspaceId = await seedWorkspace(h, { team, name: 'Other' });
   for (const id of [workspaceId, otherWorkspaceId]) {
-    await teamsRepo.upsertGrant(h.db, { workspaceId: id, userId: editor.user.id, role: 'editor', at: h.clock.now });
+    await teamsRepo.upsertGrant(h.tdb, { workspaceId: id, userId: editor.user.id, role: 'editor', at: h.clock.now });
   }
   const heard: HooksChanged[] = [];
   h.hooks.hooksChanged.push((event) => {

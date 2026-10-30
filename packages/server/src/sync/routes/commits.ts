@@ -59,7 +59,7 @@ export const commitRoutes =
     app.post(
       '/workspaces/:workspaceId/sync/commits',
       {
-        preHandler: requireWorkspaceRole(db, 'editor'),
+        preHandler: requireWorkspaceRole(env.ctx.tenancy, 'editor'),
         schema: {
           params: jsonSchema(teamWorkspaceParamsSchema, { io: 'input' }),
           body: jsonSchema(syncPushRequestSchema, { io: 'input' }),

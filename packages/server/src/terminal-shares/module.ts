@@ -30,6 +30,7 @@ import { effectiveRole, requireWorkspaceRole } from '../teams/roles.js';
 import { shareNotFound } from './errors.js';
 import { ShareRegistry, type ShareRegistryDeps } from './registry.js';
 import { runShareSocket } from './socket.js';
+import type { TenantScope } from '../tenancy/scope.js';
 
 export interface TerminalSharesOptions {
   readonly now?: () => Date;
@@ -71,8 +72,8 @@ export function terminalSharesModule(options: TerminalSharesOptions = {}): Serve
     name: 'terminal-shares',
     register(app: FastifyInstance, ctx: ServerContext): Promise<void> {
       const { db, hooks } = ctx;
-      const canView = async (userId: string, workspaceId: string): Promise<boolean> =>
-        (await effectiveRole(db, userId, workspaceId)).role !== 'none';
+      const canView = async (userId: string, workspaceId: string, tenant: TenantScope): Promise<boolean> =>
+        (await effectiveRole(ctx.tenancy.db(tenant), userId, workspaceId)).role !== 'none';
       const registry = new ShareRegistry({
         canView,
         audit: (event) => {
@@ -99,7 +100,7 @@ export function terminalSharesModule(options: TerminalSharesOptions = {}): Serve
       const feature: preHandlerAsyncHookHandler = async function (request, reply) {
         await ctx.license.requireFeature('terminal-sharing').call(this, request, reply);
       };
-      const member = [requireWorkspaceRole(db, 'viewer'), feature];
+      const member = [requireWorkspaceRole(ctx.tenancy, 'viewer'), feature];
 
       app.post(
         '/workspaces/:workspaceId/terminal-shares',
@@ -122,6 +123,7 @@ export function terminalSharesModule(options: TerminalSharesOptions = {}): Serve
             ownerId: caller.id,
             ownerName: user?.displayName ?? '',
             source: auditSource(request),
+            tenant: request.tenant,
           });
           const answer: TerminalShareCreateResponse = { shareId };
           return reply.code(201).send(answer);
@@ -155,8 +157,8 @@ export function terminalSharesModule(options: TerminalSharesOptions = {}): Serve
           registry,
           authenticate: (token) => callerForToken({ db: ctx.tenancy.db(request.tenant), settings, now }, token),
           tokenMaxMs: settings.tokenMaxMs,
-          featureOn: async () => (await ctx.license.state()).features.includes('terminal-sharing'),
-          canView,
+          featureOn: async () => (await ctx.license.state(request.tenant)).features.includes('terminal-sharing'),
+          canView: (userId, workspaceId) => canView(userId, workspaceId, request.tenant),
           setTimer,
           log: ctx.log,
           request: {

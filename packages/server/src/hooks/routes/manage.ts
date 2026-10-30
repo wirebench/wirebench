@@ -171,7 +171,7 @@ export const manageRoutes =
     app.get(
       '/workspaces/:workspaceId/hooks',
       {
-        preHandler: requireWorkspaceRole(db, 'viewer'),
+        preHandler: requireWorkspaceRole(env.ctx.tenancy, 'viewer'),
         schema: { params: workspaceParams, response: { 200: listed } },
       },
       async (request): Promise<ListedCatchUrl[]> => {
@@ -186,7 +186,7 @@ export const manageRoutes =
     app.post(
       '/workspaces/:workspaceId/hooks',
       {
-        preHandler: requireWorkspaceRole(db, 'editor'),
+        preHandler: requireWorkspaceRole(env.ctx.tenancy, 'editor'),
         schema: {
           params: workspaceParams,
           body: jsonSchema(catchUrlCreateRequestSchema, { io: 'input' }),
@@ -242,7 +242,7 @@ export const manageRoutes =
     app.patch(
       '/workspaces/:workspaceId/hooks/:hookId',
       {
-        preHandler: requireWorkspaceRole(db, 'editor'),
+        preHandler: requireWorkspaceRole(env.ctx.tenancy, 'editor'),
         schema: {
           params: hookParams,
           body: jsonSchema(catchUrlUpdateRequestSchema, { io: 'input' }),
@@ -322,7 +322,10 @@ export const manageRoutes =
 
     app.post(
       '/workspaces/:workspaceId/hooks/:hookId/rotate',
-      { preHandler: requireWorkspaceRole(db, 'editor'), schema: { params: hookParams, response: { 200: one } } },
+      {
+        preHandler: requireWorkspaceRole(env.ctx.tenancy, 'editor'),
+        schema: { params: hookParams, response: { 200: one } },
+      },
       async (request): Promise<CatchUrl> => {
         const { workspaceId, hookId } = hookOf(request);
         const row = await found(workspaceId, hookId);
@@ -345,7 +348,7 @@ export const manageRoutes =
 
     app.delete(
       '/workspaces/:workspaceId/hooks/:hookId',
-      { preHandler: requireWorkspaceRole(db, 'editor'), schema: { params: hookParams } },
+      { preHandler: requireWorkspaceRole(env.ctx.tenancy, 'editor'), schema: { params: hookParams } },
       async (request, reply) => {
         const { workspaceId, hookId } = hookOf(request);
         const row = await found(workspaceId, hookId);
@@ -368,7 +371,7 @@ export const manageRoutes =
     app.get(
       '/workspaces/:workspaceId/hooks/:hookId/captures',
       {
-        preHandler: requireWorkspaceRole(db, 'viewer'),
+        preHandler: requireWorkspaceRole(env.ctx.tenancy, 'viewer'),
         schema: {
           params: hookParams,
           querystring: jsonSchema(capturesQuerySchema, { io: 'input' }),
@@ -393,7 +396,7 @@ export const manageRoutes =
     app.get(
       '/workspaces/:workspaceId/hooks/:hookId/captures/:captureId',
       {
-        preHandler: requireWorkspaceRole(db, 'viewer'),
+        preHandler: requireWorkspaceRole(env.ctx.tenancy, 'viewer'),
         schema: {
           params: jsonSchema(captureParamsSchema, { io: 'input' }),
           response: { 200: jsonSchema(captureSchema) },
@@ -411,7 +414,7 @@ export const manageRoutes =
 
     app.delete(
       '/workspaces/:workspaceId/hooks/:hookId/captures',
-      { preHandler: requireWorkspaceRole(db, 'editor'), schema: { params: hookParams } },
+      { preHandler: requireWorkspaceRole(env.ctx.tenancy, 'editor'), schema: { params: hookParams } },
       async (request, reply) => {
         const { workspaceId, hookId } = hookOf(request);
         const row = await found(workspaceId, hookId);

@@ -18,6 +18,7 @@ import type { RepoStore } from './repos/repo-store.js';
 import type { TenantScope } from './tenancy/scope.js';
 import { outsideTenantUnit, type TenantQuerier } from './tenancy/tenant-db.js';
 import type { Tenancy } from './tenancy/tenancy.js';
+import type { ScopeSource } from './tenancy/urls.js';
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -72,6 +73,20 @@ export interface AccessChanged {
   readonly workspaceId?: string;
   readonly teamId?: string;
   readonly userId?: string;
+}
+
+/**
+ * `accessChanged` as it is announced: with `tenantId`, as every announcement carries (hosted edition spec §19.8
+ * guard 5), and the tenant's scope, which the live hub needs to look a team's workspaces up there.
+ */
+export type AccessChangedEvent = AccessChanged & { readonly tenantId: string; readonly tenant: TenantScope };
+
+/** The `tenantId` and `tenant` an announcement made for a request carries. */
+export function tenantOf(request: { readonly tenant: TenantScope }): {
+  readonly tenantId: string;
+  readonly tenant: TenantScope;
+} {
+  return { tenantId: request.tenant.tenantId, tenant: request.tenant };
 }
 
 /** One device token ended, or every token of a user except `exceptTokenId` (live-updates spec §3.2). */
@@ -133,16 +148,28 @@ export interface LicenseChanged {
 export type LicenseChangedEvent = LicenseChanged & { readonly tenantId: string; readonly tenant: TenantScope };
 
 /**
- * The server's license (licensing spec §5.1). Read at request time, never at registration: identity
- * registers before licensing replaces the host's permissive default.
+ * A tenant's license (licensing spec §5.1; hosted edition spec §19.8 guard 5): each tenant has its own row and
+ * its own seats. Read at request time, never at registration: identity registers before licensing replaces the
+ * host's permissive default.
  */
 export interface LicenseService {
-  /** Computed on demand from the stored row, the clock and one count (§3.3). Pass `tx` inside a transaction. */
-  state(tx?: Querier): Promise<LicenseState>;
-  /** Inside the caller's transaction: refuses with `licensing-seat-limit` when no seat is free (§3.4). */
-  assertSeatAvailable(tx: Querier): Promise<void>;
+  /**
+   * Computed on demand from the tenant's stored row, the clock and one count of its users (§3.3), in one unit.
+   * `of` is the scope, or a request for its `tenant`, which is read only when a license service needs it: a
+   * server without licensing answers `/meta` with no tenant at all. Pass `tx`, one of that tenant's units, to
+   * read inside it.
+   */
+  state(of: ScopeSource, tx?: TenantQuerier): Promise<LicenseState>;
+  /** Inside the caller's tenant unit: refuses with `licensing-seat-limit` when no seat is free there (§3.4). */
+  assertSeatAvailable(tx: TenantQuerier): Promise<void>;
   /** A preHandler for after a route's role guard: `licensing-feature-required` without the feature (§3.5). */
   requireFeature(feature: Feature): preHandlerAsyncHookHandler;
+  /**
+   * The license of a server whose jobs do not run per tenant yet: the scheduler's pass and alert outbox until
+   * Task 13, and the audit forwarder until Task 14 (`check:tenant-scope` names them). The one tenant's, on a
+   * self-hosted server; with several, Community.
+   */
+  stateWithoutScope(): Promise<LicenseState>;
 }
 
 /**
@@ -156,6 +183,7 @@ export function permissiveLicense(): LicenseService {
     state,
     assertSeatAvailable: () => Promise.resolve(),
     requireFeature: (feature) => requireFeature(feature, state),
+    stateWithoutScope: state,
   };
 }
 
@@ -207,7 +235,7 @@ export interface ServerHooks {
   readonly invitationAccepted: InvitationAcceptedHook[];
   readonly audit: AuditHook[];
   readonly headMoved: Announcement<HeadMoved>[];
-  readonly accessChanged: Announcement<AccessChanged>[];
+  readonly accessChanged: Announcement<AccessChangedEvent>[];
   readonly sessionEnded: Announcement<SessionEndedEvent>[];
   readonly captureReceived: Announcement<CaptureReceived>[];
   readonly hooksChanged: Announcement<HooksChanged>[];

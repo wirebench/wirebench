@@ -112,7 +112,13 @@ export async function runAdmin(
     const tenancy = createTenancy(db);
     const scope = await cliScope(tenancy);
     const env: InvitationEnv = {
-      ctx: { db, tenancy, config, hooks, license: createLicenseService({ db, publicKeys, now, serverId }) },
+      ctx: {
+        db,
+        tenancy,
+        config,
+        hooks,
+        license: createLicenseService({ tenancy, publicKeys, now, serverId: () => Promise.resolve(serverId) }),
+      },
       settings: identitySettings(config),
       now,
     };
@@ -163,13 +169,21 @@ export async function runAdmin(
       case 'admin-license-remove':
         return await runLicenseCommand(
           command,
-          { db, publicKeys, now: env.now, serverId, license: env.ctx.license, hooks: env.ctx.hooks },
+          {
+            tenancy,
+            publicKeys,
+            now: env.now,
+            serverId: () => Promise.resolve(serverId),
+            license: env.ctx.license,
+            hooks: env.ctx.hooks,
+          },
+          scope,
           io,
         );
       case 'admin-scim-token-create':
       case 'admin-scim-token-list':
       case 'admin-scim-token-revoke':
-        return await runScimTokenCommand(command, env, io);
+        return await runScimTokenCommand(command, env, scope, io);
       case 'admin-scim-group-list':
       case 'admin-scim-group-link':
       case 'admin-scim-group-unlink':

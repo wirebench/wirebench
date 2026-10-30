@@ -74,10 +74,10 @@ describeDb('seats on Community (licensing spec §3.4, §13.1)', () => {
         config,
         hooks: h.hooks,
         license: createLicenseService({
-          db: h.db,
+          tenancy: h.ctx.tenancy,
           publicKeys: [keys.publicKey],
           now: () => h.clock.now,
-          serverId: SERVER_ID,
+          serverId: () => Promise.resolve(SERVER_ID),
         }),
       },
       settings: identitySettings(config),

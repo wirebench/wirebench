@@ -67,7 +67,7 @@ describeDb('/workspaces (§3.2, §3.6, §3.7)', () => {
       status: 409,
       body: { code: 'teams-workspace-exists' },
     });
-    expect(await repo.workspaceById(h.db, orphan)).toBeUndefined();
+    expect(await repo.workspaceById(h.tdb, orphan)).toBeUndefined();
   });
 
   it('a failing repository build leaves no row and no repository (§11)', async () => {
@@ -88,7 +88,7 @@ describeDb('/workspaces (§3.2, §3.6, §3.7)', () => {
         name: 'Boom',
       });
       expect(res.status).toBeGreaterThanOrEqual(500);
-      expect(await repo.workspaceById(broken.db, id)).toBeUndefined();
+      expect(await repo.workspaceById(broken.tdb, id)).toBeUndefined();
       expect(await broken.repos.exists(id)).toBe(false);
     } finally {
       await broken.close();
@@ -127,7 +127,7 @@ describeDb('/workspaces (§3.2, §3.6, §3.7)', () => {
     const { id } = (await create(alice, { name: 'W' })).body;
     expect((await call<{ code: string }>(h, bob, 'DELETE', `/workspaces/${id}`)).body.code).toBe('teams-forbidden');
     expect((await call(h, alice, 'DELETE', `/workspaces/${id}`)).status).toBe(204);
-    expect(await repo.workspaceById(h.db, id)).toBeUndefined();
+    expect(await repo.workspaceById(h.tdb, id)).toBeUndefined();
     expect(await h.repos.exists(id)).toBe(false);
     expect(readdirSync(join(h.dataDir, 'tmp')).some((name) => name.startsWith(`removed-${id}-`))).toBe(true);
     const bare = await seedWorkspace(h, { team, name: 'No repository' });
@@ -139,7 +139,7 @@ describeDb('/workspaces (§3.2, §3.6, §3.7)', () => {
     const root = await signedInUser(h, { email: 'root@example.com', serverAdmin: true });
     const res = await create(root, { name: 'By root' });
     expect(res.body).toMatchObject({ myRole: 'admin', source: 'server-admin' });
-    expect((await repo.workspaceFacts(h.db, root.user.id, res.body.id))?.grant).toBeNull();
+    expect((await repo.workspaceFacts(h.tdb, root.user.id, res.body.id))?.grant).toBeNull();
     expect(await list(root)).toEqual([['By root', 'admin', 'server-admin']]);
   });
 });

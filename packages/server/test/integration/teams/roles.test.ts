@@ -17,7 +17,7 @@ const probe: ServerModule = {
     app.get(
       '/probe/:workspaceId',
       {
-        preHandler: requireWorkspaceRole(ctx.db, 'editor'),
+        preHandler: requireWorkspaceRole(ctx.tenancy, 'editor'),
         schema: { params: jsonSchema(teamWorkspaceParamsSchema, { io: 'input' }) },
       },
       (request) => Promise.resolve(request.workspaceAccess),
@@ -25,7 +25,7 @@ const probe: ServerModule = {
     app.get(
       '/probe-team/:teamId',
       {
-        preHandler: requireTeamRole(ctx.db, 'admin'),
+        preHandler: requireTeamRole(ctx.tenancy, 'admin'),
         schema: { params: jsonSchema(teamParamsSchema, { io: 'input' }) },
       },
       (request) => Promise.resolve(request.teamAccess),
@@ -53,7 +53,7 @@ describeDb('requireWorkspaceRole and requireTeamRole (§3.3)', () => {
     const team = await seedTeam(h, { name: 'T', admins: [admin], members: [member, editor] });
     teamId = team.id;
     workspaceId = await seedWorkspace(h, { team, name: 'W' });
-    await repo.upsertGrant(h.db, { workspaceId, userId: editor.user.id, role: 'editor', at: h.clock.now });
+    await repo.upsertGrant(h.tdb, { workspaceId, userId: editor.user.id, role: 'editor', at: h.clock.now });
   });
   afterEach(() => h.close());
 
@@ -110,9 +110,9 @@ describeDb('requireWorkspaceRole and requireTeamRole (§3.3)', () => {
   it('a user in two teams has a different role in each; a disabled user has none', async () => {
     const other = await seedTeam(h, { name: 'U', members: [admin] });
     const theirs = await seedWorkspace(h, { team: other, name: 'W', defaultRole: 'editor' });
-    expect(await effectiveRole(h.db, admin.user.id, workspaceId)).toEqual({ role: 'admin', source: 'team-admin' });
-    expect(await effectiveRole(h.db, admin.user.id, theirs)).toEqual({ role: 'editor', source: 'default' });
+    expect(await effectiveRole(h.tdb, admin.user.id, workspaceId)).toEqual({ role: 'admin', source: 'team-admin' });
+    expect(await effectiveRole(h.tdb, admin.user.id, theirs)).toEqual({ role: 'editor', source: 'default' });
     await h.db.query('update users set disabled_at = now() where id = $1', [admin.user.id]);
-    expect(await effectiveRole(h.db, admin.user.id, workspaceId)).toEqual({ role: 'none' });
+    expect(await effectiveRole(h.tdb, admin.user.id, workspaceId)).toEqual({ role: 'none' });
   });
 });

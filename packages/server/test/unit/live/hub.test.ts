@@ -9,6 +9,11 @@ import {
 } from '@wirebench/engine';
 import { CAPTURE_WINDOW_MS, LiveHub, type LiveSession, type LiveSocket } from '../../../src/live/hub.js';
 import type { Effective } from '../../../src/teams/roles.js';
+import { scopeOf } from '../../../src/tenancy/scope.js';
+
+/** The one tenant these sessions and announcements are in. */
+const TENANT = scopeOf({ id: '00000000-0000-4000-8000-000000000001', slug: 'default' });
+const IN_TENANT = { tenantId: TENANT.tenantId, tenant: TENANT };
 
 const T0 = Date.parse('2026-09-26T10:00:00.000Z');
 const HOUR = 60 * 60 * 1000;
@@ -207,6 +212,7 @@ function session(userId: string, tokenId: string, options: SessionOptions = {}):
     userId,
     name: options.name ?? NAMES[userId] ?? userId,
     expiresAt: options.expiresAt ?? T0 + 180 * DAY,
+    tenant: TENANT,
   };
 }
 
@@ -428,7 +434,7 @@ describe('LiveHub — accessChanged (§3.2, §3.3)', () => {
 
     f.grant(ANA, WS_A, 'editor');
     const gate = f.hold();
-    f.hub.accessChanged({ workspaceId: WS_A });
+    f.hub.accessChanged({ ...IN_TENANT, workspaceId: WS_A });
     expect(laptop.sent).toEqual([]); // the check runs in the background
     gate.release();
     await f.hub.idle();
@@ -438,12 +444,12 @@ describe('LiveHub — accessChanged (§3.2, §3.3)', () => {
     expect(ben.sent).toEqual([]);
 
     // The new role was recorded, so the same event again messages nobody.
-    f.hub.accessChanged({ workspaceId: WS_A });
+    f.hub.accessChanged({ ...IN_TENANT, workspaceId: WS_A });
     await f.hub.idle();
     expect([...laptop.sent, ...desk.sent, ...ben.sent]).toEqual([]);
 
     f.grant(ANA, WS_A, 'none');
-    f.hub.accessChanged({ workspaceId: WS_A });
+    f.hub.accessChanged({ ...IN_TENANT, workspaceId: WS_A });
     await f.hub.idle();
     expect(laptop.take()).toEqual([access(WS_A)]);
     expect(desk.take()).toEqual([access(WS_A)]);
@@ -468,7 +474,7 @@ describe('LiveHub — accessChanged (§3.2, §3.3)', () => {
     f.roleCalls.length = 0;
 
     for (const id of [WS_A, WS_B, WS_C]) f.grant(ANA, id, 'none');
-    f.hub.accessChanged({ teamId: TEAM, userId: ANA }); // Ana removed from the team
+    f.hub.accessChanged({ ...IN_TENANT, teamId: TEAM, userId: ANA }); // Ana removed from the team
     await f.hub.idle();
     expect(f.teamCalls).toEqual([TEAM]);
     expect(f.roleCalls).toEqual([`${ANA} ${WS_A}`, `${ANA} ${WS_B}`]);
@@ -491,7 +497,7 @@ describe('LiveHub — accessChanged (§3.2, §3.3)', () => {
 
     f.grant(ANA, WS_A, 'admin'); // made a server admin (R4)
     f.grant(ANA, WS_B, 'admin');
-    f.hub.accessChanged({ userId: ANA });
+    f.hub.accessChanged({ ...IN_TENANT, userId: ANA });
     await f.hub.idle();
     expect(f.teamCalls).toEqual([]);
     expect(f.roleCalls).toEqual([`${ANA} ${WS_A}`, `${ANA} ${WS_B}`]);
@@ -504,7 +510,7 @@ describe('LiveHub — accessChanged (§3.2, §3.3)', () => {
     f.team(TEAM, [WS_A]);
     const ana = await joined(f, ANA, 'tok-ana', WS_A);
     f.fail(new Error('connection reset'));
-    f.hub.accessChanged({ teamId: TEAM });
+    f.hub.accessChanged({ ...IN_TENANT, teamId: TEAM });
     await f.hub.idle();
     expect(f.warnings).toHaveLength(1);
     expect(ana.sent).toEqual([]);
@@ -517,8 +523,8 @@ describe('LiveHub — accessChanged (§3.2, §3.3)', () => {
   it('makes no query at all while nothing is subscribed', () => {
     const f = fixture();
     open(f, ANA, 'tok-ana');
-    f.hub.accessChanged({ teamId: TEAM });
-    f.hub.accessChanged({ userId: ANA });
+    f.hub.accessChanged({ ...IN_TENANT, teamId: TEAM });
+    f.hub.accessChanged({ ...IN_TENANT, userId: ANA });
     expect(f.teamCalls).toEqual([]);
     expect(f.roleCalls).toEqual([]);
   });
@@ -530,10 +536,10 @@ describe('LiveHub — accessChanged (§3.2, §3.3)', () => {
 
     f.grant(ANA, WS_A, 'editor');
     const first = f.hold({ once: true });
-    f.hub.accessChanged({ workspaceId: WS_A });
+    f.hub.accessChanged({ ...IN_TENANT, workspaceId: WS_A });
     await until(() => f.roleCalls.length === 1); // the first check has read `editor` and waits
     f.grant(ANA, WS_A, 'viewer');
-    f.hub.accessChanged({ workspaceId: WS_A });
+    f.hub.accessChanged({ ...IN_TENANT, workspaceId: WS_A });
     await flush();
     expect(f.roleCalls).toHaveLength(1); // the second waits for the first
     first.release();
@@ -543,7 +549,7 @@ describe('LiveHub — accessChanged (§3.2, §3.3)', () => {
 
     // `viewer` was recorded last, so the next real change to `editor` is still announced.
     f.grant(ANA, WS_A, 'editor');
-    f.hub.accessChanged({ workspaceId: WS_A });
+    f.hub.accessChanged({ ...IN_TENANT, workspaceId: WS_A });
     await f.hub.idle();
     expect(ana.take()).toEqual([access(WS_A)]);
   });
@@ -557,7 +563,7 @@ describe('LiveHub — accessChanged (§3.2, §3.3)', () => {
 
     f.grant(ANA, WS_A, 'none');
     const gate = f.hold();
-    f.hub.accessChanged({ workspaceId: WS_A });
+    f.hub.accessChanged({ ...IN_TENANT, workspaceId: WS_A });
     await until(() => f.roleCalls.length === 1);
     f.hub.remove(ana);
     expect(ben.take()).toEqual([presence(WS_A, BEN)]);
@@ -573,7 +579,7 @@ describe('LiveHub — accessChanged (§3.2, §3.3)', () => {
 
     f.grant(ANA, WS_A, 'editor');
     const gate = f.hold();
-    f.hub.accessChanged({ workspaceId: WS_A });
+    f.hub.accessChanged({ ...IN_TENANT, workspaceId: WS_A });
     await until(() => f.roleCalls.length === 1);
     f.hub.unsubscribe(ana, WS_A);
     gate.release();
@@ -594,7 +600,7 @@ describe('LiveHub — accessChanged (§3.2, §3.3)', () => {
     f.grant(ANA, WS_A, 'none');
     f.grant(ANA, WS_B, 'none');
     const gate = f.hold();
-    f.hub.accessChanged({ userId: ANA });
+    f.hub.accessChanged({ ...IN_TENANT, userId: ANA });
     await until(() => f.roleCalls.length === 1);
     f.hub.closeAll();
     gate.release();
@@ -731,7 +737,7 @@ describe('LiveHub — closeAll (§3.3, §5.1)', () => {
     expect(f.clock.armed()).toEqual([]);
 
     f.hub.headMoved({ workspaceId: WS_A, head: HEAD, tokenId: 'tok-x' });
-    f.hub.accessChanged({ teamId: TEAM });
+    f.hub.accessChanged({ ...IN_TENANT, teamId: TEAM });
     f.hub.sessionEnded({ userId: ANA });
     f.hub.heartbeat();
     f.hub.remove(ana);

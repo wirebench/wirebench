@@ -40,8 +40,8 @@ export function auditLogModule(options: AuditLogOptions = {}): ServerModule {
       ctx.meta.addCapability('audit-log');
       // The workspace `recordDesktopActivity` setting (#211); a server without it ignores the field, so the desktop hides the switch.
       ctx.meta.addCapability('desktop-activity');
-      auditRoutes({ db: ctx.db, hooks: ctx.hooks, license: () => ctx.license })(app);
-      desktopRoutes({ db: ctx.db, hooks: ctx.hooks, limiter: desktopEventsLimiter(now) })(app);
+      auditRoutes({ db: ctx.db, tenancy: ctx.tenancy, hooks: ctx.hooks, license: () => ctx.license })(app);
+      desktopRoutes({ db: ctx.db, tenancy: ctx.tenancy, hooks: ctx.hooks, limiter: desktopEventsLimiter(now) })(app);
       const key = ctx.config.auditChainKey;
       const stops = new RetentionStopLog(ctx.log);
       // With a chain key, retention deletes only checked sealed rows from the chain's oldest end and moves

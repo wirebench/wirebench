@@ -131,7 +131,7 @@ export const groupRoutes =
           if (isUniqueViolation(error, NAME_INDEX)) throw uniqueness();
           throw error;
         });
-      announceAccess(env, changes, request.log);
+      announceAccess(env, request.tenant, changes, request.log);
       return (await resources(request, [row], true))[0];
     }
 
@@ -233,7 +233,7 @@ export const groupRoutes =
           details: { displayName: current.displayName },
         });
       });
-      announceAccess(env, changes, request.log);
+      announceAccess(env, request.tenant, changes, request.log);
       return reply.code(204).send();
     });
   };

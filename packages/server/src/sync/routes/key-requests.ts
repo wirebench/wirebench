@@ -39,7 +39,7 @@ export const keyRequestRoutes =
       '/workspaces/:workspaceId/team-secrets/key-requests',
       {
         preHandler: [
-          requireWorkspaceRole(db, 'viewer'),
+          requireWorkspaceRole(env.ctx.tenancy, 'viewer'),
           rateLimit(env, (request) => [callerKey(request)], KEY_REQUEST_RATE_LIMIT_PROBLEM),
         ],
         // A key request is a few hundred bytes; the operator's sync limit is for trees.

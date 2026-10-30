@@ -17,6 +17,7 @@ import type { FastifyBaseLogger } from 'fastify';
 import type { RawData } from 'ws';
 import type { TokenCaller } from '../identity/guard.js';
 import type { LiveHub, LiveHubDeps, LiveSocket } from './hub.js';
+import type { TenantScope } from '../tenancy/scope.js';
 
 export interface SocketLoopDeps {
   readonly hub: LiveHub;
@@ -26,6 +27,8 @@ export interface SocketLoopDeps {
   readonly tokenMaxMs: number;
   readonly setTimer: LiveHubDeps['setTimer'];
   readonly log: FastifyBaseLogger;
+  /** The tenant the socket connected to; its session is bound there. */
+  readonly tenant: TenantScope;
 }
 
 /**
@@ -122,6 +125,7 @@ export function runLiveSocket(ws: LiveConnection, deps: SocketLoopDeps): void {
       userId: found.caller.id,
       name: found.displayName,
       expiresAt: Date.parse(found.tokenCreatedAt) + deps.tokenMaxMs,
+      tenant: deps.tenant,
     });
     if (outcome === 'too-many-sockets') return;
     admitted = true;

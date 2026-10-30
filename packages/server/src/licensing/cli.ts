@@ -6,7 +6,15 @@
 import { readFile } from 'node:fs/promises';
 import { isWirebenchError, type LicenseState } from '@wirebench/engine';
 import type { ServerCommand } from '../args.js';
-import { recordAudit, SYSTEM_SOURCE, type LicenseChanged, type LicenseService, type ServerHooks } from '../context.js';
+import {
+  recordAudit,
+  SYSTEM_SOURCE,
+  type AuditInput,
+  type LicenseChanged,
+  type LicenseService,
+  type ServerHooks,
+} from '../context.js';
+import type { TenantScope } from '../tenancy/scope.js';
 import { ExitCode, type ServerIo } from '../io.js';
 import { installLicense, removeLicense, type LicenseEnv } from './service.js';
 
@@ -29,14 +37,18 @@ export function describeLicense(state: LicenseState): string {
   return rows.map(([label, value]) => `${label.padEnd(12)}${value}\n`).join('');
 }
 
+/** `scope` is the admin command line's tenant (`identity/cli.ts`). */
 export async function runLicenseCommand(
   command: LicenseCommand,
   env: LicenseEnv & { readonly license: LicenseService; readonly hooks: ServerHooks },
+  scope: TenantScope,
   io: ServerIo,
 ): Promise<number> {
+  // The command line's own audit rows, recorded in its tenant like the change they describe.
+  const audit = (event: AuditInput) => env.tenancy.db(scope).transaction((tx) => recordAudit(env.hooks, tx, event));
   switch (command.command) {
     case 'admin-license-show':
-      io.stdout.write(describeLicense(await env.license.state()));
+      io.stdout.write(describeLicense(await env.license.state(scope)));
       return ExitCode.Ok;
     case 'admin-license-install': {
       let text: string;
@@ -48,7 +60,7 @@ export async function runLicenseCommand(
       }
       let changed: LicenseChanged;
       try {
-        changed = await installLicense(env, text, null);
+        changed = await installLicense(env, scope, text, null);
       } catch (error) {
         // Invalid input, as a usage error is: exit 2 (§3.7).
         if (isWirebenchError(error) && error.code === 'licensing-invalid') {
@@ -57,19 +69,19 @@ export async function runLicenseCommand(
         }
         throw error;
       }
-      await recordAudit(env.hooks, env.db, {
+      await audit({
         ...SYSTEM_SOURCE,
         action: 'license.installed',
         target: { kind: 'license', ...(changed.licenseId !== undefined ? { id: changed.licenseId } : {}) },
         details: { edition: changed.edition ?? null, via: 'cli' },
       });
-      io.stdout.write(describeLicense(await env.license.state()));
+      io.stdout.write(describeLicense(await env.license.state(scope)));
       return ExitCode.Ok;
     }
     case 'admin-license-remove': {
-      const changed = await removeLicense(env, null);
+      const changed = await removeLicense(env, scope, null);
       if (changed !== undefined) {
-        await recordAudit(env.hooks, env.db, {
+        await audit({
           ...SYSTEM_SOURCE,
           action: 'license.removed',
           target: { kind: 'license', ...(changed.licenseId !== undefined ? { id: changed.licenseId } : {}) },

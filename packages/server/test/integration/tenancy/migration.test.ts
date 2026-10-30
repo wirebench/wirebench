@@ -493,7 +493,12 @@ describeDb('migration 0020 on the frozen 0019 fixture (hosted spec §19.3, §19.
     ]);
     // teams-access: workspace_grants, by (tenant_id, workspace_id, user_id).
     const [grant] = (await db.query<{ workspace_id: string; user_id: string }>('select * from workspace_grants')).rows;
-    await upsertGrant(db, { workspaceId: grant!.workspace_id, userId: grant!.user_id, role: 'admin', at });
+    await upsertGrant(await defaultTenantDb(db), {
+      workspaceId: grant!.workspace_id,
+      userId: grant!.user_id,
+      role: 'admin',
+      at,
+    });
     expect(
       (
         await db.query('select role from workspace_grants where workspace_id = $1 and user_id = $2', [
@@ -503,8 +508,9 @@ describeDb('migration 0020 on the frozen 0019 fixture (hosted spec §19.3, §19.
       ).rows,
     ).toEqual([{ role: 'admin' }]);
     // licensing: the license, by tenant_id, its new primary key.
-    await putLicense(db, { text: 'wbl1.replaced', licenseId: 'L-new', installedBy: admin, at });
-    expect(await storedLicense(db)).toMatchObject({ text: 'wbl1.replaced', licenseId: 'L-new' });
+    const tdb = await defaultTenantDb(db);
+    await putLicense(tdb, { text: 'wbl1.replaced', licenseId: 'L-new', installedBy: admin, at });
+    expect(await storedLicense(tdb)).toMatchObject({ text: 'wbl1.replaced', licenseId: 'L-new' });
     expect((await db.query('select count(*)::int as n from license')).rows).toEqual([{ n: 1 }]);
     // audit-log: the anchor, by tenant_id; the fixture's anchor wins.
     const anchor = await readAnchor(db);

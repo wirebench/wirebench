@@ -321,7 +321,7 @@ it.runIf(OUT !== undefined)(
         [editor, 'member'],
         [viewer, 'member'],
       ] as const) {
-        await teamsRepo.insertMember(h.db, { teamId, userId: user.user.id, role, at });
+        await teamsRepo.insertMember(h.db as never, { teamId, userId: user.user.id, role, at });
       }
       const teamInvite = await call(h, alice, 'POST', `/teams/${teamId}/invitations`, {
         email: 'contractor@example.com',
@@ -338,7 +338,7 @@ it.runIf(OUT !== undefined)(
       const billing = await workspace('Billing');
       const retired = await workspace('Retired');
       for (const workspaceId of [staging, billing]) {
-        await teamsRepo.upsertGrant(h.db, { workspaceId, userId: editor.user.id, role: 'editor', at });
+        await teamsRepo.upsertGrant(h.db as never, { workspaceId, userId: editor.user.id, role: 'editor', at });
       }
       expect((await call(h, alice, 'DELETE', `/workspaces/${retired}`)).status).toBeLessThan(300);
 

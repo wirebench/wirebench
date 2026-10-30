@@ -264,8 +264,8 @@ describeDb('the host socket (hosted edition spec §17.3)', () => {
         const editor = await signedInUser(h, { email: 'editor@example.com' });
         const team = await seedTeam(h, { name: 'Payments QA', admins: [alice], members: [editor, bob] });
         const workspaceId = await seedSyncWorkspace(h, { team, name: 'Staging' });
-        await teamsRepo.upsertGrant(h.db, { workspaceId, userId: editor.user.id, role: 'editor', at: h.clock.now });
-        await teamsRepo.upsertGrant(h.db, { workspaceId, userId: bob.user.id, role: 'editor', at: h.clock.now });
+        await teamsRepo.upsertGrant(h.tdb, { workspaceId, userId: editor.user.id, role: 'editor', at: h.clock.now });
+        await teamsRepo.upsertGrant(h.tdb, { workspaceId, userId: bob.user.id, role: 'editor', at: h.clock.now });
         const requests = [
           {
             ...createRestRequest('Allowed', { id: 'req-allowed', url: `${base}/ok` }),
@@ -376,7 +376,7 @@ describeDb('the host socket (hosted edition spec §17.3)', () => {
     const editor = await signedInUser(h, { email: 'editor@example.com' });
     const team = await seedTeam(h, { name: 'Payments QA', admins: [alice], members: [editor] });
     const workspaceId = await seedSyncWorkspace(h, { team, name: 'Staging' });
-    await teamsRepo.upsertGrant(h.db, { workspaceId, userId: editor.user.id, role: 'editor', at: h.clock.now });
+    await teamsRepo.upsertGrant(h.tdb, { workspaceId, userId: editor.user.id, role: 'editor', at: h.clock.now });
     const requests = [
       {
         ...createRestRequest('Leaky', { id: 'req-leaky', url: 'https://api.example.test/' }),
@@ -810,7 +810,7 @@ async function joinedWorkspace(
   );
   const workspaceId = await seedSyncWorkspace(h, { team, name: 'Staging' });
   if (options.admin !== true) {
-    await teamsRepo.upsertGrant(h.db, { workspaceId, userId: editor.user.id, role: 'editor', at: h.clock.now });
+    await teamsRepo.upsertGrant(h.tdb, { workspaceId, userId: editor.user.id, role: 'editor', at: h.clock.now });
   }
   const changes = await snapshotOf(workspaceId, options.requests ?? [], options.extra?.(workspaceId) ?? {});
   const pushed = await call<SyncPushResponse>(h, editor, 'POST', `/workspaces/${workspaceId}/sync/commits`, {

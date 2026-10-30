@@ -115,7 +115,7 @@ export const scimPlugin =
       const row = await repo.scimTokenByHash(env.ctx.db, hash);
       if (row === undefined || !sameHash(row.tokenHash, hash)) return refuse(request, reply, 'scim-token-unknown');
       if (row.revokedAt !== null) return refuse(request, reply, 'scim-token-revoked');
-      if (!(await env.ctx.license.state()).features.includes('sso-provisioning')) {
+      if (!(await env.ctx.license.state(request.tenant)).features.includes('sso-provisioning')) {
         return reply
           .code(403)
           .type(SCIM_MEDIA_TYPE)

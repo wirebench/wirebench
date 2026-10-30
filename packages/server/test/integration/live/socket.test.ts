@@ -185,10 +185,10 @@ async function seedAdmin(server: RunningServer): Promise<{ readonly token: strin
   });
   const { token, hash } = mintToken();
   await identityRepo.insertToken(tdb, { id: newId(), userId: user.id, tokenHash: hash, deviceName: 'test device', at });
-  const team = await teamsRepo.insertTeam(db, { id: newId(), name: 'Payments QA', at });
-  await teamsRepo.insertMember(db, { teamId: team.id, userId: user.id, role: 'admin', at });
+  const team = await teamsRepo.insertTeam(tdb, { id: newId(), name: 'Payments QA', at });
+  await teamsRepo.insertMember(tdb, { teamId: team.id, userId: user.id, role: 'admin', at });
   const workspaceId = newId();
-  await teamsRepo.insertWorkspace(db, {
+  await teamsRepo.insertWorkspace(tdb, {
     id: workspaceId,
     name: 'Staging',
     teamId: team.id,

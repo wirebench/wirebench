@@ -71,7 +71,7 @@ describeDb('/teams/:teamId/members (§3.2)', () => {
   });
 
   it('two admins demoting each other at once: exactly one wins and the team keeps an admin', async () => {
-    await repo.setMemberRole(h.db, team.id, member.user.id, 'admin');
+    await repo.setMemberRole(h.tdb, team.id, member.user.id, 'admin');
     const results = await Promise.all([
       call(h, admin, 'PATCH', path(member.user.id), { role: 'member' }),
       call(h, member, 'PATCH', path(admin.user.id), { role: 'member' }),
@@ -79,16 +79,16 @@ describeDb('/teams/:teamId/members (§3.2)', () => {
     // The loser is refused as the last admin, or, if the winner committed before the loser's
     // guard ran, as a member who may no longer change roles.
     expect(results.filter((r) => r.status === 200)).toHaveLength(1);
-    expect(await repo.countAdmins(h.db, team.id)).toBe(1);
+    expect(await repo.countAdmins(h.tdb, team.id)).toBe(1);
   });
 
   it('removal ends grants in the team; a member leaves; nobody removes the last admin', async () => {
     const workspaceId = await seedWorkspace(h, { team, name: 'W' });
-    await repo.upsertGrant(h.db, { workspaceId, userId: member.user.id, role: 'editor', at: h.clock.now });
+    await repo.upsertGrant(h.tdb, { workspaceId, userId: member.user.id, role: 'editor', at: h.clock.now });
     expect((await call(h, admin, 'DELETE', path(member.user.id))).status).toBe(204);
-    expect(await effectiveRole(h.db, member.user.id, workspaceId)).toEqual({ role: 'none' });
-    expect((await repo.workspaceFacts(h.db, member.user.id, workspaceId))?.grant).toBeNull();
-    await repo.insertMember(h.db, { teamId: team.id, userId: carol.user.id, role: 'member', at: h.clock.now });
+    expect(await effectiveRole(h.tdb, member.user.id, workspaceId)).toEqual({ role: 'none' });
+    expect((await repo.workspaceFacts(h.tdb, member.user.id, workspaceId))?.grant).toBeNull();
+    await repo.insertMember(h.tdb, { teamId: team.id, userId: carol.user.id, role: 'member', at: h.clock.now });
     expect((await call<{ code: string }>(h, carol, 'DELETE', path(admin.user.id))).body.code).toBe('teams-forbidden');
     expect((await call(h, carol, 'DELETE', path(carol.user.id))).status).toBe(204);
     expect((await call<{ code: string }>(h, admin, 'DELETE', path(admin.user.id))).body.code).toBe('teams-last-admin');

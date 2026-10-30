@@ -12,6 +12,8 @@
  * - **No `directoryOf` outside the files {@link SCOPE_MINTS} names** (Task 6 review m2): the directory's
  *   `list()`, `get(id)` and `resolvable()` hand out scopes, so it is kept off `ctx.tenancy`, and only the
  *   start-up, the resolver's registration and the admin command line reach it.
+ * - **No `stateWithoutScope` outside the jobs {@link SCOPE_MINTS} names** (tenancy Task 9): a route that read
+ *   the license without its tenant would read another's in hosted mode.
  * - **No `TenantDirectory` or `TenantAdmin` outside `src/tenancy/`** (Task 8 review I2), in an import, a `new`,
  *   a type or an alias: `new TenantDirectory(ctx.db).list()` would hand a module every tenant's scope, the hole
  *   `directoryOf` closes.
@@ -42,7 +44,9 @@ export const SOURCE_ROOT = 'packages/server/src';
 export const URLS_FILE = 'packages/server/src/tenancy/urls.ts';
 
 /** The two ways to get a `TenantScope` without a request or the job loop, and the only files that may name them. */
-export const SCOPE_MINTS: Readonly<Record<'defaultScope' | 'scopeOf' | 'directoryOf', readonly string[]>> = {
+export const SCOPE_MINTS: Readonly<
+  Record<'defaultScope' | 'scopeOf' | 'directoryOf' | 'stateWithoutScope', readonly string[]>
+> = {
   defaultScope: [
     'packages/server/src/tenancy/directory.ts',
     'packages/server/src/tenancy/resolve.ts',
@@ -54,6 +58,15 @@ export const SCOPE_MINTS: Readonly<Record<'defaultScope' | 'scopeOf' | 'director
     'packages/server/src/server.ts',
     'packages/server/src/serve.ts',
     'packages/server/src/identity/cli.ts',
+  ],
+  // The license where no scope exists yet (tenancy Task 9): the scheduler's pass and alert outbox until Task 13,
+  // the audit forwarder until Task 14, which move each into the job loop.
+  stateWithoutScope: [
+    'packages/server/src/context.ts',
+    'packages/server/src/licensing/service.ts',
+    'packages/server/src/schedules/scheduler.ts',
+    'packages/server/src/schedules/alerts/outbox.ts',
+    'packages/server/src/audit-log/forward/forwarder.ts',
   ],
 };
 
@@ -96,6 +109,7 @@ export interface ScopeHit {
     | 'scope-of'
     | 'directory-of'
     | 'tenant-directory'
+    | 'license-without-scope'
     | 'public-url'
     | 'operator-url'
     | 'url-without-scope';
@@ -142,6 +156,13 @@ export function findUrlReads(file: string, content: string): ScopeHit[] {
   return hits;
 }
 
+const MINT_RULES = {
+  defaultScope: 'default-scope',
+  scopeOf: 'scope-of',
+  directoryOf: 'directory-of',
+  stateWithoutScope: 'license-without-scope',
+} as const satisfies Record<keyof typeof SCOPE_MINTS, ScopeHit['rule']>;
+
 /**
  * Every identifier or string naming one of {@link SCOPE_MINTS} in `content`, unless `file` may name it, and
  * every naming of {@link TENANCY_ONLY} outside {@link TENANCY_DIR}.
@@ -162,7 +183,7 @@ export function findScopeMints(file: string, content: string): ScopeHit[] {
           file,
           line: line + 1,
           text: (lines[line] ?? '').trim(),
-          rule: name === 'defaultScope' ? 'default-scope' : name === 'scopeOf' ? 'scope-of' : 'directory-of',
+          rule: MINT_RULES[name],
         });
       }
     }
@@ -200,6 +221,7 @@ if (process.argv[1] !== undefined && fileURLToPath(import.meta.url) === process.
       'scope-of': 'scopeOf outside the files that may name it',
       'directory-of': 'directoryOf outside the files that may name it',
       'tenant-directory': 'TenantDirectory or TenantAdmin outside src/tenancy/',
+      'license-without-scope': 'stateWithoutScope outside the jobs that may call it; use state(request.tenant)',
       'public-url': 'a read of the configured public URL; use tenantUrl(config, request)',
       'operator-url': 'operatorPublicUrl outside main.ts and serve.ts',
       'url-without-scope': 'urlWithoutScope outside its allowed callers',

@@ -29,6 +29,7 @@ import { jsonSchema } from '../schema.js';
 import { requireWorkspaceRole } from '../teams/roles.js';
 import { cursorInvalid, runFinished, runNotFound, runOpen, scheduleNotFound } from './errors.js';
 import * as repo from './repo.js';
+import type { Tenancy } from '../tenancy/tenancy.js';
 
 /** What the routes ask of the scheduler on this server. */
 export interface RunControl {
@@ -40,6 +41,8 @@ export interface RunControl {
 
 export interface ScheduleRunRoutesEnv {
   readonly db: Database;
+  /** The tenant databases: the role guard and teams' reads run in the request's tenant (tenancy Task 9). */
+  readonly tenancy: Pick<Tenancy, 'db'>;
   readonly hooks: ServerHooks;
   readonly license: () => LicenseService;
   readonly now: () => Date;
@@ -79,8 +82,8 @@ export const scheduleRunRoutes =
     const feature: preHandlerAsyncHookHandler = async function (request, reply) {
       await env.license().requireFeature('scheduled-runs').call(this, request, reply);
     };
-    const reader = [requireWorkspaceRole(db, 'viewer'), feature];
-    const writer = [requireWorkspaceRole(db, 'admin'), feature];
+    const reader = [requireWorkspaceRole(env.tenancy, 'viewer'), feature];
+    const writer = [requireWorkspaceRole(env.tenancy, 'admin'), feature];
     const scheduleParams = jsonSchema(scheduleParamsSchema, { io: 'input' });
     const runParams = jsonSchema(scheduleRunParamsSchema, { io: 'input' });
     const scheduleOf = async (workspaceId: string, scheduleId: string): Promise<repo.ScheduleRow> => {

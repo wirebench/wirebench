@@ -88,9 +88,10 @@ export function schedulesModule(options: SchedulesOptions = {}): ServerModule {
       const deliver = options.deliver ?? alertDelivery(settings, { egress: ctx.egress });
       const outbox = new AlertOutbox({ db: ctx.db, now, setTimer, log: ctx.log, license, deliver });
       options.onOutbox?.(outbox);
-      scheduleRoutes({ db: ctx.db, hooks: ctx.hooks, license, settings, now, deliver })(app);
+      scheduleRoutes({ db: ctx.db, tenancy: ctx.tenancy, hooks: ctx.hooks, license, settings, now, deliver })(app);
       scheduleRunRoutes({
         db: ctx.db,
+        tenancy: ctx.tenancy,
         hooks: ctx.hooks,
         license,
         now,

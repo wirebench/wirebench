@@ -14,6 +14,7 @@ import type { TeamRole } from '@wirebench/engine';
 import type { FastifyBaseLogger } from 'fastify';
 import { announce, recordAudit, type AuditSource, type ServerContext } from '../context.js';
 import * as identityRepo from '../identity/repo.js';
+import type { TenantScope } from '../tenancy/scope.js';
 import type { TenantQuerier } from '../tenancy/tenant-db.js';
 import * as teamsRepo from '../teams/repo.js';
 import * as repo from './repo.js';
@@ -31,8 +32,15 @@ export interface MemberDelta {
 /** Whose team access changed, to announce once the transaction has committed. */
 export type AccessChanges = { teamId: string; userId: string }[];
 
-export function announceAccess(env: ProvisioningEnv, changes: AccessChanges, log: FastifyBaseLogger): void {
-  for (const change of changes) announce(env.ctx.hooks.accessChanged, change, log);
+/** `scope` is the tenant the changes were made in. */
+export function announceAccess(
+  env: ProvisioningEnv,
+  scope: TenantScope,
+  changes: AccessChanges,
+  log: FastifyBaseLogger,
+): void {
+  for (const change of changes)
+    announce(env.ctx.hooks.accessChanged, { ...change, tenantId: scope.tenantId, tenant: scope }, log);
 }
 
 /** Plan ruling 8: a provisioned person leaves only when nothing provisions them and nobody promoted them. */

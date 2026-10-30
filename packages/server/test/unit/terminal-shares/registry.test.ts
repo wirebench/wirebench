@@ -1,3 +1,4 @@
+import { scopeOf } from '../../../src/tenancy/scope.js';
 import { describe, expect, it } from 'vitest';
 import {
   TERMINAL_SHARE_CLOSE,
@@ -89,6 +90,7 @@ function setup() {
     ownerId: OWNER,
     ownerName: 'Alice',
     source: who(OWNER, 'alice').source,
+    tenant: scopeOf({ id: '00000000-0000-4000-8000-000000000001', slug: 'default' }),
   });
   const owner = new FakePeer();
   const actions = (): string[] => audits.map((a) => a.action);

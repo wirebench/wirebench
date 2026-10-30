@@ -18,13 +18,14 @@ import {
   type WorkspaceRole,
 } from '@wirebench/engine';
 import type {
-  AccessChanged,
+  AccessChangedEvent,
   CaptureReceived,
   HeadMoved,
   HooksChanged,
   ScheduleRunFinished,
   SessionEnded,
 } from '../context.js';
+import type { TenantScope } from '../tenancy/scope.js';
 import type { Effective } from '../teams/roles.js';
 import { LIVE_TOO_MANY_SUBSCRIPTIONS } from './errors.js';
 
@@ -47,11 +48,13 @@ export interface LiveSession {
   readonly name: string;
   /** Milliseconds since the epoch: the token's `createdAt` plus `tokenMaxMs`, when the session ends by age. */
   readonly expiresAt: number;
+  /** The tenant the socket authenticated in: the hub's two queries run there (spec §19.8 guard 6). */
+  readonly tenant: TenantScope;
 }
 
 export interface LiveHubDeps {
-  readonly effectiveRole: (userId: string, workspaceId: string) => Promise<Effective>;
-  readonly workspaceIdsOfTeam: (teamId: string) => Promise<string[]>;
+  readonly effectiveRole: (userId: string, workspaceId: string, tenant: TenantScope) => Promise<Effective>;
+  readonly workspaceIdsOfTeam: (teamId: string, tenant: TenantScope) => Promise<string[]>;
   readonly log: FastifyBaseLogger;
   readonly now: () => number;
   readonly setTimer: (fn: () => void, ms: number) => { cancel(): void };
@@ -192,7 +195,7 @@ export class LiveHub {
    * (§3.3). Checks run one at a time, in the order the events came. Nothing subscribed means nothing
    * to re-check and no query.
    */
-  accessChanged(event: AccessChanged): void {
+  accessChanged(event: AccessChangedEvent): void {
     if (this.byWorkspace.size === 0) return;
     this.rechecks = this.rechecks
       .then(() => this.recheck(event))
@@ -283,7 +286,7 @@ export class LiveHub {
     }
     let found: Effective;
     try {
-      found = await this.deps.effectiveRole(state.session.userId, workspaceId);
+      found = await this.deps.effectiveRole(state.session.userId, workspaceId, state.session.tenant);
     } catch (error) {
       this.deps.log.warn({ err: error, workspaceId }, 'live subscribe role check failed');
       if (this.bySocket.get(socket) === state) this.fail(socket);
@@ -329,16 +332,23 @@ export class LiveHub {
     return count >= LIVE_LIMITS.maxSubscriptionsPerSession;
   }
 
-  private async recheck(event: AccessChanged): Promise<void> {
+  private async recheck(event: AccessChangedEvent): Promise<void> {
     try {
-      const pairs = new Map<string, { readonly userId: string; readonly workspaceId: string }>();
+      const pairs = new Map<
+        string,
+        { readonly userId: string; readonly workspaceId: string; readonly tenant: TenantScope }
+      >();
       const workspaceIds = await this.scope(event);
       if (this.closed) return;
       for (const workspaceId of workspaceIds) {
         for (const socket of this.byWorkspace.get(workspaceId) ?? []) {
-          const userId = this.bySocket.get(socket)?.session.userId;
-          if (userId === undefined || (event.userId !== undefined && event.userId !== userId)) continue;
-          pairs.set(`${userId} ${workspaceId}`, { userId, workspaceId });
+          const session = this.bySocket.get(socket)?.session;
+          if (session === undefined || (event.userId !== undefined && event.userId !== session.userId)) continue;
+          pairs.set(`${session.userId} ${workspaceId}`, {
+            userId: session.userId,
+            workspaceId,
+            tenant: session.tenant,
+          });
         }
       }
       const results: {
@@ -349,8 +359,8 @@ export class LiveHub {
       // One query at a time: a team-wide change costs one per subscribed member, in the background (§15).
       for (const pair of pairs.values()) {
         if (this.closed) return; // closeAll() dropped every subscription: nothing is left to ask about
-        const found = await this.deps.effectiveRole(pair.userId, pair.workspaceId);
-        results.push({ ...pair, role: found.role });
+        const found = await this.deps.effectiveRole(pair.userId, pair.workspaceId, pair.tenant);
+        results.push({ userId: pair.userId, workspaceId: pair.workspaceId, role: found.role });
       }
       this.applyRoles(results);
     } catch (error) {
@@ -363,11 +373,11 @@ export class LiveHub {
    * The subscribed workspaces an `AccessChanged` can touch (§3.2): its workspace, or its team's. With
    * only a user set, every workspace is in scope.
    */
-  private async scope(event: AccessChanged): Promise<string[]> {
+  private async scope(event: AccessChangedEvent): Promise<string[]> {
     const ids = new Set<string>();
     if (event.workspaceId !== undefined) ids.add(event.workspaceId);
     if (event.teamId !== undefined) {
-      const teamWorkspaceIds = await this.deps.workspaceIdsOfTeam(event.teamId);
+      const teamWorkspaceIds = await this.deps.workspaceIdsOfTeam(event.teamId, event.tenant);
       if (this.closed) return [];
       for (const id of teamWorkspaceIds) ids.add(id);
     }

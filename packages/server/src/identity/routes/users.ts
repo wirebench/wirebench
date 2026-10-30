@@ -8,7 +8,7 @@ import {
   type UserSummary,
 } from '@wirebench/engine';
 import type { FastifyInstance } from 'fastify';
-import { announce, auditSource, recordAudit } from '../../context.js';
+import { announce, auditSource, recordAudit, tenantOf } from '../../context.js';
 import { jsonSchema } from '../../schema.js';
 import type { TenantQuerier } from '../../tenancy/tenant-db.js';
 import { tenantUrl } from '../../tenancy/urls.js';
@@ -81,7 +81,8 @@ export const userRoutes =
         if (body.disabled === true)
           announce(env.ctx.hooks.sessionEnded, { tenantId: request.tenant.tenantId, userId: id }, request.log);
         // The server-admin flag is a role change that lives in identity (R4).
-        if (body.serverAdmin !== undefined) announce(env.ctx.hooks.accessChanged, { userId: id }, request.log);
+        if (body.serverAdmin !== undefined)
+          announce(env.ctx.hooks.accessChanged, { ...tenantOf(request), userId: id }, request.log);
         return db.transaction(async (tx) => (await summaries(tx, [(await repo.findUserById(tx, id))!]))[0]);
       },
     );
