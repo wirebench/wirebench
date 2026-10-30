@@ -11,6 +11,7 @@ import { COMMUNITY_SEATS, type LicenseState } from '@wirebench/engine';
 import type { LicenseChanged, LicenseService, Querier } from '../context.js';
 import type { TenantScope } from '../tenancy/scope.js';
 import type { TenantQuerier } from '../tenancy/tenant-db.js';
+import { STOP_PASS } from '../tenancy/jobs.js';
 import type { Tenancy } from '../tenancy/tenancy.js';
 import type { ScopeSource } from '../tenancy/urls.js';
 import { licenseInvalid } from './errors.js';
@@ -31,6 +32,8 @@ export interface LicenseEnv {
   readonly serverId: (db: Querier) => Promise<string>;
   /** Where `stateWithoutScope` says, once, that it has several tenants to choose from. */
   readonly log?: Pick<FastifyBaseLogger, 'warn'>;
+  /** Hosted mode: the seat check takes no legacy server-wide lock (`seats.ts`). */
+  readonly hosted?: boolean;
 }
 
 /**
@@ -74,15 +77,19 @@ export function createLicenseService(env: LicenseEnv): LicenseService {
     tx !== undefined ? stateIn(tx) : env.tenancy.db('tenantId' in of ? of : of.tenant).transaction(stateIn);
   return {
     state,
-    assertSeatAvailable: (tx) => assertSeatAvailable(tx, stateIn),
+    assertSeatAvailable: (tx) =>
+      assertSeatAvailable(tx, stateIn, env.hosted !== undefined ? { hosted: env.hosted } : {}),
     requireFeature: (feature) =>
       requireFeature(feature, (request) => env.tenancy.db(request.tenant).transaction(featuresIn)),
     stateWithoutScope: async () => {
       const states: LicenseState[] = [];
       let failure: Error | undefined;
+      let tenants = 0;
       await env.tenancy.forEachTenant(
         STATE_WITHOUT_SCOPE_JOB,
         async (tx) => {
+          // A second tenant settles the answer (Community, below): no more license reads, and no more units.
+          if (++tenants > 1) return STOP_PASS;
           try {
             states.push(await stateIn(tx));
           } catch (error) {
@@ -96,17 +103,17 @@ export function createLicenseService(env: LicenseEnv): LicenseService {
       if (failure !== undefined) throw failure;
       // One tenant is a self-hosted server, whose license this is. With several, which only hosted-mode
       // tests make, no one license is the server's, and Community grants no feature: said once, not per pass.
-      if (states.length === 1) return states[0]!;
-      if (states.length > 1 && !warnedSeveral) {
+      if (tenants === 1) return states[0]!;
+      if (tenants > 1 && !warnedSeveral) {
         warnedSeveral = true;
-        env.log?.warn({ tenants: states.length }, SEVERAL_TENANTS_MESSAGE);
+        env.log?.warn(SEVERAL_TENANTS_MESSAGE);
       }
       return {
         edition: 'community',
         status: 'none',
         seats: { used: 0, limit: COMMUNITY_SEATS },
         features: [],
-        ...(states.length > 1 ? { message: SEVERAL_TENANTS_MESSAGE } : {}),
+        ...(tenants > 1 ? { message: SEVERAL_TENANTS_MESSAGE } : {}),
       };
     },
   };

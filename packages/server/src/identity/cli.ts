@@ -104,8 +104,9 @@ export async function runAdmin(
     }
     // Only now: before migrations the server_identity table may not exist.
     const serverId = await readServerId(db).catch((error: unknown) => {
+      // A configuration problem, as `serve` reports the same lost row (exit 2), not a pending migration.
       if (error instanceof Error && error.message === MISSING_SERVER_ID) {
-        throw new StartupError(ExitCode.Migration, MISSING_SERVER_ID);
+        throw new StartupError(ExitCode.Config, MISSING_SERVER_ID);
       }
       throw error;
     });

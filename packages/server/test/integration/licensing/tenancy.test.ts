@@ -50,6 +50,32 @@ describeDb('licensing in a tenant, through its call sites (Task 9 review)', () =
     }
   });
 
+  it('hosted: assertSeatAvailable takes only the tenant’s lock, never the legacy server-wide one', async () => {
+    const hosted = createLicenseService({
+      tenancy: h.ctx.tenancy,
+      publicKeys: [keys.publicKey],
+      now: () => h.clock.now,
+      serverId: (db) => serverId(db),
+      hosted: true,
+    });
+    const other = createDatabase(h.db.url, { max: 1 });
+    const free = (sql: string, params: readonly unknown[]) =>
+      other.transaction(async (tx) => (await tx.query<{ got: boolean }>(sql, params)).rows[0]!.got);
+    try {
+      await h.tdb.transaction(async (tx) => {
+        await hosted.assertSeatAvailable(tx);
+        expect(
+          await free(`select pg_try_advisory_xact_lock(${String(SEAT_LOCK_KEY)}, ${SEAT_LOCK_TENANT_KEY}) as got`, [
+            h.tdb.scope.tenantId,
+          ]),
+        ).toBe(false);
+        expect(await free(`select pg_try_advisory_xact_lock(${String(SEAT_LOCK_KEY)}) as got`, [])).toBe(true);
+      });
+    } finally {
+      await other.close();
+    }
+  });
+
   it('gives the last seat to exactly one of two racing sign-ups in one tenant', async () => {
     const root = await signedInUser(h, { email: 'root@example.com', serverAdmin: true });
     const used = (await h.ctx.license.state(h.tdb.scope)).seats.used;
@@ -96,6 +122,12 @@ describeDb('licensing in a tenant, through its call sites (Task 9 review)', () =
       });
     }
     expect(warn).toHaveBeenCalledTimes(1);
+    // A third tenant changes nothing, and costs nothing: the pass stops at the second (Part B final review).
+    await new TenantAdmin(h.db, directoryOf(h.ctx.tenancy)).create({ slug: 'third', name: 'Third' });
+    h.statements.entries.length = 0;
+    expect((await service.stateWithoutScope()).edition).toBe('community');
+    expect(h.statements.entries.filter((entry) => entry.kind === 'set-config')).toHaveLength(2);
+    expect(h.statements.entries.filter((entry) => entry.text.includes('from license'))).toHaveLength(1);
 
     const failing = createLicenseService({
       tenancy: h.ctx.tenancy,

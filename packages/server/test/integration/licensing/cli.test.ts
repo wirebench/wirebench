@@ -140,7 +140,8 @@ describeDb('wirebench-server admin license (licensing spec §3.7)', () => {
     await db.owner.query('delete from server_identity');
     const out = io();
     const code = await runAdmin({ command: 'admin-license-show' }, out.io, options);
-    expect(code).not.toBe(0);
+    // A configuration problem, as `serve` reports it, not a pending migration (Part B final review).
+    expect(code).toBe(2);
     expect(out.stderr()).toBe(`${MISSING_SERVER_ID}\n`);
     expect(out.stderr()).not.toContain('    at ');
   });

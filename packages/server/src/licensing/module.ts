@@ -32,7 +32,14 @@ export function licensingModule(options: LicensingOptions = {}): ServerModule {
       // Read in the first unit that needs it: the module has no tenant, and so no unit, at registration. A
       // server without the row never gets this far: the tenant directory's load needs it at start-up.
       const serverId = cachedServerId();
-      const service = createLicenseService({ tenancy: ctx.tenancy, publicKeys, now, serverId, log: ctx.log });
+      const service = createLicenseService({
+        tenancy: ctx.tenancy,
+        publicKeys,
+        now,
+        serverId,
+        log: ctx.log,
+        hosted: ctx.config.mode === 'hosted',
+      });
       ctx.license = service;
       licenseRoutes({
         tenancy: ctx.tenancy,

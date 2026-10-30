@@ -11,7 +11,7 @@ import { WirebenchError } from '@wirebench/engine';
 import type { FastifyBaseLogger } from 'fastify';
 import type { Database } from '../context.js';
 import { TenantDirectory } from './directory.js';
-import { forEachTenant, type JobPass } from './jobs.js';
+import { forEachTenant, type JobPass, type STOP_PASS } from './jobs.js';
 import type { TenantScope } from './scope.js';
 import { tenantDbFactory, type TenancyDbOptions, type TenantDbFactory, type TenantQuerier } from './tenant-db.js';
 
@@ -20,7 +20,7 @@ export interface Tenancy {
   /** One unit per tenant; see `jobs.ts`. `log` is the job's own logger. */
   forEachTenant(
     job: string,
-    fn: (tx: TenantQuerier, scope: TenantScope) => Promise<void>,
+    fn: (tx: TenantQuerier, scope: TenantScope) => Promise<void | typeof STOP_PASS>,
     log: Pick<FastifyBaseLogger, 'error'>,
   ): Promise<JobPass>;
 }
