@@ -19,6 +19,11 @@ Date: 2026-10-30 · Status: approved · Branch: not started.
   4. **Names stay**: Field kit, Sandstone, Dusk.
   5. **Seed, Pith and Rind are added** as three more themes (2026-10-30, after the pomegranate
      preview), in the same change.
+  6. **The sidebar stays on the work-area surface** in Dusk and Rind; only the title bar and
+     activity bar take the chrome colour (2026-10-30, after the chrome build, §3.3).
+  7. **Danger signalled by colour alone** in a few places (recording dot, failing-schedule dot,
+     invalid-regex border, password-length hint, script-convert diff lines) is a **separate
+     follow-up**, not this change.
 
 ## 1. Objective
 
