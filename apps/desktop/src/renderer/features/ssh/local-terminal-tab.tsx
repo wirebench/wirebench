@@ -168,12 +168,13 @@ export function LocalTerminalTab({ tabId, active }: { readonly tabId: string; re
         if (selected !== '') void navigator.clipboard.writeText(selected).catch(() => undefined);
       }, COPY_ON_SELECT_DEBOUNCE_MS);
     });
-    // The app theme switching restyles a terminal that follows it; a palette scheme stays as it is.
+    // The app's mode or colour theme switching restyles a terminal that follows it; a terminal scheme
+    // (Preferences → Terminal, or the host's) stays as it is.
     const themeWatch = new MutationObserver(() => {
       xterm.options.theme = look().theme;
       highlights.refresh();
     });
-    themeWatch.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+    themeWatch.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'data-palette'] });
 
     store.setSession(tabId, { state: 'connecting' });
     void ipc()
