@@ -77,6 +77,7 @@ describeDb('SAML sign-in from the browser (hosted spec §17.2)', () => {
       {
         ctx: {
           db: h.db,
+          tenancy: h.ctx.tenancy,
           config: { publicUrl: 'https://wirebench.test' },
           hooks: h.hooks,
           license: permissiveLicense(),
@@ -84,6 +85,7 @@ describeDb('SAML sign-in from the browser (hosted spec §17.2)', () => {
         settings: { invitationMs: 7 * 86_400_000 },
         now: () => h.clock.now,
       } as never,
+      h.tdb.scope,
       { email, serverAdmin: false, createdBy: null, source: SYSTEM_SOURCE, serverUrl: 'https://wirebench.test' },
     );
   /** `GET /sign-in/saml`, read back as the IdP would see it. */
@@ -152,7 +154,7 @@ describeDb('SAML sign-in from the browser (hosted spec §17.2)', () => {
       const me = await h.app.inject({ method: 'GET', url: '/api/v1/me', headers: { cookie: `${COOKIE}=${token}` } });
       expect(me.statusCode).toBe(200);
       const userId = me.json<{ user: { id: string } }>().user.id;
-      expect((await identityRepo.tokensOfUser(h.db, userId)).map((t) => t.kind)).toEqual(['browser']);
+      expect((await identityRepo.tokensOfUser(h.tdb, userId)).map((t) => t.kind)).toEqual(['browser']);
       const signedIn = await h.db.query<{ details: { method: string } }>(
         "select details from audit_events where action = 'auth.signed_in'",
       );

@@ -18,7 +18,7 @@ function holdLock(
   const gate = new Promise<void>((resolve) => {
     open = resolve;
   });
-  return { done: h.repos.withLock(workspaceId, () => gate), release: () => open() };
+  return { done: h.repos.withLock(h.tdb.scope, workspaceId, () => gate), release: () => open() };
 }
 
 describeDb('server-sync races (§3.2, R11)', () => {
@@ -84,7 +84,7 @@ describeDb('server-sync races (§3.2, R11)', () => {
   it('a read or a push that finds the repository gone while the row remains answers 404, never 500', async () => {
     const first = await push(f.editor, null, [commit('One', [text('workspace.yaml', 'a\n')])]);
     // What a delete looks like between its guard and its row delete, or a repository lost on disk.
-    await f.h.repos.withLock(f.workspaceId, () => f.h.repos.remove(f.workspaceId));
+    await f.h.repos.withLock(f.h.tdb.scope, f.workspaceId, () => f.h.repos.remove(f.workspaceId));
     for (const route of reads(first.body.head)) {
       expect(await call(f.h, f.viewer, 'GET', url(route))).toMatchObject({
         status: 404,

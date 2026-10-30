@@ -151,7 +151,7 @@ describeDb('SAML and SCIM tables (saml-scim spec §4)', () => {
 
   it('a provisioned membership goes with the team membership and with its group, and a deleted team unlinks', async () => {
     const ada = await signedInUser(h, { email: 'ada@example.com' });
-    const team = await teams.insertTeam(h.db, { id: newId(), name: 'QA', at: h.clock.now });
+    const team = await teams.insertTeam(h.tdb, { id: newId(), name: 'QA', at: h.clock.now });
     const group = await repo.insertScimGroup(h.db, {
       id: newId(),
       displayName: 'QA',
@@ -167,7 +167,7 @@ describeDb('SAML and SCIM tables (saml-scim spec §4)', () => {
     await repo.setGroupTeam(h.db, group.id, team.id, h.clock.now);
     await repo.setGroupTeam(h.db, other.id, team.id, h.clock.now);
     expect((await repo.groupsOfTeam(h.db, team.id)).map((g) => g.id).sort()).toEqual([group.id, other.id].sort());
-    await teams.insertMember(h.db, { teamId: team.id, userId: ada.user.id, role: 'member', at: h.clock.now });
+    await teams.insertMember(h.tdb, { teamId: team.id, userId: ada.user.id, role: 'member', at: h.clock.now });
     await repo.insertProvisioned(h.db, { teamId: team.id, userId: ada.user.id, groupId: group.id });
     await repo.insertProvisioned(h.db, { teamId: team.id, userId: ada.user.id, groupId: other.id });
     await repo.insertProvisioned(h.db, { teamId: team.id, userId: ada.user.id, groupId: other.id });
@@ -175,9 +175,9 @@ describeDb('SAML and SCIM tables (saml-scim spec §4)', () => {
     await repo.deleteProvisioned(h.db, { teamId: team.id, userId: ada.user.id, groupId: other.id });
     expect(await repo.countProvisioned(h.db, team.id, ada.user.id)).toBe(1);
     await repo.deleteScimGroup(h.db, other.id);
-    await teams.deleteMember(h.db, team.id, ada.user.id);
+    await teams.deleteMember(h.tdb, team.id, ada.user.id);
     expect(await repo.countProvisioned(h.db, team.id, ada.user.id)).toBe(0);
-    await teams.deleteTeam(h.db, team.id);
+    await teams.deleteTeam(h.tdb, team.id);
     expect((await repo.scimGroupById(h.db, group.id))?.teamId).toBeNull();
   });
 

@@ -102,7 +102,7 @@ describeDb('SCIM users (saml-scim spec §3.5, §6.3)', () => {
 
     // A device token of hers stops working the moment she is deactivated, and her sockets are told.
     const minted = mintToken();
-    await insertToken(h.db, {
+    await insertToken(h.tdb, {
       id: 'dev-ada',
       userId: ada.id,
       tokenHash: minted.hash,
@@ -175,6 +175,7 @@ describeDb('SCIM users (saml-scim spec §3.5, §6.3)', () => {
       {
         ctx: {
           db: h.db,
+          tenancy: h.ctx.tenancy,
           config: { publicUrl: 'https://wirebench.test' },
           hooks: h.hooks,
           license: permissiveLicense(),
@@ -182,6 +183,7 @@ describeDb('SCIM users (saml-scim spec §3.5, §6.3)', () => {
         settings: { invitationMs: 7 * 86_400_000 },
         now: () => h.clock.now,
       } as never,
+      h.tdb.scope,
       {
         email: 'dan@example.com',
         serverAdmin: false,

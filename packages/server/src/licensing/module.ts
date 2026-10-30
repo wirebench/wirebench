@@ -10,9 +10,8 @@ import type { FastifyInstance } from 'fastify';
 import type { ServerContext, ServerModule } from '../context.js';
 import { RateLimiter } from '../identity/rate-limit.js';
 import { PRODUCTION_PUBLIC_KEYS } from './keys.js';
-import * as repo from './repo.js';
 import { licenseRoutes } from './routes.js';
-import { createLicenseService } from './service.js';
+import { cachedServerId, createLicenseService } from './service.js';
 
 export const LICENSING_MIGRATIONS_DIR = fileURLToPath(new URL('../../migrations/licensing/', import.meta.url));
 
@@ -29,12 +28,21 @@ export function licensingModule(options: LicensingOptions = {}): ServerModule {
   return {
     name: 'licensing',
     migrationsDir: LICENSING_MIGRATIONS_DIR,
-    async register(app: FastifyInstance, ctx: ServerContext): Promise<void> {
-      const serverId = await repo.serverId(ctx.db);
-      const service = createLicenseService({ db: ctx.db, publicKeys, now, serverId });
+    register(app: FastifyInstance, ctx: ServerContext): Promise<void> {
+      // Read in the first unit that needs it: the module has no tenant, and so no unit, at registration. A
+      // server without the row never gets this far: the tenant directory's load needs it at start-up.
+      const serverId = cachedServerId();
+      const service = createLicenseService({
+        tenancy: ctx.tenancy,
+        publicKeys,
+        now,
+        serverId,
+        log: ctx.log,
+        hosted: ctx.config.mode === 'hosted',
+      });
       ctx.license = service;
       licenseRoutes({
-        db: ctx.db,
+        tenancy: ctx.tenancy,
         publicKeys,
         now,
         serverId,
@@ -42,6 +50,7 @@ export function licensingModule(options: LicensingOptions = {}): ServerModule {
         hooks: ctx.hooks,
         limiter: new RateLimiter({ capacity: 10, refillPerMs: 10 / 60_000, now: () => now().getTime() }),
       })(app);
+      return Promise.resolve();
     },
   };
 }

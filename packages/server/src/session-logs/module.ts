@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 import type { FastifyInstance } from 'fastify';
 import type { ServerContext, ServerModule } from '../context.js';
 import type { SetTimer } from '../hooks/env.js';
-import { CaptureSweeper } from '../hooks/sweep.js';
+import { CaptureSweeper, rawSweepTarget } from '../hooks/sweep.js';
 import { realTimer } from '../live/module.js';
 import { removeLogsBefore } from './repo.js';
 import { sessionLogRoutes } from './routes.js';
@@ -34,18 +34,18 @@ export function sessionLogsModule(options: SessionLogsOptions = {}): ServerModul
       ctx.meta.addCapability(SESSION_LOGS_CAPABILITY);
       sessionLogRoutes({
         db: ctx.db,
+        tenancy: ctx.tenancy,
         hooks: ctx.hooks,
         license: () => ctx.license,
         now,
         maxLogBytes: ctx.config.sessionLogMaxMb * 1024 * 1024,
       })(app);
       const sweeper = new CaptureSweeper({
-        db: ctx.db,
         maxAgeDays: ctx.config.auditMaxAgeDays,
         now,
         setTimer,
         log: ctx.log,
-        deleteBefore: removeLogsBefore,
+        target: rawSweepTarget(ctx.db, removeLogsBefore),
         label: 'session-log sweep',
       });
       sweeper.start();

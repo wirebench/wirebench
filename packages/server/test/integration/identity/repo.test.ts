@@ -12,7 +12,7 @@ describeDb('identity repo', () => {
   afterEach(() => h.close());
 
   it('keys users on the lower-cased email and keeps the typed one for display', async () => {
-    const user = await repo.insertUser(h.db, {
+    const user = await repo.insertUser(h.tdb, {
       id: newId(),
       email: 'Alice@Example.com',
       displayName: 'Alice',
@@ -21,9 +21,9 @@ describeDb('identity repo', () => {
     });
     expect(user).toMatchObject({ email: 'Alice@Example.com', emailLower: 'alice@example.com', disabledAt: null });
     expect(user.createdAt).toBe('2026-09-24T12:00:00.000Z');
-    expect((await repo.findUserByEmail(h.db, 'alice@example.com'))?.id).toBe(user.id);
+    expect((await repo.findUserByEmail(h.tdb, 'alice@example.com'))?.id).toBe(user.id);
     await expect(
-      repo.insertUser(h.db, {
+      repo.insertUser(h.tdb, {
         id: newId(),
         email: 'ALICE@example.com',
         displayName: 'A',
@@ -35,7 +35,7 @@ describeDb('identity repo', () => {
 
   it('allows one open invite per email, and a second once the first is revoked or accepted', async () => {
     const invite = (secretHash: string) =>
-      repo.insertInvitation(h.db, {
+      repo.insertInvitation(h.tdb, {
         id: newId(),
         kind: 'invite',
         email: 'bob@example.com',
@@ -48,32 +48,32 @@ describeDb('identity repo', () => {
       });
     const first = await invite(mintSecret().hash);
     await expect(invite(mintSecret().hash)).rejects.toThrow();
-    await repo.revokeInvitation(h.db, first.id, h.clock.now);
+    await repo.revokeInvitation(h.tdb, first.id, h.clock.now);
     const second = await invite(mintSecret().hash);
-    expect((await repo.openInvitationByEmail(h.db, 'bob@example.com', h.clock.now))?.id).toBe(second.id);
+    expect((await repo.openInvitationByEmail(h.tdb, 'bob@example.com', h.clock.now))?.id).toBe(second.id);
     expect(
-      await repo.openInvitationByEmail(h.db, 'bob@example.com', new Date(h.clock.now.getTime() + 2000)),
+      await repo.openInvitationByEmail(h.tdb, 'bob@example.com', new Date(h.clock.now.getTime() + 2000)),
     ).toBeUndefined();
   });
 
   it('joins a token to its user, revokes all but one device, and sweeps the expired', async () => {
     const alice = await signedInUser(h, { email: 'alice@example.com' });
     const second = await signedInUser(h, { email: 'carol@example.com' });
-    const { hash } = { hash: (await repo.tokensOfUser(h.db, alice.user.id))[0]!.tokenHash };
-    expect((await repo.tokenByHash(h.db, hash))?.user.email).toBe('alice@example.com');
-    await repo.insertToken(h.db, {
+    const { hash } = { hash: (await repo.tokensOfUser(h.tdb, alice.user.id))[0]!.tokenHash };
+    expect((await repo.tokenByHash(h.tdb, hash))?.user.email).toBe('alice@example.com');
+    await repo.insertToken(h.tdb, {
       id: newId(),
       userId: alice.user.id,
       tokenHash: mintSecret().hash,
       deviceName: 'phone',
       at: h.clock.now,
     });
-    await repo.revokeTokensOfUser(h.db, alice.user.id, h.clock.now, alice.tokenId);
-    expect((await repo.tokensOfUser(h.db, alice.user.id)).map((t) => t.id)).toEqual([alice.tokenId]);
-    expect(await repo.tokensOfUser(h.db, second.user.id)).toHaveLength(1);
+    await repo.revokeTokensOfUser(h.tdb, alice.user.id, h.clock.now, alice.tokenId);
+    expect((await repo.tokensOfUser(h.tdb, alice.user.id)).map((t) => t.id)).toEqual([alice.tokenId]);
+    expect(await repo.tokensOfUser(h.tdb, second.user.id)).toHaveLength(1);
     const later = new Date(h.clock.now.getTime() + 10_000);
     expect(
-      await repo.deleteExpiredTokens(h.db, {
+      await repo.deleteExpiredTokens(h.tdb, {
         idleBefore: later,
         createdBefore: new Date(0),
         revokedBefore: new Date(0),
@@ -84,15 +84,15 @@ describeDb('identity repo', () => {
   it('reports sign-in methods per user, including none', async () => {
     const local = await signedInUser(h, { email: 'a@example.com', password: 'p'.repeat(12) });
     const none = await signedInUser(h, { email: 'b@example.com' });
-    await repo.insertOidcIdentity(h.db, {
+    await repo.insertOidcIdentity(h.tdb, {
       issuer: 'https://idp.test',
       subject: 'sub-1',
       userId: none.user.id,
       at: h.clock.now,
     });
-    const methods = await repo.signInMethodsOf(h.db, [local.user.id, none.user.id]);
+    const methods = await repo.signInMethodsOf(h.tdb, [local.user.id, none.user.id]);
     expect(methods.get(local.user.id)).toEqual({ local: true, oidc: [] });
     expect(methods.get(none.user.id)).toEqual({ local: false, oidc: [{ issuer: 'https://idp.test' }] });
-    expect((await repo.signInMethodsOf(h.db, [])).size).toBe(0);
+    expect((await repo.signInMethodsOf(h.tdb, [])).size).toBe(0);
   });
 });

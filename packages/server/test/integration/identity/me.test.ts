@@ -16,7 +16,7 @@ describeDb('/me (§3.1)', () => {
 
   it('GET /me reports the user and the methods they can sign in with', async () => {
     const alice = await signedInUser(h, { email: 'alice@example.com', password: PASSWORD, serverAdmin: true });
-    await repo.insertOidcIdentity(h.db, {
+    await repo.insertOidcIdentity(h.tdb, {
       issuer: 'https://idp.test',
       subject: 's',
       userId: alice.user.id,
@@ -35,7 +35,7 @@ describeDb('/me (§3.1)', () => {
     expect(phone).toBeUndefined();
     const { mintToken, newId } = await import('../../../src/identity/tokens.js');
     const other = mintToken();
-    await repo.insertToken(h.db, {
+    await repo.insertToken(h.tdb, {
       id: newId(),
       userId: alice.user.id,
       tokenHash: other.hash,
@@ -76,7 +76,7 @@ describeDb('/me (§3.1)', () => {
       payload: { newPassword: 'n'.repeat(12) },
     });
     expect(res.statusCode).toBe(204);
-    expect(await repo.credentialOf(h.db, alice.user.id)).toBeDefined();
+    expect(await repo.credentialOf(h.tdb, alice.user.id)).toBeDefined();
   });
 
   it('GET /me/devices lists live tokens with `current`, and DELETE revokes one of the caller’s own', async () => {
@@ -84,7 +84,7 @@ describeDb('/me (§3.1)', () => {
     const bob = await signedInUser(h, { email: 'bob@example.com' });
     const { mintToken, newId } = await import('../../../src/identity/tokens.js');
     const phoneId = newId();
-    await repo.insertToken(h.db, {
+    await repo.insertToken(h.tdb, {
       id: phoneId,
       userId: alice.user.id,
       tokenHash: mintToken().hash,
@@ -112,19 +112,19 @@ describeDb('/me (§3.1)', () => {
   it('the sweep deletes tokens idle 30 days, older than 180 days, or revoked over a day ago', async () => {
     const alice = await signedInUser(h, { email: 'alice@example.com' });
     const bob = await signedInUser(h, { email: 'bob@example.com' });
-    await repo.revokeToken(h.db, bob.tokenId, h.clock.now);
+    await repo.revokeToken(h.tdb, bob.tokenId, h.clock.now);
     h.clock.advance(2 * DAY);
     const carol = await signedInUser(h, { email: 'carol@example.com' });
     h.clock.advance(29 * DAY);
     await sweepExpired({
-      ctx: { db: h.db } as never,
+      ctx: h.ctx,
       settings: { tokenIdleMs: 30 * DAY, tokenMaxMs: 180 * DAY } as never,
       now: () => h.clock.now,
-    } as never);
-    expect(await repo.tokensOfUser(h.db, alice.user.id)).toHaveLength(0);
+    });
+    expect(await repo.tokensOfUser(h.tdb, alice.user.id)).toHaveLength(0);
     expect(
       (await h.db.query('select count(*)::int as n from device_tokens where user_id = $1', [bob.user.id])).rows[0],
     ).toEqual({ n: 0 });
-    expect(await repo.tokensOfUser(h.db, carol.user.id)).toHaveLength(1);
+    expect(await repo.tokensOfUser(h.tdb, carol.user.id)).toHaveLength(1);
   });
 });

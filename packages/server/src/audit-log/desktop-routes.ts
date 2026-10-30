@@ -15,6 +15,7 @@ import { forbidden } from '../teams/errors.js';
 import { workspaceById } from '../teams/repo.js';
 import { requireWorkspaceRole } from '../teams/roles.js';
 import { desktopRecordingOff } from './errors.js';
+import type { Tenancy } from '../tenancy/tenancy.js';
 
 /**
  * A desktop sends about one batch per 2 s debounce, and catches up in a burst after being offline: 60
@@ -37,6 +38,8 @@ export function desktopEventsLimiter(now: () => Date): RateLimiter {
 
 export interface DesktopRoutesEnv {
   readonly db: Querier & { transaction<T>(fn: (tx: Querier) => Promise<T>): Promise<T> };
+  /** The tenant databases: the role guard and teams' reads run in the request's tenant (tenancy Task 9). */
+  readonly tenancy: Pick<Tenancy, 'db'>;
   readonly hooks: ServerHooks;
   readonly limiter: RateLimiter;
 }
@@ -50,7 +53,7 @@ export const desktopRoutes =
       {
         // After the role guard: a CI token has no caller key and is refused below, uncharged.
         preHandler: [
-          requireWorkspaceRole(db, 'viewer'),
+          requireWorkspaceRole(env.tenancy, 'viewer'),
           rateLimit(env, (request) => [callerKey(request)], DESKTOP_EVENTS_RATE_LIMIT_PROBLEM),
         ],
         schema: { params: jsonSchema(teamWorkspaceParamsSchema, { io: 'input' }) },
@@ -60,7 +63,7 @@ export const desktopRoutes =
         if (request.caller === undefined) throw forbidden();
         const batch = desktopAuditBatchSchema.parse(request.body);
         const { workspaceId } = request.workspaceAccess!;
-        const workspace = await workspaceById(db, workspaceId);
+        const workspace = await workspaceById(env.tenancy.db(request.tenant), workspaceId);
         if (workspace === undefined || !workspace.recordDesktopActivity) throw desktopRecordingOff();
         const source = auditSource(request);
         const scope = {

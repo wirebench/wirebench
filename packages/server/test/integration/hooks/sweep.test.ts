@@ -23,13 +23,15 @@ describeDb('the age sweep (§3.4)', () => {
     const older = newCapture(hookId, { receivedAt: new Date(cutoff.getTime() - 1) });
     const boundary = newCapture(hookId, { receivedAt: cutoff });
     const fresh = newCapture(hookId, { receivedAt: h.clock.now });
-    for (const capture of [older, boundary, fresh]) await repo.insertCapture(h.db, capture);
+    for (const capture of [older, boundary, fresh]) await repo.insertCapture(h.tdb, capture);
     expect(h.timers.fire(SWEEP_INTERVAL_MS)).toBe(1);
     await expect
-      .poll(async () => (await repo.listCaptures(h.db, hookId, {}, 10)).map((c) => c.id))
+      .poll(async () => (await repo.listCaptures(h.tdb, hookId, {}, 10)).map((c) => c.id))
       .toEqual([fresh.id, boundary.id]);
     h.clock.advance(1);
     expect(h.timers.fire(SWEEP_INTERVAL_MS)).toBe(1);
-    await expect.poll(async () => (await repo.listCaptures(h.db, hookId, {}, 10)).map((c) => c.id)).toEqual([fresh.id]);
+    await expect
+      .poll(async () => (await repo.listCaptures(h.tdb, hookId, {}, 10)).map((c) => c.id))
+      .toEqual([fresh.id]);
   });
 });

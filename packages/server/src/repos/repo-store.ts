@@ -9,6 +9,7 @@ import { join, resolve } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import type { GitCli, WirebenchError } from '@wirebench/engine';
 import { problem } from '../problem.js';
+import type { TenantScope } from '../tenancy/scope.js';
 
 /** Sync spec R11: new repository work after shutdown began; a client retries against the next process. */
 const shuttingDown = (): WirebenchError =>
@@ -95,19 +96,23 @@ export class RepoStore {
    * has begun it refuses with `server-shutting-down` (503) as a rejected promise, never a throw:
    * callers chain `.catch` on it (the workspace-create cleanup does), and a synchronous throw would
    * escape that. An invalid id still throws at once, as a programming error.
+   *
+   * Keyed `tenantId:workspaceId` (hosted edition spec §19.8 guard 5): workspace ids are per tenant, so one id
+   * in two tenants is two queues. The path stays the legacy one until the per-tenant layout (Task 21).
    */
-  withLock<T>(workspaceId: string, fn: () => Promise<T>): Promise<T> {
+  withLock<T>(scope: TenantScope, workspaceId: string, fn: () => Promise<T>): Promise<T> {
     this.assertId(workspaceId);
     if (this.draining) return Promise.reject(shuttingDown());
-    const previous = this.queues.get(workspaceId) ?? Promise.resolve();
+    const key = `${scope.tenantId}:${workspaceId}`;
+    const previous = this.queues.get(key) ?? Promise.resolve();
     const run = previous.then(fn);
     const settled = run.then(
       () => undefined,
       () => undefined,
     );
-    this.queues.set(workspaceId, settled);
+    this.queues.set(key, settled);
     void settled.then(() => {
-      if (this.queues.get(workspaceId) === settled) this.queues.delete(workspaceId);
+      if (this.queues.get(key) === settled) this.queues.delete(key);
     });
     return run;
   }

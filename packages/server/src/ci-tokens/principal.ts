@@ -7,11 +7,11 @@
  */
 import type { FastifyRequest } from 'fastify';
 import { DEVICE_TOKEN_PATTERN } from '@wirebench/engine';
-import type { Querier } from '../context.js';
 import { TOUCH_EVERY_MS, type BearerFallback } from '../identity/guard.js';
 import { hashToken } from '../identity/tokens.js';
 import { ciTokenForbidden } from './errors.js';
 import * as repo from './repo.js';
+import type { Tenancy } from '../tenancy/tenancy.js';
 
 export interface CiCaller {
   readonly tokenId: string;
@@ -43,19 +43,28 @@ function allowed(request: FastifyRequest, caller: CiCaller): boolean {
   return workspaceId === undefined || workspaceId === caller.workspaceId;
 }
 
-export function ciBearer(env: { readonly db: Querier; readonly now: () => Date }): BearerFallback {
+/**
+ * Looks the token up in the request's tenant (hosted edition spec §19.8 guard 2), and touches it there in the
+ * same unit: every request a CI job makes pays for one unit, not two. A refusal is answered after the unit.
+ */
+export function ciBearer(env: { readonly tenancy: Pick<Tenancy, 'db'>; readonly now: () => Date }): BearerFallback {
   return async (token, request) => {
     if (!DEVICE_TOKEN_PATTERN.test(token)) return false;
-    // Looked up by its hash, so the stored value is never compared with the token itself.
-    const found = await repo.ciTokenByHash(env.db, hashToken(token));
-    if (found === undefined || found.revokedAt !== null) return false;
-    const caller: CiCaller = { tokenId: found.id, tokenName: found.name, workspaceId: found.workspaceId };
-    if (!allowed(request, caller)) throw ciTokenForbidden();
-    const now = env.now();
-    if (found.lastUsedAt === null || now.getTime() - Date.parse(found.lastUsedAt) >= TOUCH_EVERY_MS) {
-      await repo.touchCiToken(env.db, found.id, now);
-    }
-    request.ciCaller = caller;
+    const outcome = await env.tenancy.db(request.tenant).transaction(async (tx) => {
+      // Looked up by its hash, so the stored value is never compared with the token itself.
+      const found = await repo.ciTokenByHash(tx, hashToken(token));
+      if (found === undefined || found.revokedAt !== null) return 'unknown';
+      const caller: CiCaller = { tokenId: found.id, tokenName: found.name, workspaceId: found.workspaceId };
+      if (!allowed(request, caller)) return 'forbidden';
+      const now = env.now();
+      if (found.lastUsedAt === null || now.getTime() - Date.parse(found.lastUsedAt) >= TOUCH_EVERY_MS) {
+        await repo.touchCiToken(tx, found.id, now);
+      }
+      return caller;
+    });
+    if (outcome === 'unknown') return false;
+    if (outcome === 'forbidden') throw ciTokenForbidden();
+    request.ciCaller = outcome;
     return true;
   };
 }

@@ -68,7 +68,8 @@ export async function sendSignInPage(
   options: { readonly status?: number; readonly message?: string; readonly redirectTo?: string } = {},
 ): Promise<FastifyReply> {
   const methods = ctx.meta.signInMethods();
-  const samlLicensed = methods.saml === true && (await ctx.license.state()).features.includes('sso-provisioning');
+  const samlLicensed =
+    methods.saml === true && (await ctx.license.state(reply.request.tenant)).features.includes('sso-provisioning');
   const html = renderSignInPage({
     serverUrl: tenantUrl(ctx.config, reply.request),
     local: methods.local,

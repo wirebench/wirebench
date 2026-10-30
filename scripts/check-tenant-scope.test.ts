@@ -67,6 +67,44 @@ describe('check:tenant-scope', () => {
     expect(findScopeMints('packages/server/src/tenancy/directory.ts', 'return rows.map(scopeOf);')).toEqual([]);
   });
 
+  it('keeps the tenant directory to start-up, the resolver and the admin command line (m2)', () => {
+    const leak =
+      "import { directoryOf } from '../tenancy/tenancy.js';\nconst all = await directoryOf(ctx.tenancy).list();";
+    expect(findScopeMints('packages/server/src/teams/routes/teams.ts', leak)).toMatchObject([
+      { line: 1, rule: 'directory-of' },
+      { line: 2, rule: 'directory-of' },
+    ]);
+    expect(findScopeMints('packages/server/src/server.ts', 'directoryOf(ctx.tenancy)')).toEqual([]);
+    expect(findScopeMints('packages/server/src/identity/cli.ts', 'directoryOf(t).defaultScope()')).toEqual([]);
+  });
+
+  it('keeps TenantDirectory and TenantAdmin inside src/tenancy/, however they are named (Task 8 review I2)', async () => {
+    const root = await tree({
+      'packages/server/src/teams/routes/teams.ts': [
+        "import { TenantDirectory as Dir } from '../../tenancy/directory.js';",
+        'const all = await new Dir(ctx.db).list();',
+        'const admin = new tenancy.TenantAdmin(ctx.db, dir);',
+        "type T = import('../../tenancy/directory.js').TenantDirectory;",
+      ].join('\n'),
+      'packages/server/src/tenancy/jobs.ts': "import type { TenantDirectory } from './directory.js';\n",
+    });
+    expect(await checkTenantScope(root)).toMatchObject([
+      { file: 'packages/server/src/teams/routes/teams.ts', line: 1, rule: 'tenant-directory' },
+      { line: 3, rule: 'tenant-directory' },
+      { line: 4, rule: 'tenant-directory' },
+    ]);
+  });
+
+  it('keeps stateWithoutScope to the jobs that do not run per tenant yet (tenancy Task 9)', () => {
+    const route = 'packages/server/src/teams/routes/workspaces.ts';
+    expect(findScopeMints(route, 'const s = await ctx.license.stateWithoutScope();')).toMatchObject([
+      { rule: 'license-without-scope' },
+    ]);
+    expect(
+      findScopeMints('packages/server/src/schedules/scheduler.ts', 'await this.env.license().stateWithoutScope();'),
+    ).toEqual([]);
+  });
+
   it('refuses a new raw read of the public URL, in any spelling', () => {
     const file = 'packages/server/src/teams/routes/teams.ts';
     const reads = [

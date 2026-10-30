@@ -162,7 +162,7 @@ describeDb('the CI principal (callback-assertion §3)', () => {
 
   it('answers 401 once revoked, and whoami refuses a device token and no token', async () => {
     c = await setUp();
-    await ciRepo.revokeCiToken(c.h.db, c.workspaceId, c.ci.id, c.h.clock.now);
+    await ciRepo.revokeCiToken(c.h.tdb, c.workspaceId, c.ci.id, c.h.clock.now);
     const revoked = await as(c, 'GET', '/ci/whoami');
     expect(revoked.statusCode).toBe(401);
     expect(revoked.json<{ code: string }>().code).toBe('identity-unauthenticated');
@@ -181,7 +181,7 @@ describeDb('the CI principal (callback-assertion §3)', () => {
   it('writes last_used_at at most once a minute', async () => {
     c = await setUp();
     const lastUsed = async (): Promise<string | null | undefined> =>
-      (await ciRepo.ciTokenByHash(c!.h.db, hashToken(c!.ci.token)))?.lastUsedAt;
+      (await ciRepo.ciTokenByHash(c!.h.tdb, hashToken(c!.ci.token)))?.lastUsedAt;
     expect(await lastUsed()).toBeNull();
     await as(c, 'GET', '/ci/whoami');
     const first = c.h.clock.now.toISOString();
@@ -203,7 +203,7 @@ describeDb('the CI principal (callback-assertion §3)', () => {
       await as(c, 'GET', '/me'),
     ];
     expect(answers.map((answer) => answer.statusCode)).toEqual([200, 200, 403, 403]);
-    await ciRepo.revokeCiToken(c.h.db, c.workspaceId, c.ci.id, c.h.clock.now);
+    await ciRepo.revokeCiToken(c.h.tdb, c.workspaceId, c.ci.id, c.h.clock.now);
     answers.push(await as(c, 'GET', '/ci/whoami'));
     expect(answers[4]!.statusCode).toBe(401);
 

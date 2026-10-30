@@ -117,7 +117,9 @@ describeDb('the runs API (scheduled-runs spec §3.7)', () => {
     c.h.hooks.scheduleRunFinished.push((event) => heard.push(event));
     const queued = await seedRun(10, 'queued');
     expect((await call(c.h, c.admin, 'DELETE', `${runs()}/${queued}`)).status).toBe(204);
-    expect(heard).toEqual([{ workspaceId: c.workspaceId, scheduleId, runId: queued, status: 'cancelled' }]);
+    expect(heard).toEqual([
+      { tenantId: c.h.tdb.scope.tenantId, workspaceId: c.workspaceId, scheduleId, runId: queued, status: 'cancelled' },
+    ]);
     expect(await repo.runById(c.h.db, scheduleId, queued)).toMatchObject({
       status: 'cancelled',
       reason: 'cancelled',

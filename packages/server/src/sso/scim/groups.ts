@@ -96,8 +96,9 @@ export const groupRoutes =
       const source = scimSource(request);
       const now = env.now();
       const changes: AccessChanges = [];
-      const row = await db
-        .transaction(async (tx: Querier) => {
+      const row = await env.ctx.tenancy
+        .db(request.tenant)
+        .transaction(async (tx) => {
           const current = await repo.scimGroupById(tx, id);
           if (current === undefined) throw notFound();
           const members = new Set(await repo.groupMemberIds(tx, id));
@@ -130,7 +131,7 @@ export const groupRoutes =
           if (isUniqueViolation(error, NAME_INDEX)) throw uniqueness();
           throw error;
         });
-      announceAccess(env, changes, request.log);
+      announceAccess(env, request.tenant, changes, request.log);
       return (await resources(request, [row], true))[0];
     }
 
@@ -161,8 +162,9 @@ export const groupRoutes =
       const input = groupInput(request.body);
       const source = scimSource(request);
       const now = env.now();
-      const row = await db
-        .transaction(async (tx: Querier) => {
+      const row = await env.ctx.tenancy
+        .db(request.tenant)
+        .transaction(async (tx) => {
           await assertUsers(tx, input.members);
           const created = await repo.insertScimGroup(tx, {
             id: newId(),
@@ -217,7 +219,7 @@ export const groupRoutes =
       const id = (request.params as { id: string }).id;
       const source = scimSource(request);
       const changes: AccessChanges = [];
-      await db.transaction(async (tx: Querier) => {
+      await env.ctx.tenancy.db(request.tenant).transaction(async (tx) => {
         const current = await repo.scimGroupById(tx, id);
         if (current === undefined) throw notFound();
         // Through the one membership path first, so a linked team loses what this group gave it (§3.6).
@@ -231,7 +233,7 @@ export const groupRoutes =
           details: { displayName: current.displayName },
         });
       });
-      announceAccess(env, changes, request.log);
+      announceAccess(env, request.tenant, changes, request.log);
       return reply.code(204).send();
     });
   };

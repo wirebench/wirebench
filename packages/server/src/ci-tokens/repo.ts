@@ -1,5 +1,8 @@
-/** The `ci_tokens` table (callback-assertion spec §3). Raw SQL over `Querier`, like every module's repo. */
-import type { Querier } from '../context.js';
+/**
+ * The `ci_tokens` table (callback-assertion spec §3). Raw SQL over a `TenantQuerier`, like every moved module's
+ * repo: a token is found by its hash within the request's tenant (hosted edition spec §19.8 guard 2).
+ */
+import type { TenantQuerier } from '../tenancy/tenant-db.js';
 
 export interface CiTokenRow {
   readonly id: string;
@@ -39,7 +42,7 @@ const SELECT = `select t.id, t.workspace_id as "workspaceId", t.name, t.token_ha
   from ci_tokens t left join users u on u.id = t.created_by`;
 
 export async function insertCiToken(
-  db: Querier,
+  db: TenantQuerier,
   input: {
     readonly id: string;
     readonly workspaceId: string;
@@ -56,12 +59,12 @@ export async function insertCiToken(
 }
 
 /** Revoked ones included: the caller decides, so a revoked token is told apart from an unknown one only here. */
-export async function ciTokenByHash(db: Querier, tokenHash: string): Promise<CiTokenRow | undefined> {
+export async function ciTokenByHash(db: TenantQuerier, tokenHash: string): Promise<CiTokenRow | undefined> {
   const raw = (await db.query<Raw>(`${SELECT} where t.token_hash = $1`, [tokenHash])).rows[0];
   return raw === undefined ? undefined : rowOf(raw);
 }
 
-export async function ciTokensOfWorkspace(db: Querier, workspaceId: string): Promise<CiTokenRow[]> {
+export async function ciTokensOfWorkspace(db: TenantQuerier, workspaceId: string): Promise<CiTokenRow[]> {
   const rows = (
     await db.query<Raw>(`${SELECT} where t.workspace_id = $1 and t.revoked_at is null order by lower(t.name), t.id`, [
       workspaceId,
@@ -72,7 +75,7 @@ export async function ciTokensOfWorkspace(db: Querier, workspaceId: string): Pro
 
 /** The revoked token's name, or `undefined` when none was live (audit-log plan ruling 7). */
 export async function revokeCiToken(
-  db: Querier,
+  db: TenantQuerier,
   workspaceId: string,
   id: string,
   at: Date,
@@ -84,6 +87,6 @@ export async function revokeCiToken(
   return result.rows[0]?.name;
 }
 
-export async function touchCiToken(db: Querier, id: string, at: Date): Promise<void> {
+export async function touchCiToken(db: TenantQuerier, id: string, at: Date): Promise<void> {
   await db.query('update ci_tokens set last_used_at = $2 where id = $1', [id, at]);
 }

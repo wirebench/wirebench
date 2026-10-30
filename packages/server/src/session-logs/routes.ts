@@ -39,9 +39,12 @@ import { workspaceById } from '../teams/repo.js';
 import { requireWorkspaceRole } from '../teams/roles.js';
 import { logEnded, logNotFound, offsetMismatch, recordingOff } from './errors.js';
 import * as repo from './repo.js';
+import type { Tenancy } from '../tenancy/tenancy.js';
 
 export interface SessionLogRoutesEnv {
   readonly db: Database;
+  /** The tenant databases: the role guard and teams' reads run in the request's tenant (tenancy Task 9). */
+  readonly tenancy: Pick<Tenancy, 'db'>;
   readonly hooks: ServerHooks;
   readonly license: () => LicenseService;
   readonly now: () => Date;
@@ -83,7 +86,7 @@ export const sessionLogRoutes =
     const feature: preHandlerAsyncHookHandler = async function (request, reply) {
       await env.license().requireFeature('session-logs').call(this, request, reply);
     };
-    const member = [requireWorkspaceRole(db, 'viewer'), feature];
+    const member = [requireWorkspaceRole(env.tenancy, 'viewer'), feature];
     const params = jsonSchema(sessionLogParamsSchema, { io: 'input' });
     const workspaceParams = jsonSchema(teamWorkspaceParamsSchema, { io: 'input' });
     const logScope = (log: SessionLog) => ({
@@ -111,7 +114,7 @@ export const sessionLogRoutes =
         const caller = callerOf(request);
         const { workspaceId } = request.workspaceAccess!;
         const body = request.body as SessionLogOpenRequest;
-        const workspace = await workspaceById(db, workspaceId);
+        const workspace = await workspaceById(env.tenancy.db(request.tenant), workspaceId);
         if (workspace === undefined || !workspace.recordSessionLogs) throw recordingOff();
         const { log, created } = await db.transaction(async (tx) => {
           const opened = await repo.openLog(tx, {
@@ -241,7 +244,7 @@ export const sessionLogRoutes =
 
     app.delete(
       '/workspaces/:workspaceId/session-logs/:logId',
-      { preHandler: [requireWorkspaceRole(db, 'admin'), feature], schema: { params } },
+      { preHandler: [requireWorkspaceRole(env.tenancy, 'admin'), feature], schema: { params } },
       async (request, reply) => {
         callerOf(request);
         const { workspaceId, logId } = request.params as LogParams;

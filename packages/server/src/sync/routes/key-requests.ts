@@ -34,12 +34,12 @@ const KEY_REQUEST_RATE_LIMIT_PROBLEM = {
 export const keyRequestRoutes =
   (env: SyncEnv) =>
   (app: FastifyInstance): void => {
-    const { db, repos, hooks } = env.ctx;
+    const { repos, hooks } = env.ctx;
     app.post(
       '/workspaces/:workspaceId/team-secrets/key-requests',
       {
         preHandler: [
-          requireWorkspaceRole(db, 'viewer'),
+          requireWorkspaceRole(env.ctx.tenancy, 'viewer'),
           rateLimit(env, (request) => [callerKey(request)], KEY_REQUEST_RATE_LIMIT_PROBLEM),
         ],
         // A key request is a few hundred bytes; the operator's sync limit is for trees.
@@ -56,11 +56,11 @@ export const keyRequestRoutes =
         if (Buffer.byteLength(body.content, 'utf8') > TEAM_SECRETS_KEY_REQUEST_MAX_BYTES) {
           throw teamSecretsRequestTooLarge();
         }
-        const user = await findUserById(db, request.caller!.id);
+        const user = await findUserById(env.ctx.tenancy.db(request.tenant), request.caller!.id);
         if (user === undefined) throw unauthenticated();
         const path = keyRequestPath(body.keyId);
         const subject = `Request team secrets access for ${user.displayName.replace(CONTROL_CHARACTERS, ' ')}`;
-        const result = await repos.withLock(workspaceId, async () => {
+        const result = await repos.withLock(request.tenant, workspaceId, async () => {
           if (!(await repos.exists(workspaceId))) throw workspaceNotFound();
           const head = await env.store.head(workspaceId);
           if (head !== null && (await env.store.hasFile(workspaceId, head, path))) throw teamSecretsKeyExists();
@@ -72,17 +72,23 @@ export const keyRequestRoutes =
           );
         });
         try {
-          await recordAudit(hooks, db, {
-            ...auditSource(request),
-            action: 'secret.access_changed',
-            target: { kind: 'workspace', id: workspaceId },
-            workspaceId,
-            details: { entries: 0, keyRequests: 1, keyId: body.keyId, head: result.head },
-          });
+          await env.ctx.tenancy.db(request.tenant).transaction((tx) =>
+            recordAudit(hooks, tx, {
+              ...auditSource(request),
+              action: 'secret.access_changed',
+              target: { kind: 'workspace', id: workspaceId },
+              workspaceId,
+              details: { entries: 0, keyRequests: 1, keyId: body.keyId, head: result.head },
+            }),
+          );
         } catch (error) {
           request.log.warn({ err: error, workspaceId }, 'audit: key request not recorded');
         }
-        announce(hooks.headMoved, { workspaceId, head: result.head, tokenId: request.caller!.tokenId }, request.log);
+        announce(
+          hooks.headMoved,
+          { tenantId: request.tenant.tenantId, workspaceId, head: result.head, tokenId: request.caller!.tokenId },
+          request.log,
+        );
         return reply.code(201).send({ head: result.head });
       },
     );

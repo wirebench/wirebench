@@ -21,6 +21,8 @@ import { createLicenseService } from '../licensing/service.js';
 import { BUILTIN_MODULES } from '../modules.js';
 import { allMigrations, StartupError } from '../serve.js';
 import { runScimGroupCommand, runScimTokenCommand } from '../sso/cli.js';
+import type { TenantScope } from '../tenancy/scope.js';
+import { createTenancy, directoryOf, type Tenancy } from '../tenancy/tenancy.js';
 import { urlWithoutScope } from '../tenancy/urls.js';
 import { identitySettings, type InvitationEnv } from './env.js';
 import { createInvitation, invitationSummary, isOpen, revokeOpenInvitation } from './invitations.js';
@@ -37,6 +39,18 @@ function cliUrl(config: Parameters<typeof urlWithoutScope>[0]): string {
   const url = urlWithoutScope(config);
   if (url === undefined) throw new WirebenchError('tenancy-unscoped', 'the admin command line needs a tenant');
   return url;
+}
+
+/**
+ * The tenant the command line works in: the default one, until Task 16 adds `--tenant` (spec §19.11). The
+ * one file outside `src/tenancy/` that `check:tenant-scope` lets name the default scope.
+ */
+async function cliScope(tenancy: Tenancy): Promise<TenantScope> {
+  const directory = directoryOf(tenancy);
+  if (!(await directory.load())) {
+    throw new StartupError(ExitCode.Migration, 'migration 0020 is not applied: the server has no tenants');
+  }
+  return directory.defaultScope();
 }
 
 /** `now` exists for tests; the bin passes nothing. */
@@ -90,19 +104,28 @@ export async function runAdmin(
     }
     // Only now: before migrations the server_identity table may not exist.
     const serverId = await readServerId(db).catch((error: unknown) => {
+      // A configuration problem, as `serve` reports the same lost row (exit 2), not a pending migration.
       if (error instanceof Error && error.message === MISSING_SERVER_ID) {
-        throw new StartupError(ExitCode.Migration, MISSING_SERVER_ID);
+        throw new StartupError(ExitCode.Config, MISSING_SERVER_ID);
       }
       throw error;
     });
+    const tenancy = createTenancy(db);
+    const scope = await cliScope(tenancy);
     const env: InvitationEnv = {
-      ctx: { db, config, hooks, license: createLicenseService({ db, publicKeys, now, serverId }) },
+      ctx: {
+        db,
+        tenancy,
+        config,
+        hooks,
+        license: createLicenseService({ tenancy, publicKeys, now, serverId: () => Promise.resolve(serverId) }),
+      },
       settings: identitySettings(config),
       now,
     };
     switch (command.command) {
       case 'admin-invite': {
-        const created = await createInvitation(env, {
+        const created = await createInvitation(env, scope, {
           email: command.email,
           serverAdmin: command.serverAdmin,
           createdBy: null,
@@ -116,7 +139,7 @@ export async function runAdmin(
       }
       case 'admin-list-invitations': {
         const now = env.now();
-        const rows = await repo.listInvitations(db);
+        const rows = await repo.listInvitations(tenancy.db(scope));
         io.stdout.write(`${'id'.padEnd(26)}  ${'email'.padEnd(40)}  admin  status    expires\n`);
         for (const row of rows) {
           const summary = invitationSummary(row);
@@ -135,7 +158,7 @@ export async function runAdmin(
         return ExitCode.Ok;
       }
       case 'admin-revoke-invitation': {
-        if (!(await revokeOpenInvitation(env, command.id, SYSTEM_SOURCE))) {
+        if (!(await revokeOpenInvitation(env, scope, command.id, SYSTEM_SOURCE))) {
           io.stderr.write(`identity-not-found: no open invitation with id ${command.id}\n`);
           return 1;
         }
@@ -147,17 +170,25 @@ export async function runAdmin(
       case 'admin-license-remove':
         return await runLicenseCommand(
           command,
-          { db, publicKeys, now: env.now, serverId, license: env.ctx.license, hooks: env.ctx.hooks },
+          {
+            tenancy,
+            publicKeys,
+            now: env.now,
+            serverId: () => Promise.resolve(serverId),
+            license: env.ctx.license,
+            hooks: env.ctx.hooks,
+          },
+          scope,
           io,
         );
       case 'admin-scim-token-create':
       case 'admin-scim-token-list':
       case 'admin-scim-token-revoke':
-        return await runScimTokenCommand(command, env, io);
+        return await runScimTokenCommand(command, env, scope, io);
       case 'admin-scim-group-list':
       case 'admin-scim-group-link':
       case 'admin-scim-group-unlink':
-        return await runScimGroupCommand(command, env, io);
+        return await runScimGroupCommand(command, env, scope, io);
     }
   } catch (error) {
     if (error instanceof WirebenchError) {

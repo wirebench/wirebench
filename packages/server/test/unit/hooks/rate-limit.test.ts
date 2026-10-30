@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CatchBuckets, IDLE_DROP_MS, SWEEP_EVERY_MS } from '../../../src/hooks/rate-limit.js';
+import { CatchBuckets, IDLE_DROP_MS, SWEEP_EVERY_MS, catchBucketKey } from '../../../src/hooks/rate-limit.js';
 
 function clock(start = 0) {
   let now = start;
@@ -59,5 +59,21 @@ describe('CatchBuckets (webhook-capture §3.3 step 3)', () => {
     c.advance(IDLE_DROP_MS + SWEEP_EVERY_MS); // 660 tokens back of 10 000
     buckets.take('b');
     expect(buckets.size).toBe(2);
+  });
+});
+
+describe('catch URL bucket keys (hosted edition spec §19.8 guard 5)', () => {
+  it('lead with the tenant, so one catch URL id in two tenants never shares a bucket', () => {
+    const one = '00000000-0000-4000-8000-000000000001';
+    const two = '00000000-0000-4000-8000-000000000002';
+    const hook = '01J8ZC5Q0V7R3T9XK2M4N6P8QA';
+    expect(catchBucketKey(one, hook)).toBe(`${one}:${hook}`);
+    expect(catchBucketKey(one, hook)).not.toBe(catchBucketKey(two, hook));
+    const c = clock();
+    const buckets = new CatchBuckets({ ratePerSecond: 1, burst: 2, now: c.now });
+    expect(buckets.take(catchBucketKey(one, hook))).toBe(true);
+    expect(buckets.take(catchBucketKey(one, hook))).toBe(true);
+    expect(buckets.take(catchBucketKey(one, hook))).toBe(false);
+    expect(buckets.take(catchBucketKey(two, hook))).toBe(true);
   });
 });

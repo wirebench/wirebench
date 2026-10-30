@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import type { FastifyInstance } from 'fastify';
 import type { ServerContext, ServerModule } from '../context.js';
 import type { SetTimer } from '../hooks/env.js';
-import { CaptureSweeper } from '../hooks/sweep.js';
+import { CaptureSweeper, rawSweepTarget } from '../hooks/sweep.js';
 import { realTimer } from '../live/module.js';
 import { RetentionStopLog } from './chain/retention-log.js';
 import { AuditSealer } from './chain/sealer.js';
@@ -36,30 +36,31 @@ export function auditLogModule(options: AuditLogOptions = {}): ServerModule {
       // Built first: a CA file that cannot be read refuses the start (ConfigError) before anything is wired.
       const sink = await sinkFromConfig(ctx.config);
       ctx.hooks.audit.push(auditHook(now, { forward: sink !== undefined }));
-      ctx.hooks.licenseChanged.push(licenseListener({ db: ctx.db, hooks: ctx.hooks, log: ctx.log }));
+      ctx.hooks.licenseChanged.push(licenseListener({ tenancy: ctx.tenancy, hooks: ctx.hooks, log: ctx.log }));
       ctx.meta.addCapability('audit-log');
       // The workspace `recordDesktopActivity` setting (#211); a server without it ignores the field, so the desktop hides the switch.
       ctx.meta.addCapability('desktop-activity');
-      auditRoutes({ db: ctx.db, hooks: ctx.hooks, license: () => ctx.license })(app);
-      desktopRoutes({ db: ctx.db, hooks: ctx.hooks, limiter: desktopEventsLimiter(now) })(app);
+      auditRoutes({ db: ctx.db, tenancy: ctx.tenancy, hooks: ctx.hooks, license: () => ctx.license })(app);
+      desktopRoutes({ db: ctx.db, tenancy: ctx.tenancy, hooks: ctx.hooks, limiter: desktopEventsLimiter(now) })(app);
       const key = ctx.config.auditChainKey;
       const stops = new RetentionStopLog(ctx.log);
       // With a chain key, retention deletes only checked sealed rows from the chain's oldest end and moves
       // the anchor (audit-chain spec §3.3). Without one it deletes by `at`, but once a chain exists only
       // unsealed rows, so a missing key never cuts a gap; each batch reads the anchor, which is cheap.
       const sweeper = new CaptureSweeper({
-        db: ctx.db,
         maxAgeDays: ctx.config.auditMaxAgeDays,
         now,
         setTimer,
         log: ctx.log,
-        deleteBefore:
+        target: rawSweepTarget(
+          ctx.db,
           key === undefined
             ? async (db, cutoff, limit) =>
                 (await readAnchor(db)) === undefined
                   ? deleteAuditEventsBefore(db, cutoff, limit)
                   : deleteUnsealedBefore(db, cutoff, limit)
             : (_db, cutoff, limit) => deleteSealedBefore(ctx.db, key, cutoff, limit, stops),
+        ),
         label: 'audit sweep',
       });
       sweeper.start();

@@ -8,6 +8,7 @@ import { main } from '../../../src/main.js';
 import { ssoModule } from '../../../src/sso/module.js';
 import * as repo from '../../../src/sso/repo.js';
 import * as teamsRepo from '../../../src/teams/repo.js';
+import { defaultTenantDb } from '../../helpers/tenancy.js';
 import { describeDb, testDatabase } from '../../helpers/database.js';
 import { mkTempDir, removeTempDir } from '../../helpers/git.js';
 import { signedInUser, type IdentityHarness, type SignedInUser } from '../../helpers/identity.js';
@@ -160,7 +161,7 @@ describeDb('wirebench-server admin scim-token (saml-scim spec §3.4)', () => {
     await writeFile(file, license(keys, { edition: 'enterprise' }));
     expect(await runAdmin({ command: 'admin-license-install', file }, io().io, options)).toBe(0);
     await removeTempDir(dir);
-    const team = await teamsRepo.insertTeam(db, { id: newId(), name: 'Payments', at: NOW });
+    const team = await teamsRepo.insertTeam(await defaultTenantDb(db), { id: newId(), name: 'Payments', at: NOW });
     await repo.insertScimGroup(db, { id: newId(), displayName: 'Engineering', externalId: null, at: NOW });
 
     const linked = io();

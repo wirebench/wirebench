@@ -8,7 +8,7 @@ import {
   type TeamNameRequest,
   type TeamRole,
 } from '@wirebench/engine';
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { auditSource, recordAudit } from '../../context.js';
 import { isForeignKeyViolation, isUniqueViolation } from '../../db/errors.js';
 import { requireServerAdmin, requireUser } from '../../identity/guard.js';
@@ -36,7 +36,8 @@ function nameTakenOr(error: unknown): never {
 export const teamRoutes =
   (env: TeamsEnv) =>
   (app: FastifyInstance): void => {
-    const db = env.ctx.db;
+    // The request's tenant database (spec §19.8 guard 2).
+    const tdb = (request: FastifyRequest) => env.ctx.tenancy.db(request.tenant);
     const params = jsonSchema(teamParamsSchema, { io: 'input' });
     const nameBody = jsonSchema(teamNameRequestSchema, { io: 'input' });
 
@@ -45,8 +46,8 @@ export const teamRoutes =
       { preHandler: requireUser, schema: { response: { 200: jsonSchema(teamsResponseSchema) } } },
       async (request) => {
         const caller = request.caller!;
-        if (caller.serverAdmin) return (await repo.allTeams(db)).map((row) => toTeam(row, 'admin'));
-        return (await repo.teamsOfUser(db, caller.id)).map((row) => toTeam(row, row.role));
+        if (caller.serverAdmin) return (await repo.allTeams(tdb(request))).map((row) => toTeam(row, 'admin'));
+        return (await repo.teamsOfUser(tdb(request), caller.id)).map((row) => toTeam(row, row.role));
       },
     );
 
@@ -57,7 +58,7 @@ export const teamRoutes =
         const name = cleanName((request.body as TeamNameRequest).name);
         const caller = request.caller!;
         const at = env.now();
-        const team = await db
+        const team = await tdb(request)
           .transaction(async (tx) => {
             const row = await repo.insertTeam(tx, { id: newId(), name, at });
             // §3.2: the creator is the first admin, so a team never exists without one.
@@ -79,13 +80,13 @@ export const teamRoutes =
     app.patch(
       '/teams/:teamId',
       {
-        preHandler: requireTeamRole(db, 'admin'),
+        preHandler: requireTeamRole(env.ctx.tenancy, 'admin'),
         schema: { params, body: nameBody, response: { 200: jsonSchema(teamSchema) } },
       },
       async (request) => {
         const { teamId } = request.params as { readonly teamId: string };
         const name = cleanName((request.body as TeamNameRequest).name);
-        const row = await db
+        const row = await tdb(request)
           .transaction(async (tx) => {
             const previous = await repo.teamById(tx, teamId);
             if (previous === undefined) throw teamNotFound();
@@ -108,7 +109,7 @@ export const teamRoutes =
 
     app.delete('/teams/:teamId', { preHandler: requireServerAdmin, schema: { params } }, async (request, reply) => {
       const { teamId } = request.params as { readonly teamId: string };
-      await db
+      await tdb(request)
         .transaction(async (tx) => {
           if (!(await repo.lockTeam(tx, teamId))) throw teamNotFound();
           if (await repo.teamHasWorkspaces(tx, teamId)) throw notEmpty();

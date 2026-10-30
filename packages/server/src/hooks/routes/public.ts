@@ -13,6 +13,7 @@ import { announce } from '../../context.js';
 import { headerPairs, splitTarget, subpathOf, truncateBody } from '../capture.js';
 import type { HooksEnv } from '../env.js';
 import * as repo from '../repo.js';
+import { catchBucketKey } from '../rate-limit.js';
 import { verifyCapture } from '../verify.js';
 
 const EMPTY = Buffer.alloc(0);
@@ -35,14 +36,18 @@ async function receive(env: HooksEnv, request: FastifyRequest, reply: FastifyRep
   const { secret } = request.params as { readonly secret: string };
   let found: repo.PublicCatchUrl | undefined;
   try {
-    found = CATCH_SECRET_PATTERN.test(secret) ? await repo.catchUrlBySecret(env.ctx.db, secret) : undefined;
+    // Within the tenant the `Host` named (spec §19.5): a catch URL has no session, so that is its only tenant.
+    found = CATCH_SECRET_PATTERN.test(secret)
+      ? await repo.catchUrlBySecret(env.ctx.tenancy.db(request.tenant), secret)
+      : undefined;
   } catch (error) {
     return unavailable(request, reply, error);
   }
   // §3.3 step 2: unknown and disabled answer alike, with no body, so a caller cannot tell them apart.
   if (found === undefined || !found.enabled) return reply.code(404).send();
   const hook = found;
-  if (!env.buckets.take(hook.id)) return reply.code(429).header('retry-after', '1').send();
+  if (!env.buckets.take(catchBucketKey(request.tenant.tenantId, hook.id)))
+    return reply.code(429).header('retry-after', '1').send();
 
   const { path, query } = splitTarget(request.url);
   const body = Buffer.isBuffer(request.body) ? request.body : EMPTY;
@@ -68,7 +73,8 @@ async function receive(env: HooksEnv, request: FastifyRequest, reply: FastifyRep
     rejected,
   };
   try {
-    await env.ctx.db.transaction(async (tx) => {
+    // The body was read and verified above: the unit holds no wait on the sender or the network.
+    await env.ctx.tenancy.db(request.tenant).transaction(async (tx) => {
       await repo.insertCapture(tx, capture);
       await repo.pruneCaptures(tx, hook.id, env.settings.keep);
     });
@@ -78,7 +84,7 @@ async function receive(env: HooksEnv, request: FastifyRequest, reply: FastifyRep
   // After commit, on the success path only (§3.6); never awaited, a listener's throw is logged.
   announce(
     env.ctx.hooks.captureReceived,
-    { workspaceId: hook.workspaceId, hookId: hook.id, captureId: capture.id },
+    { tenantId: request.tenant.tenantId, workspaceId: hook.workspaceId, hookId: hook.id, captureId: capture.id },
     request.log,
   );
 

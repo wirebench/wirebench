@@ -13,7 +13,7 @@ import {
   type InvitationCreated,
   type TeamInvitationCreateRequest,
 } from '@wirebench/engine';
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { auditSource, recordAudit, type InvitationAcceptedHook, type ServerHooks } from '../../context.js';
 import { findUserById } from '../../identity/repo.js';
 import { createInvitation, revokeOpenInvitation } from '../../identity/invitations.js';
@@ -47,22 +47,24 @@ export function addInvitedMember(now: () => Date, hooks: ServerHooks): Invitatio
 export const teamInvitationRoutes =
   (env: TeamsEnv) =>
   (app: FastifyInstance): void => {
-    const db = env.ctx.db;
+    // The request's tenant database (spec §19.8 guard 2).
+    const tdb = (request: FastifyRequest) => env.ctx.tenancy.db(request.tenant);
     const params = jsonSchema(teamParamsSchema, { io: 'input' });
 
     app.get(
       '/teams/:teamId/invitations',
       {
-        preHandler: requireTeamRole(db, 'admin'),
+        preHandler: requireTeamRole(env.ctx.tenancy, 'admin'),
         schema: { params, response: { 200: jsonSchema(teamInvitationsResponseSchema) } },
       },
-      (request) => repo.openTeamInvitations(db, (request.params as { readonly teamId: string }).teamId, env.now()),
+      (request) =>
+        repo.openTeamInvitations(tdb(request), (request.params as { readonly teamId: string }).teamId, env.now()),
     );
 
     app.post(
       '/teams/:teamId/invitations',
       {
-        preHandler: requireTeamRole(db, 'admin'),
+        preHandler: requireTeamRole(env.ctx.tenancy, 'admin'),
         schema: {
           params,
           body: jsonSchema(teamInvitationCreateRequestSchema, { io: 'input' }),
@@ -77,6 +79,7 @@ export const teamInvitationRoutes =
           // §6: a team invitation can never mint a server admin.
           created = await createInvitation(
             env.invitations,
+            request.tenant,
             {
               email: body.email,
               serverAdmin: false,
@@ -103,13 +106,14 @@ export const teamInvitationRoutes =
     app.delete(
       '/teams/:teamId/invitations/:id',
       {
-        preHandler: requireTeamRole(db, 'admin'),
+        preHandler: requireTeamRole(env.ctx.tenancy, 'admin'),
         schema: { params: jsonSchema(teamInvitationParamsSchema, { io: 'input' }) },
       },
       async (request, reply) => {
         const { teamId, id } = request.params as { readonly teamId: string; readonly id: string };
-        if (!(await repo.isTeamInvitation(db, teamId, id))) throw invitationNotFound();
-        if (!(await revokeOpenInvitation(env.invitations, id, auditSource(request)))) throw invitationNotFound();
+        if (!(await repo.isTeamInvitation(tdb(request), teamId, id))) throw invitationNotFound();
+        if (!(await revokeOpenInvitation(env.invitations, request.tenant, id, auditSource(request))))
+          throw invitationNotFound();
         return reply.code(204).send();
       },
     );

@@ -4,16 +4,19 @@
  * empty body. The cookie's name and `Secure`, the `Origin` checks and the URLs the server prints follow the
  * request's tenant.
  */
+import { directoryOf } from '../../../src/tenancy/tenancy.js';
 import fastifyWebsocket from '@fastify/websocket';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { ServerConfig } from '../../../src/config.js';
 import type { ServerModule } from '../../../src/context.js';
 import { requireUser } from '../../../src/identity/guard.js';
+import type { OidcProvider } from '../../../src/identity/oidc.js';
+import { mintSecret, newId, pkceChallenge } from '../../../src/identity/tokens.js';
 import { TenantAdmin } from '../../../src/tenancy/directory.js';
 import type { TenantResolver } from '../../../src/tenancy/resolve.js';
 import { describeDb } from '../../helpers/database.js';
-import { identityHarness, signedInUser, type IdentityHarness } from '../../helpers/identity.js';
+import { OIDC_ENV, identityHarness, signedInUser, type IdentityHarness } from '../../helpers/identity.js';
 
 const PUBLIC_URL = 'https://wirebench.test';
 const APP_DOMAIN = 'example.test';
@@ -22,6 +25,31 @@ const BROWSER_ENV = {
   WIREBENCH_SERVER_SECRETS_KEY: Buffer.alloc(32, 7).toString('base64'),
 };
 const hosted = (config: ServerConfig): ServerConfig => ({ ...config, mode: 'hosted', appDomain: APP_DOMAIN });
+
+/** An OIDC provider that would answer anything: hosted mode must not use it (spec §19.1). */
+const provider: OidcProvider = {
+  issuer: OIDC_ENV.WIREBENCH_SERVER_OIDC_ISSUER,
+  authorizationUrl: () => `${OIDC_ENV.WIREBENCH_SERVER_OIDC_ISSUER}/authorize`,
+  exchange: () => Promise.reject(new Error('hosted mode reached the provider')),
+};
+const VERIFIER = 'v'.repeat(43);
+
+/** Every OIDC route, desktop and browser: the starts, the callbacks and the completion. */
+const OIDC_ROUTES: readonly { readonly method: 'GET' | 'POST'; readonly url: string; readonly payload?: object }[] = [
+  {
+    method: 'POST',
+    url: '/api/v1/auth/oidc/start',
+    payload: { device: { name: 'Mac' }, codeChallenge: pkceChallenge(VERIFIER), loopbackPort: 49152 },
+  },
+  { method: 'GET', url: '/api/v1/auth/oidc/callback?state=some-state&code=some-code' },
+  { method: 'GET', url: '/api/v1/auth/oidc/browser-callback?state=some-state&code=some-code' },
+  {
+    method: 'POST',
+    url: '/api/v1/auth/oidc/complete',
+    payload: { flowId: newId(), grant: mintSecret().secret, codeVerifier: VERIFIER },
+  },
+  { method: 'GET', url: '/sign-in/oidc' },
+];
 
 /** The API scope the WebSocket plugin decorates with `injectWS`, per built server. */
 const socketScopes = new WeakMap<FastifyInstance, FastifyInstance>();
@@ -77,7 +105,8 @@ describeDb('tenant resolution (spec §19.5)', () => {
     let defaultId: string;
     beforeAll(async () => {
       h = await identityHarness({
-        env: { ...BROWSER_ENV, WIREBENCH_SERVER_TRUST_PROXY: 'true' },
+        env: { ...BROWSER_ENV, ...OIDC_ENV, WIREBENCH_SERVER_TRUST_PROXY: 'true' },
+        provider,
         modules: [probeModule],
       });
       socketScopes.set(h.app, lastScope!);
@@ -104,6 +133,13 @@ describeDb('tenant resolution (spec §19.5)', () => {
       expect([200, 503]).toContain(health.statusCode);
     });
 
+    it('offers OIDC as configured: the starts answer, only hosted mode turns them off', async () => {
+      const meta = await h.app.inject({ method: 'GET', url: '/api/v1/meta' });
+      expect(meta.json<{ auth: Record<string, unknown> }>().auth).toMatchObject({ oidc: true });
+      expect((await h.app.inject(OIDC_ROUTES[0]!)).statusCode).toBe(201);
+      expect((await h.app.inject({ method: 'GET', url: '/sign-in/oidc' })).statusCode).toBe(302);
+    });
+
     it('names the public URL, never a slug, and checks cookies and Origin against it', async () => {
       const meta = await h.app.inject({ method: 'GET', url: '/api/v1/meta', headers: { host: 'acme.example.test' } });
       expect(meta.json<{ publicUrl: string }>().publicUrl).toBe(PUBLIC_URL);
@@ -126,17 +162,18 @@ describeDb('tenant resolution (spec §19.5)', () => {
     const ids: Record<string, string> = {};
     beforeAll(async () => {
       h = await identityHarness({
-        env: BROWSER_ENV,
+        env: { ...BROWSER_ENV, ...OIDC_ENV },
+        provider,
         modules: [probeModule],
         configure: hosted,
         beforeBuild: async (db, ctx) => {
           for (const slug of ['acme', 'paused', 'gone']) {
-            const created = await new TenantAdmin(db, ctx.tenancy.directory).create({ slug, name: slug });
+            const created = await new TenantAdmin(db, directoryOf(ctx.tenancy)).create({ slug, name: slug });
             ids[slug] = created.scope.tenantId;
           }
           await db.query(`update tenants set status = 'suspended' where slug = 'paused'`);
           await db.query(`update tenants set status = 'deleting' where slug = 'gone'`);
-          ids.default = ctx.tenancy.directory.defaultScope().tenantId;
+          ids.default = directoryOf(ctx.tenancy).defaultScope().tenantId;
         },
         onTenantResolver: (r) => {
           resolver = r;
@@ -231,6 +268,17 @@ describeDb('tenant resolution (spec §19.5)', () => {
         payload: '',
       });
       expect(refused.statusCode).toBe(403);
+    });
+
+    it('answers 404 on every OIDC route and reports no OIDC, though the operator configured it (spec §19.1)', async () => {
+      for (const route of OIDC_ROUTES) {
+        const res = await h.app.inject({ ...route, headers: { host: 'acme.example.test' } });
+        expect(res.statusCode, route.url).toBe(404);
+        expect(res.json<{ code: string }>().code, route.url).toBe('identity-method-disabled');
+      }
+      const meta = await h.app.inject({ method: 'GET', url: '/api/v1/meta', headers: { host: 'acme.example.test' } });
+      expect(meta.json<{ auth: Record<string, unknown> }>().auth).toMatchObject({ local: true, oidc: false });
+      expect(meta.body).not.toContain('oidcDisplayName');
     });
 
     it("names the tenant's URL in an invitation link", async () => {

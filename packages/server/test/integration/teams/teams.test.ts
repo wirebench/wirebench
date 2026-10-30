@@ -23,7 +23,7 @@ describeDb('/teams (§3.2)', () => {
     expect(res.status).toBe(201);
     expect(res.body).toMatchObject({ name: 'Payments QA', myRole: 'admin' });
     expect(res.body.id).toMatch(/^[0-9A-Z]{26}$/);
-    expect(await repo.memberRole(h.db, res.body.id, root.user.id)).toBe('admin');
+    expect(await repo.memberRole(h.tdb, res.body.id, root.user.id)).toBe('admin');
   });
 
   it('refuses a non-admin, a duplicate name in any case, a blank name and a long one', async () => {
@@ -94,10 +94,10 @@ describeDb('/teams (§3.2)', () => {
       status: 409,
       body: { code: 'teams-not-empty' },
     });
-    await repo.deleteWorkspace(h.db, workspaceId);
+    await repo.deleteWorkspace(h.tdb, workspaceId);
     expect((await call(h, root, 'DELETE', `/teams/${team.id}`)).status).toBe(204);
-    expect(await repo.teamById(h.db, team.id)).toBeUndefined();
-    expect(await repo.memberRole(h.db, team.id, alice.user.id)).toBeUndefined();
+    expect(await repo.teamById(h.tdb, team.id)).toBeUndefined();
+    expect(await repo.memberRole(h.tdb, team.id, alice.user.id)).toBeUndefined();
     expect((await call<{ code: string }>(h, root, 'DELETE', `/teams/${team.id}`)).body.code).toBe(
       'teams-team-not-found',
     );

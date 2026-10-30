@@ -1,3 +1,8 @@
+import { scopeOf } from '../../../src/tenancy/scope.js';
+
+/** The share's tenant, and another one with the same workspace id. */
+const TENANT = scopeOf({ id: '00000000-0000-4000-8000-000000000001', slug: 'default' });
+const OTHER_TENANT = scopeOf({ id: '00000000-0000-4000-8000-000000000002', slug: 'other' });
 import { describe, expect, it } from 'vitest';
 import {
   TERMINAL_SHARE_CLOSE,
@@ -89,6 +94,7 @@ function setup() {
     ownerId: OWNER,
     ownerName: 'Alice',
     source: who(OWNER, 'alice').source,
+    tenant: TENANT,
   });
   const owner = new FakePeer();
   const actions = (): string[] => audits.map((a) => a.action);
@@ -103,10 +109,10 @@ function setup() {
     tick: (ms: number) => {
       clock += ms;
     },
-    attachOwner: () => registry.attach(owner, who(OWNER, 'alice'), WS, shareId),
+    attachOwner: () => registry.attach(TENANT, owner, who(OWNER, 'alice'), WS, shareId),
     join: (userId: string, name: string, extra: Partial<ShareIdentity> = {}) => {
       const peer = new FakePeer();
-      return { peer, outcome: registry.attach(peer, who(userId, name, extra), WS, shareId) };
+      return { peer, outcome: registry.attach(TENANT, peer, who(userId, name, extra), WS, shareId) };
     },
   };
 }
@@ -127,10 +133,17 @@ describe('ShareRegistry (team sessions spec B1)', () => {
     const s = setup();
     expect(s.attachOwner()).toBe('owner');
     expect(s.owner.texts[0]).toEqual({ type: 'ready', role: 'owner' });
-    expect(s.registry.attach(new FakePeer(), who(OWNER, 'alice'), WS, s.shareId)).toBe('owner-taken');
-    expect(s.registry.attach(new FakePeer(), who(BOB, 'bob'), 'other', s.shareId)).toBe('not-found');
+    expect(s.registry.attach(TENANT, new FakePeer(), who(OWNER, 'alice'), WS, s.shareId)).toBe('owner-taken');
+    expect(s.registry.attach(TENANT, new FakePeer(), who(BOB, 'bob'), 'other', s.shareId)).toBe('not-found');
     expect(s.actions()).toEqual(['terminal_share.started']);
     expect(s.audits[0]).toMatchObject({ workspaceId: WS, shareId: s.shareId, details: { hostName: 'web' } });
+  });
+
+  it('finds a share only in its own tenant, with the same workspace id elsewhere (Task 9 review M4)', () => {
+    const s = setup();
+    expect(s.registry.info(OTHER_TENANT, WS, s.shareId, BOB)).toBeUndefined();
+    expect(s.registry.attach(OTHER_TENANT, new FakePeer(), who(BOB, 'bob'), WS, s.shareId)).toBe('not-found');
+    expect(s.registry.info(TENANT, WS, s.shareId, BOB)).toMatchObject({ hostName: 'web' });
   });
 
   it('drops a share whose owner never attaches', () => {
@@ -253,7 +266,7 @@ describe('ShareRegistry (team sessions spec B1)', () => {
     expect(s.owner.last('control').userId).toBeNull();
     expect(s.owner.last('presence').viewers).toEqual([]);
     expect(s.join(BOB, 'bob').outcome).toBe('removed');
-    expect(s.registry.info(WS, s.shareId, BOB)).toBeUndefined();
+    expect(s.registry.info(TENANT, WS, s.shareId, BOB)).toBeUndefined();
     expect(s.actions()).toContain('terminal_share.viewer_removed');
   });
 
@@ -262,7 +275,7 @@ describe('ShareRegistry (team sessions spec B1)', () => {
     s.attachOwner();
     for (let i = 0; i < TERMINAL_SHARE_LIMITS.maxViewers; i += 1) expect(s.join(BOB, `v${i}`).outcome).toBe('viewer');
     expect(s.join(CAROL, 'carol').outcome).toBe('full');
-    expect(s.registry.info(WS, s.shareId, CAROL)).toEqual({ hostName: 'web', ownerName: 'Alice', viewers: 20 });
+    expect(s.registry.info(TENANT, WS, s.shareId, CAROL)).toEqual({ hostName: 'web', ownerName: 'Alice', viewers: 20 });
   });
 
   it('ends for everyone when the owner ends it or leaves', () => {
@@ -300,12 +313,12 @@ describe('ShareRegistry (team sessions spec B1)', () => {
     const bob = s.join(BOB, 'bob');
     const carol = s.join(CAROL, 'carol');
     s.access.set(BOB, false);
-    await s.registry.recheck();
+    await s.registry.recheck(TENANT.tenantId);
     expect(bob.peer.last('ended').reason).toBe('access');
     expect(bob.peer.closed?.code).toBe(TERMINAL_SHARE_CLOSE.forbidden);
     expect(carol.peer.closed).toBeUndefined();
     s.access.set(OWNER, false);
-    await s.registry.recheck();
+    await s.registry.recheck(TENANT.tenantId);
     expect(carol.peer.last('ended').reason).toBe('access');
     expect(s.registry.size).toBe(0);
   });
@@ -314,12 +327,12 @@ describe('ShareRegistry (team sessions spec B1)', () => {
     const s = setup();
     s.attachOwner();
     const bob = s.join(BOB, 'bob');
-    s.registry.sessionEnded({ tokenId: 'tok-bob' });
+    s.registry.sessionEnded({ tenantId: TENANT.tenantId, tokenId: 'tok-bob' });
     expect(bob.peer.last('ended').reason).toBe('revoked');
     expect(bob.peer.closed?.code).toBe(TERMINAL_SHARE_CLOSE.unauthenticated);
-    s.registry.sessionEnded({ userId: OWNER, exceptTokenId: 'tok-alice' });
+    s.registry.sessionEnded({ tenantId: TENANT.tenantId, userId: OWNER, exceptTokenId: 'tok-alice' });
     expect(s.registry.size).toBe(1);
-    s.registry.sessionEnded({ userId: OWNER });
+    s.registry.sessionEnded({ tenantId: TENANT.tenantId, userId: OWNER });
     expect(s.registry.size).toBe(0);
   });
 
@@ -348,5 +361,42 @@ describe('ShareRegistry (team sessions spec B1)', () => {
     s.registry.message(s.owner, { type: 'resize', cols: 120, rows: 40 });
     expect(bob.peer.last('resize')).toEqual({ type: 'resize', cols: 120, rows: 40 });
     expect(s.join(CAROL, 'carol').peer.texts[0]).toMatchObject({ cols: 120, rows: 40 });
+  });
+});
+
+describe('ShareRegistry: one share id in two tenants (hosted edition spec §19.8 guard 5; tenancy Task 11)', () => {
+  it('keeps two shares with the same id apart: attach, info, viewers and endings stay in their tenant', () => {
+    const audits: ShareAuditEvent[] = [];
+    const registry = new ShareRegistry({
+      canView: () => Promise.resolve(true),
+      audit: (event) => audits.push(event),
+      newShareId: () => 'share-same-id-in-both-tenants',
+      now: () => 0,
+      setTimer: () => ({ cancel: () => undefined }),
+    });
+    const create = (tenant: typeof TENANT, hostName: string) =>
+      registry.create({
+        workspaceId: WS,
+        hostName,
+        cols: 80,
+        rows: 24,
+        ownerId: OWNER,
+        ownerName: 'Alice',
+        source: who(OWNER, 'alice').source,
+        tenant,
+      });
+    const id = create(TENANT, 'one');
+    expect(create(OTHER_TENANT, 'two')).toBe(id);
+    expect(registry.size).toBe(2);
+    expect(registry.attach(TENANT, new FakePeer(), who(OWNER, 'alice'), WS, id)).toBe('owner');
+    expect(registry.attach(OTHER_TENANT, new FakePeer(), who(OWNER, 'alice'), WS, id)).toBe('owner');
+    expect(registry.attach(TENANT, new FakePeer(), who(BOB, 'bob'), WS, id)).toBe('viewer');
+    expect(registry.info(TENANT, WS, id, CAROL)).toMatchObject({ hostName: 'one', viewers: 1 });
+    expect(registry.info(OTHER_TENANT, WS, id, CAROL)).toMatchObject({ hostName: 'two', viewers: 0 });
+    // The owner's token ends in tenant one: only that tenant's share ends.
+    registry.sessionEnded({ tenantId: TENANT.tenantId, tokenId: 'tok-alice' });
+    expect(registry.info(TENANT, WS, id, CAROL)).toBeUndefined();
+    expect(registry.info(OTHER_TENANT, WS, id, CAROL)).toMatchObject({ hostName: 'two' });
+    expect(audits.filter((a) => a.action === 'terminal_share.ended').map((a) => a.tenant)).toEqual([TENANT]);
   });
 });

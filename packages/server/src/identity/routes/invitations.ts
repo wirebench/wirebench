@@ -41,7 +41,7 @@ export const invitationRoutes =
       },
       async (request, reply) => {
         const body = request.body as InvitationCreateRequest;
-        const created = await createInvitation(env, {
+        const created = await createInvitation(env, request.tenant, {
           email: body.email,
           serverAdmin: body.serverAdmin ?? false,
           createdBy: request.caller!.id,
@@ -55,7 +55,7 @@ export const invitationRoutes =
     app.get(
       '/invitations',
       { preHandler: requireServerAdmin, schema: { response: { 200: jsonSchema(invitationsResponseSchema) } } },
-      async () => (await repo.listInvitations(env.ctx.db)).map(invitationSummary),
+      async (request) => (await repo.listInvitations(env.ctx.tenancy.db(request.tenant))).map(invitationSummary),
     );
 
     app.delete(
@@ -63,7 +63,7 @@ export const invitationRoutes =
       { preHandler: requireServerAdmin, schema: { params: jsonSchema(identityIdParamsSchema, { io: 'input' }) } },
       async (request, reply) => {
         const { id } = request.params as { id: string };
-        if (!(await revokeOpenInvitation(env, id, auditSource(request)))) throw notFound('Invitation');
+        if (!(await revokeOpenInvitation(env, request.tenant, id, auditSource(request)))) throw notFound('Invitation');
         return reply.code(204).send();
       },
     );
@@ -77,7 +77,7 @@ export const invitationRoutes =
           response: { 200: jsonSchema(invitationLookupResponseSchema) },
         },
       },
-      async (request) => lookupInvitation(env, (request.query as { secret: string }).secret),
+      async (request) => lookupInvitation(env, request.tenant, (request.query as { secret: string }).secret),
     );
 
     app.post(
@@ -92,6 +92,8 @@ export const invitationRoutes =
       async (request, reply) =>
         reply
           .code(201)
-          .send(await acceptInvitation(env, request.body as InvitationAcceptRequest, auditSource(request))),
+          .send(
+            await acceptInvitation(env, request.tenant, request.body as InvitationAcceptRequest, auditSource(request)),
+          ),
     );
   };

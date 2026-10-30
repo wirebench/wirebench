@@ -17,6 +17,7 @@ import type { SessionEnded } from '../context.js';
 import { HOST_CLOSE } from './errors.js';
 import type { ServerHost } from './host-runtime.js';
 import { hostDirectories } from './server-platform.js';
+import type { TenantScope } from '../tenancy/scope.js';
 
 /** One open host socket, as the instances see it. */
 export interface HostSocketHandle {
@@ -35,6 +36,8 @@ export interface HostUser {
   readonly email: string;
   /** The URL of the user's tenant (spec §19.5): what the host reaches, through the in-process transport. */
   readonly serverUrl: string;
+  /** The user's tenant: its in-process live client authenticates there. */
+  readonly tenant: TenantScope;
 }
 
 export interface HostInstancesDeps {

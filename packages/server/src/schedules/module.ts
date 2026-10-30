@@ -11,7 +11,7 @@ import type { ServerContext, ServerModule } from '../context.js';
 import type { SetTimer } from '../hooks/env.js';
 import { realTimer } from '../live/module.js';
 import { TMP_DIR } from '../repos/repo-store.js';
-import { CaptureSweeper } from '../hooks/sweep.js';
+import { CaptureSweeper, rawSweepTarget } from '../hooks/sweep.js';
 import { CommitStore } from '../sync/commit-store.js';
 import { AlertOutbox, alertDelivery, type DeliverAlert } from './alerts/outbox.js';
 import { deleteOutboxBefore, deleteRunsBefore } from './repo.js';
@@ -88,9 +88,10 @@ export function schedulesModule(options: SchedulesOptions = {}): ServerModule {
       const deliver = options.deliver ?? alertDelivery(settings, { egress: ctx.egress });
       const outbox = new AlertOutbox({ db: ctx.db, now, setTimer, log: ctx.log, license, deliver });
       options.onOutbox?.(outbox);
-      scheduleRoutes({ db: ctx.db, hooks: ctx.hooks, license, settings, now, deliver })(app);
+      scheduleRoutes({ db: ctx.db, tenancy: ctx.tenancy, hooks: ctx.hooks, license, settings, now, deliver })(app);
       scheduleRunRoutes({
         db: ctx.db,
+        tenancy: ctx.tenancy,
         hooks: ctx.hooks,
         license,
         now,
@@ -110,21 +111,19 @@ export function schedulesModule(options: SchedulesOptions = {}): ServerModule {
       // Retention (§3.6): runs past the maximum age with their results, and finished deliveries after a week.
       const sweepers = [
         new CaptureSweeper({
-          db: ctx.db,
           maxAgeDays: settings.maxAgeDays,
           now,
           setTimer,
           log: ctx.log,
-          deleteBefore: deleteRunsBefore,
+          target: rawSweepTarget(ctx.db, deleteRunsBefore),
           label: 'schedule run sweep',
         }),
         new CaptureSweeper({
-          db: ctx.db,
           maxAgeDays: OUTBOX_MAX_AGE_DAYS,
           now,
           setTimer,
           log: ctx.log,
-          deleteBefore: deleteOutboxBefore,
+          target: rawSweepTarget(ctx.db, deleteOutboxBefore),
           label: 'schedule alert sweep',
         }),
       ];

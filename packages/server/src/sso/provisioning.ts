@@ -6,16 +6,21 @@
  * SCIM only ever touches what it added: a join it makes is recorded per (team, user, group), a person an
  * admin added is left alone, and a provisioned person leaves the team only when no linked group still
  * holds them and their role is still `member`.
+ *
+ * Each runs in the caller's tenant unit, since identity's repository takes one (tenancy Task 8; the rest of
+ * this module moves in Task 15).
  */
 import type { TeamRole } from '@wirebench/engine';
 import type { FastifyBaseLogger } from 'fastify';
-import { announce, recordAudit, type AuditSource, type Querier, type ServerContext } from '../context.js';
+import { announce, recordAudit, type AuditSource, type ServerContext } from '../context.js';
 import * as identityRepo from '../identity/repo.js';
+import type { TenantScope } from '../tenancy/scope.js';
+import type { TenantQuerier } from '../tenancy/tenant-db.js';
 import * as teamsRepo from '../teams/repo.js';
 import * as repo from './repo.js';
 
 export interface ProvisioningEnv {
-  readonly ctx: Pick<ServerContext, 'db' | 'hooks'>;
+  readonly ctx: Pick<ServerContext, 'db' | 'tenancy' | 'hooks'>;
   readonly now: () => Date;
 }
 
@@ -27,8 +32,15 @@ export interface MemberDelta {
 /** Whose team access changed, to announce once the transaction has committed. */
 export type AccessChanges = { teamId: string; userId: string }[];
 
-export function announceAccess(env: ProvisioningEnv, changes: AccessChanges, log: FastifyBaseLogger): void {
-  for (const change of changes) announce(env.ctx.hooks.accessChanged, change, log);
+/** `scope` is the tenant the changes were made in. */
+export function announceAccess(
+  env: ProvisioningEnv,
+  scope: TenantScope,
+  changes: AccessChanges,
+  log: FastifyBaseLogger,
+): void {
+  for (const change of changes)
+    announce(env.ctx.hooks.accessChanged, { ...change, tenantId: scope.tenantId, tenant: scope }, log);
 }
 
 /** Plan ruling 8: a provisioned person leaves only when nothing provisions them and nobody promoted them. */
@@ -41,7 +53,7 @@ export function decideProvisionedRemoval(input: {
 
 async function joinTeam(
   env: ProvisioningEnv,
-  tx: Querier,
+  tx: TenantQuerier,
   key: { readonly teamId: string; readonly groupId: string; readonly userId: string },
   source: AuditSource,
   changes: AccessChanges,
@@ -67,7 +79,7 @@ async function joinTeam(
 
 async function leaveTeam(
   env: ProvisioningEnv,
-  tx: Querier,
+  tx: TenantQuerier,
   key: { readonly teamId: string; readonly groupId: string; readonly userId: string },
   source: AuditSource,
   changes: AccessChanges,
@@ -93,7 +105,7 @@ async function leaveTeam(
 /** Adds and removes `groupId`'s members, and follows through on its linked team; answers who changed. */
 export async function setGroupMembers(
   env: ProvisioningEnv,
-  tx: Querier,
+  tx: TenantQuerier,
   groupId: string,
   added: readonly string[],
   removed: readonly string[],
@@ -117,7 +129,7 @@ export async function setGroupMembers(
 /** Links `groupId` to `teamId` (moving it off any other team) and adds its enabled members. */
 export async function linkGroup(
   env: ProvisioningEnv,
-  tx: Querier,
+  tx: TenantQuerier,
   group: repo.ScimGroupRow,
   teamId: string,
   source: AuditSource,
@@ -141,7 +153,7 @@ export async function linkGroup(
 /** Unlinks `group` from its team; the members this group added leave, those added by hand stay. */
 export async function unlinkGroup(
   env: ProvisioningEnv,
-  tx: Querier,
+  tx: TenantQuerier,
   group: repo.ScimGroupRow,
   source: AuditSource,
   changes: AccessChanges,

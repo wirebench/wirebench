@@ -1,7 +1,7 @@
 // packages/server/test/integration/licensing/routes.test.ts
 import type { LicenseState } from '@wirebench/engine';
 import { afterEach, expect, it } from 'vitest';
-import type { LicenseChanged, ServerModule } from '../../../src/context.js';
+import type { LicenseChangedEvent, ServerModule } from '../../../src/context.js';
 import { requireServerAdmin } from '../../../src/identity/guard.js';
 import * as repo from '../../../src/licensing/repo.js';
 import { describeDb } from '../../helpers/database.js';
@@ -34,12 +34,12 @@ async function setUp(): Promise<{
   h: IdentityHarness;
   admin: SignedInUser;
   member: SignedInUser;
-  events: LicenseChanged[];
+  events: LicenseChangedEvent[];
 }> {
   h = await licensingHarness(keys, { extra: () => [probe] });
   const admin = await signedInUser(h, { email: 'admin@example.com', serverAdmin: true });
   const member = await signedInUser(h, { email: 'member@example.com' });
-  const events: LicenseChanged[] = [];
+  const events: LicenseChangedEvent[] = [];
   h.hooks.licenseChanged.push((event) => events.push(event));
   return { h, admin, member, events };
 }
@@ -77,13 +77,20 @@ describeDb('the license endpoints (licensing spec §3.6, §13)', () => {
       licenseId: PAYLOAD.id,
     });
     expect(events).toEqual([
-      { action: 'installed', licenseId: PAYLOAD.id, edition: 'team', actorUserId: admin.user.id },
+      {
+        action: 'installed',
+        licenseId: PAYLOAD.id,
+        edition: 'team',
+        actorUserId: admin.user.id,
+        tenantId: h.tdb.scope.tenantId,
+        tenant: h.tdb.scope,
+      },
     ]);
     const meta = (await call<Record<string, unknown>>(h, undefined, 'GET', '/meta')).body;
     expect(meta['edition']).toBe('team');
     expect(JSON.stringify(meta)).not.toContain(PAYLOAD.id);
     expect(JSON.stringify(meta)).not.toContain('Example AG');
-    expect((await repo.storedLicense(h.db))?.installedBy).toBe(admin.user.id);
+    expect((await repo.storedLicense(h.tdb))?.installedBy).toBe(admin.user.id);
   });
 
   it('refuses an invalid file without touching the stored license', async () => {
@@ -108,7 +115,7 @@ describeDb('the license endpoints (licensing spec §3.6, §13)', () => {
     const bound = await call<LicenseState>(h, admin, 'PUT', '/license', { license: license(keys, { serverId: id }) });
     expect(bound.status).toBe(200);
     expect(bound.body.status).toBe('active');
-    const stored = (await repo.storedLicense(h.db))?.text;
+    const stored = (await repo.storedLicense(h.tdb))?.text;
     const foreign = '11111111-2222-4333-8444-555555555555';
     const res = await call<{ code: string; message: string }>(h, admin, 'PUT', '/license', {
       license: license(keys, { serverId: foreign, customer: 'Other AG' }),
@@ -117,7 +124,7 @@ describeDb('the license endpoints (licensing spec §3.6, §13)', () => {
     expect(res.body.code).toBe('licensing-invalid');
     expect(res.body.message).toContain(foreign);
     expect(res.body.message).toContain(id);
-    expect((await repo.storedLicense(h.db))?.text).toBe(stored);
+    expect((await repo.storedLicense(h.tdb))?.text).toBe(stored);
   });
 
   it('removes the license; the server is Community on the next request', async () => {
@@ -125,7 +132,13 @@ describeDb('the license endpoints (licensing spec §3.6, §13)', () => {
     await call(h, admin, 'PUT', '/license', { license: license(keys) });
     expect((await call(h, admin, 'DELETE', '/license')).status).toBe(204);
     expect((await call<LicenseState>(h, admin, 'GET', '/license')).body.status).toBe('none');
-    expect(events.at(-1)).toEqual({ action: 'removed', licenseId: PAYLOAD.id, actorUserId: admin.user.id });
+    expect(events.at(-1)).toEqual({
+      action: 'removed',
+      licenseId: PAYLOAD.id,
+      actorUserId: admin.user.id,
+      tenantId: h.tdb.scope.tenantId,
+      tenant: h.tdb.scope,
+    });
     events.length = 0;
     expect((await call(h, admin, 'DELETE', '/license')).status).toBe(204);
     expect(events).toEqual([]); // nothing was stored, so nothing changed
@@ -133,7 +146,7 @@ describeDb('the license endpoints (licensing spec §3.6, §13)', () => {
 
   it('reports a stored license that no longer verifies as invalid, and the server as Community', async () => {
     const { h, admin } = await setUp();
-    await repo.putLicense(h.db, { text: license(other), licenseId: PAYLOAD.id, installedBy: null, at: h.clock.now });
+    await repo.putLicense(h.tdb, { text: license(other), licenseId: PAYLOAD.id, installedBy: null, at: h.clock.now });
     expect((await call<LicenseState>(h, admin, 'GET', '/license')).body).toMatchObject({
       edition: 'community',
       status: 'invalid',

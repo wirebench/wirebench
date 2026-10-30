@@ -8,6 +8,10 @@
  * subscribes, and the after-commit announcements (§3.2) feed it events. It reaches the database only
  * through the two injected queries (§10), and it reads time only through the injected clock. A unit
  * test can therefore drive it with fake sockets and fake time.
+ *
+ * Every index is keyed by tenant first (hosted edition spec §19.8 guard 5): a workspace's subscribers are a
+ * *room*, `tenantId:workspaceId`, and users, tokens and catch URL windows are keyed `tenantId:id` too. An
+ * announcement names its tenant, so it reaches only that tenant's sockets, whatever ids another tenant has.
  */
 import type { FastifyBaseLogger } from 'fastify';
 import {
@@ -18,13 +22,14 @@ import {
   type WorkspaceRole,
 } from '@wirebench/engine';
 import type {
-  AccessChanged,
-  CaptureReceived,
-  HeadMoved,
-  HooksChanged,
-  ScheduleRunFinished,
-  SessionEnded,
+  AccessChangedEvent,
+  CaptureReceivedEvent,
+  HeadMovedEvent,
+  HooksChangedEvent,
+  ScheduleRunFinishedEvent,
+  SessionEndedEvent,
 } from '../context.js';
+import type { TenantScope } from '../tenancy/scope.js';
 import type { Effective } from '../teams/roles.js';
 import { LIVE_TOO_MANY_SUBSCRIPTIONS } from './errors.js';
 
@@ -47,14 +52,22 @@ export interface LiveSession {
   readonly name: string;
   /** Milliseconds since the epoch: the token's `createdAt` plus `tokenMaxMs`, when the session ends by age. */
   readonly expiresAt: number;
+  /** The tenant the socket authenticated in: the hub's two queries run there (spec §19.8 guard 6). */
+  readonly tenant: TenantScope;
 }
 
 export interface LiveHubDeps {
-  readonly effectiveRole: (userId: string, workspaceId: string) => Promise<Effective>;
-  readonly workspaceIdsOfTeam: (teamId: string) => Promise<string[]>;
+  readonly effectiveRole: (userId: string, workspaceId: string, tenant: TenantScope) => Promise<Effective>;
+  readonly workspaceIdsOfTeam: (teamId: string, tenant: TenantScope) => Promise<string[]>;
   readonly log: FastifyBaseLogger;
   readonly now: () => number;
   readonly setTimer: (fn: () => void, ms: number) => { cancel(): void };
+  /**
+   * Hosted mode: an announcement with no tenant fails closed, dropped with one warning, rather than reaching
+   * a workspace id's rooms in every tenant (Task 11 review I1). Only the executor's `scheduleRunFinished` has
+   * none, until Task 13.
+   */
+  readonly hosted?: boolean;
 }
 
 /** Node's `setTimeout` fires at once past 2^31 − 1 ms (about 24.8 days), and the default maximum token age is 180 days. */
@@ -65,14 +78,19 @@ export const CAPTURE_WINDOW_MS = 250;
 
 /** A catch URL's open window: the newest capture announced since its last `capture`, if any. */
 interface CaptureWindow {
-  held: CaptureReceived | undefined;
+  held: CaptureReceivedEvent | undefined;
   timer: { cancel(): void } | undefined;
 }
 
 const byName = new Intl.Collator('en', { sensitivity: 'base' });
 
 type RefusedCode = Extract<LiveServerMessage, { type: 'refused' }>['code'];
-type Pair = readonly [workspaceId: string, userId: string];
+/** A workspace's subscribers in one tenant: `tenantId:workspaceId`. A tenant id is a UUID, so it holds no `:`. */
+type Room = string;
+type Pair = readonly [room: Room, userId: string];
+
+const keyOf = (tenantId: string, id: string): string => `${tenantId}:${id}`;
+const workspaceOf = (room: Room): string => room.slice(room.indexOf(':') + 1);
 
 /** Per authenticated socket. Its fields are mutable on purpose, because only the hub holds it. */
 interface SocketState {
@@ -99,6 +117,7 @@ export class LiveHub {
    */
   private rechecks: Promise<void> = Promise.resolve();
   private closed = false;
+  private warnedTenantless = false;
 
   constructor(private readonly deps: LiveHubDeps) {}
 
@@ -115,14 +134,14 @@ export class LiveHub {
       return 'ok';
     }
     if (this.bySocket.has(socket)) return 'ok';
-    if ((this.byUser.get(session.userId)?.size ?? 0) >= LIVE_LIMITS.maxSocketsPerUser) {
+    if ((this.byUser.get(userKey(session))?.size ?? 0) >= LIVE_LIMITS.maxSocketsPerUser) {
       closeQuietly(socket, LIVE_CLOSE.tooManySockets, 'too many live connections');
       return 'too-many-sockets';
     }
     const state: SocketState = { session, subs: new Map(), deadline: undefined, awaitingPong: false };
     this.bySocket.set(socket, state);
-    addTo(this.byUser, session.userId, socket);
-    addTo(this.byToken, session.tokenId, socket);
+    addTo(this.byUser, userKey(session), socket);
+    addTo(this.byToken, tokenKey(session), socket);
     this.armDeadline(socket, state);
     this.deliver([socket], { type: 'ready' });
     return 'ok';
@@ -146,8 +165,9 @@ export class LiveHub {
   unsubscribe(socket: LiveSocket, workspaceId: string): void {
     const state = this.bySocket.get(socket);
     if (state === undefined || !state.subs.delete(workspaceId)) return;
-    removeFrom(this.byWorkspace, workspaceId, socket);
-    this.announcePresence(this.whoLeft([[workspaceId, state.session.userId]]));
+    const room = roomOf(state.session, workspaceId);
+    removeFrom(this.byWorkspace, room, socket);
+    this.announcePresence(this.whoLeft([[room, state.session.userId]]));
   }
 
   /** The socket closed. Idempotent: a socket the hub already ended, dropped or never held changes nothing. */
@@ -180,8 +200,8 @@ export class LiveHub {
   }
 
   /** `head` to every subscriber of the workspace except the pushing session's sockets (§3.1). */
-  headMoved(event: HeadMoved): void {
-    const targets = [...(this.byWorkspace.get(event.workspaceId) ?? [])].filter(
+  headMoved(event: HeadMovedEvent): void {
+    const targets = [...(this.byWorkspace.get(keyOf(event.tenantId, event.workspaceId)) ?? [])].filter(
       (socket) => this.bySocket.get(socket)?.session.tokenId !== event.tokenId,
     );
     this.deliver(targets, { type: 'head', workspaceId: event.workspaceId, head: event.head });
@@ -192,8 +212,8 @@ export class LiveHub {
    * (§3.3). Checks run one at a time, in the order the events came. Nothing subscribed means nothing
    * to re-check and no query.
    */
-  accessChanged(event: AccessChanged): void {
-    if (this.byWorkspace.size === 0) return;
+  accessChanged(event: AccessChangedEvent): void {
+    if (![...this.byWorkspace.keys()].some((room) => room.startsWith(`${event.tenantId}:`))) return;
     this.rechecks = this.rechecks
       .then(() => this.recheck(event))
       .catch((error: unknown) => {
@@ -203,11 +223,11 @@ export class LiveHub {
   }
 
   /** `session-ended`, then close `4401`, for a token's sockets or a user's, minus `exceptTokenId` (§3.1). */
-  sessionEnded(event: SessionEnded): void {
+  sessionEnded(event: SessionEndedEvent): void {
     const sockets =
       'tokenId' in event
-        ? [...(this.byToken.get(event.tokenId) ?? [])]
-        : [...(this.byUser.get(event.userId) ?? [])].filter(
+        ? [...(this.byToken.get(keyOf(event.tenantId, event.tokenId)) ?? [])]
+        : [...(this.byUser.get(keyOf(event.tenantId, event.userId)) ?? [])].filter(
             (socket) => this.bySocket.get(socket)?.session.tokenId !== event.exceptTokenId,
           );
     if (sockets.length > 0) this.end(sockets);
@@ -219,9 +239,9 @@ export class LiveHub {
    * meanwhile and sends it when it ends. The desktop fetches everything after what it holds, so the
    * merged ones are not lost.
    */
-  captureReceived(event: CaptureReceived): void {
+  captureReceived(event: CaptureReceivedEvent): void {
     if (this.closed) return;
-    const open = this.captureWindows.get(event.hookId);
+    const open = this.captureWindows.get(keyOf(event.tenantId, event.hookId));
     if (open === undefined) {
       this.sendCapture(event);
       return;
@@ -231,16 +251,39 @@ export class LiveHub {
   }
 
   /** `hooks` to every subscriber of the workspace: its catch URLs changed (webhook-capture §3.6). */
-  hooksChanged(event: HooksChanged): void {
+  hooksChanged(event: HooksChangedEvent): void {
     if (this.closed) return;
-    this.deliver(this.byWorkspace.get(event.workspaceId) ?? [], { type: 'hooks', workspaceId: event.workspaceId });
+    this.deliver(this.byWorkspace.get(keyOf(event.tenantId, event.workspaceId)) ?? [], {
+      type: 'hooks',
+      workspaceId: event.workspaceId,
+    });
   }
 
-  /** `schedule-run` to every subscriber of the workspace: one of its scheduled runs ended (scheduled-runs §3.5). */
-  scheduleRunFinished(event: ScheduleRunFinished): void {
+  /**
+   * `schedule-run` to every subscriber of the workspace: one of its scheduled runs ended (scheduled-runs §3.5).
+   * The executor's announcement has no tenant until Task 13 runs it per tenant: it then reaches the workspace's
+   * rooms in every tenant, which before `0021` is the one tenant a workspace id can belong to.
+   */
+  scheduleRunFinished(event: ScheduleRunFinishedEvent): void {
     if (this.closed) return;
     const { workspaceId, scheduleId, runId, status } = event;
-    this.deliver(this.byWorkspace.get(workspaceId) ?? [], {
+    if (event.tenantId === undefined && this.deps.hosted === true) {
+      if (!this.warnedTenantless) {
+        this.warnedTenantless = true;
+        this.deps.log.warn(
+          { workspaceId },
+          'a scheduled run ended with no tenant: hosted mode sends it nowhere until the executor runs per tenant',
+        );
+      }
+      return;
+    }
+    const targets =
+      event.tenantId !== undefined
+        ? (this.byWorkspace.get(keyOf(event.tenantId, workspaceId)) ?? [])
+        : [...this.byWorkspace]
+            .filter(([room]) => workspaceOf(room) === workspaceId)
+            .flatMap(([, sockets]) => [...sockets]);
+    this.deliver(targets, {
       type: 'schedule-run',
       workspaceId,
       scheduleId,
@@ -277,13 +320,13 @@ export class LiveHub {
   private async admitSubscription(socket: LiveSocket, workspaceId: string): Promise<void> {
     const state = this.bySocket.get(socket);
     if (state === undefined || state.subs.has(workspaceId)) return;
-    if (this.full(state.session.tokenId)) {
+    if (this.full(state.session)) {
       this.refuse(socket, workspaceId, LIVE_TOO_MANY_SUBSCRIPTIONS);
       return;
     }
     let found: Effective;
     try {
-      found = await this.deps.effectiveRole(state.session.userId, workspaceId);
+      found = await this.deps.effectiveRole(state.session.userId, workspaceId, state.session.tenant);
     } catch (error) {
       this.deps.log.warn({ err: error, workspaceId }, 'live subscribe role check failed');
       if (this.bySocket.get(socket) === state) this.fail(socket);
@@ -295,15 +338,16 @@ export class LiveHub {
       this.refuse(socket, workspaceId, 'teams-workspace-not-found');
       return;
     }
-    if (this.full(state.session.tokenId)) {
+    if (this.full(state.session)) {
       this.refuse(socket, workspaceId, LIVE_TOO_MANY_SUBSCRIPTIONS);
       return;
     }
-    const arriving = !this.isPresent(workspaceId, state.session.userId);
+    const room = roomOf(state.session, workspaceId);
+    const arriving = !this.isPresent(room, state.session.userId);
     state.subs.set(workspaceId, found.role);
-    addTo(this.byWorkspace, workspaceId, socket);
-    const message: LiveServerMessage = { type: 'presence', workspaceId, users: this.presenceOf(workspaceId) };
-    this.deliver(arriving ? (this.byWorkspace.get(workspaceId) ?? []) : [socket], message);
+    addTo(this.byWorkspace, room, socket);
+    const message: LiveServerMessage = { type: 'presence', workspaceId, users: this.presenceOf(room) };
+    this.deliver(arriving ? (this.byWorkspace.get(room) ?? []) : [socket], message);
   }
 
   private refuse(socket: LiveSocket, workspaceId: string, code: RefusedCode): void {
@@ -311,46 +355,56 @@ export class LiveHub {
   }
 
   /** Sends `event` and opens its catch URL's window; the window re-sends what it held when it ends. */
-  private sendCapture(event: CaptureReceived): void {
+  private sendCapture(event: CaptureReceivedEvent): void {
     const { workspaceId, hookId, captureId } = event;
-    this.deliver(this.byWorkspace.get(workspaceId) ?? [], { type: 'capture', workspaceId, hookId, captureId });
+    this.deliver(this.byWorkspace.get(keyOf(event.tenantId, workspaceId)) ?? [], {
+      type: 'capture',
+      workspaceId,
+      hookId,
+      captureId,
+    });
     const slot: CaptureWindow = { held: undefined, timer: undefined };
-    this.captureWindows.set(hookId, slot);
+    const windowKey = keyOf(event.tenantId, hookId);
+    this.captureWindows.set(windowKey, slot);
     slot.timer = this.deps.setTimer(() => {
-      this.captureWindows.delete(hookId);
+      this.captureWindows.delete(windowKey);
       if (slot.held !== undefined) this.sendCapture(slot.held);
     }, CAPTURE_WINDOW_MS);
   }
 
   /** §3.3: a session has at most 200 subscriptions across its sockets. */
-  private full(tokenId: string): boolean {
+  private full(session: LiveSession): boolean {
     let count = 0;
-    for (const socket of this.byToken.get(tokenId) ?? []) count += this.bySocket.get(socket)?.subs.size ?? 0;
+    for (const socket of this.byToken.get(tokenKey(session)) ?? []) count += this.bySocket.get(socket)?.subs.size ?? 0;
     return count >= LIVE_LIMITS.maxSubscriptionsPerSession;
   }
 
-  private async recheck(event: AccessChanged): Promise<void> {
+  private async recheck(event: AccessChangedEvent): Promise<void> {
     try {
-      const pairs = new Map<string, { readonly userId: string; readonly workspaceId: string }>();
-      const workspaceIds = await this.scope(event);
+      const pairs = new Map<
+        string,
+        { readonly userId: string; readonly workspaceId: string; readonly tenant: TenantScope }
+      >();
+      const rooms = await this.scope(event);
       if (this.closed) return;
-      for (const workspaceId of workspaceIds) {
-        for (const socket of this.byWorkspace.get(workspaceId) ?? []) {
-          const userId = this.bySocket.get(socket)?.session.userId;
-          if (userId === undefined || (event.userId !== undefined && event.userId !== userId)) continue;
-          pairs.set(`${userId} ${workspaceId}`, { userId, workspaceId });
+      for (const room of rooms) {
+        const workspaceId = workspaceOf(room);
+        for (const socket of this.byWorkspace.get(room) ?? []) {
+          const session = this.bySocket.get(socket)?.session;
+          if (session === undefined || (event.userId !== undefined && event.userId !== session.userId)) continue;
+          pairs.set(`${room} ${session.userId}`, {
+            userId: session.userId,
+            workspaceId,
+            tenant: session.tenant,
+          });
         }
       }
-      const results: {
-        readonly userId: string;
-        readonly workspaceId: string;
-        readonly role: WorkspaceRole | 'none';
-      }[] = [];
+      const results: { readonly room: Room; readonly userId: string; readonly role: WorkspaceRole | 'none' }[] = [];
       // One query at a time: a team-wide change costs one per subscribed member, in the background (§15).
       for (const pair of pairs.values()) {
         if (this.closed) return; // closeAll() dropped every subscription: nothing is left to ask about
-        const found = await this.deps.effectiveRole(pair.userId, pair.workspaceId);
-        results.push({ ...pair, role: found.role });
+        const found = await this.deps.effectiveRole(pair.userId, pair.workspaceId, pair.tenant);
+        results.push({ room: keyOf(pair.tenant.tenantId, pair.workspaceId), userId: pair.userId, role: found.role });
       }
       this.applyRoles(results);
     } catch (error) {
@@ -360,21 +414,21 @@ export class LiveHub {
   }
 
   /**
-   * The subscribed workspaces an `AccessChanged` can touch (§3.2): its workspace, or its team's. With
-   * only a user set, every workspace is in scope.
+   * The subscribed rooms of the event's tenant an `AccessChanged` can touch (§3.2): its workspace, or its
+   * team's. With only a user set, every workspace of that tenant is in scope.
    */
-  private async scope(event: AccessChanged): Promise<string[]> {
-    const ids = new Set<string>();
-    if (event.workspaceId !== undefined) ids.add(event.workspaceId);
+  private async scope(event: AccessChangedEvent): Promise<Room[]> {
+    const rooms = new Set<Room>();
+    if (event.workspaceId !== undefined) rooms.add(keyOf(event.tenantId, event.workspaceId));
     if (event.teamId !== undefined) {
-      const teamWorkspaceIds = await this.deps.workspaceIdsOfTeam(event.teamId);
+      const teamWorkspaceIds = await this.deps.workspaceIdsOfTeam(event.teamId, event.tenant);
       if (this.closed) return [];
-      for (const id of teamWorkspaceIds) ids.add(id);
+      for (const id of teamWorkspaceIds) rooms.add(keyOf(event.tenantId, id));
     }
     if (event.workspaceId === undefined && event.teamId === undefined) {
-      for (const id of this.byWorkspace.keys()) ids.add(id);
+      for (const room of this.byWorkspace.keys()) if (room.startsWith(`${event.tenantId}:`)) rooms.add(room);
     }
-    return [...ids].filter((id) => this.byWorkspace.has(id));
+    return [...rooms].filter((room) => this.byWorkspace.has(room));
   }
 
   /**
@@ -384,16 +438,13 @@ export class LiveHub {
    * goes out per workspace and none reaches a socket about to lose access.
    */
   private applyRoles(
-    results: readonly {
-      readonly userId: string;
-      readonly workspaceId: string;
-      readonly role: WorkspaceRole | 'none';
-    }[],
+    results: readonly { readonly room: Room; readonly userId: string; readonly role: WorkspaceRole | 'none' }[],
   ): void {
     const left: Pair[] = [];
     const dead: LiveSocket[] = [];
-    for (const { userId, workspaceId, role } of results) {
-      for (const socket of [...(this.byWorkspace.get(workspaceId) ?? [])]) {
+    for (const { room, userId, role } of results) {
+      const workspaceId = workspaceOf(room);
+      for (const socket of [...(this.byWorkspace.get(room) ?? [])]) {
         const state = this.bySocket.get(socket);
         const recorded = state?.subs.get(workspaceId);
         if (state === undefined || state.session.userId !== userId || recorded === undefined || recorded === role)
@@ -404,8 +455,8 @@ export class LiveHub {
         }
         if (role === 'none') {
           state.subs.delete(workspaceId);
-          removeFrom(this.byWorkspace, workspaceId, socket);
-          left.push([workspaceId, userId]);
+          removeFrom(this.byWorkspace, room, socket);
+          left.push([room, userId]);
         } else {
           state.subs.set(workspaceId, role);
         }
@@ -413,7 +464,7 @@ export class LiveHub {
     }
     this.terminate(dead);
     const changed = this.detach(dead);
-    for (const workspaceId of this.whoLeft(left)) changed.add(workspaceId);
+    for (const room of this.whoLeft(left)) changed.add(room);
     this.announcePresence(changed);
   }
 
@@ -477,44 +528,45 @@ export class LiveHub {
     if (dead.length > 0) this.discard(dead);
   }
 
-  /** Takes sockets out of every index and cancels their timers. Returns the workspaces whose user list changed. */
-  private detach(sockets: Iterable<LiveSocket>): Set<string> {
+  /** Takes sockets out of every index and cancels their timers. Returns the rooms whose user list changed. */
+  private detach(sockets: Iterable<LiveSocket>): Set<Room> {
     const left: Pair[] = [];
     for (const socket of sockets) {
       const state = this.bySocket.get(socket);
       if (state === undefined) continue;
       state.deadline?.cancel();
       this.bySocket.delete(socket);
-      removeFrom(this.byUser, state.session.userId, socket);
-      removeFrom(this.byToken, state.session.tokenId, socket);
+      removeFrom(this.byUser, userKey(state.session), socket);
+      removeFrom(this.byToken, tokenKey(state.session), socket);
       for (const workspaceId of state.subs.keys()) {
-        removeFrom(this.byWorkspace, workspaceId, socket);
-        left.push([workspaceId, state.session.userId]);
+        const room = roomOf(state.session, workspaceId);
+        removeFrom(this.byWorkspace, room, socket);
+        left.push([room, state.session.userId]);
       }
     }
     return this.whoLeft(left);
   }
 
-  /** Of the (workspace, user) pairs that just lost a socket, the workspaces where that user now has none. */
-  private whoLeft(pairs: readonly Pair[]): Set<string> {
-    const changed = new Set<string>();
-    for (const [workspaceId, userId] of pairs) {
-      if (!this.isPresent(workspaceId, userId)) changed.add(workspaceId);
+  /** Of the (room, user) pairs that just lost a socket, the rooms where that user now has none. */
+  private whoLeft(pairs: readonly Pair[]): Set<Room> {
+    const changed = new Set<Room>();
+    for (const [room, userId] of pairs) {
+      if (!this.isPresent(room, userId)) changed.add(room);
     }
     return changed;
   }
 
-  private isPresent(workspaceId: string, userId: string): boolean {
-    for (const socket of this.byWorkspace.get(workspaceId) ?? []) {
+  private isPresent(room: Room, userId: string): boolean {
+    for (const socket of this.byWorkspace.get(room) ?? []) {
       if (this.bySocket.get(socket)?.session.userId === userId) return true;
     }
     return false;
   }
 
   /** §3.1: the distinct users subscribed, the recipient included, sorted by name and then id. */
-  private presenceOf(workspaceId: string): LivePresenceUser[] {
+  private presenceOf(room: Room): LivePresenceUser[] {
     const users = new Map<string, LivePresenceUser>();
-    for (const socket of this.byWorkspace.get(workspaceId) ?? []) {
+    for (const socket of this.byWorkspace.get(room) ?? []) {
       const session = this.bySocket.get(socket)?.session;
       if (session !== undefined && !users.has(session.userId)) {
         users.set(session.userId, { id: session.userId, name: session.name });
@@ -523,14 +575,18 @@ export class LiveHub {
     return [...users.values()].sort((a, b) => byName.compare(a.name, b.name) || compareIds(a.id, b.id));
   }
 
-  private announcePresence(workspaceIds: Iterable<string>): void {
-    for (const workspaceId of workspaceIds) {
-      const sockets = this.byWorkspace.get(workspaceId);
+  private announcePresence(rooms: Iterable<Room>): void {
+    for (const room of rooms) {
+      const sockets = this.byWorkspace.get(room);
       if (sockets === undefined) continue;
-      this.deliver(sockets, { type: 'presence', workspaceId, users: this.presenceOf(workspaceId) });
+      this.deliver(sockets, { type: 'presence', workspaceId: workspaceOf(room), users: this.presenceOf(room) });
     }
   }
 }
+
+const roomOf = (session: LiveSession, workspaceId: string): Room => keyOf(session.tenant.tenantId, workspaceId);
+const userKey = (session: LiveSession): string => keyOf(session.tenant.tenantId, session.userId);
+const tokenKey = (session: LiveSession): string => keyOf(session.tenant.tenantId, session.tokenId);
 
 function addTo<K>(index: Map<K, Set<LiveSocket>>, key: K, socket: LiveSocket): void {
   const sockets = index.get(key);

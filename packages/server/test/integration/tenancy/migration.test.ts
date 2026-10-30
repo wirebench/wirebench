@@ -34,6 +34,7 @@ import {
 import { describeDb, testDatabase } from '../../helpers/database.js';
 import { mkTempDir, removeTempDir } from '../../helpers/git.js';
 import { signedInUser } from '../../helpers/identity.js';
+import { asTenantQuerier, defaultTenantDb } from '../../helpers/tenancy.js';
 import { license, licensingHarness, testKeys } from '../../helpers/licensing.js';
 
 /** Where the rollback test cuts 0020: the foreign keys are gone, no key is rebuilt yet. */
@@ -348,13 +349,13 @@ describeDb('migration 0020 on the frozen 0019 fixture (hosted spec §19.3, §19.
         return { rows: [] as R[], rowCount: 0 };
       },
     };
-    await tokenByHash(explaining, 'no-such-hash');
-    await findUserByEmail(explaining, 'admin@example.com');
+    await tokenByHash(asTenantQuerier(explaining), 'no-such-hash');
+    await findUserByEmail(asTenantQuerier(explaining), 'admin@example.com');
     await chainHead(explaining);
     await listAuditEvents(explaining, {}, { limit: 50 });
-    await deleteCapturesBefore(explaining, new Date(), 100);
-    await catchUrlBySecret(explaining, 'no-such-secret');
-    await ciTokenByHash(explaining, 'no-such-hash');
+    await deleteCapturesBefore(asTenantQuerier(explaining), new Date(), 100);
+    await catchUrlBySecret(asTenantQuerier(explaining), 'no-such-secret');
+    await ciTokenByHash(asTenantQuerier(explaining), 'no-such-hash');
     await scimTokenByHash(explaining, 'no-such-hash');
     const [token, email, head, listing, retention, secret, ciToken, scimToken] = plans;
     expect(token).toContain('device_tokens_token_hash_key_0019');
@@ -486,13 +487,18 @@ describeDb('migration 0020 on the frozen 0019 fixture (hosted spec §19.3, §19.
     const at = new Date('2026-10-30T12:00:00.000Z');
     const { admin } = fixture.users;
     // identity: local_credentials, by (tenant_id, user_id); the admin has a password in the fixture.
-    await upsertCredential(db, admin, 'scrypt$replaced', at);
+    await upsertCredential(await defaultTenantDb(db), admin, 'scrypt$replaced', at);
     expect((await db.query('select password_hash from local_credentials where user_id = $1', [admin])).rows).toEqual([
       { password_hash: 'scrypt$replaced' },
     ]);
     // teams-access: workspace_grants, by (tenant_id, workspace_id, user_id).
     const [grant] = (await db.query<{ workspace_id: string; user_id: string }>('select * from workspace_grants')).rows;
-    await upsertGrant(db, { workspaceId: grant!.workspace_id, userId: grant!.user_id, role: 'admin', at });
+    await upsertGrant(await defaultTenantDb(db), {
+      workspaceId: grant!.workspace_id,
+      userId: grant!.user_id,
+      role: 'admin',
+      at,
+    });
     expect(
       (
         await db.query('select role from workspace_grants where workspace_id = $1 and user_id = $2', [
@@ -502,8 +508,9 @@ describeDb('migration 0020 on the frozen 0019 fixture (hosted spec §19.3, §19.
       ).rows,
     ).toEqual([{ role: 'admin' }]);
     // licensing: the license, by tenant_id, its new primary key.
-    await putLicense(db, { text: 'wbl1.replaced', licenseId: 'L-new', installedBy: admin, at });
-    expect(await storedLicense(db)).toMatchObject({ text: 'wbl1.replaced', licenseId: 'L-new' });
+    const tdb = await defaultTenantDb(db);
+    await putLicense(tdb, { text: 'wbl1.replaced', licenseId: 'L-new', installedBy: admin, at });
+    expect(await storedLicense(tdb)).toMatchObject({ text: 'wbl1.replaced', licenseId: 'L-new' });
     expect((await db.query('select count(*)::int as n from license')).rows).toEqual([{ n: 1 }]);
     // audit-log: the anchor, by tenant_id; the fixture's anchor wins.
     const anchor = await readAnchor(db);

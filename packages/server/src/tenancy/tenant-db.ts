@@ -98,14 +98,26 @@ interface ActiveUnit {
   readonly track: <T>(work: () => Promise<T>) => Promise<T>;
 }
 
+// The units the current async call chain runs in, one per factory. A timer a unit started may outlive it: an
+// ended unit counts as none. One store for every factory, so `outsideTenantUnit` can leave all of them, keyed
+// by factory, so a unit of one factory opened inside another's never hides the outer one (Task 8 review M2).
+const active = new AsyncLocalStorage<ReadonlyMap<object, ActiveUnit>>();
+
+/**
+ * Runs `fn` outside any tenant unit (Task 6 re-review R4). For work that starts in a unit but is not part of
+ * it: an announcement's listeners, which nobody awaits. A listener that reached `ctx.tenancy.db` from inside
+ * the unit would join it, and the unit would then fail with `tenancy-unawaited` and roll back.
+ */
+export function outsideTenantUnit<T>(fn: () => T): T {
+  return active.exit(fn);
+}
+
 export function tenantDbFactory(db: Database, options: TenancyDbOptions = {}): TenantDbFactory {
   let units = 0;
-  // The unit the current async call chain runs in. A timer a unit started may outlive it: an ended unit counts
-  // as none.
-  const active = new AsyncLocalStorage<ActiveUnit>();
+  const factory = {};
   let savepoints = 0;
   const outerFor = (scope: TenantScope): ActiveUnit | undefined => {
-    const outer = active.getStore();
+    const outer = active.getStore()?.get(factory);
     if (outer === undefined || outer.ended()) return undefined;
     if (outer.scope.tenantId !== scope.tenantId) {
       throw new WirebenchError(
@@ -178,7 +190,8 @@ export function tenantDbFactory(db: Database, options: TenancyDbOptions = {}): T
           },
         } as TenantQuerier;
         try {
-          const result = await active.run({ scope, tx, ended: () => ended, track }, () => fn(tx));
+          const running = new Map(active.getStore()).set(factory, { scope, tx, ended: () => ended, track });
+          const result = await active.run(running, () => fn(tx));
           if (inFlight > 0) {
             throw new WirebenchError(
               'tenancy-unawaited',

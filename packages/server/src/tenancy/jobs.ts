@@ -13,6 +13,9 @@ export interface JobLoopDeps {
   readonly log: Pick<FastifyBaseLogger, 'error'>;
 }
 
+/** What a job's function returns to end the pass early: the tenants after this one get no unit. */
+export const STOP_PASS: unique symbol = Symbol('stop the job pass');
+
 export interface JobPass {
   readonly served: number;
   readonly failed: readonly string[];
@@ -21,14 +24,15 @@ export interface JobPass {
 export async function forEachTenant(
   deps: JobLoopDeps,
   job: string,
-  fn: (tx: TenantQuerier, scope: TenantScope) => Promise<void>,
+  fn: (tx: TenantQuerier, scope: TenantScope) => Promise<void | typeof STOP_PASS>,
 ): Promise<JobPass> {
   const failed: string[] = [];
   let served = 0;
   for (const scope of await deps.directory.list()) {
     try {
-      await deps.db(scope).transaction((tx) => fn(tx, scope));
+      const outcome = await deps.db(scope).transaction((tx) => fn(tx, scope));
       served++;
+      if (outcome === STOP_PASS) break;
     } catch (error) {
       failed.push(scope.tenantId);
       deps.log.error({ err: error, job, tenantId: scope.tenantId }, 'a job failed for one tenant');

@@ -40,7 +40,7 @@ describeDb('POST /auth/local/sign-in and /auth/sign-out (§3.1)', () => {
       headers: { authorization: `Bearer ${body.token}` },
     });
     expect(me.statusCode).toBe(200);
-    expect((await repo.tokensOfUser(h.db, alice.user.id)).map((t) => t.deviceName)).toContain('MacBook of Alice');
+    expect((await repo.tokensOfUser(h.tdb, alice.user.id)).map((t) => t.deviceName)).toContain('MacBook of Alice');
   });
 
   it('says the same thing for an unknown email and a wrong password', async () => {
@@ -51,6 +51,24 @@ describeDb('POST /auth/local/sign-in and /auth/sign-out (§3.1)', () => {
     expect(wrong.statusCode).toBe(401);
     expect(unknown.body).toBe(wrong.body);
     expect(unknown.json<{ code: string }>().code).toBe('identity-invalid-credentials');
+  });
+
+  it('costs the same units and statements for an unknown email as for a wrong password (Task 8 review I1)', async () => {
+    await signedInUser(h, { email: 'alice@example.com', password: PASSWORD });
+    /** The statement count of each unit a sign-in opened, in order. */
+    const shape = async (email: string): Promise<number[]> => {
+      h.statements.entries.length = 0;
+      expect((await signIn(email, 'wrong password!')).statusCode).toBe(401);
+      const perUnit = new Map<number, number>();
+      for (const entry of h.statements.entries)
+        if (entry.kind === 'statement') perUnit.set(entry.unit, (perUnit.get(entry.unit) ?? 0) + 1);
+      return [...perUnit.values()];
+    };
+    const known = await shape('alice@example.com');
+    const unknown = await shape('nobody@example.com');
+    expect(unknown).toEqual(known);
+    // The user and the credential are read in the first unit; the refusal's audit has a unit of its own.
+    expect(known[0]).toBe(2);
   });
 
   it('distinguishes a disabled user only after a correct password', async () => {
@@ -96,13 +114,13 @@ describeDb('POST /auth/local/sign-in and /auth/sign-out (§3.1)', () => {
     const { hashPassword } = await import('../../../src/identity/passwords.js');
     const alice = await signedInUser(h, { email: 'alice@example.com' });
     await repo.upsertCredential(
-      h.db,
+      h.tdb,
       alice.user.id,
       await hashPassword(PASSWORD, { N: 2 ** 14, r: 8, p: 1, keylen: 32 }),
       h.clock.now,
     );
     expect((await signIn('alice@example.com', PASSWORD)).statusCode).toBe(201);
-    expect((await repo.credentialOf(h.db, alice.user.id))?.passwordHash).toMatch(/^scrypt\$32768\$/);
+    expect((await repo.credentialOf(h.tdb, alice.user.id))?.passwordHash).toMatch(/^scrypt\$32768\$/);
   });
 
   it('sign-out revokes the calling token and nothing else', async () => {

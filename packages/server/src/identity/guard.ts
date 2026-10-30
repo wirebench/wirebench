@@ -8,12 +8,12 @@
 import { timingSafeEqual } from 'node:crypto';
 import type { FastifyRequest, onRequestAsyncHookHandler, preHandlerHookHandler } from 'fastify';
 import { DEVICE_TOKEN_PATTERN, isWirebenchError } from '@wirebench/engine';
-import type { Querier } from '../context.js';
 import type { IdentityEnv, IdentitySettings } from './env.js';
 import { sessionToken } from './cookies.js';
 import { forbidden, originRefused, unauthenticated, userDisabled } from './errors.js';
 import * as repo from './repo.js';
 import { bearerToken, hashToken } from './tokens.js';
+import type { TenantDb } from '../tenancy/tenant-db.js';
 import { tenantUrl } from '../tenancy/urls.js';
 
 export interface Caller {
@@ -70,27 +70,37 @@ export interface TokenCaller {
  * one lazily), and `identity-user-disabled` for a disabled user. It touches `last_used_at` at most
  * once a minute. `authenticate` and the live socket's `auth` message (live-updates spec §3.3, §5.1)
  * both call it, so the two can never disagree about a token. From the cookie (`via: 'cookie'`) only a
- * `browser` token counts, so a desktop's token cannot be replayed as a browser session.
+ * `browser` token counts, so a desktop's token cannot be replayed as a browser session. `db` is the
+ * request's tenant: a token is found by its hash within that tenant only.
  */
 export async function callerForToken(
-  env: { readonly db: Querier; readonly settings: IdentitySettings; readonly now: () => Date },
+  env: { readonly db: TenantDb; readonly settings: IdentitySettings; readonly now: () => Date },
   token: string,
   via: Caller['via'] = 'bearer',
 ): Promise<TokenCaller> {
   if (!DEVICE_TOKEN_PATTERN.test(token)) throw unauthenticated(); // no query for something that is not a token
   const hash = hashToken(token);
-  const found = await repo.tokenByHash(env.db, hash);
-  if (found === undefined || !sameHash(found.token.tokenHash, hash) || found.token.revokedAt !== null)
-    throw unauthenticated();
-  if (via === 'cookie' && found.token.kind !== 'browser') throw unauthenticated();
-  const now = env.now();
-  if (isTokenExpired(found.token, now, env.settings)) {
-    await repo.deleteToken(env.db, found.token.id); // lazy expiry (§3.5); the daily sweep gets the rest
-    throw unauthenticated();
-  }
-  if (found.user.disabledAt !== null) throw userDisabled();
-  if (now.getTime() - Date.parse(found.token.lastUsedAt) >= TOUCH_EVERY_MS)
-    await repo.touchToken(env.db, found.token.id, now);
+  // One unit for the lookup, the lazy delete and the touch (Task 8 review M3): every authenticated request
+  // pays for it. A refusal is answered after the unit, so the lazy delete commits rather than rolling back.
+  const outcome = await env.db.transaction(async (tx) => {
+    const found = await repo.tokenByHash(tx, hash);
+    if (found === undefined || !sameHash(found.token.tokenHash, hash) || found.token.revokedAt !== null)
+      return 'unauthenticated';
+    if (via === 'cookie' && found.token.kind !== 'browser') return 'unauthenticated';
+    // Read after the lookup, as the clock stands when the token is judged.
+    const now = env.now();
+    if (isTokenExpired(found.token, now, env.settings)) {
+      await repo.deleteToken(tx, found.token.id); // lazy expiry (§3.5); the daily sweep gets the rest
+      return 'unauthenticated';
+    }
+    if (found.user.disabledAt !== null) return 'disabled';
+    if (now.getTime() - Date.parse(found.token.lastUsedAt) >= TOUCH_EVERY_MS)
+      await repo.touchToken(tx, found.token.id, now);
+    return found;
+  });
+  if (outcome === 'unauthenticated') throw unauthenticated();
+  if (outcome === 'disabled') throw userDisabled();
+  const found = outcome;
   return {
     caller: {
       id: found.user.id,
@@ -135,11 +145,7 @@ const SAFE_METHODS = new Set(['GET', 'HEAD']);
  * not break the routes that need no caller, and `requireUser` still answers `401`. A write
  * authenticated this way must carry `Origin` equal to the tenant's URL (CSRF; hosted spec §17.2).
  */
-async function cookieCaller(
-  env: IdentityEnv,
-  tokens: Parameters<typeof callerForToken>[0],
-  request: FastifyRequest,
-): Promise<void> {
+async function cookieCaller(env: IdentityEnv, tokens: TokenEnv, request: FastifyRequest): Promise<void> {
   const url = tenantUrl(env.ctx.config, request);
   const token = sessionToken(request, url);
   if (token === undefined) return;
@@ -154,18 +160,25 @@ async function cookieCaller(
   request.caller = caller;
 }
 
+type TokenEnv = Parameters<typeof callerForToken>[0];
+
 export function authenticate(env: IdentityEnv, fallbacks: readonly BearerFallback[] = []): onRequestAsyncHookHandler {
-  const tokens = { db: env.ctx.db, settings: env.settings, now: env.now };
+  // Read only when a credential arrived, so a request without one needs no tenant database.
+  const tokensOf = (request: FastifyRequest): TokenEnv => ({
+    db: env.ctx.tenancy.db(request.tenant),
+    settings: env.settings,
+    now: env.now,
+  });
   return async (request) => {
     const token = bearerToken(request.headers.authorization);
     if (token === undefined) {
       // No header (or not a device token): the cookie when the browser client is on, else the preHandlers decide.
       if (env.ctx.config.browserClient && request.routeOptions.config.cookieAuth !== false)
-        await cookieCaller(env, tokens, request);
+        await cookieCaller(env, tokensOf(request), request);
       return;
     }
     try {
-      request.caller = (await callerForToken(tokens, token)).caller;
+      request.caller = (await callerForToken(tokensOf(request), token)).caller;
     } catch (error) {
       if (!isWirebenchError(error) || error.code !== 'identity-unauthenticated') throw error;
       for (const fallback of fallbacks) {

@@ -31,6 +31,7 @@ import { z } from 'zod';
 import { announce, auditSource, recordAudit } from '../../context.js';
 import { tenantUrl } from '../../tenancy/urls.js';
 import { isForeignKeyViolation, isUniqueViolation } from '../../db/errors.js';
+import type { TenantQuerier } from '../../tenancy/tenant-db.js';
 import { newId } from '../../identity/tokens.js';
 import { jsonSchema } from '../../schema.js';
 import { workspaceNotFound } from '../../teams/errors.js';
@@ -147,13 +148,15 @@ function conflictOr(error: unknown): never {
 export const manageRoutes =
   (env: HooksEnv) =>
   (app: FastifyInstance): void => {
-    const { db, config } = env.ctx;
+    const { config } = env.ctx;
+    // The request's tenant database (spec §19.8 guard 2).
+    const tdb = (request: FastifyRequest) => env.ctx.tenancy.db(request.tenant);
     const one = jsonSchema(catchUrlSchema);
     const listed = jsonSchema(catchUrlsListedSchema);
     const workspaceParams = jsonSchema(teamWorkspaceParamsSchema, { io: 'input' });
     const hookParams = jsonSchema(catchUrlParamsSchema, { io: 'input' });
 
-    const found = async (workspaceId: string, hookId: string): Promise<repo.CatchUrlListRow> => {
+    const found = async (db: TenantQuerier, workspaceId: string, hookId: string): Promise<repo.CatchUrlListRow> => {
       const row = await repo.catchUrlInWorkspace(db, workspaceId, hookId);
       if (row === undefined) throw catchUrlNotFound();
       return row;
@@ -171,11 +174,11 @@ export const manageRoutes =
     app.get(
       '/workspaces/:workspaceId/hooks',
       {
-        preHandler: requireWorkspaceRole(db, 'viewer'),
+        preHandler: requireWorkspaceRole(env.ctx.tenancy, 'viewer'),
         schema: { params: workspaceParams, response: { 200: listed } },
       },
       async (request): Promise<ListedCatchUrl[]> => {
-        const rows = await repo.catchUrlsOfWorkspace(db, request.workspaceAccess!.workspaceId);
+        const rows = await repo.catchUrlsOfWorkspace(tdb(request), request.workspaceAccess!.workspaceId);
         const hooks = rows.map((row) => toCatchUrl(row, tenantUrl(config, request), viewOf(request)));
         // A CI token never sees the catch secret: a leaked one could forge the captures it reads
         // (callback-assertion §3). It needs a hook's id and name only.
@@ -186,7 +189,7 @@ export const manageRoutes =
     app.post(
       '/workspaces/:workspaceId/hooks',
       {
-        preHandler: requireWorkspaceRole(db, 'editor'),
+        preHandler: requireWorkspaceRole(env.ctx.tenancy, 'editor'),
         schema: {
           params: workspaceParams,
           body: jsonSchema(catchUrlCreateRequestSchema, { io: 'input' }),
@@ -201,7 +204,7 @@ export const manageRoutes =
         const id = newId();
         const source = auditSource(request);
         try {
-          await db.transaction(async (tx) => {
+          await tdb(request).transaction(async (tx) => {
             if (!(await repo.lockWorkspace(tx, workspaceId))) throw workspaceNotFound();
             if ((await repo.countCatchUrls(tx, workspaceId)) >= env.settings.perWorkspace) {
               throw catchUrlLimitReached(env.settings.perWorkspace);
@@ -232,17 +235,17 @@ export const manageRoutes =
         } catch (error) {
           conflictOr(error);
         }
-        announce(env.ctx.hooks.hooksChanged, { workspaceId }, request.log);
+        announce(env.ctx.hooks.hooksChanged, { tenantId: request.tenant.tenantId, workspaceId }, request.log);
         return reply
           .code(201)
-          .send(toCatchUrl(await found(workspaceId, id), tenantUrl(config, request), viewOf(request)));
+          .send(toCatchUrl(await found(tdb(request), workspaceId, id), tenantUrl(config, request), viewOf(request)));
       },
     );
 
     app.patch(
       '/workspaces/:workspaceId/hooks/:hookId',
       {
-        preHandler: requireWorkspaceRole(db, 'editor'),
+        preHandler: requireWorkspaceRole(env.ctx.tenancy, 'editor'),
         schema: {
           params: hookParams,
           body: jsonSchema(catchUrlUpdateRequestSchema, { io: 'input' }),
@@ -252,7 +255,7 @@ export const manageRoutes =
       async (request): Promise<CatchUrl> => {
         const { workspaceId, hookId } = hookOf(request);
         const body = request.body as CatchUrlUpdateRequest;
-        const current = await found(workspaceId, hookId);
+        const current = await found(tdb(request), workspaceId, hookId);
         checkResponse(body.response);
         const signature = signaturePatchOf(body, current, env.settings.secretKey);
         const name = body.name !== undefined ? cleanName(body.name) : undefined;
@@ -260,7 +263,7 @@ export const manageRoutes =
         const target = { kind: 'hook', id: hookId } as const;
         let updated: boolean;
         try {
-          updated = await db.transaction(async (tx) => {
+          updated = await tdb(request).transaction(async (tx) => {
             const done = await repo.updateCatchUrl(tx, hookId, {
               ...(name !== undefined ? { name } : {}),
               ...(body.enabled !== undefined ? { enabled: body.enabled } : {}),
@@ -315,20 +318,23 @@ export const manageRoutes =
           conflictOr(error);
         }
         if (!updated) throw catchUrlNotFound();
-        announce(env.ctx.hooks.hooksChanged, { workspaceId }, request.log);
-        return toCatchUrl(await found(workspaceId, hookId), tenantUrl(config, request), viewOf(request));
+        announce(env.ctx.hooks.hooksChanged, { tenantId: request.tenant.tenantId, workspaceId }, request.log);
+        return toCatchUrl(await found(tdb(request), workspaceId, hookId), tenantUrl(config, request), viewOf(request));
       },
     );
 
     app.post(
       '/workspaces/:workspaceId/hooks/:hookId/rotate',
-      { preHandler: requireWorkspaceRole(db, 'editor'), schema: { params: hookParams, response: { 200: one } } },
+      {
+        preHandler: requireWorkspaceRole(env.ctx.tenancy, 'editor'),
+        schema: { params: hookParams, response: { 200: one } },
+      },
       async (request): Promise<CatchUrl> => {
         const { workspaceId, hookId } = hookOf(request);
-        const row = await found(workspaceId, hookId);
+        const row = await found(tdb(request), workspaceId, hookId);
         const source = auditSource(request);
         // The old URL answers 404 from the moment this commits (§3.5).
-        await db.transaction(async (tx) => {
+        await tdb(request).transaction(async (tx) => {
           if (!(await repo.rotateSecret(tx, hookId, mintCatchSecret()))) throw catchUrlNotFound();
           await recordAudit(env.ctx.hooks, tx, {
             ...source,
@@ -338,19 +344,19 @@ export const manageRoutes =
             details: { name: row.name },
           });
         });
-        announce(env.ctx.hooks.hooksChanged, { workspaceId }, request.log);
-        return toCatchUrl(await found(workspaceId, hookId), tenantUrl(config, request), viewOf(request));
+        announce(env.ctx.hooks.hooksChanged, { tenantId: request.tenant.tenantId, workspaceId }, request.log);
+        return toCatchUrl(await found(tdb(request), workspaceId, hookId), tenantUrl(config, request), viewOf(request));
       },
     );
 
     app.delete(
       '/workspaces/:workspaceId/hooks/:hookId',
-      { preHandler: requireWorkspaceRole(db, 'editor'), schema: { params: hookParams } },
+      { preHandler: requireWorkspaceRole(env.ctx.tenancy, 'editor'), schema: { params: hookParams } },
       async (request, reply) => {
         const { workspaceId, hookId } = hookOf(request);
-        const row = await found(workspaceId, hookId);
+        const row = await found(tdb(request), workspaceId, hookId);
         const source = auditSource(request);
-        await db.transaction(async (tx) => {
+        await tdb(request).transaction(async (tx) => {
           if (!(await repo.deleteCatchUrl(tx, hookId))) throw catchUrlNotFound();
           await recordAudit(env.ctx.hooks, tx, {
             ...source,
@@ -360,7 +366,7 @@ export const manageRoutes =
             details: { name: row.name },
           });
         });
-        announce(env.ctx.hooks.hooksChanged, { workspaceId }, request.log);
+        announce(env.ctx.hooks.hooksChanged, { tenantId: request.tenant.tenantId, workspaceId }, request.log);
         return reply.code(204).send();
       },
     );
@@ -368,7 +374,7 @@ export const manageRoutes =
     app.get(
       '/workspaces/:workspaceId/hooks/:hookId/captures',
       {
-        preHandler: requireWorkspaceRole(db, 'viewer'),
+        preHandler: requireWorkspaceRole(env.ctx.tenancy, 'viewer'),
         schema: {
           params: hookParams,
           querystring: jsonSchema(capturesQuerySchema, { io: 'input' }),
@@ -379,21 +385,24 @@ export const manageRoutes =
         const { workspaceId, hookId } = hookOf(request);
         const query = request.query as CapturesQuery;
         if (query.before !== undefined && query.after !== undefined) throw cursorConflict();
-        await found(workspaceId, hookId);
         const page: repo.CapturePage =
           query.after !== undefined
             ? { after: query.after }
             : query.before !== undefined
               ? { before: query.before }
               : {};
-        return repo.listCaptures(db, hookId, page, query.limit ?? HOOKS_LIMITS.defaultPageSize);
+        // One unit for the catch URL and its captures: what a CI job polls.
+        return tdb(request).transaction(async (tx) => {
+          await found(tx, workspaceId, hookId);
+          return repo.listCaptures(tx, hookId, page, query.limit ?? HOOKS_LIMITS.defaultPageSize);
+        });
       },
     );
 
     app.get(
       '/workspaces/:workspaceId/hooks/:hookId/captures/:captureId',
       {
-        preHandler: requireWorkspaceRole(db, 'viewer'),
+        preHandler: requireWorkspaceRole(env.ctx.tenancy, 'viewer'),
         schema: {
           params: jsonSchema(captureParamsSchema, { io: 'input' }),
           response: { 200: jsonSchema(captureSchema) },
@@ -402,8 +411,10 @@ export const manageRoutes =
       async (request): Promise<Capture> => {
         const { workspaceId, hookId } = hookOf(request);
         const { captureId } = request.params as { readonly captureId: string };
-        await found(workspaceId, hookId);
-        const row = await repo.captureById(db, hookId, captureId);
+        const row = await tdb(request).transaction(async (tx) => {
+          await found(tx, workspaceId, hookId);
+          return repo.captureById(tx, hookId, captureId);
+        });
         if (row === undefined) throw captureNotFound();
         return { ...row, body: row.body.toString('base64') };
       },
@@ -411,12 +422,12 @@ export const manageRoutes =
 
     app.delete(
       '/workspaces/:workspaceId/hooks/:hookId/captures',
-      { preHandler: requireWorkspaceRole(db, 'editor'), schema: { params: hookParams } },
+      { preHandler: requireWorkspaceRole(env.ctx.tenancy, 'editor'), schema: { params: hookParams } },
       async (request, reply) => {
         const { workspaceId, hookId } = hookOf(request);
-        const row = await found(workspaceId, hookId);
+        const row = await found(tdb(request), workspaceId, hookId);
         const source = auditSource(request);
-        await db.transaction(async (tx) => {
+        await tdb(request).transaction(async (tx) => {
           const removed = await repo.clearCaptures(tx, hookId);
           await recordAudit(env.ctx.hooks, tx, {
             ...source,
@@ -426,7 +437,7 @@ export const manageRoutes =
             details: { name: row.name, captures: removed },
           });
         });
-        announce(env.ctx.hooks.hooksChanged, { workspaceId }, request.log);
+        announce(env.ctx.hooks.hooksChanged, { tenantId: request.tenant.tenantId, workspaceId }, request.log);
         return reply.code(204).send();
       },
     );

@@ -44,38 +44,38 @@ describeDb('webhook-signatures storage (§3.2)', () => {
   it('stores a scheme with its sealed secret, reads back only that one is set, and clears all four', async () => {
     const hook = await seedCatchUrl(h, workspaceId, 'Payments');
     expect(hook).toMatchObject({ signature: null, secretSet: false, signatureHint: null, rejectUnverified: false });
-    await repo.updateCatchUrl(h.db, hook.id, {
+    await repo.updateCatchUrl(h.tdb, hook.id, {
       signature: { scheme: HMAC, sealedSecret: seal(KEY, SECRET), hint: 'i789' },
       rejectUnverified: true,
     });
-    expect(await repo.catchUrlInWorkspace(h.db, workspaceId, hook.id)).toMatchObject({
+    expect(await repo.catchUrlInWorkspace(h.tdb, workspaceId, hook.id)).toMatchObject({
       signature: HMAC,
       secretSet: true,
       signatureHint: 'i789',
       rejectUnverified: true,
     });
-    const found = await repo.catchUrlBySecret(h.db, hook.secret);
+    const found = await repo.catchUrlBySecret(h.tdb, hook.secret);
     expect(found?.signature?.scheme).toEqual(HMAC);
     expect(found?.rejectUnverified).toBe(true);
-    expect(await repo.countSignedCatchUrls(h.db)).toBe(1);
-    expect(JSON.stringify(await repo.catchUrlsOfWorkspace(h.db, workspaceId))).not.toContain(SECRET);
+    expect(await repo.countSignedCatchUrls(h.tdb)).toBe(1);
+    expect(JSON.stringify(await repo.catchUrlsOfWorkspace(h.tdb, workspaceId))).not.toContain(SECRET);
 
-    await repo.updateCatchUrl(h.db, hook.id, { signature: { scheme: STANDARD } });
-    expect(await repo.catchUrlInWorkspace(h.db, workspaceId, hook.id)).toMatchObject({
+    await repo.updateCatchUrl(h.tdb, hook.id, { signature: { scheme: STANDARD } });
+    expect(await repo.catchUrlInWorkspace(h.tdb, workspaceId, hook.id)).toMatchObject({
       signature: STANDARD,
       secretSet: true,
       signatureHint: 'i789',
     });
 
-    await repo.updateCatchUrl(h.db, hook.id, { signature: null, rejectUnverified: false });
-    expect(await repo.catchUrlInWorkspace(h.db, workspaceId, hook.id)).toMatchObject({
+    await repo.updateCatchUrl(h.tdb, hook.id, { signature: null, rejectUnverified: false });
+    expect(await repo.catchUrlInWorkspace(h.tdb, workspaceId, hook.id)).toMatchObject({
       signature: null,
       secretSet: false,
       signatureHint: null,
       rejectUnverified: false,
     });
-    expect((await repo.catchUrlBySecret(h.db, hook.secret))?.signature).toBeUndefined();
-    expect(await repo.countSignedCatchUrls(h.db)).toBe(0);
+    expect((await repo.catchUrlBySecret(h.tdb, hook.secret))?.signature).toBeUndefined();
+    expect(await repo.countSignedCatchUrls(h.tdb)).toBe(0);
   });
 
   it('refuses a scheme without a secret, and reject unverified without a scheme (check constraints)', async () => {
@@ -85,7 +85,7 @@ describeDb('webhook-signatures storage (§3.2)', () => {
         hook.id,
       ]),
     ).rejects.toMatchObject({ code: '23514' });
-    await expect(repo.updateCatchUrl(h.db, hook.id, { rejectUnverified: true })).rejects.toMatchObject({
+    await expect(repo.updateCatchUrl(h.tdb, hook.id, { rejectUnverified: true })).rejects.toMatchObject({
       code: '23514',
     });
   });
@@ -95,14 +95,14 @@ describeDb('webhook-signatures storage (§3.2)', () => {
     const verified = newCapture(hook.id, { signature: { verdict: 'verified' } });
     const failed = newCapture(hook.id, { signature: { verdict: 'failed', reason: 'mismatch' }, rejected: true });
     const unchecked = newCapture(hook.id);
-    for (const capture of [verified, failed, unchecked]) await repo.insertCapture(h.db, capture);
-    const page = await repo.listCaptures(h.db, hook.id, {}, 10);
+    for (const capture of [verified, failed, unchecked]) await repo.insertCapture(h.tdb, capture);
+    const page = await repo.listCaptures(h.tdb, hook.id, {}, 10);
     expect(page.map((row) => [row.id, row.signature, row.rejected])).toEqual([
       [unchecked.id, null, false],
       [failed.id, { verdict: 'failed', reason: 'mismatch' }, true],
       [verified.id, { verdict: 'verified' }, false],
     ]);
-    expect(await repo.captureById(h.db, hook.id, failed.id)).toMatchObject({
+    expect(await repo.captureById(h.tdb, hook.id, failed.id)).toMatchObject({
       signature: { verdict: 'failed', reason: 'mismatch' },
       rejected: true,
     });

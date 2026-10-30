@@ -8,7 +8,8 @@ import type { DefaultRole, RoleSource, TeamRole, WorkspaceRole } from '@wirebenc
 import type { preHandlerAsyncHookHandler } from 'fastify';
 import { ciTokenForbidden } from '../ci-tokens/errors.js';
 import type { CiCaller } from '../ci-tokens/principal.js';
-import type { Querier } from '../context.js';
+import type { TenantQuerier } from '../tenancy/tenant-db.js';
+import type { Tenancy } from '../tenancy/tenancy.js';
 import { unauthenticated } from '../identity/errors.js';
 import { forbidden, teamNotFound, workspaceNotFound } from './errors.js';
 import * as repo from './repo.js';
@@ -69,7 +70,7 @@ export const CAPABILITIES = {
   admin: { pull: true, send: true, push: true, manage: true, delete: true },
 } as const satisfies Readonly<Record<WorkspaceRole, Readonly<Record<Capability, boolean>>>>;
 
-export async function effectiveRole(db: Querier, userId: string, workspaceId: string): Promise<Effective> {
+export async function effectiveRole(db: TenantQuerier, userId: string, workspaceId: string): Promise<Effective> {
   const row = await repo.workspaceFacts(db, userId, workspaceId);
   return row === undefined ? { role: 'none' } : resolveRole(factsOf(row));
 }
@@ -86,9 +87,9 @@ declare module 'fastify' {
 /**
  * `preHandler` for routes with a `:workspaceId` param. `none` → `404 teams-workspace-not-found`
  * (an id reveals nothing, §3.1); below `min` → `403 teams-forbidden`. Fastify has validated the
- * param as a ULID before this runs.
+ * param as a ULID before this runs. The role is read in the request's tenant (spec §19.8 guard 2).
  */
-export function requireWorkspaceRole(db: Querier, min: WorkspaceRole): preHandlerAsyncHookHandler {
+export function requireWorkspaceRole(tenancy: Pick<Tenancy, 'db'>, min: WorkspaceRole): preHandlerAsyncHookHandler {
   return async (request) => {
     const { workspaceId } = request.params as { readonly workspaceId: string };
     const ci: CiCaller | undefined = request.ciCaller;
@@ -101,7 +102,7 @@ export function requireWorkspaceRole(db: Querier, min: WorkspaceRole): preHandle
     }
     const caller = request.caller;
     if (caller === undefined) throw unauthenticated();
-    const found = await effectiveRole(db, caller.id, workspaceId);
+    const found = await effectiveRole(tenancy.db(request.tenant), caller.id, workspaceId);
     if (found.role === 'none') throw workspaceNotFound();
     if (!atLeast(found.role, min)) throw forbidden();
     request.workspaceAccess = { workspaceId, role: found.role, source: found.source };
@@ -112,13 +113,16 @@ export function requireWorkspaceRole(db: Querier, min: WorkspaceRole): preHandle
  * `preHandler` for routes with a `:teamId` param. Not on the team (and not a server admin) →
  * `404 teams-team-not-found`; a member where an admin is needed → `403 teams-forbidden`.
  */
-export function requireTeamRole(db: Querier, min: TeamRole): preHandlerAsyncHookHandler {
+export function requireTeamRole(tenancy: Pick<Tenancy, 'db'>, min: TeamRole): preHandlerAsyncHookHandler {
   return async (request) => {
     const caller = request.caller;
     if (caller === undefined) throw unauthenticated();
     const { teamId } = request.params as { readonly teamId: string };
-    if ((await repo.teamById(db, teamId)) === undefined) throw teamNotFound();
-    const role = caller.serverAdmin ? 'admin' : await repo.memberRole(db, teamId, caller.id);
+    // One unit for the team and the caller's role on it.
+    const role = await tenancy.db(request.tenant).transaction(async (tx) => {
+      if ((await repo.teamById(tx, teamId)) === undefined) return undefined;
+      return caller.serverAdmin ? 'admin' : await repo.memberRole(tx, teamId, caller.id);
+    });
     if (role === undefined) throw teamNotFound();
     if (min === 'admin' && role !== 'admin') throw forbidden();
     request.teamAccess = { teamId, role };

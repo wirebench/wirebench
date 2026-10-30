@@ -11,7 +11,7 @@ import {
   type ServerHooks,
 } from '../../src/context.js';
 import type { RepoStore } from '../../src/repos/repo-store.js';
-import { createTenancy } from '../../src/tenancy/tenancy.js';
+import { createTenancy, directoryOf } from '../../src/tenancy/tenancy.js';
 import { recordingRaw } from './tenancy.js';
 
 /** A database whose every query succeeds with no rows; `failing` flips `select 1` to a rejection. */
@@ -23,6 +23,21 @@ export function fakeDatabase(options: { failing?: boolean } = {}): Database {
         : Promise.resolve({ rows: [], rowCount: 0 }),
   };
   return { ...querier, transaction: async (fn) => fn(querier), close: () => Promise.resolve() } as Database;
+}
+
+/** The default tenant a context over no real database serves: its `request.tenant`, read by the moved modules. */
+export const FAKE_DEFAULT_TENANT = { id: '00000000-0000-4000-8000-0000000000d0', slug: 'default' };
+
+/** `fakeDatabase`, answering the tenant directory's start-up reads with {@link FAKE_DEFAULT_TENANT}. */
+function fakeTenantsDatabase(): Database {
+  const fake = fakeDatabase();
+  const query = (text: string) => {
+    if (text.includes("to_regclass('tenants')")) return Promise.resolve({ rows: [{ exists: true }], rowCount: 1 });
+    if (text.includes('from server_identity s left join tenants t'))
+      return Promise.resolve({ rows: [FAKE_DEFAULT_TENANT], rowCount: 1 });
+    return fake.query(text);
+  };
+  return { ...fake, query } as Database;
 }
 
 export async function testContext(
@@ -58,8 +73,11 @@ export async function testContext(
     hooks: serverHooks(),
     license: permissiveLicense(),
     ...rest,
-    tenancy: rest.tenancy ?? createTenancy(raw ?? fakeDatabase()),
+    tenancy: rest.tenancy ?? createTenancy(raw ?? fakeTenantsDatabase()),
   };
+  // With no real database, the directory is loaded here, so `request.tenant` names the fake default tenant;
+  // over a real one, the caller loads it once the schema is migrated.
+  if (rest.tenancy === undefined && raw === undefined) await directoryOf(context.tenancy).load();
   // Follows the config, as serve.ts builds it, unless the test passed its own.
   return rest.egress !== undefined ? context : { ...context, egress: egressPolicyOf(context.config) };
 }

@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, expect, it } from 'vitest';
 import type { ServerModule, SessionEnded } from '../../../src/context.js';
-import type { IdentityEnv } from '../../../src/identity/env.js';
 import { identitySettings } from '../../../src/identity/env.js';
 import { requireUser } from '../../../src/identity/guard.js';
 import * as repo from '../../../src/identity/repo.js';
@@ -80,7 +79,7 @@ describeDb('cookie sessions on the identity guard (hosted spec §17.2)', () => {
     const idle = await signedInUser(h, { email: 'idle@example.com', kind: 'browser' });
     const revoked = await signedInUser(h, { email: 'revoked@example.com', kind: 'browser' });
     const desktop = await signedInUser(h, { email: 'desk@example.com' });
-    await repo.revokeToken(h.db, revoked.tokenId, h.clock.now);
+    await repo.revokeToken(h.tdb, revoked.tokenId, h.clock.now);
     const me = (token: string) => h.app.inject({ method: 'GET', url: '/api/v1/me', headers: withCookie(token) });
     expect((await me(revoked.token)).statusCode).toBe(401);
     expect((await me(desktop.token)).statusCode).toBe(401);
@@ -115,15 +114,15 @@ describeDb('cookie sessions on the identity guard (hosted spec §17.2)', () => {
     expect([res.headers['set-cookie']].flat()).toEqual([
       `${COOKIE}=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Lax`,
     ]);
-    expect(await repo.tokensOfUser(h.db, alice.user.id)).toHaveLength(0);
-    expect(ended).toEqual([{ tokenId: alice.tokenId }]);
+    expect(await repo.tokensOfUser(h.tdb, alice.user.id)).toHaveLength(0);
+    expect(ended).toEqual([{ tenantId: h.tdb.scope.tenantId, tokenId: alice.tokenId }]);
     const after = await h.app.inject({ method: 'GET', url: '/api/v1/me', headers: withCookie(alice.token) });
     expect(after.statusCode).toBe(401);
   });
 
   it('still clears a stale cookie on sign-out, answering 401', async () => {
     const revoked = await signedInUser(h, { email: 'revoked@example.com', kind: 'browser' });
-    await repo.revokeToken(h.db, revoked.tokenId, h.clock.now);
+    await repo.revokeToken(h.tdb, revoked.tokenId, h.clock.now);
     for (const token of [revoked.token, mintToken().token]) {
       const res = await h.app.inject({
         method: 'POST',
@@ -151,9 +150,9 @@ describeDb('cookie sessions on the identity guard (hosted spec §17.2)', () => {
 
   it('records the token kind, and the daily sweep deletes expired browser flows', async () => {
     const web = await signedInUser(h, { email: 'web@example.com', kind: 'browser' });
-    expect((await repo.tokensOfUser(h.db, web.user.id))[0]!.kind).toBe('browser');
+    expect((await repo.tokensOfUser(h.tdb, web.user.id))[0]!.kind).toBe('browser');
     const desk = await signedInUser(h, { email: 'desk@example.com' });
-    expect((await repo.tokensOfUser(h.db, desk.user.id))[0]!.kind).toBe('device');
+    expect((await repo.tokensOfUser(h.tdb, desk.user.id))[0]!.kind).toBe('device');
 
     const flow = (id: string, expiresAt: Date) =>
       h.db.query(
@@ -172,7 +171,7 @@ describeDb('cookie sessions on the identity guard (hosted spec §17.2)', () => {
         '0.0.0-test',
       ),
     );
-    await sweepExpired({ ctx: { db: h.db }, settings, now: () => h.clock.now } as unknown as IdentityEnv);
+    await sweepExpired({ ctx: h.ctx, settings, now: () => h.clock.now });
     const left = (await h.db.query('select id from browser_flows order by id')).rows.map((row) => row.id as string);
     expect(left).toEqual(['live']);
   });

@@ -17,16 +17,15 @@ afterEach(async () => {
 });
 
 function license(features: readonly Feature[] = ['scheduled-runs']): LicenseService {
-  return {
-    ...permissiveLicense(),
-    state: () =>
-      Promise.resolve({
-        edition: 'enterprise',
-        status: 'active',
-        seats: { used: 0, limit: null },
-        features: [...features],
-      }),
-  };
+  const state = () =>
+    Promise.resolve({
+      edition: 'enterprise' as const,
+      status: 'active' as const,
+      seats: { used: 0, limit: null },
+      features: [...features],
+    });
+  // The pass reads the license without a scope until Task 13 runs it per tenant.
+  return { ...permissiveLicense(), state, stateWithoutScope: state };
 }
 
 /** Runs the scheduler starts, each held until the test releases it or it is aborted. */

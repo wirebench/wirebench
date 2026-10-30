@@ -19,11 +19,11 @@ const DEFAULT_LOG_LIMIT = 50;
 export const logRoutes =
   (env: SyncEnv) =>
   (app: FastifyInstance): void => {
-    const { db, repos } = env.ctx;
+    const { repos } = env.ctx;
     app.get(
       '/workspaces/:workspaceId/sync/log',
       {
-        preHandler: requireWorkspaceRole(db, 'viewer'),
+        preHandler: requireWorkspaceRole(env.ctx.tenancy, 'viewer'),
         schema: {
           params: jsonSchema(teamWorkspaceParamsSchema, { io: 'input' }),
           querystring: jsonSchema(syncLogQuerySchema, { io: 'input' }),

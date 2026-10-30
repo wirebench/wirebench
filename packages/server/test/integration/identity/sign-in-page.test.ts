@@ -131,7 +131,7 @@ describeDb('the sign-in page and local form sign-in (hosted spec §17.2)', () =>
       const token = sessionFrom(res)!;
       const me = await h.app.inject({ method: 'GET', url: '/api/v1/me', headers: { cookie: `${COOKIE}=${token}` } });
       expect(me.statusCode).toBe(200);
-      const tokens = await repo.tokensOfUser(h.db, alice.user.id);
+      const tokens = await repo.tokensOfUser(h.tdb, alice.user.id);
       expect(tokens.map((t) => t.kind).sort()).toEqual(['browser', 'device']);
       expect(events.filter((e) => e.action === 'auth.signed_in').map((e) => e.details?.['method'])).toEqual(['local']);
     });
@@ -161,14 +161,14 @@ describeDb('the sign-in page and local form sign-in (hosted spec §17.2)', () =>
       // Another person's session in this browser.
       const first = await formWithCookie(bob.token);
       expect(first.statusCode, first.body).toBe(303);
-      expect(await repo.tokensOfUser(h.db, bob.user.id)).toHaveLength(0);
+      expect(await repo.tokensOfUser(h.tdb, bob.user.id)).toHaveLength(0);
       // The same person signing in again: the session the cookie held ends too.
       const second = await formWithCookie(sessionFrom(first)!);
       expect(second.statusCode, second.body).toBe(303);
-      const live = await repo.tokensOfUser(h.db, alice.user.id);
+      const live = await repo.tokensOfUser(h.tdb, alice.user.id);
       expect(live.filter((t) => t.kind === 'browser')).toHaveLength(1);
       expect(ended).toHaveLength(2);
-      expect(ended[0]).toEqual({ tokenId: bob.tokenId });
+      expect(ended[0]).toEqual({ tenantId: h.tdb.scope.tenantId, tokenId: bob.tokenId });
       expect(events.filter((e) => e.action === 'auth.signed_out').map((e) => e.target?.id)).toEqual([
         bob.user.id,
         alice.user.id,
@@ -184,7 +184,7 @@ describeDb('the sign-in page and local form sign-in (hosted spec §17.2)', () =>
         },
       ]);
       // An unrelated user's session is left alone.
-      expect(await repo.tokensOfUser(h.db, aliceBrowser.user.id)).toHaveLength(1);
+      expect(await repo.tokensOfUser(h.tdb, aliceBrowser.user.id)).toHaveLength(1);
     });
 
     it('lands on a same-origin redirect_to, and on / for a foreign or protocol-relative one', async () => {

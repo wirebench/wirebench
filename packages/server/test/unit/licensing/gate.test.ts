@@ -14,7 +14,9 @@ async function probe(state: () => Promise<LicenseState>) {
     const mapped = toProblem(error);
     return reply.code(mapped.status).send(mapped.body);
   });
-  app.get('/probe', { preHandler: requireFeature('audit-log', state) }, () => ({ ok: true }));
+  app.get('/probe', { preHandler: requireFeature('audit-log', async () => (await state()).features) }, () => ({
+    ok: true,
+  }));
   const res = await app.inject({ method: 'GET', url: '/probe' });
   await app.close();
   return res;
@@ -40,11 +42,7 @@ describe('requireFeature (licensing spec §3.5)', () => {
       const mapped = toProblem(error);
       return reply.code(mapped.status).send(mapped.body);
     });
-    app.get(
-      '/probe',
-      { preHandler: requireFeature('audit-log', () => Promise.resolve({ ...community, features })) },
-      () => ({}),
-    );
+    app.get('/probe', { preHandler: requireFeature('audit-log', () => Promise.resolve(features)) }, () => ({}));
     expect((await app.inject({ method: 'GET', url: '/probe' })).statusCode).toBe(403);
     features = ['audit-log'];
     expect((await app.inject({ method: 'GET', url: '/probe' })).statusCode).toBe(200);
@@ -54,7 +52,7 @@ describe('requireFeature (licensing spec §3.5)', () => {
   it('the permissive default grants no feature and never refuses a seat', async () => {
     const license = permissiveLicense();
     await expect(license.assertSeatAvailable({} as never)).resolves.toBeUndefined();
-    const res = await probe(() => license.state());
+    const res = await probe(() => license.stateWithoutScope());
     expect(res.statusCode).toBe(403);
   });
 });

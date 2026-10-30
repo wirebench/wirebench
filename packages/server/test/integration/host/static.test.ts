@@ -87,7 +87,7 @@ describeDb('the browser tab at the root (hosted spec §17.2, §17.6)', () => {
   it('takes only a live browser session: a desktop token, a revoked or expired one and a disabled user redirect', async () => {
     const desktop = await signedInUser(h, { email: 'desk@example.com' });
     const revoked = await browserUser(h, 'revoked@example.com');
-    await repo.revokeToken(h.db, revoked.tokenId, h.clock.now);
+    await repo.revokeToken(h.tdb, revoked.tokenId, h.clock.now);
     const disabled = await signedInUser(h, { email: 'off@example.com', kind: 'browser', disabled: true });
     for (const token of [desktop.token, revoked.token, disabled.token, 'not-a-token']) {
       const res = await h.app.inject({ method: 'GET', url: '/', headers: cookie(token) });
@@ -187,8 +187,8 @@ describeDb('the browser tab at the root (hosted spec §17.2, §17.6)', () => {
     expect(res.statusCode).toBe(303);
     expect(res.headers.location).toBe('/sign-in');
     expect(String(res.headers['set-cookie'])).toMatch(new RegExp(`^${COOKIE}=; Max-Age=0; Path=/; HttpOnly; Secure`));
-    expect(ended).toEqual([{ tokenId: alice.tokenId }]);
-    expect((await repo.tokenByHash(h.db, hashToken(alice.token)))?.token.revokedAt).not.toBeNull();
+    expect(ended).toEqual([{ tenantId: h.tdb.scope.tenantId, tokenId: alice.tokenId }]);
+    expect((await repo.tokenByHash(h.tdb, hashToken(alice.token)))?.token.revokedAt).not.toBeNull();
     expect(await client.closed).toEqual({ code: 4401 });
     expect(h.audit.filter((event) => event.action === 'auth.signed_out')).toEqual([
       expect.objectContaining({
@@ -202,7 +202,7 @@ describeDb('the browser tab at the root (hosted spec §17.2, §17.6)', () => {
 
   it('POST /sign-out with a stale or missing cookie still clears it and redirects', async () => {
     const stale = await browserUser(h, 'stale@example.com');
-    await repo.revokeToken(h.db, stale.tokenId, h.clock.now);
+    await repo.revokeToken(h.tdb, stale.tokenId, h.clock.now);
     for (const headers of [cookie(stale.token), {}]) {
       const res = await h.app.inject({ method: 'POST', url: '/sign-out', headers: { ...headers, origin: PUBLIC_URL } });
       expect(res.statusCode).toBe(303);
@@ -224,7 +224,7 @@ describeDb('the browser tab at the root (hosted spec §17.2, §17.6)', () => {
       expect(res.json<{ code: string }>().code).toBe('identity-origin-refused');
       expect(res.headers['set-cookie']).toBeUndefined();
     }
-    expect((await repo.tokenByHash(h.db, hashToken(alice.token)))?.token.revokedAt).toBeNull();
+    expect((await repo.tokenByHash(h.tdb, hashToken(alice.token)))?.token.revokedAt).toBeNull();
   });
 });
 

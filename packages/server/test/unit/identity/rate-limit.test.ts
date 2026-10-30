@@ -1,5 +1,7 @@
+import type { FastifyRequest } from 'fastify';
 import { describe, expect, it } from 'vitest';
-import { RateLimiter } from '../../../src/identity/rate-limit.js';
+import { RateLimiter, callerKey, chargeKeys, emailKey, ipKey } from '../../../src/identity/rate-limit.js';
+import { scopeOf } from '../../../src/tenancy/scope.js';
 
 describe('RateLimiter (§3.6)', () => {
   const limiter = (start = 0) => {
@@ -37,5 +39,33 @@ describe('RateLimiter (§3.6)', () => {
     expect(limit.peek('k').allowed).toBe(true);
     expect(limit.take('k').allowed).toBe(true);
     expect(limit.peek('k').allowed).toBe(false);
+  });
+});
+
+describe('the sign-in limiter keys (hosted edition spec §19.8 guard 5)', () => {
+  const ONE = scopeOf({ id: '00000000-0000-4000-8000-000000000001', slug: 'one' });
+  const TWO = scopeOf({ id: '00000000-0000-4000-8000-000000000002', slug: 'two' });
+  /** One address, one email and one user id, sent to the tenant `tenant`. */
+  const request = (tenant: typeof ONE) =>
+    ({
+      tenant,
+      ip: '203.0.113.7',
+      body: { email: 'Ada@Example.com' },
+      caller: { id: '01JB3Z9K7Q4ZJ6X1V8W2M5N0AA' },
+    }) as unknown as FastifyRequest;
+
+  it('lead with the tenant id, so the same address, email or user in two tenants are two keys', () => {
+    expect(ipKey(request(ONE))).toBe(`${ONE.tenantId}:ip:203.0.113.7`);
+    expect(emailKey(request(ONE))).toBe(`${ONE.tenantId}:email:ada@example.com`);
+    expect(callerKey(request(ONE))).toBe(`${ONE.tenantId}:user:01JB3Z9K7Q4ZJ6X1V8W2M5N0AA`);
+    for (const key of [ipKey, emailKey, callerKey]) expect(key(request(ONE))).not.toBe(key(request(TWO)));
+  });
+
+  it("never let one tenant's attempts use up another's", () => {
+    const limiter = new RateLimiter({ capacity: 10, refillPerMs: 10 / 60_000, now: () => 0 });
+    const keys = (tenant: typeof ONE) => [ipKey(request(tenant)), emailKey(request(tenant))];
+    for (let i = 0; i < 10; i += 1) expect(chargeKeys(limiter, keys(ONE))).toBe(0);
+    expect(chargeKeys(limiter, keys(ONE))).toBeGreaterThan(0);
+    expect(chargeKeys(limiter, keys(TWO))).toBe(0);
   });
 });
