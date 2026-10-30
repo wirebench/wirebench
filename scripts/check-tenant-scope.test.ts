@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { checkTenantScope, findScopeMints, findUrlReads, isAllowed } from './check-tenant-scope.js';
+import { checkTenantScope, findScopeMints, findUrlReads } from './check-tenant-scope.js';
 
 describe('check:tenant-scope', () => {
   const roots: string[] = [];
@@ -51,8 +51,6 @@ describe('check:tenant-scope', () => {
     ];
     for (const text of spellings) expect(findScopeMints(route, text), text).toHaveLength(1);
     expect(findScopeMints(route, '// never call defaultScope() here\n/** defaultScope( in a doc */\n')).toEqual([]);
-    expect(isAllowed('packages/server/src/tenancy/jobs.ts')).toBe(true);
-    expect(isAllowed('packages/server/src/tenancy-extra/x.ts')).toBe(false);
   });
 
   it('gates scopeOf too, and keeps both names to their files inside src/tenancy/', () => {
@@ -125,5 +123,20 @@ describe('check:tenant-scope', () => {
         rule: 'public-url',
       },
     ]);
+  });
+
+  it('allows the configured URL in tenancy/urls.ts only, not the whole folder, and its variable in config.ts only', () => {
+    const read = 'return config.publicUrl;';
+    expect(findUrlReads('packages/server/src/tenancy/urls.ts', read)).toEqual([]);
+    expect(findUrlReads('packages/server/src/tenancy/jobs.ts', read)).toMatchObject([{ rule: 'public-url' }]);
+    expect(
+      findUrlReads('packages/server/src/tenancy/other.ts', 'export const unscoped = (c) => urlWithoutScope(c);'),
+    ).toMatchObject([{ rule: 'url-without-scope' }]);
+    for (const env of [
+      'const url = process.env.WIREBENCH_SERVER_PUBLIC_URL;',
+      "const url = process.env['WIREBENCH_SERVER_PUBLIC_URL'];",
+    ])
+      expect(findUrlReads('packages/server/src/hooks/module.ts', env), env).toMatchObject([{ rule: 'public-url' }]);
+    expect(findUrlReads('packages/server/src/config.ts', "env: 'WIREBENCH_SERVER_PUBLIC_URL',")).toEqual([]);
   });
 });

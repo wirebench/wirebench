@@ -290,19 +290,22 @@ export async function startServer(
     // Before 0020, on the connection that migrates: its composite keys need PostgreSQL 15 (spec §19.1).
     if (migrationUrl === config.databaseUrl) {
       await checkPostgresVersion(db);
-      runningLock = await RunningLock.acquire(config.databaseUrl, lockOptions);
+      runningLock = await RunningLock.acquire(config.databaseUrl, { ...lockOptions, label: 'the app connection' });
       await migrate(db, migrations);
     } else {
       const owner = createDatabase(migrationUrl);
       let ownerLock: RunningLock | undefined;
       try {
         await checkPostgresVersion(owner);
-        ownerLock = await RunningLock.acquire(migrationUrl, lockOptions);
+        ownerLock = await RunningLock.acquire(migrationUrl, {
+          ...lockOptions,
+          label: 'the owner connection, while migrating',
+        });
         if (mode === 'two-roles') await migrateAndGrant(owner, config.databaseUrl, migrations);
         else await migrate(owner, migrations);
         // Its sign-in first, so a wrong password is named as such rather than as a lock failure.
         if (mode === 'two-roles') await checkAppSignIn(db, config.databaseUrl);
-        runningLock = await RunningLock.acquire(config.databaseUrl, lockOptions);
+        runningLock = await RunningLock.acquire(config.databaseUrl, { ...lockOptions, label: 'the app connection' });
       } finally {
         await ownerLock?.release();
         await owner.close();
@@ -341,7 +344,7 @@ export async function startServer(
   const lostDuringStart = (): StartupError =>
     new StartupError(
       ExitCode.Migration,
-      `the server-running lock was lost during start-up and could not be taken again: ${lockLost.early?.message ?? ''}`,
+      `lost during start-up and could not be taken again: ${lockLost.early?.message ?? 'the server-running lock'}`,
     );
   const repos = new RepoStore({ git, dataDir: config.dataDir });
   const ctx: ServerContext = {

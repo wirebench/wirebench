@@ -8,26 +8,22 @@ import { createDatabase, type PoolLike } from '../../../src/db/pool.js';
 
 interface StubClient {
   readonly sent: string[];
-  activeQuery: unknown;
-  queryQueue: unknown[];
   readonly release: ReturnType<typeof vi.fn>;
   readonly on: ReturnType<typeof vi.fn>;
   readonly off: ReturnType<typeof vi.fn>;
   query(text: string): Promise<{ rows: never[]; rowCount: number }>;
 }
 
-/** A client that answers every statement, fails the ones `failing` names, and runs `after` once one is sent. */
-function stubClient(failing: readonly string[] = [], after?: (text: string, client: StubClient) => void): StubClient {
+/** A client that answers every statement, fails the ones `failing` names, and never answers the ones `hanging` names. */
+function stubClient(failing: readonly string[] = [], hanging: readonly string[] = []): StubClient {
   const client: StubClient = {
     sent: [],
-    activeQuery: null,
-    queryQueue: [],
     release: vi.fn(),
     on: vi.fn(),
     off: vi.fn(),
     query(text) {
       client.sent.push(text);
-      after?.(text, client);
+      if (hanging.includes(text)) return new Promise(() => undefined);
       return failing.includes(text)
         ? Promise.reject(new Error(`${text} failed`))
         : Promise.resolve({ rows: [], rowCount: 0 });
@@ -69,11 +65,12 @@ describe('Database.transaction', () => {
     expect((client.release.mock.calls[0]![0] as Error).message).toBe('ROLLBACK failed');
   });
 
-  it('destroys a client that is not idle after COMMIT', async () => {
-    const client = stubClient([], (text, c) => {
-      if (text === 'COMMIT') c.queryQueue.push({});
+  it('destroys a client with a statement of the unit still out after COMMIT, without reading pg internals', async () => {
+    const client = stubClient([], ['select pg_sleep(60)']);
+    await over(client).transaction((tx) => {
+      void tx.query('select pg_sleep(60)');
+      return Promise.resolve();
     });
-    await over(client).transaction(() => Promise.resolve());
     expect((client.release.mock.calls[0]![0] as Error).message).toBe('the client is not idle after its unit');
   });
 

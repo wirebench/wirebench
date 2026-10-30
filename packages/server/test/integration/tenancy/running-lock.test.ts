@@ -232,7 +232,12 @@ describeDb('the server-running lock and the start-up checks (hosted spec §19.4,
         modules: [...MIGRATIONS_ONLY, slow],
         runningLock: { open: recorded.open, retries: 2, retryDelayMs: 200 },
       }),
-    ).rejects.toMatchObject({ exitCode: 3, message: expect.stringContaining('lost during start-up') as unknown });
+    ).rejects.toMatchObject({
+      exitCode: 3,
+      message: expect.stringMatching(
+        /lost during start-up.*the server-running lock \(the app connection\) was lost/,
+      ) as unknown,
+    });
   });
 
   it('stops a running server, with exit 3, once the lock is lost for good (review M5)', async () => {

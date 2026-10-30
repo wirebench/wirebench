@@ -83,8 +83,85 @@ describe('the tenant database (spec §19.4)', () => {
         throw new Error('boom');
       }),
     ).rejects.toThrow('boom');
-    // One unit: the nested writes roll back with the outer one.
-    expect(sent).toEqual(['BEGIN', `${SET_TENANT} ["${A.tenantId}"]`, 'select 1', 'select 2', 'select 3', 'ROLLBACK']);
+    // One unit: the nested writes roll back with the outer one. The joined transaction has a savepoint of its own.
+    expect(sent).toEqual([
+      'BEGIN',
+      `${SET_TENANT} ["${A.tenantId}"]`,
+      'select 1',
+      'select 2',
+      'savepoint tenancy_1',
+      'select 3',
+      'release savepoint tenancy_1',
+      'ROLLBACK',
+    ]);
+  });
+
+  it('undoes only a failed joined transaction, through its savepoint, and keeps the outer unit going', async () => {
+    const { db, sent } = recordingDatabase();
+    const tenantDb = tenantDbFactory(db);
+    await tenantDb(A).transaction(async (outer) => {
+      await expect(
+        tenantDb(A).transaction(async (inner) => {
+          await inner.query('insert 1');
+          throw new Error('inner failed');
+        }),
+      ).rejects.toThrow('inner failed');
+      await outer.query('insert 2');
+    });
+    expect(sent).toEqual([
+      'BEGIN',
+      `${SET_TENANT} ["${A.tenantId}"]`,
+      'savepoint tenancy_1',
+      'insert 1',
+      'rollback to savepoint tenancy_1',
+      'insert 2',
+      'COMMIT',
+    ]);
+  });
+
+  it('fails a unit that settles with a statement it did not await, and rolls it back', async () => {
+    const sent: string[] = [];
+    const slow: Querier = {
+      query: (text: string) => {
+        sent.push(text);
+        const answer = { rows: [], rowCount: 0 };
+        return text === 'select slow'
+          ? new Promise((done) => setTimeout(() => done(answer), 50))
+          : Promise.resolve(answer);
+      },
+    };
+    const db = {
+      ...slow,
+      transaction: async <T>(fn: (tx: Querier) => Promise<T>) => {
+        sent.push('BEGIN');
+        try {
+          const result = await fn(slow);
+          sent.push('COMMIT');
+          return result;
+        } catch (error) {
+          sent.push('ROLLBACK');
+          throw error;
+        }
+      },
+      close: () => Promise.resolve(),
+    };
+    const tenantDb = tenantDbFactory(db);
+    await expect(
+      tenantDb(A).transaction((tx) => {
+        void tx.query('select slow');
+        return Promise.resolve();
+      }),
+    ).rejects.toMatchObject({ code: 'tenancy-unawaited' });
+    let stray: Promise<unknown> | undefined;
+    await expect(
+      tenantDb(A).transaction((tx) => {
+        stray = tenantDb(A).transaction((inner) => inner.query('select slow'));
+        return tx.query('select 1');
+      }),
+    ).rejects.toMatchObject({ code: 'tenancy-unawaited' });
+    // The stray unit's own next statement is refused once the unit it joined has ended, and it says so.
+    await expect(stray).rejects.toMatchObject({ code: 'tenancy-scope-ended' });
+    expect(sent.filter((line) => line === 'COMMIT')).toEqual([]);
   });
 
   it('refuses a nested unit of another tenant with tenancy-nested, and sends nothing for it', async () => {
@@ -115,12 +192,39 @@ describe('the tenant database (spec §19.4)', () => {
   it('refuses a statement that would end or open the transaction', async () => {
     const { db, sent } = recordingDatabase();
     await tenantDbFactory(db)(A).transaction(async (tx) => {
-      for (const text of ['commit', ' COMMIT;', 'rollback', 'begin', 'end', 'abort', 'start transaction', 'Begin Work'])
+      const control = [
+        'commit',
+        ' COMMIT;',
+        'rollback',
+        'begin',
+        'end',
+        'abort',
+        'start transaction',
+        'Begin Work',
+        '/* x */ commit',
+        '-- a note\ncommit',
+        '/* a */ -- b\n  /* c */ rollback',
+      ];
+      for (const text of control)
         await expect(tx.query(text), text).rejects.toMatchObject({ code: 'tenancy-transaction-control' });
+      for (const text of ['select 1; commit', 'select 1;select 2', 'update t set a = 1; /* x */ begin'])
+        await expect(tx.query(text), text).rejects.toMatchObject({ code: 'tenancy-multi-statement' });
       await tx.query('savepoint s1');
-      await tx.query("select 'commit'");
+      await tx.query('rollback to savepoint s1');
+      await tx.query("select 'commit; begin'");
+      await tx.query('select 1; -- trailing note');
+      await tx.query('select $$a; commit$$');
     });
-    expect(sent).toEqual(['BEGIN', `${SET_TENANT} ["${A.tenantId}"]`, 'savepoint s1', "select 'commit'", 'COMMIT']);
+    expect(sent).toEqual([
+      'BEGIN',
+      `${SET_TENANT} ["${A.tenantId}"]`,
+      'savepoint s1',
+      'rollback to savepoint s1',
+      "select 'commit; begin'",
+      'select 1; -- trailing note',
+      'select $$a; commit$$',
+      'COMMIT',
+    ]);
   });
 
   it('revokes the querier when its unit ends: a late query throws tenancy-scope-ended and sends nothing', async () => {

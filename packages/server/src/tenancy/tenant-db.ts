@@ -12,10 +12,18 @@
  * A `db(scope)` call made inside a running unit anyway joins it when the scope is the same one: its statements
  * run on the outer unit's connection and commit or roll back with it, rather than on a second pooled
  * connection that would commit on its own, wait on a lock the outer unit holds, and hold two clients per unit.
- * Inside a unit of another tenant it throws `tenancy-nested`.
+ * A joined `transaction` runs inside a savepoint, so its failure undoes only its own statements and leaves the
+ * outer unit usable; a joined `query` runs as it is. Inside a unit of another tenant it throws `tenancy-nested`.
  *
- * A statement that ends or opens a transaction (`commit`, `rollback`, `begin`…) is refused with
- * `tenancy-transaction-control`: it would end the unit early, and the setting with it.
+ * **Every statement of a unit is awaited inside it.** Work a unit starts and does not await is not supported: a
+ * unit whose function settles while one of its statements, or a joined unit, is still running fails with
+ * `tenancy-unawaited` and rolls back, rather than committing what happened to finish. A statement sent after
+ * the unit ended throws `tenancy-scope-ended`, as above.
+ *
+ * A statement that ends or opens a transaction (`commit`, `rollback`, `begin`…), after any leading comments, is
+ * refused with `tenancy-transaction-control`: it would end the unit early, and the setting with it. So is text
+ * holding more than one statement (`tenancy-multi-statement`), which `pg` would run whole when sent without
+ * parameters.
  */
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { WirebenchError } from '@wirebench/engine';
@@ -55,12 +63,35 @@ export type TenantDbFactory = (scope: TenantScope) => TenantDb;
 export const SET_TENANT = "select set_config('wirebench.tenant_id', $1, true)";
 
 /** Statements that end or open a transaction; savepoints stay inside the unit and are allowed. */
-const TRANSACTION_CONTROL = /^\s*(?:commit|rollback|begin|end|abort|start\s+transaction|prepare\s+transaction)\b/i;
+const TRANSACTION_CONTROL =
+  /^\s*(?:commit|rollback(?!\s+(?:work\s+|transaction\s+)?to\b)|begin|end|abort|start\s+transaction|prepare\s+transaction)\b/i;
+
+/**
+ * `text` with its comments, string literals, quoted identifiers and dollar-quoted bodies blanked out, so what is
+ * left is the statement's own words and punctuation.
+ */
+export function sqlSkeleton(text: string): string {
+  return text.replace(/--[^\n]*|\/\*[\s\S]*?\*\/|'(?:[^']|'')*'|"(?:[^"]|"")*"|\$([A-Za-z_]*)\$[\s\S]*?\$\1\$/g, ' ');
+}
+
+/** Why `text` may not run inside a unit, or `undefined`. */
+export function refusedStatement(text: string): WirebenchError | undefined {
+  const skeleton = sqlSkeleton(text);
+  if (TRANSACTION_CONTROL.test(skeleton)) {
+    return new WirebenchError('tenancy-transaction-control', 'a unit of work may not end or open a transaction');
+  }
+  if (/;\s*\S/.test(skeleton)) {
+    return new WirebenchError('tenancy-multi-statement', 'a unit of work sends one statement at a time');
+  }
+  return undefined;
+}
 
 interface ActiveUnit {
   readonly scope: TenantScope;
   readonly tx: TenantQuerier;
   readonly ended: () => boolean;
+  /** Runs `work` as part of the unit, so the unit knows it is still out. */
+  readonly track: <T>(work: () => Promise<T>) => Promise<T>;
 }
 
 export function tenantDbFactory(db: Database, options: TenancyDbOptions = {}): TenantDbFactory {
@@ -68,7 +99,8 @@ export function tenantDbFactory(db: Database, options: TenancyDbOptions = {}): T
   // The unit the current async call chain runs in. A timer a unit started may outlive it: an ended unit counts
   // as none.
   const active = new AsyncLocalStorage<ActiveUnit>();
-  const outerFor = (scope: TenantScope): TenantQuerier | undefined => {
+  let savepoints = 0;
+  const outerFor = (scope: TenantScope): ActiveUnit | undefined => {
     const outer = active.getStore();
     if (outer === undefined || outer.ended()) return undefined;
     if (outer.scope.tenantId !== scope.tenantId) {
@@ -77,22 +109,45 @@ export function tenantDbFactory(db: Database, options: TenancyDbOptions = {}): T
         `a unit of tenant ${scope.tenantId} was started inside a unit of tenant ${outer.scope.tenantId}`,
       );
     }
-    return outer.tx;
+    return outer;
   };
+  /** A joined `transaction`: the outer unit's connection, inside a savepoint of its own. */
+  const joined = <T>(outer: ActiveUnit, fn: (tx: TenantQuerier) => Promise<T>): Promise<T> =>
+    outer.track(async () => {
+      const name = `tenancy_${String(++savepoints)}`;
+      await outer.tx.query(`savepoint ${name}`);
+      try {
+        const result = await fn(outer.tx);
+        await outer.tx.query(`release savepoint ${name}`);
+        return result;
+      } catch (error) {
+        await outer.tx.query(`rollback to savepoint ${name}`);
+        throw error;
+      }
+    });
   return (scope) => {
     const transaction = <T>(fn: (tx: TenantQuerier) => Promise<T>): Promise<T> => {
-      let outer: TenantQuerier | undefined;
+      let outer: ActiveUnit | undefined;
       try {
         outer = outerFor(scope);
       } catch (error) {
         return Promise.reject(error instanceof Error ? error : new Error(String(error)));
       }
-      if (outer !== undefined) return fn(outer);
+      if (outer !== undefined) return joined(outer, fn);
       return db.transaction(async (raw) => {
         const unit = ++units;
         await raw.query(SET_TENANT, [scope.tenantId]);
         options.onStatement?.({ unit, kind: 'set-config', tenantId: scope.tenantId, text: SET_TENANT });
         let ended = false;
+        let inFlight = 0;
+        const track = async <R>(work: () => Promise<R>): Promise<R> => {
+          inFlight++;
+          try {
+            return await work();
+          } finally {
+            inFlight--;
+          }
+        };
         const tx = {
           scope,
           query: (text: string, params?: readonly unknown[]) => {
@@ -104,26 +159,37 @@ export function tenantDbFactory(db: Database, options: TenancyDbOptions = {}): T
                 ),
               );
             }
-            if (TRANSACTION_CONTROL.test(text)) {
-              return Promise.reject(
-                new WirebenchError('tenancy-transaction-control', 'a unit of work may not end or open a transaction'),
-              );
-            }
+            const refused = refusedStatement(text);
+            if (refused !== undefined) return Promise.reject(refused);
             options.onStatement?.({ unit, kind: 'statement', tenantId: scope.tenantId, text });
-            return raw.query(text, params);
+            return track(() => raw.query(text, params));
           },
         } as TenantQuerier;
         try {
-          return await active.run({ scope, tx, ended: () => ended }, () => fn(tx));
+          const result = await active.run({ scope, tx, ended: () => ended, track }, () => fn(tx));
+          if (inFlight > 0) {
+            throw new WirebenchError(
+              'tenancy-unawaited',
+              'a unit of work ended while a statement it started was still running; await every statement inside it',
+            );
+          }
+          return result;
         } finally {
           ended = true;
         }
       });
     };
-    return {
-      scope,
-      query: (text, params) => transaction((tx) => tx.query(text, params)),
-      transaction,
-    } as TenantDb;
+    const query = (text: string, params?: readonly unknown[]) => {
+      let outer: ActiveUnit | undefined;
+      try {
+        outer = outerFor(scope);
+      } catch (error) {
+        return Promise.reject(error instanceof Error ? error : new Error(String(error)));
+      }
+      // A joined statement runs as it is, on the outer unit.
+      if (outer !== undefined) return outer.tx.query(text, params);
+      return transaction((tx) => tx.query(text, params));
+    };
+    return { scope, query, transaction } as TenantDb;
   };
 }

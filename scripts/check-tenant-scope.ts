@@ -8,11 +8,14 @@
  *   one-tenant test and serve the wrong tenant in hosted mode, so the name itself is refused, not only a call.
  *   Listing the files inside `src/tenancy/` too keeps a wrapper from re-exporting either. The admin command
  *   line's self-hosted default (§19.11) joins the list when Task 16 writes it.
- * - **Outside `src/tenancy/`, no read of the configured public URL** (§19.5): no `.publicUrl`, `['publicUrl']`, `'publicUrl'` (a
- *   `Pick` that would carry it) or destructuring of it, outside `config.ts`. A module takes the tenant's URL
- *   from `tenantUrl(config, request)`, so it cannot keep a copy made at registration. `operatorPublicUrl` is
- *   the operator's own output, in `main.ts` and `serve.ts` only, and `urlWithoutScope`, the URL where no
- *   scope exists yet, has the callers {@link URL_WITHOUT_SCOPE_ALLOWED} names.
+ * - **No read of the configured public URL** (§19.5) outside {@link PUBLIC_URL_ALLOWED} (`config.ts` and
+ *   `tenancy/urls.ts`, file by file, so a second wrapper in `src/tenancy/` is caught too): no `.publicUrl`,
+ *   `['publicUrl']`, `'publicUrl'` (a `Pick` that would carry it), destructuring of it, or its variable
+ *   `WIREBENCH_SERVER_PUBLIC_URL` (`process.env` read around the config). A module takes the tenant's URL from
+ *   `tenantUrl(config, request)`, so it cannot keep a copy made at registration. `operatorPublicUrl` is the
+ *   operator's own output, in `main.ts` and `serve.ts` only, and `urlWithoutScope`, the URL where no scope
+ *   exists yet, has the callers {@link URL_WITHOUT_SCOPE_ALLOWED} names. Names built at run time
+ *   (`config['public' + 'Url']`) are not caught; they are not a mistake anyone makes by accident.
  *
  * Task 17 adds the gate's other rules.
  *
@@ -28,8 +31,8 @@ import ts from 'typescript';
 /** The server's source, the only tree the gate reads: tests may build any scope they like. */
 export const SOURCE_ROOT = 'packages/server/src';
 
-/** Where the URL rules do not apply: an entry ending in `/` covers its folder. */
-export const ALLOWED: readonly string[] = ['packages/server/src/tenancy/'];
+/** Where the URL functions are defined, and so the one file of `src/tenancy/` that reads the configured URL. */
+export const URLS_FILE = 'packages/server/src/tenancy/urls.ts';
 
 /** The two ways to get a `TenantScope` without a request or the job loop, and the only files that may name them. */
 export const SCOPE_MINTS: Readonly<Record<'defaultScope' | 'scopeOf', readonly string[]>> = {
@@ -37,11 +40,19 @@ export const SCOPE_MINTS: Readonly<Record<'defaultScope' | 'scopeOf', readonly s
   scopeOf: ['packages/server/src/tenancy/scope.ts', 'packages/server/src/tenancy/directory.ts'],
 };
 
-/** Where the configured URL may be read: the config itself, and `src/tenancy/` (through {@link isAllowed}). */
-export const PUBLIC_URL_ALLOWED: readonly string[] = ['packages/server/src/config.ts'];
+/** Where the configured URL may be read: the config itself, and the tenant URL functions. */
+export const PUBLIC_URL_ALLOWED: readonly string[] = ['packages/server/src/config.ts', URLS_FILE];
 
-/** The operator's own output (spec §19.5). */
-export const OPERATOR_URL_ALLOWED: readonly string[] = ['packages/server/src/main.ts', 'packages/server/src/serve.ts'];
+/** Where the URL's environment variable may be named: the config, which loads and documents it. */
+export const PUBLIC_URL_ENV = 'WIREBENCH_SERVER_PUBLIC_URL';
+export const PUBLIC_URL_ENV_ALLOWED: readonly string[] = ['packages/server/src/config.ts'];
+
+/** The operator's own output (spec §19.5), and the file that defines it. */
+export const OPERATOR_URL_ALLOWED: readonly string[] = [
+  'packages/server/src/main.ts',
+  'packages/server/src/serve.ts',
+  URLS_FILE,
+];
 
 /**
  * Where nothing gives a scope yet (`tenancy/urls.ts`): the admin command line until Task 16, the scheduler's
@@ -51,6 +62,7 @@ export const URL_WITHOUT_SCOPE_ALLOWED: readonly string[] = [
   'packages/server/src/identity/cli.ts',
   'packages/server/src/schedules/settings.ts',
   'packages/server/src/sso/module.ts',
+  URLS_FILE,
 ];
 
 export interface ScopeHit {
@@ -86,6 +98,12 @@ export function findUrlReads(file: string, content: string): ScopeHit[] {
         if ((ts.isIdentifier(key) || ts.isStringLiteralLike(key)) && key.text === PUBLIC_URL) hit(node, 'public-url');
       }
     }
+    if (
+      (ts.isIdentifier(node) || ts.isStringLiteralLike(node)) &&
+      node.text === PUBLIC_URL_ENV &&
+      !PUBLIC_URL_ENV_ALLOWED.includes(file)
+    )
+      hit(node, 'public-url');
     if (ts.isIdentifier(node)) {
       if (node.text === 'operatorPublicUrl' && !OPERATOR_URL_ALLOWED.includes(file)) hit(node, 'operator-url');
       if (node.text === 'urlWithoutScope' && !URL_WITHOUT_SCOPE_ALLOWED.includes(file)) hit(node, 'url-without-scope');
@@ -94,10 +112,6 @@ export function findUrlReads(file: string, content: string): ScopeHit[] {
   };
   visit(source);
   return hits;
-}
-
-export function isAllowed(path: string): boolean {
-  return ALLOWED.some((entry) => (entry.endsWith('/') ? path.startsWith(entry) : path === entry));
 }
 
 /** Every identifier or string naming `defaultScope` or `scopeOf` in `content`, unless `file` may name it. */
@@ -136,7 +150,7 @@ export async function checkTenantScope(repoRoot: string): Promise<ScopeHit[]> {
   for (const path of await sourceFiles(join(repoRoot, SOURCE_ROOT))) {
     const file = relative(repoRoot, path).split(sep).join('/');
     const content = await readFile(path, 'utf8');
-    hits.push(...findScopeMints(file, content), ...(isAllowed(file) ? [] : findUrlReads(file, content)));
+    hits.push(...findScopeMints(file, content), ...findUrlReads(file, content));
   }
   return hits;
 }

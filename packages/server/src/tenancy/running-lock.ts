@@ -5,10 +5,15 @@
  * a start-before-stop restart among them, hold it at once.
  *
  * A dropped connection drops the lock with it, silently. So the connection has TCP keepalive and a connect
- * timeout, and a heartbeat asks every {@link HEARTBEAT_MS} whether this session still holds the lock; a failed
- * or `false` answer counts as a drop. After a drop the lock is taken again on a new connection, after a delay
- * each time; when that fails (a revert holds it, or the database is gone) `onLost` is called and the server
- * stops. The whole re-take is bounded by retries × (delay + connect timeout).
+ * timeout, and a heartbeat asks every {@link HEARTBEAT_MS} whether this session still holds the lock. A failed
+ * or `false` answer counts as a drop, and so does no answer within {@link LOCK_QUERY_TIMEOUT_MS}: on a
+ * half-open connection a sent query neither answers nor fails until TCP gives up, minutes later. A tick is
+ * skipped while the last heartbeat is still out, so nothing queues. A drop is therefore seen within
+ * {@link HEARTBEAT_MS} + {@link LOCK_QUERY_TIMEOUT_MS}.
+ *
+ * After a drop the lock is taken again on a new connection, after a delay each time; when that fails (a revert
+ * holds it, or the database is gone) `onLost` is called and the server stops. Every connect and every lock query
+ * is time-limited, so the whole re-take is bounded by retries × (delay + connect timeout + query timeout).
  */
 import { WirebenchError } from '@wirebench/engine';
 import { APPLICATION_NAME, openSession, type Session } from '../db/pool.js';
@@ -36,6 +41,23 @@ export const HELD = `select exists (
 
 export const HEARTBEAT_MS = 15_000;
 
+/** How long `TRY_SHARED` or a heartbeat may wait for its answer before the lock counts as lost. */
+export const LOCK_QUERY_TIMEOUT_MS = 5_000;
+
+/** `promise`, or a rejection once `ms` have passed without it settling. */
+function within<T>(promise: Promise<T>, ms: number, what: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => {
+      reject(new Error(`${what} had no answer within ${String(ms)} ms`));
+    }, ms);
+    timer.unref();
+  });
+  return Promise.race([promise, deadline]).finally(() => {
+    clearTimeout(timer);
+  });
+}
+
 /** The lock connection's name in `pg_stat_activity`, which revert reads (plan Task 28). */
 export const LOCK_APPLICATION_NAME = `${APPLICATION_NAME}-lock`;
 
@@ -47,6 +69,10 @@ export interface RunningLockOptions {
   readonly heartbeatMs?: number;
   /** How long one connection attempt may take. */
   readonly connectTimeoutMs?: number;
+  /** How long `TRY_SHARED` or a heartbeat may take; {@link LOCK_QUERY_TIMEOUT_MS} by default. */
+  readonly queryTimeoutMs?: number;
+  /** Which lock this is, in the error `onLost` gets: the owner's while migrating, or the app role's. */
+  readonly label?: string;
   /** Called once when the lock is lost for good. */
   readonly onLost: (error: Error) => void;
   /** Called each time the lock was taken again on a new connection. */
@@ -73,6 +99,10 @@ export class RunningLock {
     return lock;
   }
 
+  private get queryTimeoutMs(): number {
+    return this.options.queryTimeoutMs ?? LOCK_QUERY_TIMEOUT_MS;
+  }
+
   /** The server process holding the lock, for a test that drops it. */
   get pid(): number | undefined {
     return this.session?.pid;
@@ -84,11 +114,16 @@ export class RunningLock {
       ((url) =>
         openSession(url, {
           applicationName: LOCK_APPLICATION_NAME,
+          queryTimeoutMs: this.queryTimeoutMs,
           ...(this.options.connectTimeoutMs !== undefined ? { connectTimeoutMs: this.options.connectTimeoutMs } : {}),
         }))
     )(this.url);
     try {
-      const rows = await session.query<{ ok: boolean }>(TRY_SHARED, [SERVER_RUNNING_CLASS]);
+      const rows = await within(
+        session.query<{ ok: boolean }>(TRY_SHARED, [SERVER_RUNNING_CLASS]),
+        this.queryTimeoutMs,
+        'taking the server-running lock',
+      );
       if (rows.rows[0]?.ok !== true) {
         throw new WirebenchError('tenancy-reverting', 'admin tenancy revert is running against this database');
       }
@@ -105,14 +140,19 @@ export class RunningLock {
       this.dropped(session, error);
     });
     clearInterval(this.heartbeat);
+    let pending = false;
     this.heartbeat = setInterval(() => {
-      session
-        .query<{ held: boolean }>(HELD, [SERVER_RUNNING_CLASS])
+      if (pending) return;
+      pending = true;
+      within(session.query<{ held: boolean }>(HELD, [SERVER_RUNNING_CLASS]), this.queryTimeoutMs, 'the lock heartbeat')
         .then((rows) => {
           if (rows.rows[0]?.held !== true) throw new Error('the session no longer holds the server-running lock');
         })
         .catch((error: unknown) => {
           this.dropped(session, error instanceof Error ? error : new Error(String(error)));
+        })
+        .finally(() => {
+          pending = false;
         });
     }, this.options.heartbeatMs ?? HEARTBEAT_MS);
     this.heartbeat.unref();
@@ -152,7 +192,10 @@ export class RunningLock {
         if (error instanceof WirebenchError && error.code === 'tenancy-reverting') break;
       }
     }
-    if (!this.closed) this.options.onLost(last);
+    if (!this.closed) {
+      const which = this.options.label === undefined ? '' : ` (${this.options.label})`;
+      this.options.onLost(new Error(`the server-running lock${which} was lost: ${last.message}`, { cause: last }));
+    }
   }
 
   /** Releases the lock by closing its connection. Idempotent. */

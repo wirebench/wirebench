@@ -10,16 +10,27 @@ function querierOf(runner: { query(text: string, values?: unknown[]): Promise<pg
   };
 }
 
-/** What `pg` keeps on a client while a query runs or waits: undocumented, so read defensively. */
-interface ClientInternals {
-  readonly activeQuery?: unknown;
-  readonly queryQueue?: readonly unknown[];
-}
-
-/** Whether `client` has nothing running and nothing queued: the only state fit to go back to the pool. */
-export function isIdle(client: pg.PoolClient): boolean {
-  const internals = client as unknown as ClientInternals;
-  return (internals.activeQuery ?? null) === null && (internals.queryQueue?.length ?? 0) === 0;
+/**
+ * A querier over one pooled client that counts the statements it has sent and not yet seen settle. Kept here
+ * rather than read from `pg`'s own fields, which are undocumented and deprecated: a client with any statement
+ * still out after its unit is in doubt (fail closed).
+ */
+function countingQuerier(client: pg.PoolClient): { readonly querier: Querier; readonly inFlight: () => number } {
+  let inFlight = 0;
+  const base = querierOf(client);
+  return {
+    querier: {
+      query: async (text, params) => {
+        inFlight++;
+        try {
+          return await base.query(text, params);
+        } finally {
+          inFlight--;
+        }
+      },
+    },
+    inFlight: () => inFlight,
+  };
 }
 
 /** The part of `pg.Pool` a `Database` uses, so a test can hand it a stub. */
@@ -65,9 +76,10 @@ export function createDatabase(connectionString: string, options: DatabaseOption
       // failed may still be inside the transaction, and one that is not idle has a statement of this
       // unit still running. `release(error)` ends its connection instead of pooling it.
       let doubt: Error | undefined;
+      const counted = countingQuerier(client);
       try {
         await client.query('BEGIN');
-        const result = await fn(querierOf(client));
+        const result = await fn(counted.querier);
         await client.query('COMMIT');
         return result;
       } catch (error) {
@@ -78,9 +90,8 @@ export function createDatabase(connectionString: string, options: DatabaseOption
         }
         throw error;
       } finally {
-        // A guard more than a path: `pg` runs queued statements before `COMMIT` or `ROLLBACK` resolves, so a
-        // client is idle here unless something outside the unit sent it a statement.
-        if (doubt === undefined && !isIdle(client)) doubt = new Error('the client is not idle after its unit');
+        // A statement of the unit that nobody awaited is still out: the client is not fit to go back.
+        if (doubt === undefined && counted.inFlight() > 0) doubt = new Error('the client is not idle after its unit');
         client.off('error', onError);
         client.release(doubt);
       }
@@ -102,6 +113,8 @@ export interface SessionOptions {
   readonly applicationName?: string;
   /** How long `connect` may take before it fails; 10 s by default, so a re-take never hangs. */
   readonly connectTimeoutMs?: number;
+  /** How long any one query may wait for its answer; unbounded by default. */
+  readonly queryTimeoutMs?: number;
 }
 
 /**
@@ -115,9 +128,16 @@ export async function openSession(connectionString: string, options: SessionOpti
     keepAliveInitialDelayMillis: 10_000,
     connectionTimeoutMillis: options.connectTimeoutMs ?? 10_000,
     application_name: options.applicationName ?? 'wirebench-session',
+    ...(options.queryTimeoutMs !== undefined ? { query_timeout: options.queryTimeoutMs } : {}),
   });
   await client.connect();
-  const pidRow = await client.query<{ pid: number }>('select pg_backend_pid() as pid');
+  let pidRow: pg.QueryResult<{ pid: number }>;
+  try {
+    pidRow = await client.query<{ pid: number }>('select pg_backend_pid() as pid');
+  } catch (error) {
+    await client.end().catch(() => undefined);
+    throw error;
+  }
   let closed = false;
   let lost: ((error: Error) => void) | undefined;
   let fired = false;
