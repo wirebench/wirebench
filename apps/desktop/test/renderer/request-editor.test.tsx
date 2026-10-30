@@ -233,6 +233,7 @@ describe('RequestEditor', () => {
         console: { visible: true, activeTab: 'http-log', size: 25, lastSize: 25, openOnFirstSend: false },
         slideOver: { open: false, width: 420, codeShell: 'posix', codeLanguage: 'curl', codeSettings: {} },
         theme: 'dark',
+        palette: 'default',
         editorLineNumbers: true,
         editorLayout: { orientation: 'side-by-side', mode: 'split' },
       },

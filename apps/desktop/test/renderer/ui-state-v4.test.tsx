@@ -127,7 +127,7 @@ describe('ui-state v4 migration', () => {
     expect(result.slideOver.codeShell).toBe(DEFAULT_UI_STATE.slideOver.codeShell);
   });
 
-  it('rewrites a migrated v3 blob as v4 on the next write', () => {
+  it('rewrites a migrated v3 blob as the current version on the next write', () => {
     const storage = fakeStorage();
     storage.setItem(UI_STORAGE_KEY, JSON.stringify(v3Payload()));
 
@@ -135,7 +135,7 @@ describe('ui-state v4 migration', () => {
 
     const persisted = JSON.parse(storage.getItem(UI_STORAGE_KEY) ?? 'null') as { version: number };
     expect(persisted.version).toBe(UI_STORAGE_VERSION);
-    expect(persisted.version).toBe(4);
+    expect(persisted.version).toBe(5);
   });
 
   it('round-trips a v4 blob exactly', () => {

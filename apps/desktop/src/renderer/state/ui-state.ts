@@ -2,6 +2,7 @@ import { AREAS } from '@shared/area-module.js';
 import type { AreaId } from '@shared/area-module.js';
 import { CODE_TARGET_IDS, isCodeLanguage } from '@shared/code-targets.js';
 import type { CodeLanguage, CodeSettings, CodeTarget } from '@shared/code-targets.js';
+import { PALETTES, type Palette } from '@shared/palettes.js';
 
 /** Which view the sidebar shows; mirrors the activity bar's icons. */
 export type SidebarView = AreaId;
@@ -142,6 +143,8 @@ export interface UiSnapshot {
     readonly codeSettings: Readonly<Partial<Record<CodeTarget, CodeSettings>>>;
   };
   readonly theme: ThemePreference;
+  /** The colour theme, mirrored from `preferences.ui.palette` so the first frame can wear it. */
+  readonly palette: Palette;
   /** Whether request/response Monaco editors show line numbers. */
   readonly editorLineNumbers: boolean;
   /** The default request-editor layout; a request may override it for the session. */
@@ -166,11 +169,28 @@ export const UI_STORAGE_KEY = 'wirebench.ui';
  * `readUi` carries forward into `slideOver.codeShell` since the Code panel now lives in the
  * slide-over (see {@link mergeSlideOver}). Adding a field to a section handled by a merge
  * function does not need a further bump.
+ *
+ * It went 4 → 5 when the mirror gained `palette`, the colour theme: a version-4 blob is read
+ * whole and gets the default palette.
  */
-export const UI_STORAGE_VERSION = 4;
+export const UI_STORAGE_VERSION = 5;
 
-/** The previous storage version, whose stored shape `readUi` still accepts (see above). */
-const PRIOR_UI_STORAGE_VERSION = 3;
+/** The version before the palette; its shape is version 5's without `palette`. */
+const V4_UI_STORAGE_VERSION = 4;
+
+/** The version before the right rail, whose stored shape `readUi` still accepts (see above). */
+const V3_UI_STORAGE_VERSION = 3;
+
+/** The stored versions `readUi` can read. */
+const READABLE_UI_STORAGE_VERSIONS: readonly unknown[] = [
+  UI_STORAGE_VERSION,
+  V4_UI_STORAGE_VERSION,
+  V3_UI_STORAGE_VERSION,
+];
+
+function isPalette(value: unknown): value is Palette {
+  return (PALETTES as readonly unknown[]).includes(value);
+}
 
 /** The layout a first run gets: the sidebar visible with Explorer selected, the console collapsed until the first send, dark theme. */
 export const DEFAULT_UI_STATE: UiSnapshot = {
@@ -178,6 +198,7 @@ export const DEFAULT_UI_STATE: UiSnapshot = {
   console: { visible: false, activeTab: 'http-log', size: 25, lastSize: 25, openOnFirstSend: true },
   slideOver: { open: false, width: 294, codeShell: 'posix', codeLanguage: 'curl', codeSettings: {} },
   theme: 'dark',
+  palette: 'default',
   editorLineNumbers: true,
   editorLayout: { orientation: 'side-by-side', mode: 'split' },
   workspaces: {},
@@ -408,7 +429,8 @@ function readWorkspaceConsole(stored: unknown): Pick<PersistedWorkspaceUi, 'cons
  * know how to read — yields the defaults rather than an error: a broken layout preference must
  * never block startup.
  *
- * A `version: 4` payload is read directly; a `version: 3` payload is accepted too (see
+ * A `version: 5` payload is read directly; a `version: 4` one reads as the default palette, and a
+ * `version: 3` payload is accepted too (see
  * {@link UI_STORAGE_VERSION}'s doc comment) — only `sidebar`, `console`, `theme`,
  * `editorLineNumbers`, `editorLayout` and `workspaces` are ever read off `state`, so the v3
  * blob's `details` key is silently dropped and everything else survives. Any other version
@@ -422,21 +444,22 @@ export function readUi(storage: Storage = localStorage): UiSnapshot {
     }
     const payload = asRecord(JSON.parse(raw));
     const version = payload?.['version'];
-    if (version !== UI_STORAGE_VERSION && version !== PRIOR_UI_STORAGE_VERSION) {
+    if (!READABLE_UI_STORAGE_VERSIONS.includes(version)) {
       return DEFAULT_UI_STATE;
     }
     const stored = asRecord(payload?.['state']) ?? {};
     const theme = stored['theme'];
+    const palette = stored['palette'];
     const editorLineNumbers = stored['editorLineNumbers'];
     // Only a version-3 blob carries the legacy `details.codeShell`; a v4 blob's `slideOver`
     // already has its own `codeShell` (or doesn't, and gets the default).
-    const legacyCodeShell =
-      version === PRIOR_UI_STORAGE_VERSION ? asRecord(stored['details'])?.['codeShell'] : undefined;
+    const legacyCodeShell = version === V3_UI_STORAGE_VERSION ? asRecord(stored['details'])?.['codeShell'] : undefined;
     return {
       sidebar: mergeSidebar(stored['sidebar']),
       console: mergeConsole(stored['console']),
       slideOver: mergeSlideOver(stored['slideOver'], legacyCodeShell),
       theme: theme === 'dark' || theme === 'light' || theme === 'system' ? theme : DEFAULT_UI_STATE.theme,
+      palette: isPalette(palette) ? palette : DEFAULT_UI_STATE.palette,
       editorLineNumbers:
         typeof editorLineNumbers === 'boolean' ? editorLineNumbers : DEFAULT_UI_STATE.editorLineNumbers,
       editorLayout: mergeEditorLayout(stored['editorLayout']),
