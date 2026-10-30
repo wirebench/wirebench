@@ -12,7 +12,9 @@
 --   tenant its uniqueness still holds);
 -- - a primary key, and a unique key a route maps by name, gets a non-unique copy built first: a primary key
 --   cannot be kept beside the new one, and a second unique index on the old columns would be checked first
---   (lower OID) and report a violation under the `_0019` name, turning a 409 into a 500.
+--   (lower OID) and report a violation under the `_0019` name, turning a 409 into a 500;
+-- - so does the unique key of an `on conflict` upsert: two racing inserts that both pass the arbiter's check
+--   would otherwise meet the older unique copy, which raises instead of taking the conflict path.
 set local maintenance_work_mem = '256MB';
 
 create table tenants (
@@ -202,12 +204,18 @@ alter table saml_flows
   add constraint saml_flows_grant_hash_key unique (tenant_id, grant_hash);
 alter table scim_tokens rename constraint scim_tokens_token_hash_key to scim_tokens_token_hash_key_0019;
 alter table scim_tokens add constraint scim_tokens_token_hash_key unique (tenant_id, token_hash);
-alter table session_logs rename constraint session_logs_workspace_id_user_id_client_log_id_key to session_logs_workspace_id_user_id_client_log_id_key_0019;
+-- The arbiters of `openLog`, `upsertPairing` and `replaceCode`: non-unique copies, so a racing upsert takes its
+-- conflict path (header).
+create index session_logs_workspace_id_user_id_client_log_id_key_0019
+  on session_logs (workspace_id, user_id, client_log_id);
+alter table session_logs drop constraint session_logs_workspace_id_user_id_client_log_id_key;
 alter table session_logs
   add constraint session_logs_workspace_id_user_id_client_log_id_key unique (tenant_id, workspace_id, user_id, client_log_id);
-alter table agent_pairings rename constraint agent_pairings_user_id_agent_id_key to agent_pairings_user_id_agent_id_key_0019;
+create index agent_pairings_user_id_agent_id_key_0019 on agent_pairings (user_id, agent_id);
+alter table agent_pairings drop constraint agent_pairings_user_id_agent_id_key;
 alter table agent_pairings add constraint agent_pairings_user_id_agent_id_key unique (tenant_id, user_id, agent_id);
-alter table agent_pairing_codes rename constraint agent_pairing_codes_user_id_key to agent_pairing_codes_user_id_key_0019;
+create index agent_pairing_codes_user_id_key_0019 on agent_pairing_codes (user_id);
+alter table agent_pairing_codes drop constraint agent_pairing_codes_user_id_key;
 alter table agent_pairing_codes add constraint agent_pairing_codes_user_id_key unique (tenant_id, user_id);
 
 create index invitations_one_open_per_email_0019

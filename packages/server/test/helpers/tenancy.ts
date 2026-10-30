@@ -7,7 +7,7 @@
  */
 import { WirebenchError } from '@wirebench/engine';
 import { expect } from 'vitest';
-import type { Database, ServerContext } from '../../src/context.js';
+import type { Database, Querier, ServerContext } from '../../src/context.js';
 import type { StatementLogEntry } from '../../src/tenancy/tenant-db.js';
 import { createTenancy, type Tenancy } from '../../src/tenancy/tenancy.js';
 
@@ -67,4 +67,43 @@ export function expectAllScoped(log: StatementLog, tenantId: string): void {
     }
   }
   expect(statements, 'statements in the log').toBeGreaterThan(0);
+}
+
+/** Every statement sent through a context's raw `ctx.db`, outside any tenant unit (Task 5 review M8). */
+const rawLogs = new WeakMap<object, string[]>();
+
+/** `db` with each statement it is sent recorded, in `ctx.db` or a unit of its `transaction`. */
+export function recordingRaw(db: Database): { readonly db: Database; readonly texts: string[] } {
+  const texts: string[] = [];
+  const record = (querier: Querier): Querier => ({
+    query: (text, params) => {
+      texts.push(text);
+      return querier.query(text, params);
+    },
+  });
+  const wrapped: Database = {
+    ...record(db),
+    transaction: (fn) => db.transaction((tx) => fn(record(tx))),
+    close: () => db.close(),
+  };
+  rawLogs.set(wrapped, texts);
+  return { db: wrapped, texts };
+}
+
+/** What went through `ctx.db` raw since the context was built; `testContext` records it. */
+export function rawStatementsOf(ctx: Pick<ServerContext, 'db'>): readonly string[] {
+  const texts = rawLogs.get(ctx.db);
+  if (texts === undefined) throw new Error('this context was not built by testContext over a real database');
+  return texts;
+}
+
+/**
+ * For a module moved into a tenant (Part B): no statement that bypassed the tenant database named one of its
+ * `tables`, which `scopedContext` cannot see when another module's helper sends it.
+ */
+export function expectNoRawStatementsOn(ctx: Pick<ServerContext, 'db'>, tables: readonly string[]): void {
+  const named = rawStatementsOf(ctx).filter((text) =>
+    tables.some((table) => new RegExp(`\\b${table}\\b`, 'i').test(text)),
+  );
+  expect(named, 'raw statements on tenant tables').toEqual([]);
 }

@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, expect, it, vi } from 'vitest';
 import type { Database } from '../../../src/context.js';
 import { createDatabase } from '../../../src/db/pool.js';
+import { TenantAdmin } from '../../../src/tenancy/directory.js';
 import { createTenancy, type Tenancy } from '../../../src/tenancy/tenancy.js';
 import { describeDb, testDatabase } from '../../helpers/database.js';
 import { expectAllScoped, loggedTenancy } from '../../helpers/tenancy.js';
@@ -46,7 +47,9 @@ describeDb('the tenant database and directory (hosted spec §19.4, §19.8)', () 
     expect((await one.query("select 1 from teams where id = 'T-rolled-back'")).rowCount).toBe(0);
   });
 
-  it('destroys a client whose rollback failed, and runs the next unit on a fresh one', async () => {
+  // `pg-pool` drops a client whose socket closed whatever `release` is given, so this shows the next unit gets a
+  // live connection, not that `release(err)` is called: `test/unit/db/pool.test.ts` pins that over a stub.
+  it('runs the next unit on a fresh connection after one died mid-unit', async () => {
     const scope = tenancy.directory.defaultScope();
     let pid = 0;
     await expect(
@@ -90,10 +93,10 @@ describeDb('the tenant database and directory (hosted spec §19.4, §19.8)', () 
     expect(log.entries.filter((e) => e.kind === 'statement').map((e) => e.text)).toEqual(['select 1', 'select 2']);
   });
 
-  it('lists the tenants, creates one, tells its listeners, and serves each in forEachTenant', async () => {
+  it("lists the tenants, creates one off ctx.tenancy, tells the directory's listeners, and serves each in forEachTenant", async () => {
     const listener = vi.fn();
     const off = tenancy.directory.onChange(listener);
-    const acme = await tenancy.directory.create({ slug: 'acme', name: 'Acme' });
+    const acme = await new TenantAdmin(one, tenancy.directory).create({ slug: 'acme', name: 'Acme' });
     off();
     expect(listener).toHaveBeenCalledTimes(1);
     expect(acme).toMatchObject({ slug: 'acme', name: 'Acme', edition: 'community', status: 'active', region: 'eu' });

@@ -191,11 +191,16 @@ describeDb('migration 0020 on a scaled fixture (hosted spec §19.10)', () => {
       )
     ).rows.map((row) => row.oid);
     try {
-      // Rref: one plain single-worker index build over a million rows, on this machine, now.
-      const referenceStarted = performance.now();
-      await owner.query('create index perf_reference on captures (id, received_at)');
-      referenceRowsPerSecond = sizes.get('captures')!.rows / ((performance.now() - referenceStarted) / 1000);
-      await owner.query('drop index perf_reference');
+      // Rref: a plain single-worker index build over a million rows, on this machine, now. The median of three,
+      // so one scheduler hiccup does not move the ratio.
+      const samples: number[] = [];
+      for (let sample = 0; sample < 3; sample++) {
+        const referenceStarted = performance.now();
+        await owner.query('create index perf_reference on captures (id, received_at)');
+        samples.push(sizes.get('captures')!.rows / ((performance.now() - referenceStarted) / 1000));
+        await owner.query('drop index perf_reference');
+      }
+      referenceRowsPerSecond = samples.sort((a, b) => a - b)[1]!;
       const migrations = await allMigrations(BUILTIN_MODULES);
       const started = performance.now();
       expect((await migrate(owner, migrations)).applied).toEqual([20]);
@@ -210,6 +215,11 @@ describeDb('migration 0020 on a scaled fixture (hosted spec §19.10)', () => {
     const heapSeconds = tables.reduce((sum, t) => sum + (t.passes * t.heapBytes) / heapBytesPerSecond, 0);
     // A heap term at or above the whole time leaves no row term: charge the rows at least a tenth of it.
     const rowSeconds = Math.max(migrationSeconds - heapSeconds, migrationSeconds / 10);
+    if (rowSeconds > migrationSeconds - heapSeconds) {
+      console.info(
+        `[perf] tenancy 0020: the heap term (${heapSeconds.toFixed(2)} s) leaves less than a tenth of ${migrationSeconds.toFixed(2)} s; the row term is floored, so R is a lower bound`,
+      );
+    }
     const rowsPerSecond = rowPasses / rowSeconds;
     const rows = tables.reduce((sum, t) => sum + t.rows, 0);
     const measured: Baseline = {

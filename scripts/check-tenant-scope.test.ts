@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { checkTenantScope, findDefaultScopeCalls, findUrlReads, isAllowed } from './check-tenant-scope.js';
+import { checkTenantScope, findScopeMints, findUrlReads, isAllowed } from './check-tenant-scope.js';
 
 describe('check:tenant-scope', () => {
   const roots: string[] = [];
@@ -19,7 +19,7 @@ describe('check:tenant-scope', () => {
     return root;
   };
 
-  it('refuses a defaultScope( planted in a route', async () => {
+  it('refuses a defaultScope planted in a route', async () => {
     const root = await tree({
       'packages/server/src/teams/routes/teams.ts': 'const scope = ctx.tenancy.directory.defaultScope();\n',
       'packages/server/src/tenancy/directory.ts': 'defaultScope(): TenantScope {\n',
@@ -29,6 +29,7 @@ describe('check:tenant-scope', () => {
         file: 'packages/server/src/teams/routes/teams.ts',
         line: 1,
         text: 'const scope = ctx.tenancy.directory.defaultScope();',
+        rule: 'default-scope',
       },
     ]);
   });
@@ -37,11 +38,35 @@ describe('check:tenant-scope', () => {
     expect(await checkTenantScope(join(import.meta.dirname, '..'))).toEqual([]);
   });
 
-  it('allows src/tenancy/ only, and skips comments', () => {
+  it('catches every spelling of defaultScope, and skips comments', () => {
+    const route = 'packages/server/src/teams/routes/teams.ts';
+    const spellings = [
+      'dir.defaultScope?.()',
+      'const { defaultScope } = ctx.tenancy.directory;',
+      "dir['defaultScope']()",
+      'const pick = dir.defaultScope.bind(dir);',
+      'const scope = dir\n  .defaultScope\n  ();',
+      '/* first */ dir.defaultScope();',
+      'x.defaultScope ()',
+    ];
+    for (const text of spellings) expect(findScopeMints(route, text), text).toHaveLength(1);
+    expect(findScopeMints(route, '// never call defaultScope() here\n/** defaultScope( in a doc */\n')).toEqual([]);
     expect(isAllowed('packages/server/src/tenancy/jobs.ts')).toBe(true);
     expect(isAllowed('packages/server/src/tenancy-extra/x.ts')).toBe(false);
-    expect(findDefaultScopeCalls('a.ts', '// never call defaultScope() here\n * defaultScope( in a doc\n')).toEqual([]);
-    expect(findDefaultScopeCalls('a.ts', 'x.defaultScope ()')).toHaveLength(1);
+  });
+
+  it('gates scopeOf too, and keeps both names to their files inside src/tenancy/', () => {
+    const forged = "const scope = scopeOf({ id: defaultId, slug: 'default' });";
+    expect(findScopeMints('packages/server/src/teams/routes/teams.ts', forged)).toMatchObject([{ rule: 'scope-of' }]);
+    expect(
+      findScopeMints('packages/server/src/teams/x.ts', "import { scopeOf } from '../tenancy/scope.js';"),
+    ).toHaveLength(1);
+    // A wrapper elsewhere in src/tenancy/ would re-export the default tenant to every module.
+    expect(
+      findScopeMints('packages/server/src/tenancy/jobs.ts', 'export const fallback = (d) => d.defaultScope();'),
+    ).toHaveLength(1);
+    expect(findScopeMints('packages/server/src/tenancy/resolve.ts', 'return directory.defaultScope();')).toEqual([]);
+    expect(findScopeMints('packages/server/src/tenancy/directory.ts', 'return rows.map(scopeOf);')).toEqual([]);
   });
 
   it('refuses a new raw read of the public URL, in any spelling', () => {

@@ -1,6 +1,14 @@
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { auditLogModule } from '../../../src/audit-log/module.js';
-import { CANONICAL_COLUMNS, chainHead, insertGenesis, readAnchor } from '../../../src/audit-log/repo.js';
+import {
+  CANONICAL_COLUMNS,
+  chainHead,
+  insertGenesis,
+  listAuditEvents,
+  readAnchor,
+} from '../../../src/audit-log/repo.js';
+import { ciTokenByHash } from '../../../src/ci-tokens/repo.js';
+import { catchUrlBySecret, deleteCapturesBefore } from '../../../src/hooks/repo.js';
 import { replaceCode, upsertPairing } from '../../../src/agent/repo.js';
 import { isForeignKeyViolation, isUniqueViolation } from '../../../src/db/errors.js';
 import { migrate, type Migration } from '../../../src/db/migrate.js';
@@ -11,7 +19,7 @@ import { BUILTIN_MODULES } from '../../../src/modules.js';
 import { allMigrations } from '../../../src/serve.js';
 import { openLog } from '../../../src/session-logs/repo.js';
 import { ssoModule } from '../../../src/sso/module.js';
-import { upsertScimUser } from '../../../src/sso/repo.js';
+import { scimTokenByHash, upsertScimUser } from '../../../src/sso/repo.js';
 import { upsertGrant } from '../../../src/teams/repo.js';
 import { loadFixture0019, type Fixture0019 } from '../../fixtures/tenancy/load.js';
 import {
@@ -313,8 +321,17 @@ describeDb('migration 0020 on the frozen 0019 fixture (hosted spec §19.3, §19.
         kept!.definition,
       );
     }
-    // The unique ones a route maps are never kept unique: their violation must keep the 0019 name.
-    for (const name of ['users_email_lower_key', 'teams_name_lower', 'workspaces_pkey', 'agent_pairing_codes_pkey']) {
+    // The unique ones a route maps are never kept unique: their violation must keep the 0019 name. Nor are an
+    // upsert's arbiters: a racing insert would meet the copy and raise instead of taking its conflict path.
+    for (const name of [
+      'users_email_lower_key',
+      'teams_name_lower',
+      'workspaces_pkey',
+      'agent_pairing_codes_pkey',
+      'session_logs_workspace_id_user_id_client_log_id_key',
+      'agent_pairings_user_id_agent_id_key',
+      'agent_pairing_codes_user_id_key',
+    ]) {
       expect(after.indexes.find((a) => a.name === `${name}_0019`)?.unique, name).toBe(false);
     }
   });
@@ -334,10 +351,22 @@ describeDb('migration 0020 on the frozen 0019 fixture (hosted spec §19.3, §19.
     await tokenByHash(explaining, 'no-such-hash');
     await findUserByEmail(explaining, 'admin@example.com');
     await chainHead(explaining);
-    const [token, email, head] = plans;
+    await listAuditEvents(explaining, {}, { limit: 50 });
+    await deleteCapturesBefore(explaining, new Date(), 100);
+    await catchUrlBySecret(explaining, 'no-such-secret');
+    await ciTokenByHash(explaining, 'no-such-hash');
+    await scimTokenByHash(explaining, 'no-such-hash');
+    const [token, email, head, listing, retention, secret, ciToken, scimToken] = plans;
     expect(token).toContain('device_tokens_token_hash_key_0019');
     expect(email).toContain('users_email_lower_key_0019');
     expect(head).toContain('audit_events_chain_seq_0019');
+    expect(listing).toMatch(/audit_events_\w+_0019/);
+    expect(retention).toMatch(/captures_\w+_0019/);
+    // On the fixture's few rows the planner may scan the composite index on its second column as cheaply as the
+    // copy; either way it is an index, which is what the hot path needs until 0021.
+    expect(secret).toMatch(/Index Scan using catch_urls_secret(_0019)? /);
+    expect(ciToken).toMatch(/Index Scan using ci_tokens_token_hash_key(_0019)? /);
+    expect(scimToken).toMatch(/Index Scan using scim_tokens_token_hash_key(_0019)? /);
     for (const plan of plans) expect(plan).not.toMatch(/Seq Scan/);
   });
 

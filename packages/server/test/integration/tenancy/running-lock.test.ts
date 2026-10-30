@@ -4,8 +4,13 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { Database, ServerModule } from '../../../src/context.js';
 import { createDatabase, openSession, type Session } from '../../../src/db/pool.js';
 import { BUILTIN_MODULES } from '../../../src/modules.js';
-import { startServer, type RunningServer } from '../../../src/serve.js';
-import { RunningLock, SERVER_RUNNING_CLASS, TRY_EXCLUSIVE } from '../../../src/tenancy/running-lock.js';
+import { startServer, type RunningServer, type StartOptions } from '../../../src/serve.js';
+import {
+  RunningLock,
+  SERVER_RUNNING_CLASS,
+  TRY_EXCLUSIVE,
+  UNLOCK_EXCLUSIVE,
+} from '../../../src/tenancy/running-lock.js';
 import { describeDb, TEST_DATABASE_URL, testDatabase } from '../../helpers/database.js';
 import { mkTempDir, removeTempDir } from '../../helpers/git.js';
 import { freePort } from '../../helpers/net.js';
@@ -27,7 +32,8 @@ describeDb('the server-running lock and the start-up checks (hosted spec §19.4,
   beforeEach(async () => {
     db = await testDatabase();
     dataDirs = [];
-    revert = await openSession(db.url);
+    // As the owner, as `admin tenancy revert` runs: the key must agree across the two roles (review M3).
+    revert = await openSession(db.ownerUrl);
     admin = createDatabase(TEST_DATABASE_URL!);
   });
   afterEach(async () => {
@@ -40,11 +46,19 @@ describeDb('the server-running lock and the start-up checks (hosted spec §19.4,
   /** What `admin tenancy revert` will try: the lock, exclusively, released at once when taken. */
   const revertCanStart = async () => {
     const ok = (await revert.query<{ ok: boolean }>(TRY_EXCLUSIVE, [SERVER_RUNNING_CLASS])).rows[0]!.ok;
-    if (ok) await revert.query('select pg_advisory_unlock($1, hashtext(current_schema()))', [SERVER_RUNNING_CLASS]);
+    if (ok) await revert.query(UNLOCK_EXCLUSIVE, [SERVER_RUNNING_CLASS]);
     return ok;
   };
 
-  const start = async (url: string, lines?: string[]): Promise<RunningServer> => {
+  const start = async (
+    url: string,
+    lines?: string[],
+    extra: {
+      readonly modules?: readonly ServerModule[];
+      readonly runningLock?: StartOptions['runningLock'];
+      readonly exit?: (code: number) => void;
+    } = {},
+  ): Promise<RunningServer> => {
     const dataDir = await mkTempDir();
     dataDirs.push(dataDir);
     const env = {
@@ -66,9 +80,10 @@ describeDb('the server-running lock and the start-up checks (hosted spec §19.4,
       { stdout: { write: vi.fn() }, stderr: { write: vi.fn() }, env },
       {
         signals: new EventEmitter(),
-        exit: vi.fn(),
+        exit: extra.exit ?? vi.fn(),
         logStream,
-        modules: MIGRATIONS_ONLY,
+        modules: extra.modules ?? MIGRATIONS_ONLY,
+        ...(extra.runningLock !== undefined ? { runningLock: extra.runningLock } : {}),
       },
     );
   };
@@ -96,6 +111,22 @@ describeDb('the server-running lock and the start-up checks (hosted spec §19.4,
     });
   });
 
+  it('heartbeats against the real lock: a held lock stays on its connection, and is named for revert to see', async () => {
+    const retaken = vi.fn();
+    const lock = await RunningLock.acquire(db.url, { onLost: vi.fn(), onRetaken: retaken, heartbeatMs: 20 });
+    try {
+      await new Promise((done) => setTimeout(done, 200));
+      expect(retaken).not.toHaveBeenCalled();
+      const named = await admin.query<{ name: string }>(
+        'select application_name as name from pg_stat_activity where pid = $1',
+        [lock.pid],
+      );
+      expect(named.rows).toEqual([{ name: 'wirebench-server-lock' }]);
+    } finally {
+      await lock.release();
+    }
+  });
+
   it('takes the lock again on a new connection when its connection drops', async () => {
     const retaken = vi.fn();
     const lost = vi.fn();
@@ -115,7 +146,8 @@ describeDb('the server-running lock and the start-up checks (hosted spec §19.4,
 
   it('gives up, and calls onLost, when a revert took it in the gap', async () => {
     const lost = vi.fn();
-    const lock = await RunningLock.acquire(db.url, { onLost: lost, retryDelayMs: 20, retries: 3 });
+    // The re-take waits before its first attempt too (review M4), long enough for the revert to win the gap.
+    const lock = await RunningLock.acquire(db.url, { onLost: lost, retryDelayMs: 300, retries: 3 });
     try {
       const pid = lock.pid!;
       await admin.query('select pg_terminate_backend($1)', [pid]);
@@ -158,6 +190,78 @@ describeDb('the server-running lock and the start-up checks (hosted spec §19.4,
       expect(lines.join('')).not.toContain('row-level security does not apply');
     } finally {
       await server.close();
+    }
+  });
+
+  /** Opens the lock's sessions as the server would, and keeps them, so a test can end the one it holds now. */
+  const recordingOpen = () => {
+    const sessions: Session[] = [];
+    return {
+      sessions,
+      open: async (url: string) => {
+        const session = await openSession(url);
+        sessions.push(session);
+        return session;
+      },
+    };
+  };
+  /** Ends the lock's backend and takes the lock exclusively in the gap, as a revert would. */
+  const dropAndRevert = async (session: Session) => {
+    await admin.query('select pg_terminate_backend($1)', [session.pid]);
+    await vi.waitFor(
+      async () =>
+        expect(
+          await revert.query<{ ok: boolean }>(TRY_EXCLUSIVE, [SERVER_RUNNING_CLASS]).then((r) => r.rows[0]!.ok),
+        ).toBe(true),
+      { timeout: 5000, interval: 5 },
+    );
+  };
+
+  it('fails the start when the lock is lost while the modules register (review I1)', async () => {
+    const recorded = recordingOpen();
+    const slow: ServerModule = {
+      name: 'teams-access',
+      register: async () => {
+        await dropAndRevert(recorded.sessions.at(-1)!);
+        // The re-take waits 200 ms, finds the revert, and gives up.
+        await new Promise((done) => setTimeout(done, 600));
+      },
+    };
+    await expect(
+      start(db.url, undefined, {
+        modules: [...MIGRATIONS_ONLY, slow],
+        runningLock: { open: recorded.open, retries: 2, retryDelayMs: 200 },
+      }),
+    ).rejects.toMatchObject({ exitCode: 3, message: expect.stringContaining('lost during start-up') as unknown });
+  });
+
+  it('stops a running server, with exit 3, once the lock is lost for good (review M5)', async () => {
+    const recorded = recordingOpen();
+    const exit = vi.fn();
+    const server = await start(db.url, undefined, {
+      exit,
+      runningLock: { open: recorded.open, retries: 1, retryDelayMs: 200 },
+    });
+    try {
+      await dropAndRevert(recorded.sessions.at(-1)!);
+      await vi.waitFor(() => expect(exit).toHaveBeenCalledWith(3), { timeout: 5000, interval: 20 });
+      // Nothing is served any more.
+      await expect(fetch(`http://127.0.0.1:${String(server.port)}/healthz`)).rejects.toThrow();
+    } finally {
+      await server.close();
+    }
+  });
+
+  it('takes the lock before migrating, so a start during a revert changes nothing (review M2)', async () => {
+    const fresh = await testDatabase({ migrated: false });
+    const owner = await openSession(fresh.ownerUrl);
+    try {
+      expect((await owner.query<{ ok: boolean }>(TRY_EXCLUSIVE, [SERVER_RUNNING_CLASS])).rows[0]!.ok).toBe(true);
+      await expect(start(fresh.ownerUrl)).rejects.toMatchObject({ exitCode: 2 });
+      expect((await fresh.owner.query("select to_regclass('server_identity') as t")).rows[0]).toEqual({ t: null });
+    } finally {
+      await owner.close();
+      await fresh.close();
     }
   });
 });

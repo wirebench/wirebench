@@ -5,7 +5,7 @@ import { forEachTenant } from '../../../src/tenancy/jobs.js';
 import { scopeOf, type TenantScope } from '../../../src/tenancy/scope.js';
 import { SET_TENANT, tenantDbFactory } from '../../../src/tenancy/tenant-db.js';
 import { testContext } from '../../helpers/context.js';
-import { scopedContext, statementLog } from '../../helpers/tenancy.js';
+import { expectNoRawStatementsOn, rawStatementsOf, scopedContext, statementLog } from '../../helpers/tenancy.js';
 
 const A = scopeOf({ id: '00000000-0000-4000-8000-00000000000a', slug: 'a' });
 const B = scopeOf({ id: '00000000-0000-4000-8000-00000000000b', slug: 'b' });
@@ -67,6 +67,60 @@ describe('the tenant database (spec §19.4)', () => {
       [2, 'statement', 'B', 'select 2'],
       [2, 'statement', 'B', 'select 3'],
     ]);
+  });
+
+  it('joins a nested unit of the same tenant to the outer one, on its connection and in its transaction', async () => {
+    const { db, sent } = recordingDatabase();
+    const tenantDb = tenantDbFactory(db);
+    await expect(
+      tenantDb(A).transaction(async (outer) => {
+        await outer.query('select 1');
+        await tenantDb(A).query('select 2');
+        await tenantDb(A).transaction(async (inner) => {
+          expect(inner).toBe(outer);
+          await inner.query('select 3');
+        });
+        throw new Error('boom');
+      }),
+    ).rejects.toThrow('boom');
+    // One unit: the nested writes roll back with the outer one.
+    expect(sent).toEqual(['BEGIN', `${SET_TENANT} ["${A.tenantId}"]`, 'select 1', 'select 2', 'select 3', 'ROLLBACK']);
+  });
+
+  it('refuses a nested unit of another tenant with tenancy-nested, and sends nothing for it', async () => {
+    const { db, sent } = recordingDatabase();
+    const tenantDb = tenantDbFactory(db);
+    await tenantDb(A).transaction(async () => {
+      await expect(tenantDb(B).query('select 1')).rejects.toMatchObject({ code: 'tenancy-nested' });
+      await expect(tenantDb(B).transaction(() => Promise.resolve())).rejects.toMatchObject({ code: 'tenancy-nested' });
+    });
+    expect(sent).toEqual(['BEGIN', `${SET_TENANT} ["${A.tenantId}"]`, 'COMMIT']);
+    // Outside any unit, B gets its own.
+    await tenantDb(B).query('select 2');
+    expect(sent.slice(3)).toEqual(['BEGIN', `${SET_TENANT} ["${B.tenantId}"]`, 'select 2', 'COMMIT']);
+  });
+
+  it('gives a timer that outlived its unit a unit of its own', async () => {
+    const { db, sent } = recordingDatabase();
+    const tenantDb = tenantDbFactory(db);
+    let later: (() => Promise<unknown>) | undefined;
+    await tenantDb(A).transaction(() => {
+      later = () => tenantDb(B).query('select 1');
+      return Promise.resolve();
+    });
+    await later!();
+    expect(sent.filter((line) => line === 'BEGIN')).toHaveLength(2);
+  });
+
+  it('refuses a statement that would end or open the transaction', async () => {
+    const { db, sent } = recordingDatabase();
+    await tenantDbFactory(db)(A).transaction(async (tx) => {
+      for (const text of ['commit', ' COMMIT;', 'rollback', 'begin', 'end', 'abort', 'start transaction', 'Begin Work'])
+        await expect(tx.query(text), text).rejects.toMatchObject({ code: 'tenancy-transaction-control' });
+      await tx.query('savepoint s1');
+      await tx.query("select 'commit'");
+    });
+    expect(sent).toEqual(['BEGIN', `${SET_TENANT} ["${A.tenantId}"]`, 'savepoint s1', "select 'commit'", 'COMMIT']);
   });
 
   it('revokes the querier when its unit ends: a late query throws tenancy-scope-ended and sends nothing', async () => {
@@ -175,5 +229,20 @@ describe('scopedContext (plan, Global Constraints)', () => {
     expect(scoped.log).toBe(log);
     expect(scoped.tenancy).toBe(shared.tenancy);
     expect(scoped.config).toBe(shared.config);
+  });
+});
+
+describe('the raw statement log (Task 5 review M8)', () => {
+  it("records what went through ctx.db, not the tenant database's units", async () => {
+    const { db } = recordingDatabase();
+    const ctx = await testContext({ db });
+    await ctx.db.query('select * from teams');
+    await ctx.db.transaction((tx) => tx.query('update workspaces set name = $1', ['x']));
+    await ctx.tenancy.db(A).query('select * from schedules');
+    expect(rawStatementsOf(ctx)).toEqual(['select * from teams', 'update workspaces set name = $1']);
+    expect(() => {
+      expectNoRawStatementsOn(ctx, ['workspaces']);
+    }).toThrow();
+    expectNoRawStatementsOn(ctx, ['schedules', 'team']);
   });
 });

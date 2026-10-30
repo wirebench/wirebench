@@ -5,6 +5,7 @@ import type { Database } from '../../../src/context.js';
 import { createDatabase } from '../../../src/db/pool.js';
 import { main } from '../../../src/main.js';
 import { startServer } from '../../../src/serve.js';
+import { checkAppRole } from '../../../src/tenancy/checks.js';
 import { appRolePlan, ensureAppRole } from '../../../src/tenancy/roles.js';
 import { APP_ROLE, describeDb, OWNER_ROLE, TEST_DATABASE_URL, testDatabase } from '../../helpers/database.js';
 import { mkTempDir, removeTempDir } from '../../helpers/git.js';
@@ -79,6 +80,39 @@ describeDb('the app role (hosted spec §19.4)', () => {
     }
     await admin.close();
     await db.close();
+  });
+
+  it('counts rights a role holds through membership: an owner, a superuser or a BYPASSRLS role it may become', async () => {
+    const check = async (grant: (role: string) => Promise<void>) => {
+      const role = freshRole();
+      await admin.query(`create role "${role}" login noinherit password 'member-pw'`);
+      await admin.query(`grant usage on schema ${db.schema} to "${role}"`);
+      await grant(role);
+      const member = createDatabase(urlAs(TEST_DATABASE_URL!, role, 'member-pw', db.schema));
+      try {
+        return await checkAppRole(member, 'hosted', () => undefined).then(
+          () => 'started',
+          (error: unknown) => (error as Error).message,
+        );
+      } finally {
+        await member.close();
+      }
+    };
+    expect(await check((role) => admin.query(`grant ${OWNER_ROLE} to "${role}"`).then(() => undefined))).toMatch(
+      /owns \d+ of the server's tables/,
+    );
+    const bypass = freshRole();
+    await admin.query(`create role "${bypass}" nologin bypassrls`);
+    expect(await check((role) => admin.query(`grant "${bypass}" to "${role}"`).then(() => undefined))).toMatch(
+      /has BYPASSRLS/,
+    );
+    const superuser = freshRole();
+    await admin.query(`create role "${superuser}" nologin superuser`);
+    expect(await check((role) => admin.query(`grant "${superuser}" to "${role}"`).then(() => undefined))).toMatch(
+      /is a superuser/,
+    );
+    // The app role itself holds none of these.
+    expect(await checkAppRole(db, 'hosted', () => undefined)).toMatchObject({ superuser: false, ownedTables: 0 });
   });
 
   it('creates a missing app role that signs in with the URL’s password, and a second run changes nothing', async () => {

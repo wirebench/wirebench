@@ -10,6 +10,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { ServerConfig } from '../../../src/config.js';
 import type { ServerModule } from '../../../src/context.js';
 import { requireUser } from '../../../src/identity/guard.js';
+import { TenantAdmin } from '../../../src/tenancy/directory.js';
 import type { TenantResolver } from '../../../src/tenancy/resolve.js';
 import { describeDb } from '../../helpers/database.js';
 import { identityHarness, signedInUser, type IdentityHarness } from '../../helpers/identity.js';
@@ -130,7 +131,7 @@ describeDb('tenant resolution (spec §19.5)', () => {
         configure: hosted,
         beforeBuild: async (db, ctx) => {
           for (const slug of ['acme', 'paused', 'gone']) {
-            const created = await ctx.tenancy.directory.create({ slug, name: slug });
+            const created = await new TenantAdmin(db, ctx.tenancy.directory).create({ slug, name: slug });
             ids[slug] = created.scope.tenantId;
           }
           await db.query(`update tenants set status = 'suspended' where slug = 'paused'`);

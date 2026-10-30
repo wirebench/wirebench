@@ -22,24 +22,44 @@ export function isIdle(client: pg.PoolClient): boolean {
   return (internals.activeQuery ?? null) === null && (internals.queryQueue?.length ?? 0) === 0;
 }
 
+/** The part of `pg.Pool` a `Database` uses, so a test can hand it a stub. */
+export type PoolLike = Pick<pg.Pool, 'query' | 'connect' | 'on' | 'end'>;
+
 export interface DatabaseOptions {
   /** The pool's size; 10 by default. Tests pass 1 to see what the next unit gets back. */
   readonly max?: number;
+  /** Told when a connection fails, pooled or mid-unit, never with the connection string. */
+  readonly onError?: (error: Error) => void;
+  /** Shows up in `pg_stat_activity`, so `admin tenancy revert` can tell a running server's connections. */
+  readonly applicationName?: string;
+  /** Test only: the pool to use instead of a real one. */
+  readonly pool?: PoolLike;
 }
+
+/** What every server connection is called in `pg_stat_activity`; the lock's own adds `-lock`. */
+export const APPLICATION_NAME = 'wirebench-server';
 
 /** A `pg.Pool` behind the `Database` interface; the one place `pg` is imported. */
 export function createDatabase(connectionString: string, options: DatabaseOptions = {}): Database {
-  const pool = new pg.Pool({ connectionString, max: options.max ?? 10 });
+  const pool =
+    options.pool ??
+    new pg.Pool({
+      connectionString,
+      max: options.max ?? 10,
+      application_name: options.applicationName ?? APPLICATION_NAME,
+    });
+  const onError = (error: Error): void => {
+    options.onError?.(error);
+  };
   // A pooled client whose server end goes away while it is idle emits `error`; without a listener
   // that would crash the process. The pool drops the client itself.
-  pool.on('error', () => undefined);
+  pool.on('error', onError);
   return {
     ...querierOf(pool),
     async transaction(fn) {
       const client = await pool.connect();
       // A connection that fails mid-unit emits `error` on the client; the failed query rejects as well, and
-      // the client is destroyed below, so the event itself needs no more than a listener.
-      const onError = () => undefined;
+      // the client is destroyed below, so the event itself is only reported.
       client.on('error', onError);
       // A client in doubt is destroyed, never reused (hosted edition spec §19.4): one whose rollback
       // failed may still be inside the transaction, and one that is not idle has a statement of this
@@ -58,6 +78,8 @@ export function createDatabase(connectionString: string, options: DatabaseOption
         }
         throw error;
       } finally {
+        // A guard more than a path: `pg` runs queued statements before `COMMIT` or `ROLLBACK` resolves, so a
+        // client is idle here unless something outside the unit sent it a statement.
         if (doubt === undefined && !isIdle(client)) doubt = new Error('the client is not idle after its unit');
         client.off('error', onError);
         client.release(doubt);
@@ -76,8 +98,24 @@ export interface Session extends Querier {
   close(): Promise<void>;
 }
 
-export async function openSession(connectionString: string): Promise<Session> {
-  const client = new pg.Client({ connectionString });
+export interface SessionOptions {
+  readonly applicationName?: string;
+  /** How long `connect` may take before it fails; 10 s by default, so a re-take never hangs. */
+  readonly connectTimeoutMs?: number;
+}
+
+/**
+ * TCP keepalive is on, so a connection a NAT or a failover dropped while idle ends with an error instead of
+ * staying half-open for ever.
+ */
+export async function openSession(connectionString: string, options: SessionOptions = {}): Promise<Session> {
+  const client = new pg.Client({
+    connectionString,
+    keepAlive: true,
+    keepAliveInitialDelayMillis: 10_000,
+    connectionTimeoutMillis: options.connectTimeoutMs ?? 10_000,
+    application_name: options.applicationName ?? 'wirebench-session',
+  });
   await client.connect();
   const pidRow = await client.query<{ pid: number }>('select pg_backend_pid() as pid');
   let closed = false;

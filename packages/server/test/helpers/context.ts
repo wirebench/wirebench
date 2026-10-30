@@ -12,6 +12,7 @@ import {
 } from '../../src/context.js';
 import type { RepoStore } from '../../src/repos/repo-store.js';
 import { createTenancy } from '../../src/tenancy/tenancy.js';
+import { recordingRaw } from './tenancy.js';
 
 /** A database whose every query succeeds with no rows; `failing` flips `select 1` to a rejection. */
 export function fakeDatabase(options: { failing?: boolean } = {}): Database {
@@ -30,7 +31,10 @@ export async function testContext(
   const location = await findGit({});
   if (location === undefined) throw new Error('git is required for the server tests');
   const dataDir = overrides.dataDir ?? process.cwd();
-  const { dataDir: droppedDataDir, ...rest } = overrides;
+  const { dataDir: droppedDataDir, ...given } = overrides;
+  // A real database is recorded, so a test can tell what bypassed the tenant database (`expectNoRawStatementsOn`).
+  const raw = given.db;
+  const rest = raw === undefined ? given : { ...given, db: recordingRaw(raw).db };
   void droppedDataDir; // not a ServerContext field; only used above to pick dataDir
   const context: ServerContext = {
     config: loadConfig(
@@ -54,7 +58,7 @@ export async function testContext(
     hooks: serverHooks(),
     license: permissiveLicense(),
     ...rest,
-    tenancy: rest.tenancy ?? createTenancy(rest.db ?? fakeDatabase()),
+    tenancy: rest.tenancy ?? createTenancy(raw ?? fakeDatabase()),
   };
   // Follows the config, as serve.ts builds it, unless the test passed its own.
   return rest.egress !== undefined ? context : { ...context, egress: egressPolicyOf(context.config) };

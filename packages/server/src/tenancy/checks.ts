@@ -15,7 +15,9 @@ export async function checkPostgresVersion(db: Querier): Promise<void> {
   if (!(version >= MIN_POSTGRES_VERSION_NUM)) {
     throw new WirebenchError(
       'server-postgres-too-old',
-      `Wirebench Server needs PostgreSQL 15 or later; this database is version ${String(Math.floor(version / 10000))}`,
+      `Wirebench Server needs PostgreSQL 15 or later; this database is version ${
+        Number.isFinite(version) ? String(Math.floor(version / 10000)) : 'unknown'
+      }`,
     );
   }
 }
@@ -27,15 +29,20 @@ export interface AppRoleReport {
   readonly role: string;
   readonly superuser: boolean;
   readonly bypassRls: boolean;
-  /** Tables of the server's schema this role owns. */
+  /** Tables of the server's schema this role owns, itself or as a member of their owner. */
   readonly ownedTables: number;
 }
 
 export async function appRoleReport(db: Querier): Promise<AppRoleReport> {
   const rows = await db.query<{ role: string; superuser: boolean; bypassRls: boolean; ownedTables: number }>(
-    `select r.rolname as role, r.rolsuper as superuser, r.rolbypassrls as "bypassRls",
+    // Through membership as well: a member of the owner owns its tables in the sense row-level security cares
+    // about, and a member of a superuser or BYPASSRLS role can `set role` to it. `MEMBER` counts roles the
+    // role could reach with `set role`, inherited or not.
+    `select r.rolname as role,
+        exists (select 1 from pg_roles s where s.rolsuper and pg_has_role(r.oid, s.oid, 'MEMBER')) as superuser,
+        exists (select 1 from pg_roles b where b.rolbypassrls and pg_has_role(r.oid, b.oid, 'MEMBER')) as "bypassRls",
         (select count(*)::int from pg_class c
-          where c.relowner = r.oid and c.relkind in ('r', 'p')
+          where pg_has_role(r.oid, c.relowner, 'MEMBER') and c.relkind in ('r', 'p')
             and c.relnamespace = to_regnamespace(current_schema())) as "ownedTables"
       from pg_roles r where r.rolname = current_user`,
   );
