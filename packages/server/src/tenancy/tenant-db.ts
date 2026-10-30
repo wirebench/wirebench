@@ -71,7 +71,11 @@ const TRANSACTION_CONTROL =
  * left is the statement's own words and punctuation.
  */
 export function sqlSkeleton(text: string): string {
-  return text.replace(/--[^\n]*|\/\*[\s\S]*?\*\/|'(?:[^']|'')*'|"(?:[^"]|"")*"|\$([A-Za-z_]*)\$[\s\S]*?\$\1\$/g, ' ');
+  // An `E'…'` string reads `\'` as a quote inside it, so it is matched before a plain one.
+  return text.replace(
+    /--[^\n]*|\/\*[\s\S]*?\*\/|(?<![\w$])[eE]'(?:[^'\\]|\\[\s\S]|'')*'|'(?:[^']|'')*'|"(?:[^"]|"")*"|\$([A-Za-z_]*)\$[\s\S]*?\$\1\$/g,
+    ' ',
+  );
 }
 
 /** Why `text` may not run inside a unit, or `undefined`. */
@@ -121,7 +125,15 @@ export function tenantDbFactory(db: Database, options: TenancyDbOptions = {}): T
         await outer.tx.query(`release savepoint ${name}`);
         return result;
       } catch (error) {
-        await outer.tx.query(`rollback to savepoint ${name}`);
+        try {
+          await outer.tx.query(`rollback to savepoint ${name}`);
+        } catch (rollback) {
+          // The inner failure is the one the caller needs; the rollback's rides along as its cause, and the
+          // outer unit, now in doubt, fails on its next statement.
+          if (error instanceof Error && error.cause === undefined) {
+            Object.defineProperty(error, 'cause', { value: rollback, configurable: true, writable: true });
+          }
+        }
         throw error;
       }
     });

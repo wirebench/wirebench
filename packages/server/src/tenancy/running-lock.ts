@@ -12,8 +12,11 @@
  * {@link HEARTBEAT_MS} + {@link LOCK_QUERY_TIMEOUT_MS}.
  *
  * After a drop the lock is taken again on a new connection, after a delay each time; when that fails (a revert
- * holds it, or the database is gone) `onLost` is called and the server stops. Every connect and every lock query
- * is time-limited, so the whole re-take is bounded by retries × (delay + connect timeout + query timeout).
+ * holds it, or the database is gone) `onLost` is called and the server stops. One attempt is one connect and one
+ * query: `TRY_SHARED` reads the backend's pid too, and runs as the session's first query (`openSession`'s
+ * `first`), so there is no separate pid read. The connect is bounded by its connect timeout and the query by
+ * {@link LOCK_QUERY_TIMEOUT_MS}, and the whole attempt is raced against their sum. So the re-take is bounded by
+ * retries × (delay + connect timeout + query timeout): 5 × (1 + 10 + 5) s = 80 s by default.
  */
 import { WirebenchError } from '@wirebench/engine';
 import { APPLICATION_NAME, openSession, type Session } from '../db/pool.js';
@@ -29,7 +32,8 @@ export const SERVER_RUNNING_CLASS = 0x57425352; // "WBSR"
 export const LOCK_SCHEMA_KEY =
   "hashtext(coalesce((select relnamespace::regnamespace::text from pg_class where oid = to_regclass('server_identity')), current_schema()))";
 
-export const TRY_SHARED = `select pg_try_advisory_lock_shared($1, ${LOCK_SCHEMA_KEY}) as ok`;
+/** The attempt's one query: the lock, and the backend's pid, in one round trip. */
+export const TRY_SHARED = `select pg_backend_pid() as pid, pg_try_advisory_lock_shared($1, ${LOCK_SCHEMA_KEY}) as ok`;
 export const TRY_EXCLUSIVE = `select pg_try_advisory_lock($1, ${LOCK_SCHEMA_KEY}) as ok`;
 export const UNLOCK_EXCLUSIVE = `select pg_advisory_unlock($1, ${LOCK_SCHEMA_KEY}) as ok`;
 
@@ -77,8 +81,11 @@ export interface RunningLockOptions {
   readonly onLost: (error: Error) => void;
   /** Called each time the lock was taken again on a new connection. */
   readonly onRetaken?: (pid: number) => void;
-  /** Test only: how a session is opened. */
-  readonly open?: (url: string) => Promise<Session>;
+  /** Test only: how a session is opened, `first` being its first query (`openSession`'s option of that name). */
+  readonly open?: (
+    url: string,
+    first: { readonly text: string; readonly params: readonly unknown[] },
+  ) => Promise<Session>;
 }
 
 export class RunningLock {
@@ -109,29 +116,34 @@ export class RunningLock {
   }
 
   private async take(): Promise<Session> {
-    const session = await (
+    const connectTimeoutMs = this.options.connectTimeoutMs ?? 10_000;
+    const first = { text: TRY_SHARED, params: [SERVER_RUNNING_CLASS] };
+    const opening = (
       this.options.open ??
       ((url) =>
         openSession(url, {
           applicationName: LOCK_APPLICATION_NAME,
           queryTimeoutMs: this.queryTimeoutMs,
-          ...(this.options.connectTimeoutMs !== undefined ? { connectTimeoutMs: this.options.connectTimeoutMs } : {}),
+          connectTimeoutMs,
+          first,
         }))
-    )(this.url);
+    )(this.url, first);
+    let session: Session;
     try {
-      const rows = await within(
-        session.query<{ ok: boolean }>(TRY_SHARED, [SERVER_RUNNING_CLASS]),
-        this.queryTimeoutMs,
-        'taking the server-running lock',
-      );
-      if (rows.rows[0]?.ok !== true) {
-        throw new WirebenchError('tenancy-reverting', 'admin tenancy revert is running against this database');
-      }
-      return session;
+      session = await within(opening, connectTimeoutMs + this.queryTimeoutMs, 'taking the server-running lock');
     } catch (error) {
-      await session.close();
+      // A session that opens after its deadline is closed, not left holding a lock nobody watches.
+      void opening.then(
+        (late) => late.close(),
+        () => undefined,
+      );
       throw error;
     }
+    if (session.first?.ok !== true) {
+      await session.close();
+      throw new WirebenchError('tenancy-reverting', 'admin tenancy revert is running against this database');
+    }
+    return session;
   }
 
   private watch(session: Session): void {

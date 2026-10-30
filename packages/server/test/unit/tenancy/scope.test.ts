@@ -119,6 +119,34 @@ describe('the tenant database (spec §19.4)', () => {
     ]);
   });
 
+  it('rethrows the inner error when its savepoint rollback fails too, with the rollback as its cause', async () => {
+    const sent: string[] = [];
+    const querier: Querier = {
+      query: (text: string) => {
+        sent.push(text);
+        return text.startsWith('rollback to savepoint')
+          ? Promise.reject(new Error('the connection died'))
+          : Promise.resolve({ rows: [], rowCount: 0 });
+      },
+    };
+    const db = {
+      ...querier,
+      transaction: async <T>(fn: (tx: Querier) => Promise<T>) => fn(querier),
+      close: () => Promise.resolve(),
+    };
+    const tenantDb = tenantDbFactory(db);
+    let caught: unknown;
+    await tenantDb(A).transaction(async () => {
+      caught = await tenantDb(A)
+        .transaction(() => Promise.reject(new Error('inner failed')))
+        .catch((error: unknown) => error);
+    });
+    expect(caught).toBeInstanceOf(Error);
+    expect((caught as Error).message).toBe('inner failed');
+    expect(((caught as Error).cause as Error).message).toBe('the connection died');
+    expect(sent).toContain('rollback to savepoint tenancy_1');
+  });
+
   it('fails a unit that settles with a statement it did not await, and rolls it back', async () => {
     const sent: string[] = [];
     const slow: Querier = {
@@ -207,13 +235,21 @@ describe('the tenant database (spec §19.4)', () => {
       ];
       for (const text of control)
         await expect(tx.query(text), text).rejects.toMatchObject({ code: 'tenancy-transaction-control' });
-      for (const text of ['select 1; commit', 'select 1;select 2', 'update t set a = 1; /* x */ begin'])
+      // `E'\''` is one quote; the plain-string rule would read past it and swallow `; commit`.
+      for (const text of [
+        'select 1; commit',
+        'select 1;select 2',
+        'update t set a = 1; /* x */ begin',
+        "select E'\\''; commit --'",
+        "select e'a\\\\'; commit",
+      ])
         await expect(tx.query(text), text).rejects.toMatchObject({ code: 'tenancy-multi-statement' });
       await tx.query('savepoint s1');
       await tx.query('rollback to savepoint s1');
       await tx.query("select 'commit; begin'");
       await tx.query('select 1; -- trailing note');
       await tx.query('select $$a; commit$$');
+      await tx.query("select E'it\\'s; commit', date'2026-10-30'");
     });
     expect(sent).toEqual([
       'BEGIN',
@@ -223,6 +259,7 @@ describe('the tenant database (spec §19.4)', () => {
       "select 'commit; begin'",
       'select 1; -- trailing note',
       'select $$a; commit$$',
+      "select E'it\\'s; commit', date'2026-10-30'",
       'COMMIT',
     ]);
   });

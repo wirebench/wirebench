@@ -3,13 +3,22 @@ import { describe, expect, it, vi } from 'vitest';
 import type { Session } from '../../../src/db/pool.js';
 import { HELD, RunningLock, TRY_SHARED } from '../../../src/tenancy/running-lock.js';
 
-/** A session that takes the lock, and answers the heartbeat with `held()`. */
-function stubSession(pid: number, held: () => Promise<boolean>): Session & { readonly closed: () => boolean } {
+/**
+ * A session whose first query took the lock (as `openSession` runs `TRY_SHARED` in place of its pid read), and
+ * which answers the heartbeat with `held()`. `queries` counts what is sent on it afterwards.
+ */
+function stubSession(
+  pid: number,
+  held: () => Promise<boolean>,
+): Session & { readonly closed: () => boolean; readonly queries: string[] } {
   let closed = false;
+  const queries: string[] = [];
   return {
     pid,
+    first: { pid, ok: true },
+    queries,
     query: <R extends Record<string, unknown>>(text: string) => {
-      if (text === TRY_SHARED) return Promise.resolve({ rows: [{ ok: true }] as unknown as R[], rowCount: 1 });
+      queries.push(text);
       if (text === HELD) return held().then((value) => ({ rows: [{ held: value }] as unknown as R[], rowCount: 1 }));
       return Promise.reject(new Error(`unexpected ${text}`));
     },
@@ -23,6 +32,35 @@ function stubSession(pid: number, held: () => Promise<boolean>): Session & { rea
 }
 
 describe('the running-lock heartbeat', () => {
+  it('takes the lock with one query per attempt: TRY_SHARED as the session first query, pid and all', async () => {
+    const session = stubSession(7, () => Promise.resolve(true));
+    const open = vi.fn().mockResolvedValue(session);
+    const lock = await RunningLock.acquire('postgres://stub', { open, onLost: vi.fn() });
+    try {
+      expect(open).toHaveBeenCalledOnce();
+      expect(open.mock.calls[0]![1]).toMatchObject({ text: TRY_SHARED });
+      expect(TRY_SHARED).toMatch(/pg_backend_pid\(\) as pid/);
+      // Nothing more was sent to take it.
+      expect(session.queries).toEqual([]);
+      expect(lock.pid).toBe(7);
+    } finally {
+      await lock.release();
+    }
+  });
+
+  it('refuses with tenancy-reverting, and closes the session, when the first query did not get the lock', async () => {
+    const session = { ...stubSession(8, () => Promise.resolve(true)), first: { pid: 8, ok: false } };
+    let closed = false;
+    session.close = () => {
+      closed = true;
+      return Promise.resolve();
+    };
+    await expect(
+      RunningLock.acquire('postgres://stub', { open: () => Promise.resolve(session), onLost: vi.fn() }),
+    ).rejects.toMatchObject({ code: 'tenancy-reverting' });
+    expect(closed).toBe(true);
+  });
+
   it('takes the lock again when the session answers that it no longer holds it (a half-open connection)', async () => {
     const first = stubSession(1, () => Promise.resolve(false));
     const second = stubSession(2, () => Promise.resolve(true));
@@ -98,23 +136,18 @@ describe('the running-lock heartbeat', () => {
   });
 
   it('bounds TRY_SHARED too, and names the lock in the error onLost gets', async () => {
-    const hung: Session = {
-      ...stubSession(3, () => Promise.resolve(true)),
-      query: () => new Promise(() => undefined),
-    };
+    // An attempt whose connect or first query never answers: bounded by connect timeout + query timeout.
+    const never = () => new Promise<Session>(() => undefined);
     await expect(
-      RunningLock.acquire('postgres://stub', {
-        open: () => Promise.resolve(hung),
-        queryTimeoutMs: 20,
-        onLost: vi.fn(),
-      }),
-    ).rejects.toThrow('taking the server-running lock had no answer within 20 ms');
+      RunningLock.acquire('postgres://stub', { open: never, connectTimeoutMs: 1, queryTimeoutMs: 20, onLost: vi.fn() }),
+    ).rejects.toThrow('taking the server-running lock had no answer within 21 ms');
     const first = stubSession(1, () => Promise.resolve(false));
-    const open = vi.fn().mockResolvedValueOnce(first).mockResolvedValue(hung);
+    const open = vi.fn().mockResolvedValueOnce(first).mockImplementation(never);
     const lost = vi.fn();
     const lock = await RunningLock.acquire('postgres://stub', {
       open,
       heartbeatMs: 5,
+      connectTimeoutMs: 1,
       queryTimeoutMs: 20,
       retryDelayMs: 1,
       retries: 1,

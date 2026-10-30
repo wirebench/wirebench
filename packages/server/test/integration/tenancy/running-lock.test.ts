@@ -9,6 +9,7 @@ import {
   RunningLock,
   SERVER_RUNNING_CLASS,
   TRY_EXCLUSIVE,
+  TRY_SHARED,
   UNLOCK_EXCLUSIVE,
 } from '../../../src/tenancy/running-lock.js';
 import { describeDb, TEST_DATABASE_URL, testDatabase } from '../../helpers/database.js';
@@ -127,6 +128,17 @@ describeDb('the server-running lock and the start-up checks (hosted spec §19.4,
     }
   });
 
+  it('takes the lock in the session first query, which also reads its pid: one query per attempt', async () => {
+    const session = await openSession(db.url, { first: { text: TRY_SHARED, params: [SERVER_RUNNING_CLASS] } });
+    try {
+      expect(session.first).toEqual({ pid: session.pid, ok: true });
+      expect(await revertCanStart()).toBe(false);
+    } finally {
+      await session.close();
+    }
+    expect(await revertCanStart()).toBe(true);
+  });
+
   it('takes the lock again on a new connection when its connection drops', async () => {
     const retaken = vi.fn();
     const lost = vi.fn();
@@ -198,8 +210,8 @@ describeDb('the server-running lock and the start-up checks (hosted spec §19.4,
     const sessions: Session[] = [];
     return {
       sessions,
-      open: async (url: string) => {
-        const session = await openSession(url);
+      open: async (url: string, first: { readonly text: string; readonly params: readonly unknown[] }) => {
+        const session = await openSession(url, { first });
         sessions.push(session);
         return session;
       },

@@ -104,6 +104,8 @@ export function createDatabase(connectionString: string, options: DatabaseOption
 export interface Session extends Querier {
   /** The server process behind the connection, for a test that ends it. */
   readonly pid: number;
+  /** The row of {@link SessionOptions.first}, when one was given. */
+  readonly first?: Readonly<Record<string, unknown>>;
   /** Called once when the connection ends or fails, not after `close()`. */
   onLost(listener: (error: Error) => void): void;
   close(): Promise<void>;
@@ -115,6 +117,11 @@ export interface SessionOptions {
   readonly connectTimeoutMs?: number;
   /** How long any one query may wait for its answer; unbounded by default. */
   readonly queryTimeoutMs?: number;
+  /**
+   * The session's first query, run in place of the plain pid read, so a caller that has one more question to
+   * ask pays one round trip and one query timeout, not two. It must return `pid` (`pg_backend_pid()`).
+   */
+  readonly first?: { readonly text: string; readonly params?: readonly unknown[] };
 }
 
 /**
@@ -131,9 +138,12 @@ export async function openSession(connectionString: string, options: SessionOpti
     ...(options.queryTimeoutMs !== undefined ? { query_timeout: options.queryTimeoutMs } : {}),
   });
   await client.connect();
-  let pidRow: pg.QueryResult<{ pid: number }>;
+  let pidRow: pg.QueryResult<{ pid: number } & Record<string, unknown>>;
   try {
-    pidRow = await client.query<{ pid: number }>('select pg_backend_pid() as pid');
+    pidRow = await client.query<{ pid: number } & Record<string, unknown>>(
+      options.first?.text ?? 'select pg_backend_pid() as pid',
+      options.first?.params === undefined ? undefined : [...options.first.params],
+    );
   } catch (error) {
     await client.end().catch(() => undefined);
     throw error;
@@ -151,6 +161,7 @@ export async function openSession(connectionString: string, options: SessionOpti
   return {
     ...querierOf(client),
     pid: pidRow.rows[0]!.pid,
+    ...(options.first !== undefined ? { first: pidRow.rows[0]! } : {}),
     onLost(listener) {
       lost = listener;
     },
