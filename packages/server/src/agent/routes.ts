@@ -5,7 +5,7 @@
  *   cookie write whose `Origin` is not the public URL. A bearer caller is treated as not signed in.
  * - `POST /pairings` has no session: the code is the credential. It is limited per address, and failures
  *   are limited server-wide (below).
- * - The agent's own requests (redeem, and an unpair or port change from its side) carry the
+ * - The agent's own requests (redeem, and an unpair or its port, told at every start) carry the
  *   `AGENT_HEADERS` and are verified against the pairing's Ed25519 key (`signature.ts`). A `DELETE` or
  *   `PATCH` signs the hash of its exact body bytes, so these routes sit in a scope of their own whose JSON
  *   parser keeps the raw body.
@@ -358,10 +358,12 @@ export function agentRoutes(env: AgentRoutesEnv): (app: FastifyInstance) => Prom
         );
         if ('refused' in verified) {
           const { refused, pairing } = verified;
-          // No pairing involved: nothing to audit. An unknown pairing answers as a bad signature, so ids cannot be probed.
+          // No pairing involved: nothing to audit. An unknown pairing answers `agent-pairing-unknown`, as a signed
+          // `DELETE` or `PATCH` does: the agent takes it as unpaired from the browser's side and removes its
+          // copy. It tells a prober nothing a `PATCH` does not, and pairing ids are random ULIDs.
           if (pairing === undefined) {
             request.log.debug({ reason: refused }, 'agent nonce redeem refused');
-            throw signatureInvalid();
+            throw refused === 'unknown-pairing' ? pairingUnknown() : signatureInvalid();
           }
           await auditRefusal({
             ...auditSource(request),
@@ -459,6 +461,8 @@ export function agentRoutes(env: AgentRoutesEnv): (app: FastifyInstance) => Prom
         const pairing = await verifiedRequest(request, 'PATCH', id);
         await db.transaction(async (tx) => {
           await repo.setPort(tx, id, port, now());
+          // The agent tells its port at every start; only a move is worth an audit row.
+          if (pairing.port === port) return;
           await recordAudit(hooks, tx, {
             ...auditSource(request),
             actor: await asUser(tx, pairing.userId),

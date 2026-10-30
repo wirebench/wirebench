@@ -163,6 +163,9 @@ importers:
       '@vitejs/plugin-react':
         specifier: ^5.2.0
         version: 5.2.0(vite@7.3.7(@types/node@26.6.5)(jiti@2.7.0)(lightningcss@1.33.0)(yaml@2.9.0))
+      '@wirebench/agent':
+        specifier: workspace:*
+        version: link:../../packages/agent
       '@wirebench/host':
         specifier: workspace:*
         version: link:../../packages/host
@@ -294,12 +297,18 @@ importers:
       bcrypt-pbkdf:
         specifier: 1.0.2
         version: 1.0.2
+      graphql:
+        specifier: ^17.0.2
+        version: 17.0.2
       node-hid:
         specifier: 3.4.0
         version: 3.4.0
       ssh2:
         specifier: 1.17.0
         version: 1.17.0
+      undici:
+        specifier: 8.12.2
+        version: 8.12.2
       yaml:
         specifier: 2.9.0
         version: 2.9.0
@@ -307,9 +316,21 @@ importers:
         specifier: ^4.6.6
         version: 4.6.6
     devDependencies:
+      '@wirebench/agent':
+        specifier: workspace:*
+        version: link:../agent
+      '@wirebench/host':
+        specifier: workspace:*
+        version: link:../host
       '@wirebench/ssh':
         specifier: workspace:*
         version: link:../ssh
+      '@wirebench/wire':
+        specifier: workspace:*
+        version: link:../wire
+      esbuild:
+        specifier: ^0.28.2
+        version: 0.28.2
 
   packages/core:
     dependencies:
@@ -13122,7 +13143,7 @@ snapshots:
     dependencies:
       css-tree: 3.2.1
       ohash: 2.0.12
-      undici: 8.12.3
+      undici: 8.12.2
 
   unist-util-find-after@5.0.0:
     dependencies:

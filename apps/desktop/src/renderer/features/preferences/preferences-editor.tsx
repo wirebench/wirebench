@@ -20,6 +20,7 @@ import {
   SlidersHorizontal,
   ToggleRight,
   Laptop,
+  MonitorSmartphone,
   Smartphone,
   SquareTerminal,
   Waypoints,
@@ -57,6 +58,7 @@ import { SshSection } from './sections/ssh-section.js';
 import { TerminalSection } from './sections/terminal-section.js';
 import { ShortcutsSection } from './sections/shortcuts-section.js';
 import { TokensSection } from './sections/tokens-section.js';
+import { PairedBrowsersSection } from './sections/paired-browsers-section.js';
 import { ThisMachineSection } from './sections/this-machine-section.js';
 import type { SectionProps } from './sections/section-props.js';
 import {
@@ -93,6 +95,7 @@ const ICONS: Readonly<Record<SettingsSectionId, LucideIcon>> = {
   secrets: KeyRound,
   accounts: CircleUser,
   'this-machine': Laptop,
+  'paired-browsers': MonitorSmartphone,
   tokens: Smartphone,
 };
 
@@ -145,6 +148,8 @@ function SectionBody({
       return <AccountsSection {...props} />;
     case 'this-machine':
       return <ThisMachineSection />;
+    case 'paired-browsers':
+      return <PairedBrowsersSection />;
     case 'tokens':
       return <TokensSection />;
   }

@@ -102,6 +102,8 @@ export const COMMAND_CAPABILITIES: Readonly<Partial<Record<CommandId, Capability
   'workspace.newWindow': 'windows',
   // Adds a server account; a browser tab's one account is the server's.
   'account.signIn': 'accounts',
+  // The desktop runs this machine's agent; a browser tab pairs from Settings → This machine instead.
+  'account.pairThisMachine': 'machine-agent',
   // Shows secret values in the HTTP log; the browser never shows a value back.
   'secrets.toggleShowSecrets': 'reveal-secrets',
   'workspace.secretSources': 'secret-sources',

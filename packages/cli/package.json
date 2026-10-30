@@ -29,10 +29,10 @@
     "wirebench": "./dist/bin.js"
   },
   "scripts": {
-    "build": "tsc -b",
+    "build": "tsc -b && node scripts/bundle-agent.mjs",
     "test": "vitest run --root ../.. --project cli-unit --project cli-integration",
     "typecheck": "tsc -b",
-    "prepack": "node scripts/vendor-ssh.mjs"
+    "prepack": "node scripts/vendor-ssh.mjs && node scripts/bundle-agent.mjs --no-sourcemap"
   },
   "imports": {
     "#ssh": "@wirebench/ssh"
@@ -41,12 +41,18 @@
     "@modelcontextprotocol/sdk": "1.32.0",
     "@wirebench/engine": "workspace:*",
     "bcrypt-pbkdf": "1.0.2",
+    "graphql": "^17.0.2",
     "node-hid": "3.4.0",
     "ssh2": "1.17.0",
+    "undici": "8.12.2",
     "yaml": "2.9.0",
     "zod": "^4.6.6"
   },
   "devDependencies": {
-    "@wirebench/ssh": "workspace:*"
+    "@wirebench/agent": "workspace:*",
+    "@wirebench/host": "workspace:*",
+    "@wirebench/ssh": "workspace:*",
+    "@wirebench/wire": "workspace:*",
+    "esbuild": "^0.28.2"
   }
 }

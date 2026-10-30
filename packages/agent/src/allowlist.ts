@@ -20,10 +20,10 @@ export function isAgentChannel(channel: string): boolean {
  * The capabilities a browser tab may use through the agent, while `agent.send` runs a bundle (§2's browser
  * subset): none of them is a channel the page can call by itself. The hello names the platform's own,
  * cut to these, and only those a bundle send really has: `secret-sources` waits for #792 (a source-backed
- * name answers `secret-missing` on the agent) and `team-secrets` for the desktop's team-secrets hook, so
- * neither is claimed yet. `ssh` is an opt-in recorded at pairing and served by nothing yet, so it is not
- * here; the renderer-gated ones of slice 2 (`listen`, `windows`, `accounts`, `reveal-secrets`) are refused
- * too.
+ * name answers `secret-missing` on the agent), and `team-secrets` is claimed only by an embedder that resolves
+ * them (the desktop, through {@link browserCapabilities}'s `teamSecrets`). `ssh` is served by nothing yet,
+ * and no opt-in is recorded for it (both agents pair with `sshOptIn: false`), so it is not here; the
+ * renderer-gated ones of slice 2 (`listen`, `windows`, `accounts`, `reveal-secrets`) are refused too.
  */
 export const BROWSER_CAPABILITIES: ReadonlySet<Capability> = new Set<Capability>([
   'send:public',
@@ -31,7 +31,16 @@ export const BROWSER_CAPABILITIES: ReadonlySet<Capability> = new Set<Capability>
   'kerberos',
 ]);
 
-/** The platform's capabilities a browser caller is told of, in the platform's order. */
-export function browserCapabilities(platform: ReadonlySet<Capability>): Capability[] {
-  return [...platform].filter((capability) => BROWSER_CAPABILITIES.has(capability));
+/**
+ * The platform's capabilities a browser caller is told of, in the platform's order. `teamSecrets` adds
+ * `team-secrets` (when the platform has it) for an embedder whose bundle sends resolve them: the desktop's.
+ */
+export function browserCapabilities(
+  platform: ReadonlySet<Capability>,
+  options: { readonly teamSecrets?: boolean } = {},
+): Capability[] {
+  return [...platform].filter(
+    (capability) =>
+      BROWSER_CAPABILITIES.has(capability) || (capability === 'team-secrets' && options.teamSecrets === true),
+  );
 }

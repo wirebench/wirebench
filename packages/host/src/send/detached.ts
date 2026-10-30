@@ -56,7 +56,14 @@ export interface AgentTeamSecretQuery {
   readonly pairingId: string;
   readonly serverOrigin: string;
   readonly workspaceId: string;
+  /** The bundle's project, as its manifest names it: a `${secret:name}` token's value is the project's. */
+  readonly projectId: string | undefined;
   readonly name: string;
+  /**
+   * The bundle's `team-secrets/` subtree, by path inside it (`values/<id>.yaml`), as text. Read only to tell
+   * whether this machine's imported value is as new as the server's; never a value to open.
+   */
+  readonly bundleTeamSecrets: ReadonlyMap<string, string>;
 }
 
 /**
@@ -105,6 +112,8 @@ export interface SendFromDirectoryInput {
   readonly workspaceId: string;
   /** The `${secret:name}` names the bundle declares; any other ref is missing. */
   readonly secretNames: readonly string[];
+  /** The bundle's `team-secrets/` subtree, by path inside it, as text; handed to the team-secrets hook. */
+  readonly teamSecrets?: ReadonlyMap<string, string>;
   /**
    * The whole `${#System#…}` scope of this send, already cut to what it may read; every other name resolves
    * empty. Never the process environment by default: a paired server must not read it.
@@ -171,19 +180,30 @@ export interface DetachedSendDeps {
  * caller's pairing and workspace, else from the team-secrets hook. A plain store ref, an undeclared name and
  * a source-backed one are all missing. Each value it hands out is recorded for masking.
  */
-function agentSecrets(deps: DetachedSendDeps, input: SendFromDirectoryInput): GetSecret {
+function agentSecrets(
+  deps: DetachedSendDeps,
+  input: SendFromDirectoryInput,
+  projectId: () => string | undefined,
+): GetSecret {
   const declared = new Set(input.secretNames);
+  const bundleTeamSecrets = input.teamSecrets;
   const get: GetSecret = async (ref) => {
     const name = parseSecretPseudoRef(ref);
     if (name === undefined || !declared.has(name)) return undefined;
     const value =
       (await deps.agentSecret(agentSecretLabel(input.pairingId, input.workspaceId, name))) ??
-      (await deps.teamSecrets?.({
-        pairingId: input.pairingId,
-        serverOrigin: input.origin,
-        workspaceId: input.workspaceId,
-        name,
-      }));
+      // Only a bundle the server built for a team secret carries the subtree: any other name stays missing,
+      // as on the headless agent (§18.4), and is never a reason to ask for a workspace here.
+      (bundleTeamSecrets === undefined
+        ? undefined
+        : await deps.teamSecrets?.({
+            pairingId: input.pairingId,
+            serverOrigin: input.origin,
+            workspaceId: input.workspaceId,
+            projectId: projectId(),
+            name,
+            bundleTeamSecrets,
+          }));
     if (value !== undefined) deps.hostState.redactor.recordSecretValue(value);
     return value;
   };
@@ -318,10 +338,13 @@ export async function sendFromDirectory(
 ): Promise<DetachedSendResult> {
   const { signal } = input;
   stopIfAborted(signal);
-  const getSecret = agentSecrets(deps, input);
+  // The project host is made below; a secret is only asked for once its project is open.
+  const opened: { host?: ProjectHost } = {};
+  const getSecret = agentSecrets(deps, input, () => opened.host?.open?.project.id);
   const hostState = detachedHostState(deps.hostState, input.systemValues);
   const engine = deps.engine(getSecret);
   const host = deps.projectHost(engine, getSecret, hostState);
+  opened.host = host;
   try {
     await host.openProject(input.projectDir);
     // A SOAP request's default `wsa:Action` and its script types come from the loaded definition.

@@ -1620,3 +1620,69 @@ whose manifest lists origins may fetch, and only from those origins, through the
 path: the proxy variables apply, private and loopback addresses are refused, and each exchange is
 recorded, redacted and without bodies, in `history/plugin-<id>.jsonl`. Writing one: the types are
 `@wirebench/engine/plugin`.
+
+## `wirebench agent`
+
+The local agent lets a browser tab at your team's Wirebench Server send requests from your machine, to
+hosts only it reaches: `localhost`, the office network, a VPN (hosted edition spec §18.6). The desktop
+app runs the same agent code; `wirebench agent` is it without a window. The two are separate agents: each
+has its own pairings, key and allowlist (the desktop's in its own profile, this one's in
+`~/.wirebench/agent`), so these commands never change the desktop's, and Settings → Paired browsers never
+changes this one's. Pair one of them per machine and server; if both are paired, a tab sends a request
+that reads a team secret through the desktop app's and anything else through whichever it reached first.
+
+```bash
+wirebench agent pair ABC234 --server https://wirebench.example.com   # the code the browser shows
+wirebench agent                                                     # serve until Ctrl+C
+wirebench agent status
+wirebench agent unpair --server https://wirebench.example.com
+```
+
+- `wirebench agent` listens on `127.0.0.1`, port 47615 or the next free one up to 47634, prints the port
+  and serves until Ctrl+C (or SIGTERM). It starts with no pairing too, and takes up one made later from
+  another terminal: `pair` tells the server the port of an agent already running (it reads
+  `agent.json` in the agent's folder), or 47615 when none runs, and a started agent tells each server the
+  port it took.
+- `pair <code> --server <url>` trades the code for a pairing. The address is `https://`, or `http://` for
+  a server on this machine. A paired server can send requests from this machine on your behalf, including
+  to addresses on this machine's network; `pair` says so when it succeeds. SSH is not served to a tab, and
+  no SSH opt-in is recorded at pairing: the version that serves it will ask then.
+- `unpair [--server <url>] [--local]` unpairs at the server and here: every server, or only that one,
+  each whatever became of the others. A server that cannot be reached is forgotten here anyway, with a
+  warning that it still lists this machine; a server that refuses keeps its pairing, and the command exits
+  3. `--local` forgets the pairing here without asking the server.
+- Unpairing in the tab (Settings → This machine → Unpair) removes the pairing at the server at once: no
+  tab of that server gets in from then on. The agent removes its own copy the next time it calls that
+  server about it: at its next start, when it tells each server its port, or when a tab offers it a nonce.
+  Only the server's own "no such pairing" answer removes it; a server that cannot be reached, or answers
+  anything else, leaves it in place.
+- `status` lists the pairings, the allowed environment variables, and whether the agent runs.
+- `allow-env <NAME…>`, `disallow-env <NAME…>`, `allowed-env`: a paired server's requests read
+  `${#System#NAME}` only for a name on this list, which is empty by default; every other name resolves to
+  nothing and the send is refused as unresolved. The list is kept with the pairings, so it can be set only
+  after the first one.
+
+Exit 0 when done, 2 for a usage problem (or `allow-env` before any pairing), 3 when the folder, a server
+or the agent refuses.
+
+**Where its state lives.** `~/.wirebench/agent`, or `$WIREBENCH_AGENT_HOME`: the pairings, the host's
+own files, and `agent.key`, the 32-byte key every secret there (the agent's private key among them) is
+sealed under with AES-256-GCM. The CLI has no OS keychain, so the file mode is the protection: the folder
+is made `0700` and the key `0600`, and on macOS and Linux the agent refuses to start when either is open
+to the group or to others, naming the `chmod 700` or `chmod 600` that fixes it. Windows has no such mode
+bits; there the folder's ACL (your user profile) protects it.
+
+**Proxies.** Sends and the agent's own calls to its servers (pairing, unpairing, letting a tab in) go
+through `HTTPS_PROXY` / `HTTP_PROXY`, minus `NO_PROXY`. A send to this machine's loopback (`localhost`,
+`*.localhost`, `127.0.0.0/8`, `::1`) or a link-local address always goes direct, whatever `NO_PROXY`
+says.
+
+**Team secrets.** A request that reads a team secret answers `team-secret-needs-approval` from this agent:
+it has no approved machine key. Pair the desktop app with the server and send through it.
+
+**Not in a container.** The CLI image runs `wirebench agent`, but a container's `127.0.0.1` is its own,
+which the browser on your machine cannot reach. Run the agent on the machine the browser runs on.
+
+The agent itself is `dist/agent/bundle.js`, loaded only by this verb. Kerberos is offered when the
+optional `kerberos` package loads ([ADR-0019](adr/0019-kerberos-uses-an-optional-native-module.md)); the
+terminal's, serial and security-key bindings are never loaded.

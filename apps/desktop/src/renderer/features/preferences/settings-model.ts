@@ -38,6 +38,7 @@ export type SettingsSectionId =
   | 'secrets'
   | 'accounts'
   | 'this-machine'
+  | 'paired-browsers'
   | 'tokens';
 
 /**
@@ -266,6 +267,15 @@ export const SETTINGS_NAV: readonly SettingsNavGroup[] = [
         searchable: false,
         keywords: ['agent', 'pair', 'localhost', 'local'],
         agent: true,
+      },
+      {
+        id: 'paired-browsers',
+        label: 'Paired browsers',
+        subtitle: 'Servers whose browser tabs may send requests from this machine.',
+        keys: { kind: 'none' },
+        searchable: false,
+        keywords: ['agent', 'pair', 'localhost', 'browser', 'system'],
+        capability: 'machine-agent',
       },
       {
         id: 'tokens',

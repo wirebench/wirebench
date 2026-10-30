@@ -6,8 +6,8 @@
  *
  * `allowedSystemNames` is this machine's allowlist of `${#System#NAME}` names a bundle send may read (§18.5),
  * empty by default. It lives here rather than in a file of its own so one lock, one re-read and one atomic
- * rename cover it: a `wirebench agent` beside the desktop sees a change at its next refresh, and two writers
- * never lose each other's edit. A version 1 file (before the allowlist) reads as version 2 with an empty
+ * rename cover it: a running agent sees a change another process made to its folder at its next refresh,
+ * and two writers never lose each other's edit. A version 1 file (before the allowlist) reads as version 2 with an empty
  * list, and is written back as version 2 at its next change.
  *
  * The private key is sealed by the platform's secret store (`safeStorage` on the desktop, the headless
@@ -15,7 +15,10 @@
  * the key are made at the first pairing, so an install that never pairs writes nothing. Every write goes to a
  * temporary file renamed over the old one, so a crash leaves the old file or the new, never half of one.
  *
- * The desktop's agent and a `wirebench agent pair` may write the file at the same time, so every write
+ * Each agent keeps its own file: the desktop's in its `userData`, the headless one's in `~/.wirebench/agent`
+ * (§18.6), so the two never share pairings, an identity or an allowlist. But two processes of one agent may
+ * write its file at the same time (a running `wirebench agent` and a `wirebench agent pair` beside it), so
+ * every write
  * (identity creation included) holds `agent-pairings.json.lock`, made with `O_EXCL`, across its re-read, its
  * change, the rename and the stamp read. The lock file holds its holder's token (pid and a random id), and a
  * holder removes it only while it still holds that token. A lock older than {@link STALE_LOCK_MS} is a
@@ -27,6 +30,7 @@ import { randomUUID } from 'node:crypto';
 import { link, mkdir, open, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { z } from 'zod';
+import { WirebenchError } from '@wirebench/engine';
 import type { HostPlatform } from '@wirebench/host';
 import { agentKeyFromPkcs8, generateAgentKey, type AgentKey } from './keys.js';
 
@@ -427,7 +431,11 @@ export async function openPairingStore(
       // Another process may have paired first, under the lock: its key is the install's key.
       if (identity !== undefined) return identity;
       if (!platform.secrets.available()) {
-        throw new Error('This machine cannot keep the agent key secret, so it cannot pair');
+        // Said as it is (Linux without a keyring, say): the user can act on it, and it names no secret.
+        throw new WirebenchError(
+          'agent-no-secret-storage',
+          'This machine cannot keep the agent key secret, so it cannot pair',
+        );
       }
       const made: AgentIdentity = { agentId: randomUUID(), key: generateAgentKey() };
       const privateKeySealed = platform.secrets.encrypt(made.key.sealable()).toString('base64');

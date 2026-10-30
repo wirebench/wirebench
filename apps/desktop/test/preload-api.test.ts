@@ -70,6 +70,7 @@ describe('buildApi', () => {
       'license',
       'localTerminal',
       'log',
+      'machineAgent',
       'mock',
       'oauth2',
       'on',

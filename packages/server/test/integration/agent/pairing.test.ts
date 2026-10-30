@@ -362,13 +362,14 @@ describeDb('local-agent pairing (hosted edition spec §18.2)', () => {
     expect((await redeem(nonce, pairingId)).statusCode).toBe(200);
   });
 
-  it('refuses an unknown pairing as a bad signature, and missing headers, auditing neither', async () => {
+  it('answers an unknown pairing agent-pairing-unknown and missing headers as a bad signature, auditing neither', async () => {
     const pairingId = await paired();
     const nonce = await issueNonce(pairingId);
     const before = audits.length;
+    // The agent takes this answer as unpaired from the browser's side, and removes its own copy.
     const unknown = await redeem(nonce, '01JZZZZZZZZZZZZZZZZZZZZZZZ');
-    expect(unknown.statusCode).toBe(401);
-    expect(codeOf(unknown)).toBe('agent-signature-invalid');
+    expect(unknown.statusCode).toBe(404);
+    expect(codeOf(unknown)).toBe('agent-pairing-unknown');
     const bare = await h.app.inject({ method: 'POST', url: '/api/v1/agent/nonces/redeem', payload: { nonce } });
     expect(bare.statusCode).toBe(401);
     expect(codeOf(bare)).toBe('agent-signature-invalid');
@@ -448,7 +449,10 @@ describeDb('local-agent pairing (hosted edition spec §18.2)', () => {
       actor: { kind: 'user', userId: alice.user.id },
       details: { by: 'user' },
     });
-    expect(codeOf(await redeem(nonce, pairingId))).toBe('agent-signature-invalid');
+    // The agent's next signed call learns it is unpaired, and removes its own copy.
+    const redeemed = await redeem(nonce, pairingId);
+    expect(redeemed.statusCode).toBe(404);
+    expect(codeOf(redeemed)).toBe('agent-pairing-unknown');
     const again = await h.app.inject({
       method: 'DELETE',
       url: `/api/v1/agent/pairings/${pairingId}`,
@@ -568,6 +572,27 @@ describeDb('local-agent pairing (hosted edition spec §18.2)', () => {
       port: 47616,
       lastSeenAt: h.clock.now.toISOString(),
     });
+
+    // The agent tells its port at every start: the same port again is seen, not audited.
+    const count = audits.length;
+    h.clock.advance(5_000);
+    expect((await signedRequest('PATCH', pairingId, { body })).statusCode).toBe(204);
+    expect(audits).toHaveLength(count);
+    const seen = await h.app.inject({ method: 'GET', url: '/api/v1/agent/pairings', headers: browser(alice) });
+    expect(seen.json<{ pairings: { lastSeenAt: string }[] }>().pairings[0]?.lastSeenAt).toBe(h.clock.now.toISOString());
+  });
+
+  it('answers a signed PATCH or DELETE of a pairing unpaired from the browser agent-pairing-unknown', async () => {
+    const pairingId = await paired();
+    const gone = await h.app.inject({
+      method: 'DELETE',
+      url: `/api/v1/agent/pairings/${pairingId}`,
+      headers: browser(alice),
+    });
+    expect(gone.statusCode).toBe(204);
+    const patch = await signedRequest('PATCH', pairingId, { body: JSON.stringify({ port: 47616 }) });
+    expect(patch.statusCode).toBe(404);
+    expect(codeOf(patch)).toBe('agent-pairing-unknown');
   });
 
   // ---- sweep ---------------------------------------------------------------------------

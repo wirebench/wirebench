@@ -38,7 +38,7 @@ import {
   type ReplyFrame,
 } from '@wirebench/host';
 import { browserCapabilities, isAgentChannel } from './allowlist.js';
-import { redeemNonce, reportPort, type AgentFetch } from './pair.js';
+import { AgentServerError, redeemNonce, reportPort, type AgentFetch } from './pair.js';
 import type { Pairing, PairingStore } from './pairings.js';
 import { AGENT_PORTS } from './ports.js';
 
@@ -79,6 +79,13 @@ export interface AgentCallContext {
 /** An agent-local channel: run by the agent itself, never by the embedder's host. */
 export type AgentHandler = (request: unknown, context: AgentCallContext) => Promise<unknown>;
 
+/**
+ * The embedder's `agent.*` handlers. `resolvesTeamSecrets` says their bundle sends resolve team secrets (the
+ * desktop's, `agentSendHandlers` sets it): the hello then names `team-secrets` when the platform has it. One
+ * flag, so the hello and the send never disagree.
+ */
+export type AgentHandlers = ReadonlyMap<string, AgentHandler> & { readonly resolvesTeamSecrets?: boolean };
+
 export interface StartAgentOptions {
   /** The embedder's host, handed to `agent.*` handlers; a browser caller reaches none of its channels. */
   readonly host: Host;
@@ -90,7 +97,7 @@ export interface StartAgentOptions {
   /** The time a socket has to pass its `auth` frame; {@link HOST_AUTH_TIMEOUT_MS} when absent. */
   readonly authTimeoutMs?: number;
   /** More `agent.*` handlers: `agentSendHandlers()` gives `agent.send`, `agent.cancel` and `agent.cookies.clear`. */
-  readonly handlers?: ReadonlyMap<string, AgentHandler>;
+  readonly handlers?: AgentHandlers;
   /**
    * How often the pairings file is re-read while the agent runs, so a pairing another process removed ends
    * its sockets without a request coming in; {@link AGENT_REFRESH_INTERVAL_MS} when absent. The file is also
@@ -168,14 +175,15 @@ function refused(frame: CallFrame): ReplyFrame {
 
 /**
  * Starts the agent on the first free port of `ports`, on `127.0.0.1` only. It starts with no pairings as
- * readily as with some; the embedder decides when. A pairing whose server has not been told this port is
- * told it, signed, in the background.
+ * readily as with some; the embedder decides when. Every pairing's server is told this port, signed, in the
+ * background; a server that no longer holds its pairing has it removed here.
  */
 export async function startAgent(options: StartAgentOptions): Promise<RunningAgent> {
   const { host, platform, store } = options;
   const fetch: AgentFetch = options.fetch ?? ((url, init) => globalThis.fetch(url, init));
   const log = options.log ?? (() => undefined);
   const ports = options.ports ?? AGENT_PORTS;
+  const teamSecrets = options.handlers?.resolvesTeamSecrets === true;
   /** Every open socket, and the pairing it proved itself with once it has. */
   const sockets = new Map<HostSocket, { pairingId?: string }>();
   const reports = new Set<Promise<void>>();
@@ -232,7 +240,7 @@ export async function startAgent(options: StartAgentOptions): Promise<RunningAge
       'agent.hello',
       (_request, { pairing }) =>
         Promise.resolve({
-          capabilities: browserCapabilities(platform.capabilities),
+          capabilities: browserCapabilities(platform.capabilities, { teamSecrets }),
           version: platform.app.version(),
           sshOptIn: pairing.sshOptIn,
         }),
@@ -296,7 +304,7 @@ export async function startAgent(options: StartAgentOptions): Promise<RunningAge
           hello: {
             type: 'hello',
             host: 'agent',
-            capabilities: browserCapabilities(platform.capabilities),
+            capabilities: browserCapabilities(platform.capabilities, { teamSecrets }),
             sshOptIn: pairing.sshOptIn,
           },
           // No scope on the host: a browser caller reaches nothing of it.
@@ -355,11 +363,17 @@ export async function startAgent(options: StartAgentOptions): Promise<RunningAge
     throw new AgentPortsBusyError(ports);
   }
 
+  // Each pairing's server is told the port at every start, not only when it moved: that is also how the
+  // agent learns of a pairing unpaired from the browser's side, which `reportPort` then removes here.
   for (const pairing of store.list()) {
-    if (pairing.port === port) continue;
     const report = reportPort(pairing, port, store, fetch)
       .catch((error: unknown) => {
-        log('a paired server could not be told the agent port', error);
+        log(
+          error instanceof AgentServerError && error.code === 'unpaired'
+            ? 'a pairing its server no longer holds was removed'
+            : 'a paired server could not be told the agent port',
+          error,
+        );
       })
       .finally(() => {
         reports.delete(report);
