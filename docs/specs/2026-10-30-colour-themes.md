@@ -9,22 +9,28 @@ Date: 2026-10-30 · Status: approved · Branch: not started.
 - Source palette: five colours sampled from a grasshopper photo — slate violet `#5A5A8D`, burnt
   orange-red `#B53D1D`, mid brown `#684A36`, sand `#B5947E`, espresso `#452C24`.
 - Previewed on 2026-10-30 as three directions — Field kit, Sandstone, Dusk — each in light and dark.
+- Second source palette: five colours sampled from a pomegranate photo — cream `#DCC3A9`, crimson
+  `#BB1731`, wine `#8B1128`, deep maroon `#5B121F`, burgundy `#461118`. Previewed the same day as
+  three more directions — Seed, Pith, Rind.
 - Owner rulings (2026-10-30, one popup):
   1. **Default stays the default** for new installs; the three themes are opt-in.
   2. **The palette is stored in the preferences document**, beside the mode.
   3. **Dusk keeps its violet chrome**, with the four chrome tokens.
   4. **Names stay**: Field kit, Sandstone, Dusk.
+  5. **Seed, Pith and Rind are added** as three more themes (2026-10-30, after the pomegranate
+     preview), in the same change.
 
 ## 1. Objective
 
 Wirebench has one look: a warm near-black ramp with a single terracotta accent, in dark or light.
-People who sit in the app all day want to pick a look they like. This change adds **three colour
+People who sit in the app all day want to pick a look they like. This change adds **six colour
 themes** next to today's, each with a light and a dark mode, chosen in Settings or the command
 palette and applied at once without a restart.
 
 Success means:
 
-- A user can pick Default, Field kit, Sandstone or Dusk, and separately Dark, Light or System.
+- A user can pick Default, Field kit, Sandstone, Dusk, Seed, Pith or Rind, and separately Dark,
+  Light or System.
 - The whole window follows: chrome, editors (Monaco), terminals, method badges, status colours.
 - The first frame after launch already has the chosen theme (no flash of Default).
 - Every theme × mode passes the same contrast gate today's two palettes pass.
@@ -34,15 +40,17 @@ Success means:
 Today `ui.theme` is a **mode**: `dark | light | system`. Themes add a second axis, the **palette**.
 They stay separate so `system` keeps following the OS for every palette.
 
-| Setting      | Values                                      | Default   |
-| ------------ | ------------------------------------------- | --------- |
-| `ui.theme`   | `dark`, `light`, `system` (unchanged)       | `dark`    |
-| `ui.palette` | `default`, `field-kit`, `sandstone`, `dusk` | `default` |
+| Setting      | Values                                                                  | Default   |
+| ------------ | ----------------------------------------------------------------------- | --------- |
+| `ui.theme`   | `dark`, `light`, `system` (unchanged)                                   | `dark`    |
+| `ui.palette` | `default`, `field-kit`, `sandstone`, `dusk`, `seed`, `pith`, `rind` | `default` |
+
+The order of `ui.palette`'s values is the order the picker shows them.
 
 The DOM carries both: `<html data-theme="dark" data-palette="sandstone">`. `default` sets no
 `data-palette` attribute, so today's CSS keeps working untouched.
 
-## 3. The three palettes
+## 3. The six palettes
 
 Each palette gives every colour token in `tokens.css` a value in both modes. Spacing, radius, type,
 geometry and layers are not palette tokens and never change. The values below are the starting
@@ -105,10 +113,10 @@ The chrome (activity bar, sidebar, title bar) is violet; the work area is a neut
 canvas; the orange-red is the accent. This is the most branded of the three because violet is
 always on screen.
 
-It needs tokens the others do not: a **chrome surface** for the activity bar, sidebar and title
+It needs tokens most others do not (Rind, §3.6, uses them too): a **chrome surface** for the activity bar, sidebar and title
 bar. Today those use `--wb-bg-sunken`/`--wb-bg-raised`. This change adds `--wb-bg-chrome`,
 `--wb-bg-chrome-selected`, `--wb-fg-chrome` and `--wb-fg-chrome-muted`, aliased to the existing
-values in every other palette so nothing else moves.
+values in every palette except Dusk and Rind, so nothing else moves.
 
 | Token                     | Dark      | Light     |
 | ------------------------- | --------- | --------- |
@@ -131,20 +139,106 @@ values in every other palette so nothing else moves.
 | `--wb-accent-surface`     | `#3A1C12` | `#FBE9E1` |
 | `--wb-fg-on-accent`       | `#FFFFFF` | `#FFFFFF` |
 
-### 3.4 Tokens a palette does not list
+### 3.4 Seed — pomegranate red throughout
+
+Red sets the mood: cream surfaces in light, burgundy surfaces in dark, wine as the accent (lifted
+to crimson in dark). It is the boldest theme. Because red is everywhere, danger moves to amber
+(§3.8).
+
+| Token                 | Dark      | Light     |
+| --------------------- | --------- | --------- |
+| `--wb-bg-sunken`      | `#13090B` | `#F2E6DA` |
+| `--wb-bg-base`        | `#1A0D10` | `#FBF6F1` |
+| `--wb-bg-raised`      | `#2A1418` | `#FFFFFF` |
+| `--wb-bg-overlay`     | `#321A1F` | `#FFFFFF` |
+| `--wb-bg-hover`       | `#3A1C22` | `#F4E9DE` |
+| `--wb-bg-active`      | `#461118` | `#EADBCC` |
+| `--wb-bg-selected`    | `#5B121F` | `#EBCFD2` |
+| `--wb-fg-default`     | `#F2E6DA` | `#461118` |
+| `--wb-fg-muted`       | `#DCC3A9` | `#5B121F` |
+| `--wb-fg-subtle`      | `#C9A99A` | `#7A3A44` |
+| `--wb-border-default` | `#461118` | `#E5D3C4` |
+| `--wb-accent-default` | `#D9304A` | `#8B1128` |
+| `--wb-accent-hover`   | `#E5506A` | `#6E0D20` |
+| `--wb-accent-surface` | `#3A1219` | `#F6E1E4` |
+| `--wb-fg-on-accent`   | `#FFF5F3` | `#FFFFFF` |
+| `--wb-status-danger`  | `#E8833A` | `#B5541A` |
+| `--wb-status-warning` | `#D9B441` | `#8B6A10` |
+
+### 3.5 Pith — neutral, red only for action
+
+The calm one: stone and cream surfaces, a plain charcoal in dark, and crimson only on the accent
+(primary buttons, focus, selection tint). Danger moves to amber (§3.8).
+
+| Token                 | Dark      | Light     |
+| --------------------- | --------- | --------- |
+| `--wb-bg-sunken`      | `#121010` | `#F1ECE5` |
+| `--wb-bg-base`        | `#171515` | `#FAF8F5` |
+| `--wb-bg-raised`      | `#1F1C1C` | `#FFFFFF` |
+| `--wb-bg-overlay`     | `#252121` | `#FFFFFF` |
+| `--wb-bg-hover`       | `#2B2627` | `#F1ECE5` |
+| `--wb-bg-active`      | `#302B2B` | `#E6DFD7` |
+| `--wb-bg-selected`    | `#3A1E23` | `#F7E4E7` |
+| `--wb-fg-default`     | `#ECE6E1` | `#2B2224` |
+| `--wb-fg-muted`       | `#C4BAB4` | `#4A4042` |
+| `--wb-fg-subtle`      | `#A39A95` | `#6E6466` |
+| `--wb-border-default` | `#302B2B` | `#E6DFD7` |
+| `--wb-accent-default` | `#D9304A` | `#BB1731` |
+| `--wb-accent-hover`   | `#E5506A` | `#9A1228` |
+| `--wb-accent-surface` | `#34161B` | `#FBEAEC` |
+| `--wb-fg-on-accent`   | `#FFFFFF` | `#FFFFFF` |
+| `--wb-status-danger`  | `#E8833A` | `#B5541A` |
+| `--wb-status-warning` | `#D9B441` | `#8B6A10` |
+
+The preview showed the selected row as a thin crimson bar; this spec uses a faint crimson tint on
+`--wb-bg-selected` instead, so no component changes for one theme.
+
+### 3.6 Rind — maroon chrome, neutral work area
+
+A branded frame: deep maroon chrome (the same chrome tokens Dusk uses, §3.3) around a neutral work
+area, with crimson as the accent. Danger moves to amber (§3.8).
+
+| Token                     | Dark      | Light     |
+| ------------------------- | --------- | --------- |
+| `--wb-bg-chrome`          | `#3A0E16` | `#5B121F` |
+| `--wb-bg-chrome-selected` | `#6E1424` | `#8B1128` |
+| `--wb-fg-chrome`          | `#F2E6DA` | `#F2E6DA` |
+| `--wb-fg-chrome-muted`    | `#C9A99A` | `#DCC3A9` |
+| `--wb-bg-sunken`          | `#110E0F` | `#F3EEE8` |
+| `--wb-bg-base`            | `#151213` | `#FBF8F5` |
+| `--wb-bg-raised`          | `#1E1A1B` | `#FFFFFF` |
+| `--wb-bg-overlay`         | `#241F20` | `#FFFFFF` |
+| `--wb-bg-hover`           | `#2A2425` | `#F3EEE8` |
+| `--wb-bg-active`          | `#2E2829` | `#E8DFD6` |
+| `--wb-bg-selected`        | `#3A1E23` | `#F2E6DA` |
+| `--wb-fg-default`         | `#ECE4DD` | `#2B1A1C` |
+| `--wb-fg-muted`           | `#C9BDB5` | `#5B121F` |
+| `--wb-border-default`     | `#2E2829` | `#E8DFD6` |
+| `--wb-accent-default`     | `#D9304A` | `#BB1731` |
+| `--wb-accent-hover`       | `#E5506A` | `#9A1228` |
+| `--wb-accent-surface`     | `#34161B` | `#FBEAEC` |
+| `--wb-fg-on-accent`       | `#FFFFFF` | `#FFFFFF` |
+| `--wb-status-danger`      | `#E8833A` | `#B5541A` |
+| `--wb-status-warning`     | `#D9B441` | `#8B6A10` |
+
+### 3.7 Tokens a palette does not list
 
 A token not in a palette's table keeps the value it has for that mode in Default. That covers the
 method badges, environment colours, success/info where unlisted, `--wb-fg-faint`,
 `--wb-border-strong`, `--wb-accent-muted` and the overlay shadow. Implementation may restate any of
 them per palette if the contrast gate or a visual check calls for it.
 
-### 3.5 Accent next to danger
+### 3.8 Accent next to danger
 
 In Field kit and Dusk the accent is an orange-red, close to the danger red. Danger must stay
 recognisable without colour alone: danger states already carry an icon or a word (`500`, "Failed",
 the Problems count). This change checks every danger surface does, and in those two palettes moves
 `--wb-status-danger` towards a pinker red (`#E0685F` dark / `#B02A3A` light) so the two do not read
 as the same colour side by side.
+
+In Seed, Pith and Rind the accent and much of the surface are red, so danger leaves the red family
+altogether: `--wb-status-danger` is amber-orange there, and `--wb-status-warning` moves to a yellow
+so the two stay apart. The icon-or-word rule above matters most in these three.
 
 ## 4. CSS structure
 
@@ -184,12 +278,12 @@ The "nothing outside this file may hard-code a colour" rule stays.
 
 **Settings → Appearance → Theme** becomes two settings:
 
-- **Colour theme** — four cards in a row, each showing its name and five swatches, drawn in the
+- **Colour theme** — seven cards in a grid, each showing its name and five swatches, drawn in the
   current mode. The selected card has the accent ring. Clicking applies at once.
 - **Mode** — the existing Dark / Light / System control, unchanged.
 
 **Command palette:** a new command `view.choosePalette`, "Theme: choose colour theme…", opens a
-quick pick of the four; moving through the list previews each, Escape restores the one that was
+quick pick of the seven; moving through the list previews each, Escape restores the one that was
 active, Enter keeps the highlighted one. `view.toggleTheme` keeps cycling the mode.
 
 Both write through `usePreferencesStore().update({ ui: { palette } })`, like `cycleTheme`, so there
@@ -198,10 +292,10 @@ is one code path.
 ## 7. Testing
 
 - **Contrast gate:** `scripts/contrast-check.ts` runs its `PAIRS` list for every palette × mode
-  (8 combinations instead of 2). The chrome tokens get their own pairs (chrome text on chrome
+  (14 combinations instead of 2). The chrome tokens get their own pairs (chrome text on chrome
   surface, chrome text on selected chrome). The gate stays part of `pnpm check`.
 - **Unit:** theme resolution sets both attributes; an old UI blob reads `default`; preferences
-  without `palette` merge to `default`; `monacoThemeName` covers all eight names.
+  without `palette` merge to `default`; `monacoThemeName` covers all fourteen names.
 - **Renderer:** the Appearance cards select and write the palette; the palette quick pick previews
   and restores on Escape.
 - **e2e:** pick Sandstone + Light in Settings, relaunch, and check the first frame's
