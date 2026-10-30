@@ -153,7 +153,7 @@ export async function credentialOf(db: Querier, userId: string): Promise<Credent
 
 export async function upsertCredential(db: Querier, userId: string, passwordHash: string, at: Date): Promise<void> {
   await db.query(
-    'insert into local_credentials (user_id, password_hash, updated_at) values ($1, $2, $3) on conflict (user_id) do update set password_hash = excluded.password_hash, updated_at = excluded.updated_at',
+    'insert into local_credentials (user_id, password_hash, updated_at) values ($1, $2, $3) on conflict (tenant_id, user_id) do update set password_hash = excluded.password_hash, updated_at = excluded.updated_at',
     [userId, passwordHash, at],
   );
 }

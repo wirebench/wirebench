@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import type { FastifyInstance } from 'fastify';
 import type { ServerContext, ServerModule } from '../context.js';
 import { RateLimiter } from '../identity/rate-limit.js';
+import { tenantUrl, urlWithoutScope } from '../tenancy/urls.js';
 import { samlSettings, ssoUrls, type SsoEnv } from './env.js';
 import * as repo from './repo.js';
 import { authSamlRoutes, browserSamlStartRoutes } from './routes/auth-saml.js';
@@ -43,10 +44,13 @@ export function ssoModule(options: SsoOptions = {}): ServerModule {
     name: 'sso',
     migrationsDir: SSO_MIGRATIONS_DIR,
     async register(app: FastifyInstance, ctx: ServerContext): Promise<void> {
-      const urls = ssoUrls(ctx.config.publicUrl);
-      const settings = samlSettings(ctx.config);
+      // The SAML provider is the server-wide one, configured from the environment: the default tenant's
+      // until slice 7 moves it into per-tenant settings. Hosted mode has none (spec §19.1).
+      const serverWide = urlWithoutScope(ctx.config);
+      const settings = serverWide === undefined ? undefined : samlSettings(ctx.config);
       let saml: SsoEnv['saml'];
-      if (settings !== undefined) {
+      if (settings !== undefined && serverWide !== undefined) {
+        const urls = ssoUrls(serverWide);
         // Read once at start-up; a failure is a start-up failure (exit 2 through serve.ts).
         const metadata =
           options.metadata ??
@@ -79,7 +83,7 @@ export function ssoModule(options: SsoOptions = {}): ServerModule {
         ctx,
         now,
         limiter: new RateLimiter({ capacity: 10, refillPerMs: 10 / 60_000, now: () => now().getTime() }),
-        urls,
+        urlsFor: (of) => ssoUrls(tenantUrl(ctx.config, of)),
         saml,
       };
       shared = env;

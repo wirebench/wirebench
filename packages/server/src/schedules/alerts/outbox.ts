@@ -6,7 +6,7 @@
  * never touches the run. A claim leases its rows rather than locking them across a send, so a server
  * that dies mid-delivery leaves them to the next pass after the lease, here or on another server.
  */
-import type { ScheduleRunStatus, ScheduleRunSummary } from '@wirebench/engine';
+import { WirebenchError, type ScheduleRunStatus, type ScheduleRunSummary } from '@wirebench/engine';
 import type { FastifyBaseLogger } from 'fastify';
 import type { Database, LicenseService, Querier } from '../../context.js';
 import type { SetTimer } from '../../hooks/env.js';
@@ -93,7 +93,7 @@ export function failuresOf(results: readonly unknown[]): AlertPayload['failures'
 }
 
 export interface AlertEnv {
-  readonly settings: Pick<SchedulesSettings, 'publicUrl'>;
+  readonly settings: Pick<SchedulesSettings, 'linkUrl'>;
   readonly now: () => Date;
 }
 
@@ -131,6 +131,10 @@ export async function enqueueAlerts(tx: Querier, env: AlertEnv, scheduleId: stri
   const send = decision.send;
   if (send === undefined || row.alerts.targets.length === 0) return 0;
   const summary = run.summary;
+  const linkUrl = env.settings.linkUrl;
+  if (linkUrl === undefined) {
+    throw new WirebenchError('tenancy-unscoped', 'an alert link needs a tenant; the scheduler has none yet');
+  }
   const payload: AlertPayload = {
     kind: send.kind,
     streak: send.streak,
@@ -148,7 +152,7 @@ export async function enqueueAlerts(tx: Querier, env: AlertEnv, scheduleId: stri
       failed: summary?.failed ?? 0,
       errored: summary?.errored ?? 0,
       durationMs: summary?.durationMs ?? 0,
-      url: `${env.settings.publicUrl}/api/v1/workspaces/${row.workspaceId}/schedules/${scheduleId}/runs/${run.id}`,
+      url: `${linkUrl}/api/v1/workspaces/${row.workspaceId}/schedules/${scheduleId}/runs/${run.id}`,
     },
     failures: failuresOf(run.results),
   };

@@ -11,11 +11,19 @@ import type { ServerContext, ServerModule } from './context.js';
 import { toProblem } from './problem.js';
 import { healthRoutes } from './routes/health.js';
 import { metaRoutes } from './routes/meta.js';
+import { registerTenantResolution, type TenantResolver } from './tenancy/resolve.js';
 
 export interface BuildServerOptions {
   readonly modules: readonly ServerModule[];
   /** Where log lines go instead of stdout; tests pass a stream to read what was logged. */
   readonly logStream?: NodeJS.WritableStream;
+  /**
+   * The context each module registers with; the shared one by default. Tests of a module moved into a tenant
+   * pass `scopedContext` for it (`test/helpers/tenancy.ts`), whose `db` throws (plan, Global Constraints).
+   */
+  readonly contextFor?: (module: ServerModule, context: ServerContext) => ServerContext;
+  /** Hands out the hosted tenant map, for tests that change a tenant and reload it; never called self-hosted. */
+  readonly onTenantResolver?: (resolver: TenantResolver) => void;
 }
 
 /**
@@ -80,6 +88,10 @@ export async function buildServer(ctx: ServerContext, options: BuildServerOption
   });
 
   const context: ServerContext = { ...ctx, log: app.log };
+
+  // First, so it runs ahead of every module's hooks, on the API, the public routes and every upgrade.
+  const resolver = await registerTenantResolution(app, ctx.config, ctx.tenancy.directory);
+  if (resolver !== undefined) options.onTenantResolver?.(resolver);
 
   app.addHook('onSend', async (request, reply) => {
     reply.header('x-request-id', request.id);
@@ -151,7 +163,8 @@ export async function buildServer(ctx: ServerContext, options: BuildServerOption
         // fastify-plugin sets): a hook or decorator one module adds, such as identity's
         // `request.caller`, must reach the routes of every module registered after it. /healthz
         // sits outside /api/v1 and never sees them.
-        const mount = (scope: FastifyInstance): Promise<void> => module.register(scope, context);
+        const moduleContext = options.contextFor?.(module, context) ?? context;
+        const mount = (scope: FastifyInstance): Promise<void> => module.register(scope, moduleContext);
         Object.assign(mount, { [SKIP_OVERRIDE]: true, [Symbol.for('fastify.display-name')]: module.name });
         await api.register(mount);
       }
@@ -161,7 +174,7 @@ export async function buildServer(ctx: ServerContext, options: BuildServerOption
   for (const module of options.modules) {
     if (module.registerPublic !== undefined) {
       await app.register(async (root) => {
-        await module.registerPublic!(root, context);
+        await module.registerPublic!(root, options.contextFor?.(module, context) ?? context);
       });
     }
   }

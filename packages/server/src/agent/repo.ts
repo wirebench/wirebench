@@ -38,7 +38,7 @@ export async function replaceCode(
 ): Promise<void> {
   await db.query(
     `insert into agent_pairing_codes (code_hash, user_id, expires_at) values ($1, $2, $3)
-     on conflict (user_id) do update set code_hash = excluded.code_hash, expires_at = excluded.expires_at`,
+     on conflict (tenant_id, user_id) do update set code_hash = excluded.code_hash, expires_at = excluded.expires_at`,
     [input.codeHash, input.userId, input.expiresAt],
   );
 }
@@ -73,7 +73,7 @@ export async function upsertPairing(
     await db.query(
       `insert into agent_pairings (id, user_id, agent_id, public_key, port, ssh_opt_in, created_at, last_seen_at)
        values ($1, $2, $3, $4, $5, $6, $7, $7)
-       on conflict (user_id, agent_id) do update set public_key = excluded.public_key, port = excluded.port,
+       on conflict (tenant_id, user_id, agent_id) do update set public_key = excluded.public_key, port = excluded.port,
          ssh_opt_in = excluded.ssh_opt_in, last_seen_at = excluded.last_seen_at
        returning ${PAIRING_COLUMNS}`,
       [input.id, input.userId, input.agentId, input.publicKey, input.port, input.sshOptIn, input.at],

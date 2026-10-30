@@ -72,7 +72,9 @@ Specifically:
   server; neither may import Electron.
 - The server's integration suite needs a real PostgreSQL: it skips, saying why, when
   `WIREBENCH_SERVER_TEST_DATABASE_URL` is unset, and CI's `server-integration` job runs it against a
-  service container.
+  service container. Since the hosted edition's slice 4, the suites migrate as `wirebench_owner` and query
+  as `wirebench_app`, which `scripts/ci/server-test-roles.sql` creates: CI runs it, and locally it is run
+  once as the superuser. CI also sets `WIREBENCH_SERVER_REQUIRE_DB=1`, so a lost URL fails the job.
 
 ## Alternatives considered
 

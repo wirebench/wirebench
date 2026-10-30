@@ -1,0 +1,190 @@
+{
+  "commit": "e9bdc5af1",
+  "ids": {
+    "users": [
+      "01M6515NGPFJXPFMZ84Y2WARTK",
+      "01M6515NJF0CAAZBGC7AHHS1W4",
+      "01M6515NJJQWQ43JTGV0X0FA3F",
+      "01M6515NM25TKZK2YX567BN8FE",
+      "01M6515NM4M3PM8BPMQ9Z7WR7W",
+      "01M6515NR042QS9R0ZYKF1MKY5"
+    ],
+    "teams": [
+      "01M6515NR76RW45MDXX7AM4HBB"
+    ],
+    "workspaces": [
+      "01M6515NRG32TF9SAA9ETDZRFV",
+      "01M6515NSM2AJW2GTVKVPTS2HP",
+      "01M6515NTQ76ESDKV3BHM5CD90"
+    ],
+    "agent_pairings": [
+      "01M6515P7XEH734A28RN47D47Z"
+    ],
+    "ci_tokens": [
+      "01M6515P78Z1T9VFQYN8494N4G",
+      "01M6515P7B82P1QPVRN0BM91XJ"
+    ],
+    "catch_urls": [
+      "01M6515P6KHVMWRYWW5SESXPAX"
+    ],
+    "schedules": [
+      "01M6515P7HVVBTXS8CEZFK15KY"
+    ],
+    "session_logs": [
+      "01M6515P7T59EA38NHX8M43GCQ"
+    ],
+    "invitations": [
+      "01M6515NP815W711EM45JTYCBY",
+      "01M6515NPEM00G004H08ZQE4D6",
+      "01M6515NRDMGFM21768CJKX6WP"
+    ],
+    "scim_groups": [
+      "01M6515P7R2TFXYTWGF5197YKM"
+    ],
+    "schedule_runs": [
+      "01M6515P7JAKQS4GKXE7C3W7K9"
+    ]
+  },
+  "users": {
+    "admin": "01M6515NGPFJXPFMZ84Y2WARTK",
+    "alice": "01M6515NJF0CAAZBGC7AHHS1W4",
+    "editor": "01M6515NJJQWQ43JTGV0X0FA3F",
+    "viewer": "01M6515NM25TKZK2YX567BN8FE",
+    "leaver": "01M6515NM4M3PM8BPMQ9Z7WR7W",
+    "joined": "01M6515NR042QS9R0ZYKF1MKY5"
+  },
+  "workspaces": {
+    "staging": "01M6515NRG32TF9SAA9ETDZRFV",
+    "billing": "01M6515NSM2AJW2GTVKVPTS2HP",
+    "retired": "01M6515NTQ76ESDKV3BHM5CD90"
+  },
+  "dataDirPlaceholder": {
+    "token": "@WIREBENCH_FIXTURE_DATA_DIR@",
+    "files": [
+      "repos/01M6515NRG32TF9SAA9ETDZRFV.git/config",
+      "repos/01M6515NSM2AJW2GTVKVPTS2HP.git/config",
+      "repos/01M6515P844XKB9C2NTQDM7PYP.git/config",
+      "tmp/removed-01M6515NTQ76ESDKV3BHM5CD90-1793317853054/config"
+    ]
+  },
+  "migrations": [
+    {
+      "version": 1,
+      "name": "init",
+      "sha256": "5eef90294d9be77d8999291d8a80a050b5d343949bfb5e898050e3603598ac9b"
+    },
+    {
+      "version": 2,
+      "name": "identity",
+      "sha256": "2ca1f003c8d71db5c3bb491046d16f5b26319627a69c2f4aa7df3daa612282cd"
+    },
+    {
+      "version": 3,
+      "name": "teams",
+      "sha256": "bf5fb127844bd5b238f2f518a64aeef197b313bea3c6a350aa32015720dedec4"
+    },
+    {
+      "version": 4,
+      "name": "webhook-capture",
+      "sha256": "865f9d4a3592d4a827f9ce3ff9a02608f6eea7f74410ac84584c90d2e55c3af6"
+    },
+    {
+      "version": 5,
+      "name": "webhook-signatures",
+      "sha256": "708a3909a7ef767b893cde547b2e6d781cc94d2f7e6e8f430fb9303229c1adac"
+    },
+    {
+      "version": 6,
+      "name": "ci-tokens",
+      "sha256": "9a09336b6b8295f7bd1a0848b634f2d58efdc7fbb8163a2b109098c2fe005d12"
+    },
+    {
+      "version": 7,
+      "name": "licensing",
+      "sha256": "65cfadb45bfb6d4b495e99cff50c8b889b464c59f6fe35a4e016467d318f1cbf"
+    },
+    {
+      "version": 8,
+      "name": "audit-log",
+      "sha256": "4f3dd7358928b03532bd10b56ba1fa2828451182656d1be56e0409d6de86d3e0"
+    },
+    {
+      "version": 9,
+      "name": "desktop-recording",
+      "sha256": "99a4a927e76028ec864cd9c314d2a9bbd58ae26bdb5891873539a3408cf4ba44"
+    },
+    {
+      "version": 10,
+      "name": "audit-team-index",
+      "sha256": "75b0536a077595cc8744c75d017f63df373bed0caabe2283e3e2ba73b17924da"
+    },
+    {
+      "version": 11,
+      "name": "audit-forward-queue",
+      "sha256": "a1d3f70dec241723cbbe03f623eec1af3a7075976a3a8101b8931d46849945b8"
+    },
+    {
+      "version": 12,
+      "name": "audit-chain",
+      "sha256": "a36cc625189d05abb55c523250b5e6d575f44fa40a08801da4629f38182458ae"
+    },
+    {
+      "version": 13,
+      "name": "server-id",
+      "sha256": "027ea0cfde5160c985dc9c594c62d260518a8582d0a45c01a41431950abb6d99"
+    },
+    {
+      "version": 14,
+      "name": "scheduled-runs",
+      "sha256": "f8954ff12f1f9f8da3a02353d631ae8486bc6e59bb9de2f1146e64d9fed550ea"
+    },
+    {
+      "version": 15,
+      "name": "saml-scim",
+      "sha256": "5bc28b8226bed74afa1837d67b9183f193c135435b7c8138effe2e06405a2e3b"
+    },
+    {
+      "version": 16,
+      "name": "session-logs",
+      "sha256": "c5283f69c254cfd459be4bb57c195af14a1d67ab508e956b4d64a722c90dffd1"
+    },
+    {
+      "version": 17,
+      "name": "feature-policy",
+      "sha256": "71ffb3d91a795455eb6c41858e94f1b3d3de59cd3c71bac890b3860084d9de12"
+    },
+    {
+      "version": 18,
+      "name": "browser-sessions",
+      "sha256": "212df565952511ee026fa1c4a5290424181fe53305c9e5685312af7699f09e5a"
+    },
+    {
+      "version": 19,
+      "name": "agent-pairings",
+      "sha256": "77a02fd8655d216ede7b5c0f2146e4924684cbf5c8494cdd11d21146e57833be"
+    }
+  ],
+  "checkout": "checkouts/01M6515NJF0CAAZBGC7AHHS1W4",
+  "chain": {
+    "firstSeq": "1",
+    "lastSeq": "19",
+    "unsealed": 1
+  },
+  "keys": {
+    "secretsKey": "UVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVE=",
+    "auditChainKey": "fixture-0019-audit-chain-key-0123456789abcdef",
+    "hooksSecretKey": "UlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlI=",
+    "schedulesSecretKey": "U1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1M="
+  },
+  "plaintexts": {
+    "hostSecret": "sk-fixture-0123456789abcdef",
+    "hostSecretLabel": "wirebench-secret:project-billing:API_KEY",
+    "cookies": {
+      "staging": "session=staging-cookie-0019",
+      "billing": "session=billing-cookie-0019"
+    },
+    "hookSignatureSecret": "whsec_fixture0019signingsecret",
+    "scheduleSecret": "sk-schedule-fixture-0019",
+    "slackUrl": "https://hooks.slack.example.test/services/T000/B000/fixture0019"
+  }
+}

@@ -21,7 +21,8 @@ import * as repo from './repo.js';
 import { emailLower, signIn } from './sessions.js';
 import { hashSecret, mintSecret, newId } from './tokens.js';
 
-export const inviteUrl = (env: InvitationEnv, secret: string): string => `${env.ctx.config.publicUrl}/invite/${secret}`;
+/** The link an invitee opens: on the tenant's URL, which the caller passes (spec §19.5). */
+export const inviteUrl = (serverUrl: string, secret: string): string => `${serverUrl}/invite/${secret}`;
 
 export interface CreateInvitationInput {
   readonly email: string;
@@ -29,6 +30,8 @@ export interface CreateInvitationInput {
   /** The admin's user id, or `null` from the console. */
   readonly createdBy: string | null;
   readonly source: AuditSource;
+  /** The tenant's URL the link is on: `tenantUrl` of the request, or the admin command line's. */
+  readonly serverUrl: string;
 }
 
 /**
@@ -78,7 +81,7 @@ export async function createInvitation(
     if (isUniqueViolation(error, 'invitations_one_open_per_email')) throw invitationExists();
     throw error;
   }
-  return { id: row.id, email: row.email, url: inviteUrl(env, secret), expiresAt: row.expiresAt };
+  return { id: row.id, email: row.email, url: inviteUrl(input.serverUrl, secret), expiresAt: row.expiresAt };
 }
 
 /** A `reset` row for an existing user; any earlier open reset for them is closed first. */
@@ -87,6 +90,7 @@ export async function createPasswordReset(
   user: repo.UserRow,
   createdBy: string,
   source: AuditSource,
+  serverUrl: string,
 ): Promise<PasswordResetCreated> {
   const now = env.now();
   const { secret, hash } = mintSecret();
@@ -111,7 +115,7 @@ export async function createPasswordReset(
     });
     return inserted;
   });
-  return { url: inviteUrl(env, secret), expiresAt: row.expiresAt };
+  return { url: inviteUrl(serverUrl, secret), expiresAt: row.expiresAt };
 }
 
 export function isOpen(row: repo.InvitationRow, now: Date): boolean {

@@ -7,7 +7,7 @@ import type { LIVE_REFUSED_CODES, WirebenchError } from '@wirebench/engine';
 import { problem } from '../problem.js';
 
 /**
- * §6: an upgrade whose `Origin` is present and is not `publicUrl`. It is answered before the upgrade,
+ * §6: an upgrade whose `Origin` is present and is not the tenant's URL. It is answered before the upgrade,
  * so a web page open in a browser cannot listen in on a signed-in user's workspaces.
  */
 export function liveOriginRefused(): WirebenchError {

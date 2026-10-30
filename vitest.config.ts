@@ -117,6 +117,20 @@ export default defineConfig({
       },
       {
         test: {
+          name: 'server-perf',
+          // The tenancy migration over a scaled fixture (hosted spec §19.10): minutes, against PostgreSQL.
+          // Single-threaded like engine-perf, since it measures throughput; skips without a database.
+          include: ['packages/server/test/perf/**/*.test.ts'],
+          testTimeout: 1_800_000,
+          hookTimeout: 1_800_000,
+          fileParallelism: false,
+          pool: 'forks',
+          maxWorkers: 1,
+          minWorkers: 1,
+        },
+      },
+      {
+        test: {
           name: 'desktop',
           include: ['apps/desktop/test/**/*.test.{ts,tsx}'],
           environment: 'jsdom',

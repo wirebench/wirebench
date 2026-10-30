@@ -5,9 +5,10 @@
  * start is the sso module's. These routes sit outside `/api/v1`, so the guard's Origin check does not
  * reach them; the two forms check Origin themselves, against login CSRF and forced sign-out.
  */
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { auditSource } from '../../context.js';
 import { toProblem } from '../../problem.js';
+import { tenantUrl } from '../../tenancy/urls.js';
 import { endPresentedSession, finishBrowserSignIn, safeRedirectPath, startBrowserFlow } from '../browser-flows.js';
 import { clearSessionCookie } from '../cookies.js';
 import type { IdentityEnv } from '../env.js';
@@ -29,11 +30,11 @@ const field = (body: unknown, name: string): string | undefined => {
 export const browserSignInRoutes =
   (env: IdentityEnv) =>
   (app: FastifyInstance): void => {
-    const publicUrl = env.ctx.config.publicUrl;
+    const urlOf = (request: FastifyRequest): string => tenantUrl(env.ctx.config, request);
 
     app.get('/sign-in', async (request, reply) =>
       sendSignInPage(reply, env.ctx, {
-        redirectTo: safeRedirectPath((request.query as Record<string, unknown>)['redirect_to'], publicUrl),
+        redirectTo: safeRedirectPath((request.query as Record<string, unknown>)['redirect_to'], urlOf(request)),
       }),
     );
 
@@ -49,8 +50,9 @@ export const browserSignInRoutes =
       form.post('/sign-in/local', { bodyLimit: FORM_BODY_LIMIT }, async (request, reply) => {
         if (!env.settings.local) throw methodDisabled();
         // Login CSRF: another site's form must not sign this browser in to an account of its choosing.
-        if (request.headers.origin !== publicUrl) throw originRefused();
-        const redirectTo = safeRedirectPath(field(request.body, 'redirect_to'), publicUrl);
+        const url = urlOf(request);
+        if (request.headers.origin !== url) throw originRefused();
+        const redirectTo = safeRedirectPath(field(request.body, 'redirect_to'), url);
         // The same buckets as the desktop's route, so the two together get no more attempts.
         const retryAfter = chargeKeys(env.limiter, [ipKey(request), emailKey(request)]);
         if (retryAfter > 0) {
@@ -80,9 +82,10 @@ export const browserSignInRoutes =
       // browser stops presenting it, and lands on the sign-in page all the same.
       form.post('/sign-out', { bodyLimit: FORM_BODY_LIMIT }, async (request, reply) => {
         // Another site must not sign this browser out (a nuisance, and a step towards login CSRF).
-        if (request.headers.origin !== publicUrl) throw originRefused();
+        const url = urlOf(request);
+        if (request.headers.origin !== url) throw originRefused();
         await endPresentedSession(env, request, auditSource(request));
-        clearSessionCookie(reply, publicUrl);
+        clearSessionCookie(reply, url);
         return reply.code(303).header('location', '/sign-in').header('cache-control', 'no-store').send();
       });
       registered();
@@ -99,9 +102,9 @@ export const browserSignInRoutes =
         const nonce = mintSecret().secret;
         // 43 base64url characters: a valid RFC 7636 verifier.
         const codeVerifier = mintSecret().secret;
-        const state = await startBrowserFlow(env, reply, {
+        const state = await startBrowserFlow(env, request, reply, {
           provider: 'oidc',
-          redirectTo: safeRedirectPath((request.query as Record<string, unknown>)['redirect_to'], publicUrl),
+          redirectTo: safeRedirectPath((request.query as Record<string, unknown>)['redirect_to'], urlOf(request)),
           nonce,
           codeVerifier,
         });
@@ -112,7 +115,7 @@ export const browserSignInRoutes =
             provider.authorizationUrl({
               state,
               nonce,
-              redirectUri: env.settings.browserRedirectUri,
+              redirectUri: env.settings.browserRedirectUri(request),
               codeChallenge: pkceChallenge(codeVerifier),
             }),
           )

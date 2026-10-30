@@ -250,14 +250,15 @@ describeDb('the public route: refusals (§3.3 steps 2, 3, 5)', () => {
   it('answers 503 with Retry-After: 30 when storing fails, announces nothing, and recovers', async () => {
     c = await setUp();
     const { h, hook, heard } = c;
-    await h.db.query('alter table captures rename to captures_away');
+    // Renaming a table is DDL, which only the owner may run.
+    await h.db.owner.query('alter table captures rename to captures_away');
     const res = await h.app.inject({ method: 'POST', url: `/hooks/${hook.secret}`, payload: 'x' });
     expect([res.statusCode, res.headers['retry-after'], res.body]).toEqual([503, '30', '']);
-    await h.db.query('alter table captures_away rename to captures');
-    await h.db.query('alter table catch_urls rename to catch_urls_away');
+    await h.db.owner.query('alter table captures_away rename to captures');
+    await h.db.owner.query('alter table catch_urls rename to catch_urls_away');
     const lookup = await h.app.inject({ method: 'POST', url: `/hooks/${hook.secret}`, payload: 'x' });
     expect([lookup.statusCode, lookup.headers['retry-after']]).toEqual([503, '30']);
-    await h.db.query('alter table catch_urls_away rename to catch_urls');
+    await h.db.owner.query('alter table catch_urls_away rename to catch_urls');
     expect(heard).toEqual([]);
     expect((await h.app.inject({ method: 'POST', url: `/hooks/${hook.secret}` })).statusCode).toBe(200);
   });

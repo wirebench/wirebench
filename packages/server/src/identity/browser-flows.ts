@@ -17,6 +17,7 @@ import * as repo from './repo.js';
 import type { UserRow } from './repo.js';
 import { signIn } from './sessions.js';
 import { hashSecret, hashToken, mintSecret, newId } from './tokens.js';
+import { tenantUrl } from '../tenancy/urls.js';
 
 /** §2 of the identity spec: a pending flow lives ten minutes. */
 export const BROWSER_FLOW_TTL_MS = 10 * 60 * 1000;
@@ -49,16 +50,16 @@ interface FlowEnv {
  * origin (an absolute URL, `//host`, a backslash a browser reads as a slash, a scheme) is dropped,
  * so `redirect_to` cannot be used as an open redirect.
  */
-export function safeRedirectPath(value: unknown, publicUrl: string): string {
+export function safeRedirectPath(value: unknown, baseUrl: string): string {
   if (typeof value !== 'string' || value.length > MAX_REDIRECT_LENGTH) return '/';
   if (!value.startsWith('/') || value.startsWith('//') || /[\\\u0000-\u001f\u007f]/.test(value)) return '/';
   let url: URL;
   try {
-    url = new URL(value, publicUrl);
+    url = new URL(value, baseUrl);
   } catch {
     return '/';
   }
-  if (url.origin !== new URL(publicUrl).origin) return '/';
+  if (url.origin !== new URL(baseUrl).origin) return '/';
   const path = `${url.pathname}${url.search}${url.hash}`;
   // Checked again after parsing: dot-segments can collapse into `//host` (`/..//evil.test` → `//evil.test`),
   // which a browser reads as another origin. One application of this function must be enough.
@@ -69,6 +70,7 @@ export function safeRedirectPath(value: unknown, publicUrl: string): string {
 /** Stores the flow and sets its cookie; returns the state to send to the IdP. */
 export async function startBrowserFlow(
   env: FlowEnv,
+  request: FastifyRequest,
   reply: FastifyReply,
   input: {
     readonly provider: BrowserFlowProvider;
@@ -92,7 +94,7 @@ export async function startBrowserFlow(
       now,
     ],
   );
-  setFlowCookie(reply, env.ctx.config.publicUrl, state.secret, input.provider === 'saml');
+  setFlowCookie(reply, tenantUrl(env.ctx.config, request), state.secret, input.provider === 'saml');
   return state.secret;
 }
 
@@ -139,11 +141,11 @@ export async function takeBrowserFlow(
   provider: BrowserFlowProvider,
   state: string,
 ): Promise<BrowserFlow | undefined> {
-  const publicUrl = env.ctx.config.publicUrl;
-  const cookie = flowCookie(request, publicUrl);
+  const url = tenantUrl(env.ctx.config, request);
+  const cookie = flowCookie(request, url);
   // Left alone on a mismatch, so a cross-site request carrying some other state cannot end a flow in progress.
   if (state === '' || cookie === undefined || !sameText(cookie, state)) return undefined;
-  clearFlowCookie(reply, publicUrl);
+  clearFlowCookie(reply, url);
   const flow = await claim(env.ctx.db, provider, hashSecret(state));
   if (flow === undefined || flow.expiresAt.getTime() <= env.now().getTime()) return undefined;
   return flow;
@@ -156,7 +158,7 @@ export async function takeBrowserFlow(
  * and neither does the root `POST /sign-out`, which sits outside the guard.
  */
 export async function endPresentedSession(env: FlowEnv, request: FastifyRequest, source: AuditSource): Promise<void> {
-  const token = sessionToken(request, env.ctx.config.publicUrl);
+  const token = sessionToken(request, tenantUrl(env.ctx.config, request));
   if (token === undefined || !DEVICE_TOKEN_PATTERN.test(token)) return;
   const found = await repo.tokenByHash(env.ctx.db, hashToken(token));
   if (found === undefined || found.token.kind !== 'browser' || found.token.revokedAt !== null) return;
@@ -192,12 +194,13 @@ export async function finishBrowserSignIn(
   redirectTo: string,
 ): Promise<FastifyReply> {
   const config = env.ctx.config;
+  const url = tenantUrl(config, request);
   await endPresentedSession(env, request, source);
   const { token } = await signIn(env, user, method, BROWSER_DEVICE_NAME, source, 'browser');
-  setSessionCookie(reply, config.publicUrl, token, Math.floor(identitySettings(config).tokenMaxMs / 1000));
+  setSessionCookie(reply, url, token, Math.floor(identitySettings(config).tokenMaxMs / 1000));
   return reply
     .code(303)
-    .header('location', safeRedirectPath(redirectTo, config.publicUrl))
+    .header('location', safeRedirectPath(redirectTo, url))
     .header('cache-control', 'no-store')
     .send();
 }

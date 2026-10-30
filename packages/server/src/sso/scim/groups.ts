@@ -47,10 +47,16 @@ function excludesMembers(request: FastifyRequest): boolean {
 export const groupRoutes =
   (env: SsoEnv) =>
   (scim: FastifyInstance): void => {
-    const base = env.urls.scimBaseUrl;
     const db = env.ctx.db;
 
-    async function resources(rows: readonly repo.ScimGroupRow[], withMembers: boolean, q: Querier = db) {
+    async function resources(
+      request: FastifyRequest,
+      rows: readonly repo.ScimGroupRow[],
+      withMembers: boolean,
+      q: Querier = db,
+    ) {
+      // The SCIM base of the request's tenant (spec §19.5).
+      const base = env.urlsFor(request).scimBaseUrl;
       const members = withMembers
         ? await repo.groupMembersWithEmail(
             q,
@@ -125,7 +131,7 @@ export const groupRoutes =
           throw error;
         });
       announceAccess(env, changes, request.log);
-      return (await resources([row], true))[0];
+      return (await resources(request, [row], true))[0];
     }
 
     scim.get('/Groups', async (request) => {
@@ -141,14 +147,14 @@ export const groupRoutes =
         totalResults: page.total,
         startIndex,
         itemsPerPage: page.groups.length,
-        Resources: await resources(page.groups, !excludesMembers(request)),
+        Resources: await resources(request, page.groups, !excludesMembers(request)),
       };
     });
 
     scim.get('/Groups/:id', async (request) => {
       const row = await repo.scimGroupById(db, (request.params as { id: string }).id);
       if (row === undefined) throw notFound();
-      return (await resources([row], !excludesMembers(request)))[0];
+      return (await resources(request, [row], !excludesMembers(request)))[0];
     });
 
     scim.post('/Groups', async (request, reply) => {
@@ -179,8 +185,8 @@ export const groupRoutes =
         });
       return reply
         .code(201)
-        .header('location', `${base}/Groups/${row.id}`)
-        .send((await resources([row], true))[0]);
+        .header('location', `${env.urlsFor(request).scimBaseUrl}/Groups/${row.id}`)
+        .send((await resources(request, [row], true))[0]);
     });
 
     scim.put('/Groups/:id', async (request) => {

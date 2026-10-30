@@ -31,6 +31,7 @@ import { INVITE_PAGE_CSP, renderReturnPage } from '../../identity/invite-page.js
 import { linkClaims, type IdentityLinks } from '../../identity/linking.js';
 import { ipKey, rateLimit } from '../../identity/rate-limit.js';
 import * as identityRepo from '../../identity/repo.js';
+import { tenantUrl } from '../../tenancy/urls.js';
 import type { UserRow } from '../../identity/repo.js';
 import { signIn } from '../../identity/sessions.js';
 import { sendSignInPage } from '../../identity/sign-in-page.js';
@@ -227,7 +228,7 @@ export const authSamlRoutes =
           const answer = await answerResponse({ ...env, saml }, request, {
             samlResponse,
             requestId: flow.requestId,
-            acsUrl: env.urls.acsUrl,
+            acsUrl: env.urlsFor(request).acsUrl,
             flowId: flow.id,
           });
           if (!answer.ok) {
@@ -264,7 +265,7 @@ export const authSamlRoutes =
             const answer = await answerResponse({ ...env, saml }, request, {
               samlResponse: formField(request.body, 'SAMLResponse'),
               requestId: flow.nonce,
-              acsUrl: env.urls.browserAcsUrl,
+              acsUrl: env.urlsFor(request).browserAcsUrl,
               flowId: flow.id,
             });
             if (!answer.ok) {
@@ -328,12 +329,12 @@ export const authSamlRoutes =
         preHandler: [requireServerAdmin, feature],
         schema: { response: { 200: jsonSchema(samlInfoResponseSchema) } },
       },
-      () => ({
+      (request) => ({
         configured: env.saml !== undefined,
         ...(env.saml !== undefined ? { idpEntityId: env.saml.provider.idpEntityId } : {}),
-        entityId: env.urls.entityId,
-        acsUrl: env.urls.acsUrl,
-        scimBaseUrl: env.urls.scimBaseUrl,
+        entityId: env.urlsFor(request).entityId,
+        acsUrl: env.urlsFor(request).acsUrl,
+        scimBaseUrl: env.urlsFor(request).scimBaseUrl,
       }),
     );
   };
@@ -361,11 +362,11 @@ export const browserSamlStartRoutes =
       async (request, reply) => {
         const saml = env.saml!;
         const requestId = `_${randomBytes(20).toString('hex')}`;
-        const relayState = await startBrowserFlow(env, reply, {
+        const relayState = await startBrowserFlow(env, request, reply, {
           provider: 'saml',
           redirectTo: safeRedirectPath(
             (request.query as Record<string, unknown>)['redirect_to'],
-            env.ctx.config.publicUrl,
+            tenantUrl(env.ctx.config, request),
           ),
           nonce: requestId,
         });
@@ -373,7 +374,7 @@ export const browserSamlStartRoutes =
           .code(302)
           .header(
             'location',
-            await saml.provider.authorizationUrl({ requestId, relayState, acsUrl: env.urls.browserAcsUrl }),
+            await saml.provider.authorizationUrl({ requestId, relayState, acsUrl: env.urlsFor(request).browserAcsUrl }),
           )
           .header('cache-control', 'no-store')
           .header('referrer-policy', 'no-referrer')

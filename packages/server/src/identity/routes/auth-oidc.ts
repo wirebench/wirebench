@@ -19,6 +19,7 @@ import {
 import { timingSafeEqual } from 'node:crypto';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { jsonSchema } from '../../schema.js';
+import { tenantUrl } from '../../tenancy/urls.js';
 import { FLOW_EXPIRED_MESSAGE, finishBrowserSignIn, refusalMessage, takeBrowserFlow } from '../browser-flows.js';
 import type { IdentityEnv } from '../env.js';
 import { flowInvalid, methodDisabled } from '../errors.js';
@@ -99,7 +100,7 @@ export const authOidcRoutes =
         });
         return reply.code(201).send({
           flowId: id,
-          authorizationUrl: provider.authorizationUrl({ state, nonce, redirectUri: env.settings.redirectUri }),
+          authorizationUrl: provider.authorizationUrl({ state, nonce, redirectUri: env.settings.redirectUri(request) }),
           expiresAt: expiresAt.toISOString(),
         });
       },
@@ -141,7 +142,7 @@ export const authOidcRoutes =
         let claims: OidcClaims;
         try {
           claims = await provider.exchange({
-            callbackUrl: new URL(request.url, env.ctx.config.publicUrl),
+            callbackUrl: new URL(request.url, tenantUrl(env.ctx.config, request)),
             state: flow.state,
             nonce: flow.nonce,
           });
@@ -202,7 +203,7 @@ export const authOidcRoutes =
           let claims: OidcClaims;
           try {
             claims = await provider.exchange({
-              callbackUrl: new URL(request.url, env.ctx.config.publicUrl),
+              callbackUrl: new URL(request.url, tenantUrl(env.ctx.config, request)),
               state: query.state,
               nonce: flow.nonce ?? '',
               codeVerifier: flow.codeVerifier ?? '',
