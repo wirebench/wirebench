@@ -1560,7 +1560,7 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
                 {format === 'auto' && (detected.kind !== 'unknown' || pluginFormat !== undefined) && (
                   <span
                     data-testid="detected-format-badge"
-                    className="flex items-center gap-1 rounded bg-accent-muted px-2 py-0.5 text-xs font-medium text-accent"
+                    className="flex items-center gap-1 rounded bg-accent-muted px-2 py-0.5 text-xs font-medium text-fg-default"
                   >
                     <Sparkles size={11} aria-hidden="true" />
                     {pluginFormat !== undefined ? `${pluginFormat.label} (plugin)` : detected.label}

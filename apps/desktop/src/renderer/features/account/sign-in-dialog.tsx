@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
+import { XCircle } from 'lucide-react';
 import { Button } from '../../components/button.js';
 import { showToast } from '../../components/toast.js';
 import type { IpcError } from '@shared/ipc.js';
@@ -158,6 +159,7 @@ export function SignInDialog() {
   };
 
   const passwordLongEnough = newPassword.length >= MIN_PASSWORD_LENGTH;
+  const passwordTooShort = newPassword.length > 0 && !passwordLongEnough;
   const passwordsMatch = newPassword === confirmPassword;
   const canAccept = displayName.trim().length > 0 && passwordLongEnough && passwordsMatch && !busy;
 
@@ -355,12 +357,17 @@ export function SignInDialog() {
                 autoComplete="new-password"
                 value={newPassword}
                 onChange={(event) => setNewPassword(event.target.value)}
+                aria-invalid={passwordTooShort}
+                aria-describedby="sign-in-password-hint"
                 className={INPUT_CLASS}
               />
+              {/* Too short is told by a cross beside the hint, not by its colour alone (#803). */}
               <p
+                id="sign-in-password-hint"
                 data-testid="sign-in-password-hint"
-                className={`mt-1 text-xs ${newPassword.length > 0 && !passwordLongEnough ? 'text-status-danger' : 'text-fg-subtle'}`}
+                className={`mt-1 flex items-center gap-1 text-xs ${passwordTooShort ? 'text-status-danger' : 'text-fg-subtle'}`}
               >
+                {passwordTooShort && <XCircle size={11} aria-hidden="true" className="shrink-0" />}
                 At least {MIN_PASSWORD_LENGTH} characters.
               </p>
               <label className={LABEL_CLASS} htmlFor="sign-in-confirm-password">

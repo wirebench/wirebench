@@ -67,6 +67,9 @@ All notable changes to this project are documented here. The format follows
   contributors' `packages/server/compose.yaml` now uses `wirebench_app`.
 
 ### Changed
+- **Default's editor colours match the rest of the window (#803).** Monaco's comment, hint and
+  line-number greys, and in light mode its accent, success and warning colours, now equal the
+  Default tokens the app's chrome already uses; they had kept older values.
 - **Server: PostgreSQL 15 or later (#798).** Start-up and `migrate` refuse an older database with
   `server-postgres-too-old`. The compose files already run PostgreSQL 16.
 - **Server: a start-up warning when one role does everything (#798).** A server whose one database URL is a
@@ -928,6 +931,11 @@ All notable changes to this project are documented here. The format follows
   (#635).
 
 ### Fixed
+- **Danger is no longer told by colour alone (#803).** A logged terminal shows a record glyph
+  rather than a red dot, a failing schedule in the explorer shows a cross, an invalid search pattern
+  in the HTTP log shows a cross beside the red border, a too-short password hint gains a cross, and
+  conversion problems read **Error** or **Warning** with their own icon. A pane receiving broadcast
+  input has a dashed outline, so it differs from the focused pane by more than its colour.
 - **The project menu is shorter (#686).** A project's six creators sit under one **New ▸** submenu,
   named alike: **New REST API…** (as on the Start page), **New gRPC API…**, **New WebSocket API…**,
   **New MCP server…**, **New Webhook…** and **New Sequence…**.

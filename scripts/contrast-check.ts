@@ -140,6 +140,14 @@ const PAIRS: readonly Pair[] = [
   // The selected row of a response's Events list: every part of it (time, chip, id, preview) turns
   // to the default foreground on the selection, since the quieter tokens do not hold on it.
   { fg: '--wb-fg-default', bg: '--wb-accent-muted', kind: 'text', where: 'selected event row' },
+  // Accent-muted chips: the accent itself as text on accent-muted is near 2:1, so the chip's word
+  // takes the default foreground and the chip keeps its tint (#803).
+  {
+    fg: '--wb-fg-default',
+    bg: '--wb-accent-muted',
+    kind: 'text',
+    where: 'Experimental chip (Settings → Features), detected-format badge (Import)',
+  },
 
   // Status text: response codes in the status bar, problem rows, keystore chips.
   { fg: '--wb-status-success', bg: '--wb-bg-sunken', kind: 'text', where: 'status bar 2xx' },

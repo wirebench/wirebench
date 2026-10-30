@@ -124,7 +124,7 @@ export function FeaturesSection({ preferences, update }: SectionProps) {
                       aside: (
                         <span
                           data-testid={`feature-stage-${state.id}`}
-                          className="rounded bg-accent-muted px-1.5 py-0.5 text-xs font-medium text-accent"
+                          className="rounded bg-accent-muted px-1.5 py-0.5 text-xs font-medium text-fg-default"
                         >
                           Experimental
                         </span>

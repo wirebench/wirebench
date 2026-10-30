@@ -33,10 +33,9 @@ export type EditorMode = 'dark' | 'light';
  * Every colour theme's editor colours, read from that theme's blocks in `tokens.css` as the
  * browser cascades them (a token a palette does not restate is Default's for that mode).
  *
- * Default's two records are the editor's long-standing values and are kept as they are: the
- * contrast gate later moved a few of its tokens (`fgSubtle` and `fgFaint`, and in light mode
- * `accent`, `success` and `warning`) without the editor following, and Default does not move with
- * colour themes. The test lists that drift; every other value equals its token.
+ * Default included: its records once kept older values after the contrast gate moved a few of
+ * its tokens, and were brought back in line with `tokens.css` (#803). The test holds every value
+ * equal to its token.
  */
 export const EDITOR_COLOURS: Readonly<Record<Palette, Readonly<Record<EditorMode, EditorColours>>>> = {
   default: {
@@ -46,8 +45,8 @@ export const EDITOR_COLOURS: Readonly<Record<Palette, Readonly<Record<EditorMode
       bgSelected: '#3a2a22',
       fgDefault: '#ece9e3',
       fgMuted: '#a49d93',
-      fgSubtle: '#756e66',
-      fgFaint: '#4c4741',
+      fgSubtle: '#8d8780',
+      fgFaint: '#8a847d',
       borderDefault: '#2a2724',
       accent: '#d97757',
       info: '#7fa6dd',
@@ -60,13 +59,13 @@ export const EDITOR_COLOURS: Readonly<Record<Palette, Readonly<Record<EditorMode
       bgSelected: '#f6e3da',
       fgDefault: '#22201d',
       fgMuted: '#5c564e',
-      fgSubtle: '#837c73',
-      fgFaint: '#b3ada4',
+      fgSubtle: '#6d675f',
+      fgFaint: '#706a62',
       borderDefault: '#e0dcd5',
-      accent: '#bf5730',
+      accent: '#a94d2b',
       info: '#3d6ba8',
-      success: '#2f7d52',
-      warning: '#9a6b12',
+      success: '#2b7550',
+      warning: '#8b6010',
     },
   },
   'field-kit': {
