@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, it } from 'vitest';
-import { CaptureSweeper, rawSweepTarget } from '../../../src/hooks/sweep.js';
+import { CaptureSweeper } from '../../../src/hooks/sweep.js';
 import { newId } from '../../../src/identity/tokens.js';
 import * as repo from '../../../src/schedules/repo.js';
 import { describeDb } from '../../helpers/database.js';
@@ -11,7 +11,7 @@ let scheduleId: string;
 beforeEach(async () => {
   c = await schedulesHarness();
   scheduleId = newId();
-  await repo.insertSchedule(c.h.db, {
+  await repo.insertSchedule(c.h.tdb, {
     id: scheduleId,
     workspaceId: c.workspaceId,
     name: 'Nightly',
@@ -35,7 +35,7 @@ const daysAgo = (days: number): Date => new Date(c.h.clock.now.getTime() - days 
 
 async function run(days: number, status: 'running' | 'skipped' = 'skipped'): Promise<string> {
   const id = newId();
-  await repo.insertRun(c.h.db, { id, scheduleId, trigger: 'schedule', status, at: daysAgo(days) });
+  await repo.insertRun(c.h.tdb, { id, scheduleId, trigger: 'schedule', status, at: daysAgo(days) });
   return id;
 }
 
@@ -59,7 +59,7 @@ describeDb('schedule retention (scheduled-runs spec §3.6)', () => {
     const recent = await run(10);
     await c.h.db.query(`insert into schedule_results (run_id, ordinal, result) values ($1, 0, '{}')`, [old[0]]);
     const sweeper = new CaptureSweeper({
-      target: rawSweepTarget(c.h.db, repo.deleteRunsBefore),
+      target: { tenancy: c.h.ctx.tenancy, job: 'schedule-run-retention', deleteBefore: repo.deleteRunsBefore },
       maxAgeDays: 90,
       now: () => c.h.clock.now,
       setTimer: c.timers.setTimer,
@@ -75,7 +75,7 @@ describeDb('schedule retention (scheduled-runs spec §3.6)', () => {
   it('deletes delivered and dead alert deliveries after a week, never a pending one', async () => {
     const gone = [await delivery(8, 'delivered'), await delivery(30, 'dead')];
     const kept = [await delivery(30, 'pending'), await delivery(2, 'delivered')];
-    expect(await repo.deleteOutboxBefore(c.h.db, daysAgo(7), 100)).toBe(gone.length);
+    expect(await repo.deleteOutboxBefore(c.h.tdb, daysAgo(7), 100)).toBe(gone.length);
     expect(await ids('schedule_alert_outbox')).toEqual(kept.sort());
   });
 });

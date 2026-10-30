@@ -14,8 +14,8 @@ import {
   type Schedule,
   type ScheduleRun,
 } from '@wirebench/engine';
-import type { FastifyInstance, preHandlerAsyncHookHandler } from 'fastify';
-import { auditSource, recordAudit, type Database, type LicenseService, type ServerHooks } from '../context.js';
+import type { FastifyInstance, FastifyRequest, preHandlerAsyncHookHandler } from 'fastify';
+import { auditSource, recordAudit, type LicenseService, type ServerHooks } from '../context.js';
 import { isUniqueViolation } from '../db/errors.js';
 import { newId } from '../identity/tokens.js';
 import { jsonSchema } from '../schema.js';
@@ -26,10 +26,10 @@ import { scheduleLimit, scheduleNameTaken, scheduleNotFound } from './errors.js'
 import * as repo from './repo.js';
 import { alertTargetView, mergeSecrets, sealAlertTargets, secretSummaries } from './seal.js';
 import type { SchedulesSettings } from './settings.js';
+import type { TenantQuerier } from '../tenancy/tenant-db.js';
 import type { Tenancy } from '../tenancy/tenancy.js';
 
 export interface ScheduleRoutesEnv {
-  readonly db: Database;
   /** The tenant databases: the role guard and teams' reads run in the request's tenant (tenancy Task 9). */
   readonly tenancy: Pick<Tenancy, 'db'>;
   readonly hooks: ServerHooks;
@@ -76,7 +76,8 @@ function cronOf(text: string, zone: string): string {
 export const scheduleRoutes =
   (env: ScheduleRoutesEnv) =>
   (app: FastifyInstance): void => {
-    const { db } = env;
+    // The request's tenant database (spec §19.8 guard 2).
+    const tdb = (request: FastifyRequest) => env.tenancy.db(request.tenant);
     const feature: preHandlerAsyncHookHandler = async function (request, reply) {
       await env.license().requireFeature('scheduled-runs').call(this, request, reply);
     };
@@ -87,7 +88,7 @@ export const scheduleRoutes =
     const scheduleParams = jsonSchema(scheduleParamsSchema, { io: 'input' });
     const nextRun = (cron: string, zone: string, enabled: boolean): Date | null =>
       enabled ? nextFire(cron, zone, env.now()) : null;
-    const viewOf = async (row: repo.ScheduleRow): Promise<Schedule> =>
+    const viewOf = async (db: TenantQuerier, row: repo.ScheduleRow): Promise<Schedule> =>
       scheduleView(row, (await repo.lastRunsOf(db, [row.id])).get(row.id));
     const nameTaken = (error: unknown, name: string): unknown =>
       isUniqueViolation(error, repo.SCHEDULE_NAME_INDEX) ? scheduleNameTaken(name) : error;
@@ -99,9 +100,9 @@ export const scheduleRoutes =
         schema: { params: workspaceParams, response: { 200: jsonSchema(schedulesResponseSchema) } },
       },
       async (request): Promise<Schedule[]> => {
-        const rows = await repo.schedulesOfWorkspace(db, request.workspaceAccess!.workspaceId);
+        const rows = await repo.schedulesOfWorkspace(tdb(request), request.workspaceAccess!.workspaceId);
         const last = await repo.lastRunsOf(
-          db,
+          tdb(request),
           rows.map((row) => row.id),
         );
         return rows.map((row) => scheduleView(row, last.get(row.id)));
@@ -128,7 +129,7 @@ export const scheduleRoutes =
         };
         const id = newId();
         try {
-          await db.transaction(async (tx) => {
+          await tdb(request).transaction(async (tx) => {
             if ((await repo.countSchedules(tx, workspaceId)) >= SCHEDULE_LIMITS.maxPerWorkspace) {
               throw scheduleLimit();
             }
@@ -166,7 +167,7 @@ export const scheduleRoutes =
         } catch (error) {
           throw nameTaken(error, input.name);
         }
-        const row = await repo.scheduleById(db, workspaceId, id);
+        const row = await repo.scheduleById(tdb(request), workspaceId, id);
         return reply.code(201).send(scheduleView(row!, undefined));
       },
     );
@@ -176,9 +177,9 @@ export const scheduleRoutes =
       { preHandler: reader, schema: { params: scheduleParams, response: { 200: jsonSchema(scheduleSchema) } } },
       async (request): Promise<Schedule> => {
         const { scheduleId } = request.params as { readonly scheduleId: string };
-        const row = await repo.scheduleById(db, request.workspaceAccess!.workspaceId, scheduleId);
+        const row = await repo.scheduleById(tdb(request), request.workspaceAccess!.workspaceId, scheduleId);
         if (row === undefined) throw scheduleNotFound();
-        return viewOf(row);
+        return viewOf(tdb(request), row);
       },
     );
 
@@ -197,7 +198,7 @@ export const scheduleRoutes =
         const { scheduleId } = request.params as { readonly scheduleId: string };
         const update = scheduleUpdateSchema.parse(request.body);
         try {
-          await db.transaction(async (tx) => {
+          await tdb(request).transaction(async (tx) => {
             const row = await repo.scheduleById(tx, workspaceId, scheduleId, true);
             if (row === undefined) throw scheduleNotFound();
             const timeZone = update.timeZone ?? row.timeZone;
@@ -250,8 +251,8 @@ export const scheduleRoutes =
         } catch (error) {
           throw nameTaken(error, update.name ?? '');
         }
-        const row = await repo.scheduleById(db, workspaceId, scheduleId);
-        return viewOf(row!);
+        const row = await repo.scheduleById(tdb(request), workspaceId, scheduleId);
+        return viewOf(tdb(request), row!);
       },
     );
 
@@ -261,7 +262,7 @@ export const scheduleRoutes =
       async (request, reply) => {
         const { workspaceId } = request.workspaceAccess!;
         const { scheduleId } = request.params as { readonly scheduleId: string };
-        await db.transaction(async (tx) => {
+        await tdb(request).transaction(async (tx) => {
           const name = await repo.deleteSchedule(tx, workspaceId, scheduleId);
           if (name === undefined) throw scheduleNotFound();
           await recordAudit(env.hooks, tx, {
@@ -290,7 +291,7 @@ export const scheduleRoutes =
         const { workspaceId } = request.workspaceAccess!;
         const { scheduleId } = request.params as { readonly scheduleId: string };
         const input = scheduleSecretsSchema.parse(request.body);
-        await db.transaction(async (tx) => {
+        await tdb(request).transaction(async (tx) => {
           const row = await repo.scheduleById(tx, workspaceId, scheduleId, true);
           if (row === undefined) throw scheduleNotFound();
           const merged = mergeSecrets(env.settings, row.secrets, input);
@@ -304,8 +305,8 @@ export const scheduleRoutes =
             details: { name: row.name, added: merged.added, changed: merged.changed, removed: merged.removed },
           });
         });
-        const row = await repo.scheduleById(db, workspaceId, scheduleId);
-        return viewOf(row!);
+        const row = await repo.scheduleById(tdb(request), workspaceId, scheduleId);
+        return viewOf(tdb(request), row!);
       },
     );
 
@@ -319,14 +320,14 @@ export const scheduleRoutes =
       async (request): Promise<AlertTestResponse> => {
         const { workspaceId } = request.workspaceAccess!;
         const { scheduleId } = request.params as { readonly scheduleId: string };
-        const row = await repo.scheduleById(db, workspaceId, scheduleId);
+        const row = await repo.scheduleById(tdb(request), workspaceId, scheduleId);
         if (row === undefined) throw scheduleNotFound();
         const payload = {
           kind: 'test',
           streak: 0,
           muted: false,
           schedule: { id: row.id, name: row.name },
-          workspace: { id: workspaceId, name: (await repo.workspaceName(db, workspaceId)) ?? workspaceId },
+          workspace: { id: workspaceId, name: (await repo.workspaceName(tdb(request), workspaceId)) ?? workspaceId },
           project: row.target.project,
           environment: row.target.environment ?? null,
           failures: [],

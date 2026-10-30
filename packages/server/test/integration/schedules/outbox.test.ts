@@ -33,7 +33,7 @@ describeDb('schedule alerts: state, outbox and delivery (scheduled-runs spec §3
   beforeEach(async () => {
     c = await schedulesHarness();
     scheduleId = newId();
-    await repo.insertSchedule(c.h.db, {
+    await repo.insertSchedule(c.h.tdb, {
       id: scheduleId,
       workspaceId: c.workspaceId,
       name: 'Nightly',
@@ -69,8 +69,14 @@ describeDb('schedule alerts: state, outbox and delivery (scheduled-runs spec §3
       summary: { total: 2, passed: 1, failed: status === 'failed' ? 1 : 0, errored: 0, skipped: 0, durationMs: 1200 },
       results,
     };
-    await repo.insertRun(c.h.db, { id: run.id, scheduleId, trigger: 'schedule', status: 'running', at: c.h.clock.now });
-    await c.h.db.transaction((tx) => enqueueAlerts(tx, env(), scheduleId, run));
+    await repo.insertRun(c.h.tdb, {
+      id: run.id,
+      scheduleId,
+      trigger: 'schedule',
+      status: 'running',
+      at: c.h.clock.now,
+    });
+    await c.h.tdb.transaction((tx) => enqueueAlerts(tx, env(), scheduleId, run));
     return run;
   };
   const rows = async (): Promise<OutboxRow[]> =>
@@ -183,7 +189,7 @@ describeDb('schedule alerts: state, outbox and delivery (scheduled-runs spec §3
 
   it('a target removed since the alert was queued is not delivered to', async () => {
     await finish('failed');
-    const row = await repo.scheduleById(c.h.db, c.workspaceId, scheduleId);
+    const row = await repo.scheduleById(c.h.tdb, c.workspaceId, scheduleId);
     await c.h.db.query('update schedules set alerts = $2 where id = $1', [
       scheduleId,
       JSON.stringify({ ...row!.alerts, targets: row!.alerts.targets.slice(0, 1) }),

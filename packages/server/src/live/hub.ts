@@ -62,12 +62,6 @@ export interface LiveHubDeps {
   readonly log: FastifyBaseLogger;
   readonly now: () => number;
   readonly setTimer: (fn: () => void, ms: number) => { cancel(): void };
-  /**
-   * Hosted mode: an announcement with no tenant fails closed, dropped with one warning, rather than reaching
-   * a workspace id's rooms in every tenant (Task 11 review I1). Only the executor's `scheduleRunFinished` has
-   * none, until Task 13.
-   */
-  readonly hosted?: boolean;
 }
 
 /** Node's `setTimeout` fires at once past 2^31 − 1 ms (about 24.8 days), and the default maximum token age is 180 days. */
@@ -117,7 +111,6 @@ export class LiveHub {
    */
   private rechecks: Promise<void> = Promise.resolve();
   private closed = false;
-  private warnedTenantless = false;
 
   constructor(private readonly deps: LiveHubDeps) {}
 
@@ -259,31 +252,11 @@ export class LiveHub {
     });
   }
 
-  /**
-   * `schedule-run` to every subscriber of the workspace: one of its scheduled runs ended (scheduled-runs §3.5).
-   * The executor's announcement has no tenant until Task 13 runs it per tenant: it then reaches the workspace's
-   * rooms in every tenant, which before `0021` is the one tenant a workspace id can belong to.
-   */
+  /** `schedule-run` to every subscriber of the workspace: one of its scheduled runs ended (scheduled-runs §3.5). */
   scheduleRunFinished(event: ScheduleRunFinishedEvent): void {
     if (this.closed) return;
     const { workspaceId, scheduleId, runId, status } = event;
-    if (event.tenantId === undefined && this.deps.hosted === true) {
-      if (!this.warnedTenantless) {
-        this.warnedTenantless = true;
-        this.deps.log.warn(
-          { workspaceId },
-          'a scheduled run ended with no tenant: hosted mode sends it nowhere until the executor runs per tenant',
-        );
-      }
-      return;
-    }
-    const targets =
-      event.tenantId !== undefined
-        ? (this.byWorkspace.get(keyOf(event.tenantId, workspaceId)) ?? [])
-        : [...this.byWorkspace]
-            .filter(([room]) => workspaceOf(room) === workspaceId)
-            .flatMap(([, sockets]) => [...sockets]);
-    this.deliver(targets, {
+    this.deliver(this.byWorkspace.get(keyOf(event.tenantId, workspaceId)) ?? [], {
       type: 'schedule-run',
       workspaceId,
       scheduleId,

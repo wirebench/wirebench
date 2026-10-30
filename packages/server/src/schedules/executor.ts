@@ -41,9 +41,11 @@ import {
   type Workspace,
 } from '@wirebench/engine';
 import type { FastifyBaseLogger } from 'fastify';
-import { announce, recordAudit, type Database, type ServerHooks } from '../context.js';
+import { announce, recordAudit, type ServerHooks } from '../context.js';
 import type { SetTimer } from '../hooks/env.js';
-import { enqueueAlerts } from './alerts/outbox.js';
+import type { TenantScope } from '../tenancy/scope.js';
+import type { Tenancy } from '../tenancy/tenancy.js';
+import { enqueueAlertsOrWarn } from './alerts/outbox.js';
 import { materialise, type Materialised } from './materialise.js';
 import { RunStopped, type RunReason } from './outcome.js';
 import * as repo from './repo.js';
@@ -51,11 +53,15 @@ import { openSecrets } from './seal.js';
 import type { SchedulesSettings } from './settings.js';
 
 export interface ExecutorEnv {
-  readonly db: Database;
+  /** The tenant databases: a run is read and stored in its own tenant's units (spec §19.8 guard 6). */
+  readonly tenancy: Pick<Tenancy, 'db'>;
   readonly hooks: ServerHooks;
   readonly settings: SchedulesSettings;
-  /** The workspace's files at its head: `CommitStore.snapshot`. */
-  readonly snapshot: (workspaceId: string) => Promise<SyncSnapshotResponse>;
+  /**
+   * The workspace's files at its head, from the tenant's repository store: `CommitStore.snapshot`. The scope is
+   * passed for the per-tenant layout (Task 21); the store's path is still the workspace id's until then.
+   */
+  readonly snapshot: (scope: TenantScope, workspaceId: string) => Promise<SyncSnapshotResponse>;
   /** Absolute: `<dataDir>/tmp/schedules`. */
   readonly tmpRoot: string;
   /** The server's version, for the stored report's `tool`. */
@@ -145,11 +151,18 @@ function plan(table: DataTable | undefined, data: ScheduleTarget['data'] = { pat
 }
 
 /**
- * Runs `runId`, which the scheduler has marked running, and stores how it ended. `signal` is the
- * scheduler's, aborted with an {@link AbortReason}. A run that goes wrong is an outcome, never a throw.
+ * Runs `runId` of `scope`'s tenant, which the scheduler has marked running, and stores how it ended. `signal`
+ * is the scheduler's, aborted with an {@link AbortReason}. A run that goes wrong is an outcome, never a throw.
+ * No unit is held while it runs: it is read in one, and its outcome stored in another.
  */
-export async function executeRun(env: ExecutorEnv, runId: string, signal: AbortSignal): Promise<void> {
-  const found = await repo.runWithSchedule(env.db, runId);
+export async function executeRun(
+  env: ExecutorEnv,
+  scope: TenantScope,
+  runId: string,
+  signal: AbortSignal,
+): Promise<void> {
+  const db = env.tenancy.db(scope);
+  const found = await repo.runWithSchedule(db, runId);
   if (found === undefined) return;
   const { schedule } = found;
   const { target, options } = schedule;
@@ -175,7 +188,7 @@ export async function executeRun(env: ExecutorEnv, runId: string, signal: AbortS
     const secrets = openSecrets(env.settings, schedule.secrets);
     for (const value of Object.values(secrets)) known.add(value);
 
-    const head = await env.snapshot(schedule.workspaceId);
+    const head = await env.snapshot(scope, schedule.workspaceId);
     if (head.head === null) throw new RunStopped('workspace-empty', 'The workspace has nothing pushed yet.');
     commit = head.head;
     snapshot = await materialise({
@@ -277,7 +290,7 @@ export async function executeRun(env: ExecutorEnv, runId: string, signal: AbortS
     await snapshot?.dispose();
   }
 
-  const stored = await env.db.transaction(async (tx) => {
+  const stored = await db.transaction(async (tx) => {
     if (!(await repo.finishRun(tx, runId, { ...outcome, commit, environment, at: env.now() }))) return false;
     const { summary } = outcome;
     await recordAudit(env.hooks, tx, {
@@ -297,15 +310,22 @@ export async function executeRun(env: ExecutorEnv, runId: string, signal: AbortS
           : {}),
       },
     });
-    // The alert state moves with the run it judges: both commit, or neither.
-    await enqueueAlerts(tx, env, schedule.id, { id: runId, ...outcome, commit, environment });
+    // The alert state moves with the run it judges, in its unit; an alert that cannot be queued is skipped,
+    // never thrown into it, so the run's result is never lost to its alert.
+    await enqueueAlertsOrWarn(tx, env, schedule.id, { id: runId, ...outcome, commit, environment });
     return true;
   });
   // After the commit; a run a cancel ended was announced by the cancel.
   if (stored) {
     announce(
       env.hooks.scheduleRunFinished,
-      { workspaceId: schedule.workspaceId, scheduleId: schedule.id, runId, status: outcome.status },
+      {
+        tenantId: scope.tenantId,
+        workspaceId: schedule.workspaceId,
+        scheduleId: schedule.id,
+        runId,
+        status: outcome.status,
+      },
       env.log,
     );
   }

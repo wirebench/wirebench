@@ -24,8 +24,7 @@ function license(features: readonly Feature[] = ['scheduled-runs']): LicenseServ
       seats: { used: 0, limit: null },
       features: [...features],
     });
-  // The pass reads the license without a scope until Task 13 runs it per tenant.
-  return { ...permissiveLicense(), state, stateWithoutScope: state };
+  return { ...permissiveLicense(), state };
 }
 
 /** Runs the scheduler starts, each held until the test releases it or it is aborted. */
@@ -45,13 +44,18 @@ function heldRuns() {
 const turn = (): Promise<void> => new Promise((done) => setImmediate(done));
 
 function scheduler(overrides: Partial<SchedulerEnv> = {}): Scheduler {
-  return new Scheduler({ ...executorEnv(c, null, '/nonexistent'), license: () => license(), ...overrides });
+  return new Scheduler({
+    ...executorEnv(c, null, '/nonexistent'),
+    tenancy: c.h.ctx.tenancy,
+    license: () => license(),
+    ...overrides,
+  });
 }
 
 /** An enabled hourly schedule, due `dueMs` ago (negative: in the future). */
 async function seedSchedule(name: string, dueMs = 0, timeoutMinutes = 15): Promise<string> {
   const id = newId();
-  await repo.insertSchedule(c.h.db, {
+  await repo.insertSchedule(c.h.tdb, {
     id,
     workspaceId: c.workspaceId,
     name,
@@ -93,7 +97,7 @@ describeDb('the scheduler (scheduled-runs spec §3.1)', () => {
     const s = scheduler({ execute: heldRuns().execute });
     await s.runOnce();
     expect(await runsOf(id)).toHaveLength(1);
-    const next = new Date((await repo.scheduleById(c.h.db, c.workspaceId, id))!.nextRunAt!);
+    const next = new Date((await repo.scheduleById(c.h.tdb, c.workspaceId, id))!.nextRunAt!);
     expect(next.getTime()).toBeGreaterThan(c.h.clock.now.getTime());
     expect(next.getUTCMinutes()).toBe(0);
     expect((await s.runOnce()).fired).toBe(0);
@@ -166,14 +170,12 @@ describeDb('the scheduler (scheduled-runs spec §3.1)', () => {
     const held = heldRuns();
     let stopping: Promise<void> | undefined;
     // The claim commits, then the server stops before the pass launches what it claimed.
-    const db = Object.assign(Object.create(c.h.db) as typeof c.h.db, {
-      transaction: async <T>(fn: Parameters<typeof c.h.db.transaction<T>>[0]): Promise<T> => {
-        const result = await c.h.db.transaction(fn);
-        if (stopping === undefined && Array.isArray(result) && result.length > 0) stopping = s.stop();
-        return result;
-      },
-    });
-    const s = scheduler({ db, execute: held.execute });
+    const claimQueued: SchedulerEnv['claimQueued'] = async (tx, limit, at) => {
+      const claimed = await repo.claimQueuedRuns(tx, limit, at);
+      if (stopping === undefined && claimed.length > 0) stopping = s.stop();
+      return claimed;
+    };
+    const s = scheduler({ claimQueued, execute: held.execute });
     await s.runOnce();
     await stopping;
     expect(held.started.map((run) => run.signal.reason as unknown)).toEqual(['shutdown']);
@@ -185,9 +187,9 @@ describeDb('the scheduler (scheduled-runs spec §3.1)', () => {
     const held = heldRuns();
     const s = scheduler({ execute: held.execute });
     await s.runOnce();
-    expect(s.cancel(held.started[0]!.runId)).toBe(true);
+    expect(s.cancel(c.h.tdb.scope, held.started[0]!.runId)).toBe(true);
     expect(held.started[0]!.signal.reason).toBe('cancelled');
-    expect(s.cancel('not-here')).toBe(false);
+    expect(s.cancel(c.h.tdb.scope, 'not-here')).toBe(false);
     await s.stop();
   });
 
@@ -196,17 +198,17 @@ describeDb('the scheduler (scheduled-runs spec §3.1)', () => {
     const at = (minutesAgo: number): Date => new Date(c.h.clock.now.getTime() - minutesAgo * 60_000);
     const stale = newId();
     const live = newId();
-    await repo.insertRun(c.h.db, { id: stale, scheduleId: id, trigger: 'schedule', status: 'running', at: at(17) });
-    await repo.insertRun(c.h.db, { id: live, scheduleId: id, trigger: 'manual', status: 'running', at: at(5) });
+    await repo.insertRun(c.h.tdb, { id: stale, scheduleId: id, trigger: 'schedule', status: 'running', at: at(17) });
+    await repo.insertRun(c.h.tdb, { id: live, scheduleId: id, trigger: 'manual', status: 'running', at: at(5) });
     const s = scheduler({ execute: heldRuns().execute });
     await s.runOnce();
-    expect((await repo.runWithSchedule(c.h.db, stale))!.run).toMatchObject({
+    expect((await repo.runWithSchedule(c.h.tdb, stale))!.run).toMatchObject({
       status: 'errored',
       reason: 'interrupted',
     });
-    expect((await repo.runWithSchedule(c.h.db, live))!.run.status).toBe('running');
+    expect((await repo.runWithSchedule(c.h.tdb, live))!.run.status).toBe('running');
     // An interrupted run is an errored one to the alert state.
-    expect(await repo.scheduleById(c.h.db, c.workspaceId, id)).toMatchObject({
+    expect(await repo.scheduleById(c.h.tdb, c.workspaceId, id)).toMatchObject({
       alertState: 'failing',
       failureStreak: 1,
     });

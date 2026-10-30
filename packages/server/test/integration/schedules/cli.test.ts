@@ -26,7 +26,7 @@ describeDb('wirebench-server admin schedules (scheduled-runs spec §3.8)', () =>
     // No license: the commands need none.
     c = await schedulesHarness({ enterprise: false });
     scheduleId = newId();
-    await repo.insertSchedule(c.h.db, {
+    await repo.insertSchedule(c.h.tdb, {
       id: scheduleId,
       workspaceId: c.workspaceId,
       name: 'Nightly',
@@ -44,10 +44,10 @@ describeDb('wirebench-server admin schedules (scheduled-runs spec §3.8)', () =>
   afterEach(async () => {
     await c.close();
   });
-  const env = () => ({ db: c.h.db, hooks: c.h.hooks, now: () => c.h.clock.now });
+  const env = () => ({ db: c.h.tdb, hooks: c.h.hooks, now: () => c.h.clock.now });
 
   it('list shows every schedule with its state, next run and last outcome; --workspace narrows it', async () => {
-    await repo.insertRun(c.h.db, {
+    await repo.insertRun(c.h.tdb, {
       id: newId(),
       scheduleId,
       trigger: 'schedule',
@@ -72,7 +72,7 @@ describeDb('wirebench-server admin schedules (scheduled-runs spec §3.8)', () =>
     const off = capture();
     expect(await runSchedulesCommand({ command: 'admin-schedules-disable', id: scheduleId }, env(), off.io)).toBe(0);
     expect(off.stdout()).toBe(`Schedule ${scheduleId} disabled\n`);
-    expect(await repo.scheduleById(c.h.db, c.workspaceId, scheduleId)).toMatchObject({
+    expect(await repo.scheduleById(c.h.tdb, c.workspaceId, scheduleId)).toMatchObject({
       enabled: false,
       nextRunAt: null,
     });
@@ -81,7 +81,7 @@ describeDb('wirebench-server admin schedules (scheduled-runs spec §3.8)', () =>
     expect(again.stdout()).toBe(`Schedule ${scheduleId} was already disabled\n`);
     await runSchedulesCommand({ command: 'admin-schedules-enable', id: scheduleId }, env(), capture().io);
     // The harness clock is 2026-09-24T12:00Z: the next 03:00 is tomorrow's.
-    expect(await repo.scheduleById(c.h.db, c.workspaceId, scheduleId)).toMatchObject({
+    expect(await repo.scheduleById(c.h.tdb, c.workspaceId, scheduleId)).toMatchObject({
       enabled: true,
       nextRunAt: '2026-09-25T03:00:00.000Z',
     });
@@ -94,7 +94,7 @@ describeDb('wirebench-server admin schedules (scheduled-runs spec §3.8)', () =>
   it('runs writes the newest runs as NDJSON, up to --limit', async () => {
     const at = (minutes: number): Date => new Date(c.h.clock.now.getTime() - minutes * 60_000);
     for (const minutes of [30, 20, 10]) {
-      await repo.insertRun(c.h.db, {
+      await repo.insertRun(c.h.tdb, {
         id: newId(),
         scheduleId,
         trigger: 'schedule',

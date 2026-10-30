@@ -11,7 +11,7 @@ import type { ServerContext, ServerModule } from '../context.js';
 import type { SetTimer } from '../hooks/env.js';
 import { realTimer } from '../live/module.js';
 import { TMP_DIR } from '../repos/repo-store.js';
-import { CaptureSweeper, rawSweepTarget } from '../hooks/sweep.js';
+import { CaptureSweeper } from '../hooks/sweep.js';
 import { CommitStore } from '../sync/commit-store.js';
 import { AlertOutbox, alertDelivery, type DeliverAlert } from './alerts/outbox.js';
 import { deleteOutboxBefore, deleteRunsBefore } from './repo.js';
@@ -71,10 +71,11 @@ export function schedulesModule(options: SchedulesOptions = {}): ServerModule {
       });
       const license = (): typeof ctx.license => ctx.license;
       const scheduler = new Scheduler({
-        db: ctx.db,
+        tenancy: ctx.tenancy,
         hooks: ctx.hooks,
         settings,
-        snapshot: (workspaceId) => store.snapshot(workspaceId),
+        // The store's path is still the workspace id's until the per-tenant layout (Task 21).
+        snapshot: (_scope, workspaceId) => store.snapshot(workspaceId),
         tmpRoot: resolve(tmpDir, SCHEDULES_TMP_DIR),
         version: ctx.config.version,
         now,
@@ -86,11 +87,10 @@ export function schedulesModule(options: SchedulesOptions = {}): ServerModule {
       });
       options.onScheduler?.(scheduler);
       const deliver = options.deliver ?? alertDelivery(settings, { egress: ctx.egress });
-      const outbox = new AlertOutbox({ db: ctx.db, now, setTimer, log: ctx.log, license, deliver });
+      const outbox = new AlertOutbox({ tenancy: ctx.tenancy, now, setTimer, log: ctx.log, license, deliver });
       options.onOutbox?.(outbox);
-      scheduleRoutes({ db: ctx.db, tenancy: ctx.tenancy, hooks: ctx.hooks, license, settings, now, deliver })(app);
+      scheduleRoutes({ tenancy: ctx.tenancy, hooks: ctx.hooks, license, settings, now, deliver })(app);
       scheduleRunRoutes({
-        db: ctx.db,
         tenancy: ctx.tenancy,
         hooks: ctx.hooks,
         license,
@@ -105,7 +105,7 @@ export function schedulesModule(options: SchedulesOptions = {}): ServerModule {
               );
             });
           },
-          cancel: (runId) => scheduler.cancel(runId),
+          cancel: (scope, runId) => scheduler.cancel(scope, runId),
         },
       })(app);
       // Retention (§3.6): runs past the maximum age with their results, and finished deliveries after a week.
@@ -115,7 +115,7 @@ export function schedulesModule(options: SchedulesOptions = {}): ServerModule {
           now,
           setTimer,
           log: ctx.log,
-          target: rawSweepTarget(ctx.db, deleteRunsBefore),
+          target: { tenancy: ctx.tenancy, job: 'schedule-run-retention', deleteBefore: deleteRunsBefore },
           label: 'schedule run sweep',
         }),
         new CaptureSweeper({
@@ -123,7 +123,7 @@ export function schedulesModule(options: SchedulesOptions = {}): ServerModule {
           now,
           setTimer,
           log: ctx.log,
-          target: rawSweepTarget(ctx.db, deleteOutboxBefore),
+          target: { tenancy: ctx.tenancy, job: 'schedule-alert-retention', deleteBefore: deleteOutboxBefore },
           label: 'schedule alert sweep',
         }),
       ];

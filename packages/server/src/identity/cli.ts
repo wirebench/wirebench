@@ -100,7 +100,9 @@ export async function runAdmin(
       command.command === 'admin-schedules-disable' ||
       command.command === 'admin-schedules-runs'
     ) {
-      return await runSchedulesCommand(command, { db, hooks, now }, io);
+      // In the command line's tenant, as every schedules route works in the request's.
+      const tenancy = createTenancy(db);
+      return await runSchedulesCommand(command, { db: tenancy.db(await cliScope(tenancy)), hooks, now }, io);
     }
     // Only now: before migrations the server_identity table may not exist.
     const serverId = await readServerId(db).catch((error: unknown) => {

@@ -43,10 +43,10 @@ async function runOnce(
   overrides: Partial<ExecutorEnv> = {},
 ) {
   const { runId } = await seedRun(c, seed);
-  await executeRun(executorEnv(c, files, tmpRoot, overrides), runId, never);
-  const found = await repo.runWithSchedule(c.h.db, runId);
+  await executeRun(executorEnv(c, files, tmpRoot, overrides), c.h.tdb.scope, runId, never);
+  const found = await repo.runWithSchedule(c.h.tdb, runId);
   expect(await readdir(tmpRoot)).toEqual([]);
-  return { run: found!.run, results: await repo.resultsOf(c.h.db, runId) };
+  return { run: found!.run, results: await repo.resultsOf(c.h.tdb, runId) };
 }
 
 describeDb('executeRun (scheduled-runs spec §3.2)', () => {
@@ -88,7 +88,7 @@ describeDb('executeRun (scheduled-runs spec §3.2)', () => {
       muteAfter: 3,
     };
     const { run } = await runOnce(await workspaceSnapshot([probe('Fail', `${server.url}/fail`)]), { alerts });
-    const schedule = await repo.runWithSchedule(c.h.db, run.id);
+    const schedule = await repo.runWithSchedule(c.h.tdb, run.id);
     expect(schedule!.schedule).toMatchObject({ alertState: 'failing', failureStreak: 1 });
     const queued = await c.h.db.query<{ kind: string; payload: { run: { id: string }; failures: { path: string }[] } }>(
       'select kind, payload from schedule_alert_outbox where run_id = $1',
@@ -155,11 +155,11 @@ describeDb('executeRun (scheduled-runs spec §3.2)', () => {
   it('the deadline aborts a hanging run, which errors with timeout', async () => {
     const files = await workspaceSnapshot([probe('Hang', `${server.url}/hang`)]);
     const { runId } = await seedRun(c, { options: { timeoutMinutes: 2 } });
-    const running = executeRun(executorEnv(c, files, tmpRoot), runId, never);
+    const running = executeRun(executorEnv(c, files, tmpRoot), c.h.tdb.scope, runId, never);
     await server.hanging;
     expect(c.timers.fire(2 * 60_000)).toBe(1);
     await running;
-    expect((await repo.runWithSchedule(c.h.db, runId))!.run).toMatchObject({ status: 'errored', reason: 'timeout' });
+    expect((await repo.runWithSchedule(c.h.tdb, runId))!.run).toMatchObject({ status: 'errored', reason: 'timeout' });
     expect(await readdir(tmpRoot)).toEqual([]);
   });
 
@@ -167,11 +167,11 @@ describeDb('executeRun (scheduled-runs spec §3.2)', () => {
     const files = await workspaceSnapshot([probe('Hang', `${server.url}/hang`)]);
     const { runId } = await seedRun(c);
     const stop = new AbortController();
-    const running = executeRun(executorEnv(c, files, tmpRoot), runId, stop.signal);
+    const running = executeRun(executorEnv(c, files, tmpRoot), c.h.tdb.scope, runId, stop.signal);
     await server.hanging;
     stop.abort('shutdown');
     await running;
-    expect((await repo.runWithSchedule(c.h.db, runId))!.run).toMatchObject({
+    expect((await repo.runWithSchedule(c.h.tdb, runId))!.run).toMatchObject({
       status: 'cancelled',
       reason: 'shutdown',
     });
@@ -182,16 +182,16 @@ describeDb('executeRun (scheduled-runs spec §3.2)', () => {
     const files = await workspaceSnapshot([probe('Hang', `${server.url}/hang`)]);
     const { runId } = await seedRun(c);
     const stop = new AbortController();
-    const running = executeRun(executorEnv(c, files, tmpRoot), runId, stop.signal);
+    const running = executeRun(executorEnv(c, files, tmpRoot), c.h.tdb.scope, runId, stop.signal);
     await server.hanging;
     await c.h.db.query("update schedule_runs set status = 'cancelled', reason = 'cancelled' where id = $1", [runId]);
     stop.abort('cancelled');
     await running;
-    expect((await repo.runWithSchedule(c.h.db, runId))!.run).toMatchObject({
+    expect((await repo.runWithSchedule(c.h.tdb, runId))!.run).toMatchObject({
       status: 'cancelled',
       reason: 'cancelled',
     });
-    expect(await repo.resultsOf(c.h.db, runId)).toEqual([]);
+    expect(await repo.resultsOf(c.h.tdb, runId)).toEqual([]);
   });
 
   it('an unexpected failure errors the run with run-failed and logs a masked message', async () => {
@@ -211,12 +211,14 @@ describeDb('executeRun (scheduled-runs spec §3.2)', () => {
     c.h.hooks.scheduleRunFinished.push((event) => heard.push(event));
     const files = await workspaceSnapshot([probe('Ok', `${server.url}/ok`)]);
     const { scheduleId, runId } = await seedRun(c);
-    await executeRun(executorEnv(c, files, tmpRoot), runId, never);
-    expect(heard).toEqual([{ workspaceId: c.workspaceId, scheduleId, runId, status: 'passed' }]);
+    await executeRun(executorEnv(c, files, tmpRoot), c.h.tdb.scope, runId, never);
+    expect(heard).toEqual([
+      { tenantId: c.h.tdb.scope.tenantId, workspaceId: c.workspaceId, scheduleId, runId, status: 'passed' },
+    ]);
 
     const cancelled = await seedRun(c);
     await c.h.db.query("update schedule_runs set status = 'cancelled' where id = $1", [cancelled.runId]);
-    await executeRun(executorEnv(c, files, tmpRoot), cancelled.runId, never);
+    await executeRun(executorEnv(c, files, tmpRoot), c.h.tdb.scope, cancelled.runId, never);
     expect(heard).toHaveLength(1);
   });
 });

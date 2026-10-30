@@ -5,7 +5,8 @@
  * `schedule.updated` with the system actor; `runs` writes NDJSON for a script to read.
  */
 import type { ServerCommand } from '../args.js';
-import { recordAudit, SYSTEM_SOURCE, type Database, type ServerHooks } from '../context.js';
+import { recordAudit, SYSTEM_SOURCE, type ServerHooks } from '../context.js';
+import type { TenantDb } from '../tenancy/tenant-db.js';
 import { ExitCode, type ServerIo } from '../io.js';
 import { nextFire } from './cron.js';
 import * as repo from './repo.js';
@@ -13,7 +14,8 @@ import * as repo from './repo.js';
 type SchedulesCommand = Extract<ServerCommand, { command: `admin-schedules-${string}` }>;
 
 export interface SchedulesCliEnv {
-  readonly db: Database;
+  /** The admin command line's tenant's database (`identity/cli.ts`). */
+  readonly db: TenantDb;
   readonly hooks: ServerHooks;
   readonly now: () => Date;
 }

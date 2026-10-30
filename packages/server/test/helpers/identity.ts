@@ -172,6 +172,7 @@ export const MOVED_MODULES: readonly ServerModule['name'][] = [
   'ci-tokens',
   'live-updates',
   'terminal-shares',
+  'scheduled-runs',
 ];
 
 export interface SignedInUser {

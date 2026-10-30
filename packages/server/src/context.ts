@@ -105,11 +105,8 @@ export type SessionEndedEvent = SessionEnded & { readonly tenantId: string };
 export type HeadMovedEvent = HeadMoved & { readonly tenantId: string };
 export type CaptureReceivedEvent = CaptureReceived & { readonly tenantId: string };
 export type HooksChangedEvent = HooksChanged & { readonly tenantId: string };
-/**
- * `scheduleRunFinished` with its tenant when the announcer has one: a cancel's request does, the executor not
- * until Task 13 runs it per tenant.
- */
-export type ScheduleRunFinishedEvent = ScheduleRunFinished & { readonly tenantId?: string };
+/** `scheduleRunFinished` with its tenant: the cancel's request's, or the executor's job-loop scope (Task 13). */
+export type ScheduleRunFinishedEvent = ScheduleRunFinished & { readonly tenantId: string };
 
 /** A catch URL stored a capture (webhook-capture spec §3.6); fired after the insert's transaction committed. */
 export interface CaptureReceived {
@@ -178,9 +175,8 @@ export interface LicenseService {
   /** A preHandler for after a route's role guard: `licensing-feature-required` without the feature (§3.5). */
   requireFeature(feature: Feature): preHandlerAsyncHookHandler;
   /**
-   * The license of a server whose jobs do not run per tenant yet: the scheduler's pass and alert outbox until
-   * Task 13, and the audit forwarder until Task 14 (`check:tenant-scope` names them). The one tenant's, on a
-   * self-hosted server; with several, Community.
+   * The license of a server whose jobs do not run per tenant yet: the audit forwarder until Task 14
+   * (`check:tenant-scope` names it). The one tenant's, on a self-hosted server; with several, Community.
    */
   stateWithoutScope(): Promise<LicenseState>;
 }

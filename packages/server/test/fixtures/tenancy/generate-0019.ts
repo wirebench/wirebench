@@ -430,7 +430,7 @@ it.runIf(OUT !== undefined)(
       // ---- scheduled runs: a schedule with a sealed secret and a Slack alert, a failed run with results.
       const schedulesKey = Buffer.from(FIXTURE_KEYS.schedulesSecretKey, 'base64');
       const scheduleId = newId();
-      await schedulesRepo.insertSchedule(h.db, {
+      await schedulesRepo.insertSchedule(h.db as never, {
         id: scheduleId,
         workspaceId: staging,
         name: 'Nightly health',
@@ -450,9 +450,9 @@ it.runIf(OUT !== undefined)(
         createdBy: admin.user.id,
         at,
       });
-      await schedulesRepo.setScheduleSecrets(h.db, scheduleId, { API_KEY: sealValue(schedulesKey, FIXTURE_PLAINTEXTS.scheduleSecret) }, at);
+      await schedulesRepo.setScheduleSecrets(h.db as never, scheduleId, { API_KEY: sealValue(schedulesKey, FIXTURE_PLAINTEXTS.scheduleSecret) }, at);
       const runId = newId();
-      await schedulesRepo.insertRun(h.db, { id: runId, scheduleId, trigger: 'schedule', status: 'running', at });
+      await schedulesRepo.insertRun(h.db as never, { id: runId, scheduleId, trigger: 'schedule', status: 'running', at });
       const finished: schedulesRepo.FinishedRun = {
         status: 'failed',
         reason: null,
@@ -466,8 +466,8 @@ it.runIf(OUT !== undefined)(
         at,
       };
       await h.db.transaction(async (tx) => {
-        expect(await schedulesRepo.finishRun(tx, runId, finished)).toBe(true);
-        await enqueueAlerts(tx, { settings: { linkUrl: PUBLIC_URL }, now: () => at }, scheduleId, {
+        expect(await schedulesRepo.finishRun(tx as never, runId, finished)).toBe(true);
+        await enqueueAlerts(tx as never, { settings: { linkUrl: PUBLIC_URL }, now: () => at } as never, scheduleId, {
           id: runId,
           ...finished,
         });

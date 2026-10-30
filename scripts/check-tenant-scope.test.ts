@@ -101,8 +101,15 @@ describe('check:tenant-scope', () => {
       { rule: 'license-without-scope' },
     ]);
     expect(
-      findScopeMints('packages/server/src/schedules/scheduler.ts', 'await this.env.license().stateWithoutScope();'),
+      findScopeMints(
+        'packages/server/src/audit-log/forward/forwarder.ts',
+        'await this.deps.license().stateWithoutScope();',
+      ),
     ).toEqual([]);
+    // The scheduler reads each tenant's license since Task 13.
+    expect(
+      findScopeMints('packages/server/src/schedules/scheduler.ts', 'await this.env.license().stateWithoutScope();'),
+    ).toHaveLength(1);
   });
 
   it('refuses a new raw read of the public URL, in any spelling', () => {

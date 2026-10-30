@@ -161,7 +161,7 @@ export function testSettings(overrides: Partial<SchedulesSettings> = {}): Schedu
     concurrency: 2,
     maxAgeDays: 90,
     maxSnapshotBytes: 1024 * 1024,
-    linkUrl: 'https://wirebench.example.test',
+    linkUrl: () => 'https://wirebench.example.test',
     ...overrides,
   };
 }
@@ -174,7 +174,7 @@ export function executorEnv(
   overrides: Partial<ExecutorEnv> = {},
 ): ExecutorEnv {
   return {
-    db: c.h.db,
+    tenancy: c.h.ctx.tenancy,
     hooks: c.h.hooks,
     settings: testSettings(),
     snapshot: () => Promise.resolve(files === null ? { head: null, files: [] } : { head: HEAD, files: [...files] }),
@@ -199,7 +199,7 @@ export async function seedRun(
   } = {},
 ): Promise<{ readonly scheduleId: string; readonly runId: string }> {
   const scheduleId = newId();
-  await repo.insertSchedule(c.h.db, {
+  await repo.insertSchedule(c.h.tdb, {
     id: scheduleId,
     workspaceId: c.workspaceId,
     name: `Nightly ${scheduleId}`,
@@ -215,9 +215,9 @@ export async function seedRun(
   });
   if (input.secret !== false) {
     const key = Buffer.from(SCHEDULES_KEY, 'base64');
-    await repo.setScheduleSecrets(c.h.db, scheduleId, { API_KEY: sealValue(key, API_KEY) }, c.h.clock.now);
+    await repo.setScheduleSecrets(c.h.tdb, scheduleId, { API_KEY: sealValue(key, API_KEY) }, c.h.clock.now);
   }
   const runId = newId();
-  await repo.insertRun(c.h.db, { id: runId, scheduleId, trigger: 'manual', status: 'running', at: c.h.clock.now });
+  await repo.insertRun(c.h.tdb, { id: runId, scheduleId, trigger: 'manual', status: 'running', at: c.h.clock.now });
   return { scheduleId, runId };
 }

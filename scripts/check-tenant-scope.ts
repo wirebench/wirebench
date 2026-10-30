@@ -59,13 +59,11 @@ export const SCOPE_MINTS: Readonly<
     'packages/server/src/serve.ts',
     'packages/server/src/identity/cli.ts',
   ],
-  // The license where no scope exists yet (tenancy Task 9): the scheduler's pass and alert outbox until Task 13,
-  // the audit forwarder until Task 14, which move each into the job loop.
+  // The license where no scope exists yet (tenancy Task 9): the audit forwarder until Task 14 moves it into the
+  // job loop. The scheduler's pass and alert outbox read each tenant's since Task 13.
   stateWithoutScope: [
     'packages/server/src/context.ts',
     'packages/server/src/licensing/service.ts',
-    'packages/server/src/schedules/scheduler.ts',
-    'packages/server/src/schedules/alerts/outbox.ts',
     'packages/server/src/audit-log/forward/forwarder.ts',
   ],
 };
@@ -89,12 +87,11 @@ export const OPERATOR_URL_ALLOWED: readonly string[] = [
 ];
 
 /**
- * Where nothing gives a scope yet (`tenancy/urls.ts`): the admin command line until Task 16, the scheduler's
- * alert links until Task 13, and the server-wide SAML provider until slice 7.
+ * Where nothing gives a scope yet (`tenancy/urls.ts`): the admin command line until Task 16 and the server-wide
+ * SAML provider until slice 7.
  */
 export const URL_WITHOUT_SCOPE_ALLOWED: readonly string[] = [
   'packages/server/src/identity/cli.ts',
-  'packages/server/src/schedules/settings.ts',
   'packages/server/src/sso/module.ts',
   URLS_FILE,
 ];

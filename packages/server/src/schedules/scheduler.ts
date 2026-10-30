@@ -8,22 +8,35 @@
  * cancels it and aborts the runs in flight, which end `cancelled` with reason `shutdown`. A run left
  * `running` by a server that died ends `interrupted` once it is past its deadline: the first pass after
  * a restart finds it, and a server sharing the database finds it too.
+ *
+ * Every pass goes through the job loop, one unit per tenant (hosted edition spec §19.8 guard 6): each tenant's
+ * license is read there, so a tenant without `scheduled-runs` skips only its own schedules. Queued runs start
+ * round-robin across the licensed tenants under the unchanged server-wide cap, from a pass and from a finished
+ * run alike, so one tenant's backlog cannot starve another's. Runs in flight are keyed `tenantId:runId`.
  */
 import type { LicenseService } from '../context.js';
 import { newId } from '../identity/tokens.js';
-import { enqueueAlerts } from './alerts/outbox.js';
+import type { TenantScope } from '../tenancy/scope.js';
+import type { TenantQuerier } from '../tenancy/tenant-db.js';
+import type { Tenancy } from '../tenancy/tenancy.js';
+import { enqueueAlertsOrWarn } from './alerts/outbox.js';
 import { nextFire } from './cron.js';
 import { executeRun, type AbortReason, type ExecutorEnv } from './executor.js';
 import * as repo from './repo.js';
 
 export const SCHEDULER_TICK_MS = 15_000;
-/** The most schedules one pass fires; the rest wait for the next pass. */
+/** The most schedules one pass fires in one tenant; the rest wait for the next pass. */
 const FIRE_BATCH = 100;
+/** The pass's name in the job loop's log lines. */
+export const SCHEDULER_JOB = 'scheduler';
 
 export interface SchedulerEnv extends ExecutorEnv {
+  readonly tenancy: Pick<Tenancy, 'db' | 'forEachTenant'>;
   readonly license: () => LicenseService;
   /** The executor by default; a test seam. */
-  readonly execute?: (runId: string, signal: AbortSignal) => Promise<void>;
+  readonly execute?: (runId: string, signal: AbortSignal, scope: TenantScope) => Promise<void>;
+  /** Claims up to `limit` of one tenant's queued runs, marking them running; a test seam. */
+  readonly claimQueued?: (tx: TenantQuerier, limit: number, at: Date) => Promise<string[]>;
 }
 
 export interface SchedulerPass {
@@ -37,9 +50,16 @@ export class Scheduler {
   private timer: { cancel(): void } | undefined;
   private passing: Promise<SchedulerPass> | undefined;
   private stopped = false;
+  /** By `tenantId:runId`: run ids are per tenant. */
   private readonly inFlight = new Map<string, { readonly abort: AbortController; readonly done: Promise<void> }>();
   /** Starts a finished run set off outside a pass, so `idle` waits for them too. */
   private readonly starting = new Set<Promise<void>>();
+  /** The tenants whose license has the feature, as the last pass found them; queued runs start from these. */
+  private licensed: TenantScope[] = [];
+  /** The tenant after the one that last got a run started: where the round-robin goes on. */
+  private turn: string | undefined;
+  /** One start at a time, so two finished runs freeing two slots cannot claim past the cap. */
+  private starts: Promise<number> = Promise.resolve(0);
 
   constructor(private readonly env: SchedulerEnv) {}
 
@@ -56,9 +76,9 @@ export class Scheduler {
     return this.passing;
   }
 
-  /** Aborts a run this server is running; false when it runs elsewhere or not at all. */
-  cancel(runId: string): boolean {
-    const run = this.inFlight.get(runId);
+  /** Aborts a run this server is running in `scope`'s tenant; false when it runs elsewhere or not at all. */
+  cancel(scope: TenantScope, runId: string): boolean {
+    const run = this.inFlight.get(runKey(scope, runId));
     run?.abort.abort('cancelled' satisfies AbortReason);
     return run !== undefined;
   }
@@ -106,68 +126,109 @@ export class Scheduler {
 
   private async pass(): Promise<SchedulerPass> {
     if (this.stopped) return { fired: 0, started: 0 };
-    // Without the feature nothing new fires or starts; runs under way finish.
-    const state = await this.env.license().stateWithoutScope();
-    if (!state.features.includes('scheduled-runs')) return { fired: 0, started: 0 };
-    // A run whose server died ends `interrupted` once past its deadline, frees its schedule and counts as
-    // an errored run for its alerts.
-    await this.env.db.transaction(async (tx) => {
-      for (const run of await repo.interruptStaleRuns(tx, this.env.now())) {
-        await enqueueAlerts(tx, this.env, run.scheduleId, {
-          ...run,
-          status: 'errored',
-          reason: 'interrupted',
-          summary: null,
-          results: [],
-        });
-      }
-    });
-    const fired = await this.fire();
+    let fired = 0;
+    const licensed: TenantScope[] = [];
+    await this.env.tenancy.forEachTenant(
+      SCHEDULER_JOB,
+      async (tx, scope) => {
+        // Without the feature nothing new fires or starts in this tenant; its runs under way finish.
+        if (!(await this.env.license().state(scope, tx)).features.includes('scheduled-runs')) return;
+        licensed.push(scope);
+        // A run whose server died ends `interrupted` once past its deadline, frees its schedule and counts as
+        // an errored run for its alerts.
+        for (const run of await repo.interruptStaleRuns(tx, this.env.now())) {
+          await enqueueAlertsOrWarn(tx, this.env, run.scheduleId, {
+            ...run,
+            status: 'errored',
+            reason: 'interrupted',
+            summary: null,
+            results: [],
+          });
+        }
+        fired += await this.fire(tx);
+      },
+      this.env.log,
+    );
+    this.licensed = licensed;
     const started = await this.startQueued();
     return { fired, started };
   }
 
-  /** Queues a run (or a `skipped` one) for each due schedule, and moves its next fire past now. */
-  private fire(): Promise<number> {
+  /** Queues a run (or a `skipped` one) for each of the tenant's due schedules, and moves its next fire past now. */
+  private async fire(tx: TenantQuerier): Promise<number> {
     const now = this.env.now();
-    return this.env.db.transaction(async (tx) => {
-      const due = await repo.claimDueSchedules(tx, now, FIRE_BATCH);
-      for (const schedule of due) {
-        const open = await repo.hasOpenRun(tx, schedule.id);
-        await repo.insertRun(tx, {
-          id: newId(),
-          scheduleId: schedule.id,
-          trigger: 'schedule',
-          status: open ? 'skipped' : 'queued',
-          ...(open ? { reason: 'overlap' } : {}),
-          at: now,
-        });
-        await repo.setNextRunAt(tx, schedule.id, nextFire(schedule.cron, schedule.timeZone, now));
+    const due = await repo.claimDueSchedules(tx, now, FIRE_BATCH);
+    for (const schedule of due) {
+      const open = await repo.hasOpenRun(tx, schedule.id);
+      await repo.insertRun(tx, {
+        id: newId(),
+        scheduleId: schedule.id,
+        trigger: 'schedule',
+        status: open ? 'skipped' : 'queued',
+        ...(open ? { reason: 'overlap' } : {}),
+        at: now,
+      });
+      await repo.setNextRunAt(tx, schedule.id, nextFire(schedule.cron, schedule.timeZone, now));
+    }
+    return due.length;
+  }
+
+  /** Starts queued runs while this server has room, one start at a time. */
+  private startQueued(): Promise<number> {
+    const next = this.starts.then(
+      () => this.startRoundRobin(),
+      () => this.startRoundRobin(),
+    );
+    this.starts = next.catch(() => 0);
+    return next;
+  }
+
+  /**
+   * Round-robin across the licensed tenants, one run per tenant per turn, oldest first within each, until the
+   * cap is reached or no tenant has a queued run. Each claim is one unit of its tenant.
+   */
+  private async startRoundRobin(): Promise<number> {
+    const tenants = this.licensed;
+    if (tenants.length === 0) return 0;
+    const claim = this.env.claimQueued ?? ((tx, limit, at) => repo.claimQueuedRuns(tx, limit, at));
+    const from = Math.max(
+      0,
+      tenants.findIndex((scope) => scope.tenantId === this.turn),
+    );
+    let started = 0;
+    let idle = 0;
+    for (let i = from; idle < tenants.length; i = (i + 1) % tenants.length) {
+      if (this.stopped || this.settingsFree() <= 0) break;
+      const scope = tenants[i]!;
+      const [runId] = await this.env.tenancy.db(scope).transaction((tx) => claim(tx, 1, this.env.now()));
+      if (runId === undefined) {
+        idle++;
+        continue;
       }
-      return due.length;
-    });
+      idle = 0;
+      this.turn = tenants[(i + 1) % tenants.length]!.tenantId;
+      this.launch(scope, runId);
+      started++;
+    }
+    return started;
   }
 
-  /** Starts queued runs, oldest first, while this server has room. */
-  private async startQueued(): Promise<number> {
-    const free = this.env.settings.concurrency - this.inFlight.size;
-    if (free <= 0 || this.stopped) return 0;
-    const claimed = await this.env.db.transaction((tx) => repo.claimQueuedRuns(tx, free, this.env.now()));
-    for (const runId of claimed) this.launch(runId);
-    return claimed.length;
+  private settingsFree(): number {
+    return this.env.settings.concurrency - this.inFlight.size;
   }
 
-  private launch(runId: string): void {
+  private launch(scope: TenantScope, runId: string): void {
     const abort = new AbortController();
     // Claimed while a stop was under way: it is marked running, so it runs straight into the shutdown.
     if (this.stopped) abort.abort('shutdown' satisfies AbortReason);
-    const execute = this.env.execute ?? ((id, signal) => executeRun(this.env, id, signal));
-    const done = execute(runId, abort.signal)
+    const execute = this.env.execute ?? ((id: string, signal: AbortSignal) => executeRun(this.env, scope, id, signal));
+    const key = runKey(scope, runId);
+    const done = execute(runId, abort.signal, scope)
       .catch((error: unknown) => {
-        this.env.log.error({ runId, message: messageOf(error) }, 'scheduled run failed');
+        this.env.log.error({ runId, tenantId: scope.tenantId, message: messageOf(error) }, 'scheduled run failed');
       })
       .finally(() => {
-        this.inFlight.delete(runId);
+        this.inFlight.delete(key);
         // A slot came free: start the next queued run now rather than at the next tick.
         if (!this.stopped) {
           const start: Promise<void> = this.startQueued()
@@ -179,6 +240,8 @@ export class Scheduler {
           this.starting.add(start);
         }
       });
-    this.inFlight.set(runId, { abort, done });
+    this.inFlight.set(key, { abort, done });
   }
 }
+
+const runKey = (scope: TenantScope, runId: string): string => `${scope.tenantId}:${runId}`;

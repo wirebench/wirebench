@@ -36,7 +36,7 @@ describeDb('scheduled-run fire sites (scheduled-runs spec §3.9)', () => {
     const events = recordingAudit(c.h.hooks);
     const files = await workspaceSnapshot([probe('Fail', `${server.url}/fail`)]);
     const { scheduleId, runId } = await seedRun(c);
-    await executeRun(executorEnv(c, files, tmpRoot), runId, new AbortController().signal);
+    await executeRun(executorEnv(c, files, tmpRoot), c.h.tdb.scope, runId, new AbortController().signal);
     expect(events.filter((event) => event.action === 'schedule.run_finished')).toEqual([
       expect.objectContaining({
         actor: { kind: 'system' },
@@ -66,7 +66,7 @@ describeDb('scheduled-run fire sites (scheduled-runs spec §3.9)', () => {
     const files = await workspaceSnapshot([probe('Ok', `${server.url}/ok`)]);
     const { runId } = await seedRun(c);
     await c.h.db.query("update schedule_runs set status = 'cancelled' where id = $1", [runId]);
-    await executeRun(executorEnv(c, files, tmpRoot), runId, new AbortController().signal);
+    await executeRun(executorEnv(c, files, tmpRoot), c.h.tdb.scope, runId, new AbortController().signal);
     expect(events.filter((event) => event.action === 'schedule.run_finished')).toEqual([]);
   });
 });
