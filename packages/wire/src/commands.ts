@@ -67,6 +67,7 @@ export const COMMAND_IDS = [
   'view.showCookies',
   'view.showSettings',
   'view.toggleTheme',
+  'view.choosePalette',
   'preferences.open',
   'preferences.keyboardShortcuts',
   'definition.import',

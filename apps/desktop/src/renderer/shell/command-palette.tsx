@@ -2,6 +2,7 @@ import { Fragment, useEffect, useMemo, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { Command } from 'cmdk';
 import type { CommandCategory } from '@shared/commands.js';
+import { PALETTES, type Palette } from '@shared/palettes.js';
 import { explorerActions } from '../features/explorer/explorer-actions.js';
 import { RENDERER_KINDS, rendererKind } from '../kinds/index.js';
 import { connectQuick, openInNewTab, openTerminalFor, saveQuickAsHost } from '../features/ssh/connect.js';
@@ -21,6 +22,8 @@ import { useSnippetsStore } from '../features/ssh/snippets/snippets-store.js';
 import type { CommandContext } from '../lib/commands.js';
 import { listPaletteCommands, runCommand, type PaletteCommand } from '../lib/commands.js';
 import { effectiveShortcut, formatKeybinding } from '../lib/keybindings.js';
+import { endPalettePreview, PALETTE_LABEL, previewPalette } from '../lib/theme.js';
+import { choosePalette } from '../lib/theme-actions.js';
 import { useProjectStore } from '../state/project.js';
 import { useUiStore } from '../state/ui.js';
 import { paletteFilter, paletteKeywords } from './palette-filter.js';
@@ -44,7 +47,7 @@ import {
  * is on, `start-forward`) or to stop (every one this window runs or has failed, `stop-forward`), or the
  * forwarding groups to start (every group with a rule that can run and is not running, `start-forward-group`)
  * or to stop (every group with a rule this window holds, `stop-forward-group`), or only the snippets, to run
- * (`snippets`).
+ * (`snippets`), or the colour themes, previewed as the highlight moves (`palette`).
  */
 export type PaletteMode =
   | 'commands'
@@ -57,7 +60,8 @@ export type PaletteMode =
   | 'stop-forward'
   | 'start-forward-group'
   | 'stop-forward-group'
-  | 'snippets';
+  | 'snippets'
+  | 'palette';
 
 export interface CommandPaletteProps {
   readonly open: boolean;
@@ -238,6 +242,28 @@ export function CommandPalette({ open, onOpenChange, context, mode = 'commands' 
   useEffect(() => {
     setSearch('');
   }, [mode, open]);
+  // The colour theme picker: the highlight starts on the stored colour theme, and every move
+  // previews the one under it. Closing it any way but Enter, or switching mode, ends the preview,
+  // which puts the stored colour theme back (Enter has written the new one by then).
+  const palettePicker = mode === 'palette';
+  const storedPalette = useUiStore((state) => state.palette);
+  const [highlight, setHighlight] = useState<string>(storedPalette);
+  useEffect(() => {
+    if (open && palettePicker) {
+      setHighlight(useUiStore.getState().palette);
+    }
+  }, [open, palettePicker]);
+  useEffect(() => {
+    if (!open || !palettePicker) return undefined;
+    return () => {
+      endPalettePreview();
+    };
+  }, [open, palettePicker]);
+  const moveHighlight = (value: string): void => {
+    setHighlight(value);
+    const palette = PALETTES.find((each) => each === value);
+    if (palette !== undefined) previewPalette(palette);
+  };
   const rankedGroups = useMemo(
     () => rankGroups(groups, search, (row: PaletteCommand) => row.command),
     [groups, search],
@@ -365,33 +391,36 @@ export function CommandPalette({ open, onOpenChange, context, mode = 'commands' 
   const groupPicker = mode === 'start-forward-group' || mode === 'stop-forward-group';
   const snippetsPicker = mode === 'snippets';
   const hostsOnly = mode === 'hosts' || filesPicker || newTabPicker;
-  const picker = quickOpen || hostsOnly || layoutsPicker || forwardPicker || groupPicker || snippetsPicker;
+  const picker =
+    quickOpen || hostsOnly || layoutsPicker || forwardPicker || groupPicker || snippetsPicker || palettePicker;
   // A search that names a server (`user@host:port`) can connect to it without saving it first (#537).
   const quickTarget = sshEnabled && (mode === 'hosts' || newTabPicker) ? parseQuickTarget(search) : undefined;
   const savedTargetIds =
     quickTarget === undefined ? [] : savedHostsFor(quickTarget, resolvedHosts).map((host) => `host:${host.id}`);
   const savedTargetHosts = hostEntries.filter((entry) => savedTargetIds.includes(entry.key));
-  const title = snippetsPicker
-    ? 'Run snippet'
-    : groupPicker
-      ? mode === 'start-forward-group'
-        ? 'Start forwarding group'
-        : 'Stop forwarding group'
-      : forwardPicker
-        ? mode === 'start-forward'
-          ? 'Start port forward'
-          : 'Stop port forward'
-        : layoutsPicker
-          ? 'Open layout'
-          : filesPicker
-            ? 'Open files on host'
-            : newTabPicker
-              ? 'Open host in new tab'
-              : hostsOnly
-                ? 'Connect to host'
-                : quickOpen
-                  ? 'Go to operation or request'
-                  : 'Command palette';
+  const title = palettePicker
+    ? 'Choose colour theme'
+    : snippetsPicker
+      ? 'Run snippet'
+      : groupPicker
+        ? mode === 'start-forward-group'
+          ? 'Start forwarding group'
+          : 'Stop forwarding group'
+        : forwardPicker
+          ? mode === 'start-forward'
+            ? 'Start port forward'
+            : 'Stop port forward'
+          : layoutsPicker
+            ? 'Open layout'
+            : filesPicker
+              ? 'Open files on host'
+              : newTabPicker
+                ? 'Open host in new tab'
+                : hostsOnly
+                  ? 'Connect to host'
+                  : quickOpen
+                    ? 'Go to operation or request'
+                    : 'Command palette';
 
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
@@ -409,18 +438,22 @@ export function CommandPalette({ open, onOpenChange, context, mode = 'commands' 
             // The commands rank a search naming their group first; ⌘P ranks a request by its name before its
             // breadcrumb; the other pickers keep cmdk's own order.
             {...(quickOpen ? { filter: quickOpenFilter } : picker ? {} : { filter: paletteFilter })}
+            // The colour theme picker owns its highlight, so it can preview what is under it.
+            {...(palettePicker ? { value: highlight, onValueChange: moveHighlight } : {})}
             label={
-              snippetsPicker
-                ? 'Snippets'
-                : forwardPicker
-                  ? 'Port forwards'
-                  : layoutsPicker
-                    ? 'Layouts'
-                    : hostsOnly
-                      ? 'Hosts'
-                      : quickOpen
-                        ? 'Operations, requests and hosts'
-                        : 'Commands'
+              palettePicker
+                ? 'Colour themes'
+                : snippetsPicker
+                  ? 'Snippets'
+                  : forwardPicker
+                    ? 'Port forwards'
+                    : layoutsPicker
+                      ? 'Layouts'
+                      : hostsOnly
+                        ? 'Hosts'
+                        : quickOpen
+                          ? 'Operations, requests and hosts'
+                          : 'Commands'
             }
           >
             <Command.Input
@@ -432,20 +465,42 @@ export function CommandPalette({ open, onOpenChange, context, mode = 'commands' 
             />
             <Command.List className="max-h-[320px] overflow-auto p-1">
               <Command.Empty className="px-3 py-6 text-center text-sm text-fg-subtle">
-                {snippetsPicker
-                  ? 'No matching snippet.'
-                  : groupPicker
-                    ? 'No matching forwarding group.'
-                    : forwardPicker
-                      ? 'No matching forward.'
-                      : layoutsPicker
-                        ? 'No matching layout.'
-                        : hostsOnly
-                          ? 'No matching host.'
-                          : quickOpen
-                            ? 'No matching operation or request.'
-                            : 'No matching command.'}
+                {palettePicker
+                  ? 'No matching colour theme.'
+                  : snippetsPicker
+                    ? 'No matching snippet.'
+                    : groupPicker
+                      ? 'No matching forwarding group.'
+                      : forwardPicker
+                        ? 'No matching forward.'
+                        : layoutsPicker
+                          ? 'No matching layout.'
+                          : hostsOnly
+                            ? 'No matching host.'
+                            : quickOpen
+                              ? 'No matching operation or request.'
+                              : 'No matching command.'}
               </Command.Empty>
+              {palettePicker &&
+                PALETTES.map((palette: Palette) => (
+                  <Command.Item
+                    key={palette}
+                    value={palette}
+                    keywords={[PALETTE_LABEL[palette]]}
+                    data-testid="palette-colour-theme"
+                    data-colour-theme={palette}
+                    {...(palette === storedPalette ? { 'data-current': 'true' } : {})}
+                    onSelect={() => {
+                      choosePalette(palette);
+                      endPalettePreview();
+                      onOpenChange(false);
+                    }}
+                    className="flex cursor-default items-center justify-between gap-3 rounded-md px-2 py-1.5 text-md text-fg-muted data-[selected=true]:bg-surface-selected data-[selected=true]:text-fg-default"
+                  >
+                    <span className="truncate">{PALETTE_LABEL[palette]}</span>
+                    {palette === storedPalette && <span className="text-xs text-fg-subtle">Current</span>}
+                  </Command.Item>
+                ))}
               {quickOpen &&
                 entries.map((entry) => (
                   <Command.Item

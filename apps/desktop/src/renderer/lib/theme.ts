@@ -179,9 +179,66 @@ export function useResolvedTheme(preference: ThemePreference): ResolvedTheme {
   return preference === 'system' ? os : preference;
 }
 
-/** The colour theme the window wears, as mirrored into the ui store from preferences. */
+/**
+ * The colour theme the command palette's picker is showing while its highlight moves, or
+ * `undefined` when nothing is being previewed. Deliberately outside the ui store: that store is
+ * persisted to `localStorage` and mirrors preferences, and a preview must touch neither.
+ */
+let previewed: Palette | undefined;
+const previewListeners = new Set<() => void>();
+
+function subscribePreview(listener: () => void): () => void {
+  previewListeners.add(listener);
+  return () => {
+    previewListeners.delete(listener);
+  };
+}
+
+function getPreview(): Palette | undefined {
+  return previewed;
+}
+
+function setPreview(next: Palette | undefined): void {
+  if (next === previewed) {
+    return;
+  }
+  previewed = next;
+  for (const listener of previewListeners) {
+    listener();
+  }
+}
+
+/**
+ * Shows `palette` on the whole window without choosing it: `<html data-palette>` for the chrome
+ * and the terminals, and {@link usePalette} for Monaco. Nothing is written; {@link endPalettePreview}
+ * puts the stored colour theme back.
+ */
+export function previewPalette(palette: Palette): void {
+  setPreview(palette);
+  applyPalette(palette);
+}
+
+/**
+ * Ends a preview, re-applying the stored colour theme — the one that was active, or the one just
+ * chosen, since choosing writes preferences (and so the ui store) synchronously first. A no-op
+ * when nothing is being previewed.
+ */
+export function endPalettePreview(): void {
+  if (previewed === undefined) {
+    return;
+  }
+  setPreview(undefined);
+  applyPalette(useUiStore.getState().palette);
+}
+
+/**
+ * The colour theme the window wears: a picker's preview while one runs, else the one mirrored into
+ * the ui store from preferences.
+ */
 export function usePalette(): Palette {
-  return useUiStore((state) => state.palette);
+  const stored = useUiStore((state) => state.palette);
+  const preview = useSyncExternalStore(subscribePreview, getPreview, getPreview);
+  return preview ?? stored;
 }
 
 /**

@@ -229,7 +229,22 @@ describe('StatusBar', () => {
     const indicator = screen.getByTestId('status-bar-theme');
     expect(indicator.dataset['themePreference']).toBe('light');
     expect(indicator.textContent).toContain('Light');
-    expect(indicator.getAttribute('aria-label')).toBe('Theme: Light. Cycle theme');
+    expect(indicator.getAttribute('aria-label')).toBe('Theme: Light. Cycle mode');
+    expect(indicator.getAttribute('title')).toBe('Theme: Light. Cycle mode');
+  });
+
+  it('names a chosen colour theme beside the mode', () => {
+    useUiStore.setState({ theme: 'dark', palette: 'sandstone' });
+    try {
+      render(<StatusBar />);
+      const indicator = screen.getByTestId('status-bar-theme');
+      expect(indicator.textContent).toBe('Sandstone · Dark');
+      expect(indicator.getAttribute('aria-label')).toBe('Theme: Sandstone · Dark. Cycle mode');
+      expect(indicator.getAttribute('title')).toBe('Theme: Sandstone · Dark. Cycle mode');
+      expect(indicator.dataset['colourTheme']).toBe('sandstone');
+    } finally {
+      useUiStore.setState({ palette: 'default' });
+    }
   });
 
   it('names what `system` currently resolves to', () => {

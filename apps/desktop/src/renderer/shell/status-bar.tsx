@@ -1,7 +1,7 @@
 import { AlertTriangle, Moon, Sun, SunMoon, XCircle } from 'lucide-react';
 import { useShallow } from 'zustand/react/shallow';
 import { cycleTheme } from '../lib/theme-actions.js';
-import { THEME_LABEL, useResolvedTheme } from '../lib/theme.js';
+import { PALETTE_LABEL, THEME_LABEL, useResolvedTheme } from '../lib/theme.js';
 import { RENDERER_AREAS } from '../areas/index.js';
 import { useAppVersion } from '../lib/use-app-version.js';
 import { updateStatusLabel, useUpdateStatus } from '../lib/update-status.js';
@@ -28,15 +28,19 @@ const RECORDED_TOOLTIP =
 const THEME_ICON = { dark: Moon, light: Sun, system: SunMoon } as const;
 
 /**
- * The status bar's theme indicator: names the current preference and, for `system`, what it
- * currently resolves to. Clicking it runs the same `view.toggleTheme` cycle the palette does,
- * so there is exactly one code path for changing the theme.
+ * The status bar's theme indicator: names the colour theme (unless it is Default) and the mode
+ * and, for `system`, what it currently resolves to. Clicking it runs the same `view.toggleTheme`
+ * mode cycle the command palette does, so there is exactly one code path for changing the mode.
  */
 function ThemeIndicator() {
   const preference = useUiStore((state) => state.theme);
   const resolved = useResolvedTheme(preference);
   const Icon = THEME_ICON[preference];
-  const label = preference === 'system' ? `System (${THEME_LABEL[resolved]})` : THEME_LABEL[preference];
+  const palette = useUiStore((state) => state.palette);
+  const mode = preference === 'system' ? `System (${THEME_LABEL[resolved]})` : THEME_LABEL[preference];
+  // Default names the mode alone, as before colour themes; another colour theme leads.
+  const label = palette === 'default' ? mode : `${PALETTE_LABEL[palette]} · ${mode}`;
+  const description = `Theme: ${label}. Cycle mode`;
 
   return (
     <button
@@ -44,8 +48,9 @@ function ThemeIndicator() {
       data-testid="status-bar-theme"
       data-theme-preference={preference}
       data-theme-resolved={resolved}
-      title="Cycle theme: dark, light, system"
-      aria-label={`Theme: ${label}. Cycle theme`}
+      data-colour-theme={palette}
+      title={description}
+      aria-label={description}
       className="flex items-center gap-1 rounded-sm px-1 hover:bg-surface-hover hover:text-fg-default"
       onClick={() => {
         cycleTheme();
