@@ -33,12 +33,13 @@ describe('wirebench-server bin', () => {
 describeDb('migrate --check against PostgreSQL', () => {
   let db: Awaited<ReturnType<typeof testDatabase>>;
   beforeAll(async () => {
-    db = await testDatabase();
+    db = await testDatabase({ migrated: false });
   });
   afterAll(() => db.close());
 
+  // `migrate` is the owner's to run.
   it('reports pending, applies, then reports up to date', async () => {
-    const env = { WIREBENCH_SERVER_DATABASE_URL: db.url, WIREBENCH_SERVER_PUBLIC_URL: 'https://x.test' };
+    const env = { WIREBENCH_SERVER_DATABASE_URL: db.ownerUrl, WIREBENCH_SERVER_PUBLIC_URL: 'https://x.test' };
     expect((await exec(['migrate', '--check'], env)).code).toBe(1);
     expect((await exec(['migrate'], env)).code).toBe(0);
     expect((await exec(['migrate', '--check'], env)).code).toBe(0);

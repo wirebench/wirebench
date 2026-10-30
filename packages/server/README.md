@@ -10,7 +10,9 @@ database, one data directory; run it behind TLS. Design: `docs/specs/2026-09-24-
 <!-- config:start -->
 | Variable | Required | Default | Meaning |
 | --- | --- | --- | --- |
-| `WIREBENCH_SERVER_DATABASE_URL` | yes | — | PostgreSQL connection string. Never logged. |
+| `WIREBENCH_SERVER_MODE` | no | `self-hosted` | How the server runs. Only `self-hosted` is accepted: one organisation, reached by whatever names point at it. From the next release; 6.1.0 ignores it. |
+| `WIREBENCH_SERVER_DATABASE_URL` | yes | — | PostgreSQL connection string. Every query runs as its role. With a migration URL set beside it, it may go through a pooler. Never logged. |
+| `WIREBENCH_SERVER_MIGRATION_DATABASE_URL` | no | `WIREBENCH_SERVER_DATABASE_URL` | PostgreSQL connection string for the role that owns the schema; a direct connection, never a pooler. Migrations, `admin tenancy role` and the server-running lock use it. When it names a role other than the database URL’s, the server creates that app role if it is missing and the owner may create roles, and grants it its privileges at every start. From the next release; 6.1.0 ignores it. Never logged. |
 | `WIREBENCH_SERVER_PUBLIC_URL` | yes | — | The `https://…` origin clients use; no path, query or trailing slash. |
 | `WIREBENCH_SERVER_DATA_DIR` | no | `/data` | Repositories and temporary files. |
 | `WIREBENCH_SERVER_HOST` | no | `0.0.0.0` | Listen address. |
@@ -67,6 +69,8 @@ database, one data directory; run it behind TLS. Design: `docs/specs/2026-09-24-
 
     docker compose -f packages/server/compose.yaml up
 
+Requires PostgreSQL 15 or later: start-up and `migrate` refuse an older server with `server-postgres-too-old`.
+
 Runs `ghcr.io/wirebench/wirebench-server` beside PostgreSQL 16 with a named volume each. Both ports
 are published on `127.0.0.1` only: the server on `WIREBENCH_HTTP_PORT` (default `8080`) and the
 database on `WIREBENCH_DB_PORT` (default `5432`); set either when the default is taken. Outside
@@ -77,6 +81,42 @@ in-process. `wirebench-server migrate` applies schema migrations ahead of a rest
 `wirebench-server migrate --check` exits 1 while any are pending; `wirebench-server config check`
 lists each variable as set, defaulted or missing without printing values. `/healthz` reports
 pass/fail per check (database, data directory, git) and nothing else.
+
+### Database roles
+
+The server can use two PostgreSQL roles. The role in `WIREBENCH_SERVER_MIGRATION_DATABASE_URL` owns the
+schema and runs the migrations; the role in `WIREBENCH_SERVER_DATABASE_URL`, the app role, runs every
+query and owns nothing. With two URLs, the server connects as the owner at every start, creates the app
+role when it is missing and the owner may create roles (`login nosuperuser nobypassrls noinherit`, its
+password stored as a SCRAM-SHA-256 verifier), and grants it its privileges. `compose.yaml` does this with
+`wirebench` as the owner and `wirebench_app` as the app role, so an existing volume starts as well.
+
+With only `WIREBENCH_SERVER_DATABASE_URL` set, that one role migrates and queries, as before, and start-up
+logs a warning that row-level security does not apply to it. Two URLs that name the same role are one role
+too: the migrations run over the migration URL. With two roles, both must be `postgres://` URLs that name
+their users, and the app URL must name the password the role is created with.
+
+**The migration URL must be a direct connection; the app URL may go through a pooler.** The server holds a
+session-level lock for its whole life (a revert checks it), and holds it on the migration URL, which a
+transaction pooler would break. With one URL, that URL holds it, so it must be direct too.
+
+**A database restart does not stop the server**, as long as the database is back within about two minutes:
+the lock is taken again, with a growing delay, while the database refuses connections. After that the server
+exits with code 3, and a supervisor such as compose's `restart:` starts it again. It exits at once only when
+`admin tenancy revert` holds the lock.
+
+To switch an installation outside compose, run `wirebench-server admin tenancy role` with both URLs set, then
+restart. When the owner may not create roles, `admin tenancy role --print-sql` prints the statements instead:
+the `create role` for a role with `CREATEROLE`, the rest for the owner. That output holds the app role's
+password as a SCRAM-SHA-256 verifier, so handle it as a secret.
+
+The app role is created once and its password is never changed afterwards: after changing it in the URL, set it
+on the role too, as the owner, or the server refuses to start. In `psql`, `\password wirebench_app` asks for it
+and sends only a SCRAM-SHA-256 verifier, so the password never reaches the server's statement log, which a
+plain `alter role … password '…'` would. The role is shared by
+every database of the cluster, since PostgreSQL roles are. Going back is pointing
+`WIREBENCH_SERVER_DATABASE_URL` at the owner again and unsetting the migration URL; unsetting only the
+migration URL would leave migrations to the app role, which may not create tables.
 
 The image carries the browser client's build. A server run from a checkout with
 `WIREBENCH_SERVER_BROWSER_CLIENT` on needs it too, or it refuses to start: run

@@ -57,11 +57,31 @@ All notable changes to this project are documented here. The format follows
   sealed under `~/.wirebench/agent/agent.key`, protected only by its file mode (on macOS and Linux the
   agent refuses to start when the folder or key is open to others). It has no team secrets: use the
   desktop app for those. It is a separate agent from the desktop app's, with its own pairings and allowlist.
+- **Server: a database role of its own for the server's queries (#798).** Set
+  `WIREBENCH_SERVER_MIGRATION_DATABASE_URL` to the role that owns the schema, and
+  `WIREBENCH_SERVER_DATABASE_URL` to an app role that owns nothing. The server migrates as the owner,
+  creates the app role on first start when it is missing (its password stored only as a SCRAM-SHA-256
+  verifier), grants it what it needs at every start, and runs every query as it. The migration URL must be
+  a direct connection; the app URL may go through a pooler. `wirebench-server admin tenancy role` does the
+  same outside a start, and `--print-sql` prints the statements for an owner that may not create roles. The
+  contributors' `packages/server/compose.yaml` now uses `wirebench_app`.
 
 ### Changed
 - **Default's editor colours match the rest of the window (#803).** Monaco's comment, hint and
   line-number greys, and in light mode its accent, success and warning colours, now equal the
   Default tokens the app's chrome already uses; they had kept older values.
+- **Server: PostgreSQL 15 or later (#798).** Start-up and `migrate` refuse an older database with
+  `server-postgres-too-old`. The compose files already run PostgreSQL 16.
+- **Server: a start-up warning when one role does everything (#798).** A server whose one database URL is a
+  superuser, has `BYPASSRLS`, or owns the schema's tables still starts and upgrades as before, and logs a
+  warning that row-level security does not apply to that role, pointing at "Database roles" in the server
+  README.
+- **Server: the migration to tenants (#798).** The first start migrates the database to the multi-tenant
+  layout (migration `0020`): a single default tenant holds everything, and nothing users see changes. Large
+  databases take longer to start once; measure it on a copy first.
+- **Server: a database restart no longer leaves the server running blind (#798).** The server holds a
+  lock for its whole life. When the database goes away it takes the lock back as soon as the database
+  returns, for up to about two minutes, and then exits with code 3 for its supervisor to restart.
 - **The open editor tab stands out.** It carries an accent bar along its bottom edge, and the editor
   tab strip is taller, so the tab you are on is easy to pick out at a glance.
 - **Project and API pages use tabs.** The project page (General, Settings, Properties) and every API

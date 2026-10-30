@@ -8,7 +8,11 @@ services:
       db:
         condition: service_healthy
     environment:
-      WIREBENCH_SERVER_DATABASE_URL: postgres://wirebench:wirebench@db:5432/wirebench
+      # Two roles (README, "Database roles"): migrations run as wirebench, the owner every existing volume
+      # already has, and queries as wirebench_app, which owns nothing. At every start the server creates
+      # wirebench_app when it is missing and grants it its privileges, so an old volume starts too.
+      WIREBENCH_SERVER_MIGRATION_DATABASE_URL: postgres://wirebench:wirebench@db:5432/wirebench
+      WIREBENCH_SERVER_DATABASE_URL: postgres://wirebench_app:wirebench_app@db:5432/wirebench
       WIREBENCH_SERVER_PUBLIC_URL: http://localhost:${WIREBENCH_HTTP_PORT:-8080}
       WIREBENCH_SERVER_ALLOW_INSECURE_PUBLIC_URL: 'true'
     ports:

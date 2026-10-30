@@ -6,10 +6,17 @@
  */
 import { isIP } from 'node:net';
 import { isAbsolute, resolve } from 'node:path';
-import { isCanonicalBase64 } from '@wirebench/engine';
+import { isCanonicalBase64, type EgressPolicy } from '@wirebench/engine';
 import { z } from 'zod';
 
 const LOG_LEVELS = ['fatal', 'error', 'warn', 'info', 'debug', 'trace'] as const;
+
+/** How the server serves its tenants (hosted edition spec §19.1); only `self-hosted` loads from the environment. */
+export const SERVER_MODES = ['self-hosted', 'hosted'] as const;
+export type ServerMode = (typeof SERVER_MODES)[number];
+
+/** Why `loadConfig` refuses `hosted` (spec §19.1). */
+export const HOSTED_REFUSED = 'hosted mode arrives with the control plane';
 
 // zod 4's `.default()` short-circuits the rest of the chain: a default applied after `.transform`
 // or `.pipe` is returned as-is, unparsed. Both helpers below take the default as a string and
@@ -106,7 +113,13 @@ const alertHostsText = z
   );
 
 const inputSchema = z.object({
+  // Both values parse, so the type has both, but `hosted` is refused here: tests build a hosted config directly.
+  mode: z
+    .enum(SERVER_MODES)
+    .default('self-hosted')
+    .refine((mode): boolean => mode !== 'hosted', HOSTED_REFUSED),
   databaseUrl: z.string().min(1),
+  migrationDatabaseUrl: z.string().min(1).optional(),
   publicUrl: originText,
   dataDir: z.string().min(1).default('/data'),
   host: z.string().min(1).default('0.0.0.0'),
@@ -171,6 +184,11 @@ type ConfigKey = keyof z.input<typeof inputSchema>;
 export interface ServerConfig extends z.output<typeof inputSchema> {
   /** The package version, for `/api/v1/meta` and `--version`. */
   readonly version: string;
+  /**
+   * The domain hosted tenants are named under, `<slug>.<appDomain>` (spec §19.5). Only tests set it in
+   * slice 4; slice 6 gives it its variable.
+   */
+  readonly appDomain?: string;
 }
 
 /** One documented environment variable. */
@@ -187,11 +205,30 @@ export interface ConfigVariable {
 
 export const CONFIG_VARIABLES: readonly ConfigVariable[] = [
   {
+    env: 'WIREBENCH_SERVER_MODE',
+    key: 'mode',
+    required: false,
+    defaultText: 'self-hosted',
+    secret: false,
+    description:
+      'How the server runs. Only `self-hosted` is accepted: one organisation, reached by whatever names point at it. From the next release; 6.1.0 ignores it.',
+  },
+  {
     env: 'WIREBENCH_SERVER_DATABASE_URL',
     key: 'databaseUrl',
     required: true,
     secret: true,
-    description: 'PostgreSQL connection string.',
+    description:
+      'PostgreSQL connection string. Every query runs as its role. With a migration URL set beside it, it may go through a pooler.',
+  },
+  {
+    env: 'WIREBENCH_SERVER_MIGRATION_DATABASE_URL',
+    key: 'migrationDatabaseUrl',
+    required: false,
+    defaultText: 'WIREBENCH_SERVER_DATABASE_URL',
+    secret: true,
+    description:
+      'PostgreSQL connection string for the role that owns the schema; a direct connection, never a pooler. Migrations, `admin tenancy role` and the server-running lock use it. When it names a role other than the database URL’s, the server creates that app role if it is missing and the owner may create roles, and grants it its privileges at every start. From the next release; 6.1.0 ignores it.',
   },
   {
     env: 'WIREBENCH_SERVER_PUBLIC_URL',
@@ -736,6 +773,28 @@ export function loadConfig(env: NodeJS.ProcessEnv, version: string): ServerConfi
     dataDir: isAbsolute(config.dataDir) ? config.dataDir : resolve(config.dataDir),
     version,
   };
+}
+
+/**
+ * Deletes both database URLs from `process.env` once the configuration is loaded: `GitCli` spreads
+ * `process.env` into every git child's environment, which would hand them the connection strings.
+ */
+export function forgetDatabaseUrls(): void {
+  delete process.env.WIREBENCH_SERVER_DATABASE_URL;
+  delete process.env.WIREBENCH_SERVER_MIGRATION_DATABASE_URL;
+}
+
+/**
+ * The egress rule for connections the server opens for users (spec §17.5): hosted mode always denies private
+ * ranges, whatever `WIREBENCH_SERVER_EGRESS_DENY_PRIVATE` says (§19.1).
+ */
+export function egressPolicyOf(config: Pick<ServerConfig, 'mode' | 'egressDenyPrivate'>): EgressPolicy {
+  return { denyPrivate: config.mode === 'hosted' || config.egressDenyPrivate };
+}
+
+/** The URL migrations run as: the owner's when it is set, else the one database URL. */
+export function migrationUrlOf(config: Pick<ServerConfig, 'databaseUrl' | 'migrationDatabaseUrl'>): string {
+  return config.migrationDatabaseUrl ?? config.databaseUrl;
 }
 
 export type ConfigStatus = 'set' | 'defaulted' | 'missing' | 'invalid';

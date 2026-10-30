@@ -134,7 +134,8 @@ describeDb('wirebench-server admin license (licensing spec §3.7)', () => {
   });
 
   it('a missing server_identity row is one stderr line, not a stack trace', async () => {
-    await db.query('delete from server_identity');
+    // The app role only reads server_identity, so the owner takes the row away.
+    await db.owner.query('delete from server_identity');
     const out = io();
     const code = await runAdmin({ command: 'admin-license-show' }, out.io, options);
     expect(code).not.toBe(0);
@@ -143,7 +144,7 @@ describeDb('wirebench-server admin license (licensing spec §3.7)', () => {
   });
 
   it('audit export still runs with the server_identity row deleted', async () => {
-    await db.query('delete from server_identity');
+    await db.owner.query('delete from server_identity');
     const exported = io();
     expect(await runAdmin({ command: 'admin-audit-export' }, exported.io, options)).toBe(0);
   });

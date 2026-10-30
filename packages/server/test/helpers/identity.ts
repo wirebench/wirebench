@@ -1,18 +1,16 @@
 import { join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import type { GitCli } from '@wirebench/engine';
-import { loadConfig } from '../../src/config.js';
-import type { ServerHooks, ServerModule } from '../../src/context.js';
-import { migrate } from '../../src/db/migrate.js';
-import { BUILTIN_MODULES } from '../../src/modules.js';
+import { loadConfig, type ServerConfig } from '../../src/config.js';
+import type { ServerContext, ServerHooks, ServerModule } from '../../src/context.js';
 import { identityModule } from '../../src/identity/module.js';
 import type { OidcProvider } from '../../src/identity/oidc.js';
 import { hashPassword } from '../../src/identity/passwords.js';
 import * as repo from '../../src/identity/repo.js';
 import { mintToken, newId } from '../../src/identity/tokens.js';
 import { NO_HOOKS_DIR, RepoStore } from '../../src/repos/repo-store.js';
-import { allMigrations } from '../../src/serve.js';
 import { buildServer } from '../../src/server.js';
+import type { TenantResolver } from '../../src/tenancy/resolve.js';
 import { testContext } from './context.js';
 import { testDatabase } from './database.js';
 import { mkTempDir, removeTempDir, testGit } from './git.js';
@@ -72,9 +70,15 @@ export async function identityHarness(
     readonly logStream?: NodeJS.WritableStream;
     /**
      * A schema an earlier harness used, to start the server again over the same data (a restart).
-     * The harness migrates it (a no-op when current) and leaves it open on `close`; its owner closes it.
+     * The harness leaves it open on `close`; its owner closes it.
      */
     readonly db?: Awaited<ReturnType<typeof testDatabase>>;
+    /** Changes the loaded configuration: a hosted one, which `loadConfig` refuses (spec §19.1). */
+    readonly configure?: (config: ServerConfig) => ServerConfig;
+    /** Runs after the directory loaded and before the server is built: tenants the hosted map starts with. */
+    /** The hosted tenant map, for a test that changes a tenant behind the directory's back. */
+    readonly onTenantResolver?: (resolver: TenantResolver) => void;
+    readonly beforeBuild?: (db: Awaited<ReturnType<typeof testDatabase>>, ctx: ServerContext) => Promise<void>;
   } = {},
 ): Promise<IdentityHarness> {
   const db = options.db ?? (await testDatabase());
@@ -88,7 +92,7 @@ export async function identityHarness(
       this.now = new Date(this.now.getTime() + ms);
     },
   };
-  const config = loadConfig(
+  const loaded = loadConfig(
     {
       WIREBENCH_SERVER_DATABASE_URL: db.url,
       WIREBENCH_SERVER_PUBLIC_URL: 'https://wirebench.test',
@@ -98,6 +102,7 @@ export async function identityHarness(
     },
     '0.0.0-test',
   );
+  const config = options.configure?.(loaded) ?? loaded;
   const identity = identityModule({
     now: () => clock.now,
     sweepIntervalMs: 0,
@@ -105,18 +110,21 @@ export async function identityHarness(
   });
   const extra = typeof options.modules === 'function' ? options.modules(clock) : (options.modules ?? []);
   const modules = [identity, ...extra];
-  // Every built-in module's migrations, whichever modules this suite registers: versions are checked for
-  // contiguity across modules, so a partial set would leave a gap. Only `modules` get routes and hooks.
-  await migrate(db, await allMigrations(BUILTIN_MODULES));
+  // `testDatabase` has run every built-in module's migrations as the owner, whichever modules this suite
+  // registers: versions are checked for contiguity across modules, so a partial set would leave a gap.
+  // Only `modules` get routes and hooks.
   await RepoStore.prepare(dataDir);
   const repos = new RepoStore({ git: options.git ?? testGit(join(dataDir, NO_HOOKS_DIR)), dataDir });
   // R13: ctx.git (and the commit store's ctx.git.withPlumbing()) gets the same hermetic client as the
   // repository store, so no developer gitconfig or hook reaches a server test. `options.git` still
   // overrides only the store, for tests that force RepoStore.create to fail.
   const ctx = await testContext({ dataDir, db, config, repos, git: testGit(join(dataDir, NO_HOOKS_DIR)) });
+  await ctx.tenancy.directory.load();
+  await options.beforeBuild?.(db, ctx);
   const app = await buildServer(ctx, {
     modules,
     ...(options.logStream !== undefined ? { logStream: options.logStream } : {}),
+    ...(options.onTenantResolver !== undefined ? { onTenantResolver: options.onTenantResolver } : {}),
   });
   return {
     app,

@@ -29,6 +29,7 @@ import {
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { announce, auditSource, recordAudit } from '../../context.js';
+import { tenantUrl } from '../../tenancy/urls.js';
 import { isForeignKeyViolation, isUniqueViolation } from '../../db/errors.js';
 import { newId } from '../../identity/tokens.js';
 import { jsonSchema } from '../../schema.js';
@@ -71,12 +72,12 @@ function withoutUrl(hook: CatchUrl): Omit<CatchUrl, 'url'> {
 }
 
 /** A row as the wire shows it: the secret only inside the full URL (§5); the signature secret never. */
-export function toCatchUrl(row: repo.CatchUrlListRow, publicUrl: string, view: CatchUrlView): CatchUrl {
+export function toCatchUrl(row: repo.CatchUrlListRow, baseUrl: string, view: CatchUrlView): CatchUrl {
   return {
     id: row.id,
     workspaceId: row.workspaceId,
     name: row.name,
-    url: `${publicUrl}${CATCH_URL_PATH_PREFIX}${row.secret}`,
+    url: `${baseUrl}${CATCH_URL_PATH_PREFIX}${row.secret}`,
     enabled: row.enabled,
     response: row.response,
     captureCount: row.captureCount,
@@ -175,7 +176,7 @@ export const manageRoutes =
       },
       async (request): Promise<ListedCatchUrl[]> => {
         const rows = await repo.catchUrlsOfWorkspace(db, request.workspaceAccess!.workspaceId);
-        const hooks = rows.map((row) => toCatchUrl(row, config.publicUrl, viewOf(request)));
+        const hooks = rows.map((row) => toCatchUrl(row, tenantUrl(config, request), viewOf(request)));
         // A CI token never sees the catch secret: a leaked one could forge the captures it reads
         // (callback-assertion §3). It needs a hook's id and name only.
         return request.ciCaller === undefined ? hooks : hooks.map(withoutUrl);
@@ -232,7 +233,9 @@ export const manageRoutes =
           conflictOr(error);
         }
         announce(env.ctx.hooks.hooksChanged, { workspaceId }, request.log);
-        return reply.code(201).send(toCatchUrl(await found(workspaceId, id), config.publicUrl, viewOf(request)));
+        return reply
+          .code(201)
+          .send(toCatchUrl(await found(workspaceId, id), tenantUrl(config, request), viewOf(request)));
       },
     );
 
@@ -313,7 +316,7 @@ export const manageRoutes =
         }
         if (!updated) throw catchUrlNotFound();
         announce(env.ctx.hooks.hooksChanged, { workspaceId }, request.log);
-        return toCatchUrl(await found(workspaceId, hookId), config.publicUrl, viewOf(request));
+        return toCatchUrl(await found(workspaceId, hookId), tenantUrl(config, request), viewOf(request));
       },
     );
 
@@ -336,7 +339,7 @@ export const manageRoutes =
           });
         });
         announce(env.ctx.hooks.hooksChanged, { workspaceId }, request.log);
-        return toCatchUrl(await found(workspaceId, hookId), config.publicUrl, viewOf(request));
+        return toCatchUrl(await found(workspaceId, hookId), tenantUrl(config, request), viewOf(request));
       },
     );
 

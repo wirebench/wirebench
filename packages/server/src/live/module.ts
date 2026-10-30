@@ -13,6 +13,7 @@ import fastifyWebsocket from '@fastify/websocket';
 import { LIVE_CAPABILITY, LIVE_CLOSE, LIVE_LIMITS } from '@wirebench/engine';
 import type { FastifyInstance, onRequestHookHandler } from 'fastify';
 import type { ServerContext, ServerModule } from '../context.js';
+import { tenantUrl, type UrlConfig } from '../tenancy/urls.js';
 import { identitySettings } from '../identity/env.js';
 import { callerForToken } from '../identity/guard.js';
 import { workspaceIdsOfTeam } from '../teams/repo.js';
@@ -59,9 +60,9 @@ export function realTimer(fn: () => void, ms: number): { cancel(): void } {
   };
 }
 
-function sameOrigin(header: string, publicUrl: string): boolean {
+function sameOrigin(header: string, url: string): boolean {
   try {
-    return new URL(header).origin === publicUrl;
+    return new URL(header).origin === url;
   } catch {
     return false; // `null`, or anything else that is not a URL
   }
@@ -69,13 +70,13 @@ function sameOrigin(header: string, publicUrl: string): boolean {
 
 /**
  * §6: a browser page on another site must not open a socket with the user's cookies. Wirebench has
- * none, but the rule costs nothing. The desktop sends no `Origin` (assumption 4). `publicUrl` is
- * already an origin (`config.ts`).
+ * none, but the rule costs nothing. The desktop sends no `Origin` (assumption 4). The tenant's URL is
+ * already an origin (`tenancy/urls.ts`).
  */
-export function originCheck(publicUrl: string): onRequestHookHandler {
+export function originCheck(config: UrlConfig): onRequestHookHandler {
   return (request, _reply, done) => {
     const origin = request.headers.origin;
-    done(origin === undefined || sameOrigin(origin, publicUrl) ? undefined : liveOriginRefused());
+    done(origin === undefined || sameOrigin(origin, tenantUrl(config, request)) ? undefined : liveOriginRefused());
   };
 }
 
@@ -151,7 +152,7 @@ export function liveModule(options: LiveOptions = {}): ServerModule {
         runLiveSocket(connection, loop);
       });
       // A plain GET (a proxy that strips `Upgrade`) is answered 404 by the plugin (§3.5).
-      app.get(ROUTE, { websocket: true, onRequest: originCheck(ctx.config.publicUrl) }, (socket) => {
+      app.get(ROUTE, { websocket: true, onRequest: originCheck(ctx.config) }, (socket) => {
         runLiveSocket(socket, loop);
       });
 

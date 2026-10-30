@@ -27,6 +27,7 @@ import { safeRedirectPath } from '../identity/browser-flows.js';
 import { sessionToken } from '../identity/cookies.js';
 import { identitySettings } from '../identity/env.js';
 import { callerForToken } from '../identity/guard.js';
+import { tenantUrl } from '../tenancy/urls.js';
 
 /** The copied build, beside this file's compiled output; the same path from `src/host/` under a test. */
 export const BROWSER_BUILD_DIR = fileURLToPath(new URL('../../dist/browser/', import.meta.url));
@@ -74,8 +75,8 @@ function isPagePath(path: string): boolean {
 }
 
 /** `/sign-in?redirect_to=<path>`, the path's slashes left as they are (a query may hold them). */
-function signInLocation(request: FastifyRequest, publicUrl: string): string {
-  const target = safeRedirectPath(request.url, publicUrl);
+function signInLocation(request: FastifyRequest, serverUrl: string): string {
+  const target = safeRedirectPath(request.url, serverUrl);
   return `/sign-in?redirect_to=${encodeURIComponent(target).replaceAll('%2F', '/')}`;
 }
 
@@ -98,7 +99,7 @@ export async function browserClientRoutes(
 ): Promise<void> {
   const root = options.root ?? BROWSER_BUILD_DIR;
   const now = options.now ?? (() => new Date());
-  const publicUrl = ctx.config.publicUrl;
+  const urlOf = (request: FastifyRequest): string => tenantUrl(ctx.config, request);
   let page: Buffer;
   try {
     page = await readFile(join(root, 'index.html'));
@@ -127,7 +128,7 @@ export async function browserClientRoutes(
 
   /** Whether the request carries a live browser session, by every check the guard makes. */
   const signedIn = async (request: FastifyRequest): Promise<boolean> => {
-    const token = sessionToken(request, publicUrl);
+    const token = sessionToken(request, urlOf(request));
     if (token === undefined) return false;
     try {
       await callerForToken(tokens, token, 'cookie');
@@ -151,7 +152,10 @@ export async function browserClientRoutes(
     commonHeaders(reply);
     reply.header('cache-control', 'no-store');
     if (!(await signedIn(request)))
-      return reply.code(303).header('location', signInLocation(request, publicUrl)).send();
+      return reply
+        .code(303)
+        .header('location', signInLocation(request, urlOf(request)))
+        .send();
     return reply
       .header('content-security-policy', BROWSER_CONTENT_SECURITY_POLICY)
       .type('text/html; charset=utf-8')

@@ -8,10 +8,30 @@ import { access, constants } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import { GitCli, WirebenchError, findGit } from '@wirebench/engine';
-import { ConfigError, loadConfig, type ServerConfig } from './config.js';
-import { MetaRegistry, permissiveLicense, serverHooks, type ServerContext, type ServerModule } from './context.js';
+import {
+  ConfigError,
+  egressPolicyOf,
+  forgetDatabaseUrls,
+  loadConfig,
+  migrationUrlOf,
+  type ServerConfig,
+} from './config.js';
+import {
+  MetaRegistry,
+  permissiveLicense,
+  serverHooks,
+  type Database,
+  type ServerContext,
+  type ServerModule,
+} from './context.js';
 import { loadMigrations, migrate, MIGRATIONS_DIR, pendingMigrations, type Migration } from './db/migrate.js';
 import { createDatabase } from './db/pool.js';
+import { checkAppRole, checkPostgresVersion } from './tenancy/checks.js';
+import { TENANCY_MIGRATIONS_DIR } from './tenancy/migrations.js';
+import { RunningLock, type RunningLockOptions } from './tenancy/running-lock.js';
+import { operatorPublicUrl } from './tenancy/urls.js';
+import { createTenancy } from './tenancy/tenancy.js';
+import { ensureAppRole, roleMode } from './tenancy/roles.js';
 import { ExitCode, packageVersion, type ServerIo } from './io.js';
 import { NO_HOOKS_DIR, RepoStore } from './repos/repo-store.js';
 import { buildServer } from './server.js';
@@ -46,17 +66,26 @@ export interface StartOptions {
   readonly drainMs?: number;
   /** How a second signal ends the process: `process.exit` in production, a spy in tests. */
   readonly exit?: (code: number) => void;
+  /** Where the server's log lines go instead of stdout; tests read the start-up warnings from it. */
+  readonly logStream?: NodeJS.WritableStream;
+  /**
+   * Test only: start without migration 0020, which a test's partial module list leaves out. Production lists
+   * always reach it, and a server without it has no tenants, so it refuses.
+   */
+  readonly allowNoTenants?: boolean;
+  /** How a lost running lock is retried (spec §19.10); tests shorten it. */
+  readonly runningLock?: Pick<RunningLockOptions, 'retakeWindowMs' | 'retryDelayMs' | 'heartbeatMs' | 'open'>;
 }
 
 /**
- * Loads the configuration, then deletes the database URL from `process.env`: `GitCli` always
+ * Loads the configuration, then deletes the database URLs from `process.env`: `GitCli` always
  * spreads `process.env` into git's environment (an `env` option can only add to it), so leaving
- * the variable there would hand the connection string to every git child process.
+ * the variables there would hand the connection strings to every git child process.
  */
 function configFrom(env: NodeJS.ProcessEnv, io: ServerIo): ServerConfig {
   try {
     const config = loadConfig(env, packageVersion());
-    delete process.env.WIREBENCH_SERVER_DATABASE_URL;
+    forgetDatabaseUrls();
     return config;
   } catch (error) {
     if (error instanceof ConfigError) {
@@ -75,6 +104,46 @@ async function locateGit(config: ServerConfig): Promise<GitCli> {
   return new GitCli(location, { hooksDir: join(config.dataDir, NO_HOOKS_DIR) });
 }
 
+/**
+ * `roleMode` (spec §19.4), with its refusal of a keyword-form connection string as a configuration error.
+ * One role migrates and queries, exactly as before slice 4; two have the owner migrate and grant.
+ */
+function roleModeOf(config: ServerConfig): 'one-role' | 'two-roles' {
+  try {
+    return roleMode(config);
+  } catch (error) {
+    if (error instanceof WirebenchError) throw new StartupError(ExitCode.Config, `${error.code}: ${error.message}`);
+    throw error;
+  }
+}
+
+/**
+ * The app pool's first query, with a refused password named for what it most likely is: an app role that
+ * already existed with another password, which `ensureAppRole` leaves alone (spec §19.4 only creates).
+ */
+async function checkAppSignIn(db: Database, appUrl: string): Promise<void> {
+  try {
+    await db.query('select 1');
+  } catch (error) {
+    if ((error as { readonly code?: unknown }).code !== '28P01') throw error;
+    const role = new URL(appUrl).username;
+    throw new StartupError(
+      ExitCode.Config,
+      `the app role ${decodeURIComponent(role)} refused the password in WIREBENCH_SERVER_DATABASE_URL; it existed already, and its password is not changed at start-up: set it on the role as the owner (\\password in psql), or fix the URL`,
+    );
+  }
+}
+
+/**
+ * As the owner: the pending migrations, then the app role and its grants (`ensureAppRole`), every time,
+ * so a table a migration just created is granted before the app role connects.
+ */
+async function migrateAndGrant(owner: Database, appUrl: string, migrations: readonly Migration[]): Promise<number[]> {
+  const { applied } = await migrate(owner, migrations);
+  await ensureAppRole(owner, appUrl);
+  return applied;
+}
+
 /** How a failed migration reads on stderr: a WirebenchError (e.g. `server-schema-too-new`) keeps its code. */
 function migrationFailure(error: unknown): string {
   if (error instanceof WirebenchError) return `${error.code}: ${error.message}`;
@@ -84,25 +153,34 @@ function migrationFailure(error: unknown): string {
 /**
  * The host's migrations and each module's, merged in version order. No single folder has to be
  * contiguous — once identity takes 0002, a later host migration is 0005 — so contiguity from 0001
- * (and uniqueness) is checked on the combined, sorted list. `hostDir` exists for tests.
+ * (and uniqueness) is checked on the combined, sorted list. `hostDir` and `tenancyDir` exist for tests.
  */
 export async function allMigrations(
   modules: readonly ServerModule[],
   hostDir: string = MIGRATIONS_DIR,
+  tenancyDir: string = TENANCY_MIGRATIONS_DIR,
 ): Promise<readonly Migration[]> {
   const moduleDirs = modules.flatMap((m) =>
     m.migrationsDir === undefined ? [] : typeof m.migrationsDir === 'string' ? [m.migrationsDir] : [...m.migrationsDir],
   );
   let perFolder: (readonly Migration[])[];
+  let tenancy: readonly Migration[];
   try {
-    perFolder = await Promise.all([
+    [tenancy, ...perFolder] = await Promise.all([
+      loadMigrations(tenancyDir, { contiguous: false }),
       loadMigrations(hostDir, { contiguous: false }),
       ...moduleDirs.map((dir) => loadMigrations(dir, { contiguous: false })),
     ]);
   } catch (error) {
     throw new StartupError(ExitCode.Migration, error instanceof Error ? error.message : String(error));
   }
-  const combined = perFolder.flat().sort((a, b) => a.version - b.version);
+  // The tenancy migrations scope every module's tables, so they join only a list that reaches the version
+  // before them: every production list does, and a test's partial module set stops short of them.
+  const modular = perFolder.flat();
+  const before = (tenancy[0]?.version ?? 1) - 1;
+  const combined = [...modular, ...(modular.some((m) => m.version === before) ? tenancy : [])].sort(
+    (a, b) => a.version - b.version,
+  );
   for (const [index, migration] of combined.entries()) {
     if (index > 0 && combined[index - 1]!.version === migration.version) {
       throw new StartupError(ExitCode.Migration, `duplicate migration version ${migration.version} across modules`);
@@ -133,8 +211,24 @@ export async function runMigrate(
     }
     throw error;
   }
-  const db = createDatabase(config.databaseUrl);
+  let mode: 'one-role' | 'two-roles';
   try {
+    mode = roleModeOf(config);
+  } catch (error) {
+    if (!(error instanceof StartupError)) throw error;
+    io.stderr.write(`${error.message}\n`);
+    return error.exitCode;
+  }
+  const db = createDatabase(migrationUrlOf(config), { applicationName: 'wirebench-migrate' });
+  try {
+    // Before anything pending is read or run: 0020's composite keys need PostgreSQL 15 (spec §19.1).
+    try {
+      await checkPostgresVersion(db);
+    } catch (error) {
+      if (!(error instanceof WirebenchError) || error.code !== 'server-postgres-too-old') throw error;
+      io.stderr.write(`${error.code}: ${error.message}\n`);
+      return ExitCode.Config;
+    }
     const migrations = await allMigrations(modules);
     if (check) {
       const pending = await pendingMigrations(db, migrations);
@@ -145,7 +239,10 @@ export async function runMigrate(
       );
       return pending.length === 0 ? ExitCode.Ok : ExitCode.Pending;
     }
-    const { applied } = await migrate(db, migrations);
+    const applied =
+      mode === 'two-roles'
+        ? await migrateAndGrant(db, config.databaseUrl, migrations)
+        : (await migrate(db, migrations)).applied;
     io.stdout.write(
       applied.length === 0 ? 'migrations: nothing to apply\n' : `migrations: applied ${applied.join(', ')}\n`,
     );
@@ -167,13 +264,61 @@ export async function startServer(
   const exit = options.exit ?? ((code: number) => process.exit(code));
   const config = configFrom(env, io);
   const git = await locateGit(config);
-  const db = createDatabase(config.databaseUrl);
-  try {
-    await migrate(db, await allMigrations(modules));
-  } catch (error) {
+  // With an owner of its own (spec §19.4), the server migrates and grants as the owner, then connects as
+  // the app role. With one role it migrates as that role: over the migration URL when one is set apart (a
+  // direct connection beside a pooler, say), as `migrate` does, and otherwise over the one pool, as always.
+  const mode = roleModeOf(config);
+  const migrationUrl = migrationUrlOf(config);
+  // The pool's errors are logged once the logger exists; a connection failing before then fails a query too.
+  const dbLog: { warn?: (error: Error) => void } = {};
+  const db = createDatabase(config.databaseUrl, { onError: (error) => dbLog.warn?.(error) });
+  // Set once the server can stop itself. Losing the lock before then is recorded, and fails the start.
+  const lockLost: { stop?: (error: Error) => void; early?: Error } = {};
+  const lockOptions = {
+    ...options.runningLock,
+    onLost: (error: Error) => {
+      if (lockLost.stop !== undefined) lockLost.stop(error);
+      else lockLost.early ??= error;
+    },
+  };
+  // Held for the life of the process; a revert's exclusive try fails while it is (spec §19.10). Taken before
+  // migrating, so a start during a revert touches nothing, and on the migration URL, which is always a direct
+  // connection: a session-level advisory lock means nothing behind a transaction pooler, which the app URL may
+  // be (owner ruling, 2026-10-30). With one URL it is that URL, as before.
+  let runningLock: RunningLock | undefined;
+  const fail = async (error: StartupError): Promise<never> => {
+    await runningLock?.release();
     await db.close();
-    if (error instanceof StartupError) throw error;
-    throw new StartupError(ExitCode.Migration, migrationFailure(error));
+    throw error;
+  };
+  try {
+    const migrations = await allMigrations(modules);
+    // Before 0020, on the connection that migrates: its composite keys need PostgreSQL 15 (spec §19.1).
+    if (migrationUrl === config.databaseUrl) {
+      await checkPostgresVersion(db);
+      runningLock = await RunningLock.acquire(migrationUrl, { ...lockOptions, label: 'the database connection' });
+      await migrate(db, migrations);
+    } else {
+      const owner = createDatabase(migrationUrl);
+      try {
+        await checkPostgresVersion(owner);
+        runningLock = await RunningLock.acquire(migrationUrl, { ...lockOptions, label: 'the migration connection' });
+        if (mode === 'two-roles') await migrateAndGrant(owner, config.databaseUrl, migrations);
+        else await migrate(owner, migrations);
+      } finally {
+        await owner.close();
+      }
+      if (mode === 'two-roles') await checkAppSignIn(db, config.databaseUrl);
+    }
+  } catch (error) {
+    if (error instanceof StartupError) return fail(error);
+    if (
+      error instanceof WirebenchError &&
+      (error.code === 'server-postgres-too-old' || error.code === 'tenancy-reverting')
+    ) {
+      return fail(new StartupError(ExitCode.Config, `${error.code}: ${error.message}`));
+    }
+    return fail(new StartupError(ExitCode.Migration, migrationFailure(error)));
   }
   try {
     await RepoStore.prepare(config.dataDir);
@@ -181,25 +326,49 @@ export async function startServer(
       await access(join(config.dataDir, sub), constants.W_OK);
     }
   } catch {
-    await db.close();
-    throw new StartupError(ExitCode.Config, `data directory ${config.dataDir} is not writable`);
+    return fail(new StartupError(ExitCode.Config, `data directory ${config.dataDir} is not writable`));
   }
+  const warnings: { readonly message: string; readonly details: Record<string, unknown> }[] = [];
+  const tenancy = createTenancy(db);
+  try {
+    await checkAppRole(db, config.mode, (message, details) => warnings.push({ message, details }));
+    // A module list that stops short of 0019 leaves 0020 out (`allMigrations`), and with it every tenant.
+    if (!(await tenancy.directory.load()) && options.allowNoTenants !== true) {
+      return fail(new StartupError(ExitCode.Migration, 'migration 0020 is not applied: the server has no tenants'));
+    }
+  } catch (error) {
+    if (error instanceof WirebenchError)
+      return fail(new StartupError(ExitCode.Config, `${error.code}: ${error.message}`));
+    return fail(new StartupError(ExitCode.Migration, migrationFailure(error)));
+  }
+  // Set by now: every path above that leaves it unset has thrown.
+  const heldLock = runningLock;
+  const lostDuringStart = (): StartupError =>
+    new StartupError(
+      ExitCode.Migration,
+      `lost during start-up and could not be taken again: ${lockLost.early?.message ?? 'the server-running lock'}`,
+    );
   const repos = new RepoStore({ git, dataDir: config.dataDir });
   const ctx: ServerContext = {
     config,
     db,
+    tenancy,
     repos,
     git,
     log: undefined as unknown as ServerContext['log'], // buildServer replaces it with the app's logger
     meta: new MetaRegistry(),
-    egress: { denyPrivate: config.egressDenyPrivate },
+    egress: egressPolicyOf(config),
     hooks: serverHooks(),
     license: permissiveLicense(),
   };
   let app: FastifyInstance;
   try {
-    app = await buildServer(ctx, { modules });
+    app = await buildServer(ctx, {
+      modules,
+      ...(options.logStream !== undefined ? { logStream: options.logStream } : {}),
+    });
   } catch (error) {
+    await heldLock.release();
     await db.close(); // a module that fails to register must not leave the pool holding the process open
     if (error instanceof StartupError) throw error;
     // Discovery against the IdP, a duplicate decorator, a bad route: all configuration-shaped
@@ -209,10 +378,22 @@ export async function startServer(
       `a module failed to register: ${error instanceof Error ? error.message : String(error)}`,
     );
   }
+  dbLog.warn = (error) => {
+    app.log.warn({ err: error }, 'a database connection failed');
+  };
+  for (const warning of warnings) app.log.warn(warning.details, warning.message);
+  // Module registration can take seconds (OIDC discovery): a lock lost meanwhile means no listening at all.
+  if (lockLost.early !== undefined) {
+    await app.close();
+    await heldLock.release();
+    await db.close();
+    throw lostDuringStart();
+  }
   try {
     await app.listen({ host: config.host, port: config.port });
   } catch (error) {
     await app.close();
+    await heldLock.release();
     await db.close();
     const code = (error as { readonly code?: unknown }).code;
     throw new StartupError(
@@ -222,16 +403,18 @@ export async function startServer(
   }
   const address = app.server.address();
   const port = typeof address === 'object' && address !== null ? address.port : config.port;
-  app.log.info({ publicUrl: config.publicUrl, port, modules: modules.map((m) => m.name) }, 'listening');
+  app.log.info({ publicUrl: operatorPublicUrl(config), port, modules: modules.map((m) => m.name) }, 'listening');
 
   const signals: EventEmitter = options.signals ?? process;
   let closing: Promise<void> | undefined;
-  const close = (): Promise<void> => {
+  /** `lost`: the lock is gone, so nothing more is served, and repository work is not waited for (spec §19.10). */
+  const shutDown = (lost: boolean): Promise<void> => {
     closing ??= (async () => {
       // Spec §3.7: wait up to drainMs for in-flight requests, then close the pool and exit 0. At
       // the deadline the remaining connections are dropped so app.close() resolves. The shutdown
       // stays a normal one: only a second signal ends it with 130.
-      const timer = setTimeout(() => app.server.closeAllConnections(), options.drainMs ?? 10_000);
+      if (lost) app.server.closeAllConnections();
+      const timer = setTimeout(() => app.server.closeAllConnections(), lost ? 0 : (options.drainMs ?? 10_000));
       timer.unref();
       // Node's server.close() drops only the connections idle at that moment; a keep-alive
       // connection whose request was in flight turns idle afterwards and would hold the close
@@ -249,11 +432,29 @@ export async function startServer(
       // Sync spec R11: a handler whose connection the deadline dropped still finishes its repository
       // work (a push looks up its author and writes commits), so the pool outlives that work. From
       // here on, new repository work is refused with server-shutting-down.
-      await repos.drain();
+      if (!lost) await repos.drain();
+      await heldLock.release();
       await db.close();
     })();
     return closing;
   };
+  const close = (): Promise<void> => shutDown(false);
+  // Without the lock a revert could start under this server, so it stops (spec §19.10).
+  lockLost.stop = (error) => {
+    app.log.error({ err: error }, 'the server-running lock was lost and could not be taken again; stopping');
+    void shutDown(true)
+      .catch((closeError: unknown) => {
+        app.log.error({ err: closeError }, 'the server did not close cleanly after losing its lock');
+      })
+      .finally(() => {
+        exit(ExitCode.Migration);
+      });
+  };
+  // Lost between `listen` and here: stop now rather than serve without it.
+  if (lockLost.early !== undefined) {
+    await shutDown(true).catch(() => undefined);
+    throw lostDuringStart();
+  }
   // `on`, not `once`: a second SIGTERM must reach this handler too, or the process would fall
   // back to the default action and die with 143 instead of the documented 130.
   function onSignal(): void {

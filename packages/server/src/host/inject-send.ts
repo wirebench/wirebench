@@ -1,8 +1,9 @@
 /**
  * The server host's `HostOptions.server.send` (hosted edition spec §17.3): a call the host makes to this
  * server runs through `app.inject`, the whole route pipeline and no socket, as the user whose device token
- * the instance holds now. Only `publicUrl`'s origin is reachable; the host holds its transport to it
- * already, and this side refuses any other on its own.
+ * the instance holds now. Only the tenant's URL is reachable; the host holds its transport to it already,
+ * and this side refuses any other on its own. Each call carries that URL's `Host`, so that in hosted mode
+ * it resolves to the same tenant (spec §19.5); self-hosted mode never reads it.
  *
  * The answer comes back in the shape `sendHttp` gives. Only what the host's `ServerClient` reads carries
  * meaning: the status, the lower-cased headers and the body. There is no wire behind it, so the raw views
@@ -54,13 +55,13 @@ function refusedSession(body: string): boolean {
  */
 export function injectSend(
   app: Pick<FastifyInstance, 'inject'>,
-  publicUrl: string,
+  serverUrl: string,
   session: () => { readonly token: string; readonly tokenId: string; readonly ip?: string } | undefined,
   onRefused: (tokenId: string) => void,
 ): (request: HttpRequest) => Promise<HttpExchange> {
   return async (request) => {
-    if (originOf(request.url) !== publicUrl) {
-      throw new WirebenchError('server-url-invalid', `This host reaches ${publicUrl} only`);
+    if (originOf(request.url) !== serverUrl) {
+      throw new WirebenchError('server-url-invalid', `This host reaches ${serverUrl} only`);
     }
     const target = new URL(request.url);
     const headers: Record<string, string> = {};
@@ -71,6 +72,7 @@ export function injectSend(
     const sent = { ...headers };
     const current = session();
     if (current !== undefined) headers.authorization = `Bearer ${current.token}`;
+    headers.host = target.host;
     const startedAt = new Date();
     const started = performance.now();
     const response = await app.inject({

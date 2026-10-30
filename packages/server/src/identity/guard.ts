@@ -14,6 +14,7 @@ import { sessionToken } from './cookies.js';
 import { forbidden, originRefused, unauthenticated, userDisabled } from './errors.js';
 import * as repo from './repo.js';
 import { bearerToken, hashToken } from './tokens.js';
+import { tenantUrl } from '../tenancy/urls.js';
 
 export interface Caller {
   readonly id: string;
@@ -132,14 +133,15 @@ const SAFE_METHODS = new Set(['GET', 'HEAD']);
  * The session cookie, tried only when no `Authorization` header named a token. A cookie the guard
  * refuses as unknown, revoked or expired leaves the caller undefined, as if absent: a stale cookie must
  * not break the routes that need no caller, and `requireUser` still answers `401`. A write
- * authenticated this way must carry `Origin` equal to the public URL (CSRF; hosted spec §17.2).
+ * authenticated this way must carry `Origin` equal to the tenant's URL (CSRF; hosted spec §17.2).
  */
 async function cookieCaller(
   env: IdentityEnv,
   tokens: Parameters<typeof callerForToken>[0],
   request: FastifyRequest,
 ): Promise<void> {
-  const token = sessionToken(request, env.ctx.config.publicUrl);
+  const url = tenantUrl(env.ctx.config, request);
+  const token = sessionToken(request, url);
   if (token === undefined) return;
   let caller: Caller;
   try {
@@ -148,7 +150,7 @@ async function cookieCaller(
     if (isWirebenchError(error) && error.code === 'identity-unauthenticated') return;
     throw error;
   }
-  if (!SAFE_METHODS.has(request.method) && request.headers.origin !== env.ctx.config.publicUrl) throw originRefused();
+  if (!SAFE_METHODS.has(request.method) && request.headers.origin !== url) throw originRefused();
   request.caller = caller;
 }
 

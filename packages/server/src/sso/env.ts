@@ -1,9 +1,10 @@
 import type { ServerConfig } from '../config.js';
 import type { ServerContext } from '../context.js';
 import type { RateLimiter } from '../identity/rate-limit.js';
+import type { ScopeSource } from '../tenancy/urls.js';
 import type { SamlClaimSettings, SamlProvider } from './saml.js';
 
-/** The URLs an IdP is given (saml-scim spec §3.1, §3.5), derived from the public URL alone. */
+/** The URLs an IdP is given (saml-scim spec §3.1, §3.5), derived from the tenant's URL alone. */
 export interface SsoUrls {
   /** This server's SAML entity ID, which is also where its SP metadata is served. */
   readonly entityId: string;
@@ -13,12 +14,12 @@ export interface SsoUrls {
   readonly scimBaseUrl: string;
 }
 
-export function ssoUrls(publicUrl: string): SsoUrls {
+export function ssoUrls(baseUrl: string): SsoUrls {
   return {
-    entityId: `${publicUrl}/api/v1/auth/saml/metadata`,
-    acsUrl: `${publicUrl}/api/v1/auth/saml/acs`,
-    browserAcsUrl: `${publicUrl}/api/v1/auth/saml/browser-acs`,
-    scimBaseUrl: `${publicUrl}/scim/v2`,
+    entityId: `${baseUrl}/api/v1/auth/saml/metadata`,
+    acsUrl: `${baseUrl}/api/v1/auth/saml/acs`,
+    browserAcsUrl: `${baseUrl}/api/v1/auth/saml/browser-acs`,
+    scimBaseUrl: `${baseUrl}/scim/v2`,
   };
 }
 
@@ -48,6 +49,7 @@ export interface SsoEnv {
   readonly ctx: ServerContext;
   readonly now: () => Date;
   readonly limiter: RateLimiter;
-  readonly urls: SsoUrls;
+  /** The request's tenant's URLs (spec §19.5), never a copy made at registration. */
+  readonly urlsFor: (of: ScopeSource) => SsoUrls;
   readonly saml: { readonly provider: SamlProvider; readonly claims: SamlClaimSettings } | undefined;
 }

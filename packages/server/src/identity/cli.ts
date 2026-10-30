@@ -6,12 +6,12 @@
 import type { KeyObject } from 'node:crypto';
 import { WirebenchError } from '@wirebench/engine';
 import type { ServerCommand } from '../args.js';
-import { ConfigError, loadConfig } from '../config.js';
+import { ConfigError, forgetDatabaseUrls, loadConfig } from '../config.js';
 import { auditHook } from '../audit-log/hook.js';
 import { runAuditCommand, runVerifyCommand } from '../audit-log/cli.js';
 import { SYSTEM_SOURCE, serverHooks } from '../context.js';
 import { pendingMigrations } from '../db/migrate.js';
-import { createDatabase } from '../db/pool.js';
+import { ADMIN_APPLICATION_NAME, createDatabase } from '../db/pool.js';
 import { ExitCode, packageVersion, type ServerIo } from '../io.js';
 import { PRODUCTION_PUBLIC_KEYS } from '../licensing/keys.js';
 import { MISSING_SERVER_ID, serverId as readServerId } from '../licensing/repo.js';
@@ -21,11 +21,23 @@ import { createLicenseService } from '../licensing/service.js';
 import { BUILTIN_MODULES } from '../modules.js';
 import { allMigrations, StartupError } from '../serve.js';
 import { runScimGroupCommand, runScimTokenCommand } from '../sso/cli.js';
+import { urlWithoutScope } from '../tenancy/urls.js';
 import { identitySettings, type InvitationEnv } from './env.js';
 import { createInvitation, invitationSummary, isOpen, revokeOpenInvitation } from './invitations.js';
 import * as repo from './repo.js';
 
-type AdminCommand = Extract<ServerCommand, { command: `admin-${string}` }>;
+// `admin tenancy role` runs as the owner, not the app role, so it has its own runner (tenancy/cli.ts).
+type AdminCommand = Exclude<Extract<ServerCommand, { command: `admin-${string}` }>, { command: 'admin-tenancy-role' }>;
+
+/**
+ * The tenant URL an invitation link names. The command line serves the default tenant until Task 16 adds
+ * `--tenant`, and `loadConfig` refuses hosted mode, so this is the public URL.
+ */
+function cliUrl(config: Parameters<typeof urlWithoutScope>[0]): string {
+  const url = urlWithoutScope(config);
+  if (url === undefined) throw new WirebenchError('tenancy-unscoped', 'the admin command line needs a tenant');
+  return url;
+}
 
 /** `now` exists for tests; the bin passes nothing. */
 export async function runAdmin(
@@ -40,8 +52,8 @@ export async function runAdmin(
   const now = options.now ?? (() => new Date());
   try {
     config = loadConfig(io.env, packageVersion());
-    delete process.env.WIREBENCH_SERVER_DATABASE_URL;
-    db = createDatabase(config.databaseUrl);
+    forgetDatabaseUrls();
+    db = createDatabase(config.databaseUrl, { applicationName: ADMIN_APPLICATION_NAME });
     publicKeys = options.publicKeys ?? PRODUCTION_PUBLIC_KEYS;
     hooks = serverHooks();
     // Events the CLI records are queued like the server's, for the running server to forward.
@@ -95,6 +107,7 @@ export async function runAdmin(
           serverAdmin: command.serverAdmin,
           createdBy: null,
           source: SYSTEM_SOURCE,
+          serverUrl: cliUrl(config),
         });
         io.stdout.write(
           `Invitation for ${created.email} (${command.serverAdmin ? 'server admin' : 'member'})\n${created.url}\nExpires ${created.expiresAt}\n`,

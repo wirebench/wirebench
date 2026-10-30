@@ -18,6 +18,7 @@ import { auditSource, recordAudit, type InvitationAcceptedHook, type ServerHooks
 import { findUserById } from '../../identity/repo.js';
 import { createInvitation, revokeOpenInvitation } from '../../identity/invitations.js';
 import { jsonSchema } from '../../schema.js';
+import { tenantUrl } from '../../tenancy/urls.js';
 import type { TeamsEnv } from '../env.js';
 import { invitationNotFound, userExistsInvite } from '../errors.js';
 import * as repo from '../repo.js';
@@ -76,7 +77,13 @@ export const teamInvitationRoutes =
           // §6: a team invitation can never mint a server admin.
           created = await createInvitation(
             env.invitations,
-            { email: body.email, serverAdmin: false, createdBy: request.caller!.id, source: auditSource(request) },
+            {
+              email: body.email,
+              serverAdmin: false,
+              createdBy: request.caller!.id,
+              source: auditSource(request),
+              serverUrl: tenantUrl(env.invitations.ctx.config, request),
+            },
             (tx, invitationId) => repo.insertTeamInvitation(tx, { invitationId, teamId, role: body.role }),
           );
         } catch (error) {

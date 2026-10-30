@@ -86,7 +86,7 @@ export const sessionLogRoutes =
     const member = [requireWorkspaceRole(db, 'viewer'), feature];
     const params = jsonSchema(sessionLogParamsSchema, { io: 'input' });
     const workspaceParams = jsonSchema(teamWorkspaceParamsSchema, { io: 'input' });
-    const scopeOf = (log: SessionLog) => ({
+    const logScope = (log: SessionLog) => ({
       target: { kind: 'session-log' as const, id: log.id },
       workspaceId: log.workspaceId,
     });
@@ -124,7 +124,7 @@ export const sessionLogRoutes =
           if (opened.created) {
             await recordAudit(hooks, tx, {
               ...auditSource(request),
-              ...scopeOf(opened.log),
+              ...logScope(opened.log),
               action: 'session_log.started',
               details: about(opened.log),
             });
@@ -223,7 +223,7 @@ export const sessionLogRoutes =
         await db.transaction((tx) =>
           recordAudit(hooks, tx, {
             ...auditSource(request),
-            ...scopeOf(log),
+            ...logScope(log),
             action: 'session_log.read',
             details: { ...about(log), offset: start, bytes: sent.length },
           }),
@@ -251,7 +251,7 @@ export const sessionLogRoutes =
           await repo.removeLog(tx, log.id);
           await recordAudit(hooks, tx, {
             ...auditSource(request),
-            ...scopeOf(log),
+            ...logScope(log),
             action: 'session_log.deleted',
             details: { ...about(log), size: log.size },
           });

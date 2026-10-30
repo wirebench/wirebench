@@ -2,11 +2,12 @@ import { metaResponseSchema, SERVER_API_VERSION, SERVER_NAME } from '@wirebench/
 import type { FastifyInstance } from 'fastify';
 import type { ServerContext } from '../context.js';
 import { jsonSchema } from '../schema.js';
+import { tenantUrl } from '../tenancy/urls.js';
 
 export const metaRoutes =
   (ctx: ServerContext) =>
   (app: FastifyInstance): void => {
-    app.get('/meta', { schema: { response: { 200: jsonSchema(metaResponseSchema) } } }, async () => {
+    app.get('/meta', { schema: { response: { 200: jsonSchema(metaResponseSchema) } } }, async (request) => {
       const hooks = ctx.meta.hooks();
       // licensing §3.6: the edition, and nothing else about the license, is public.
       const { edition } = await ctx.license.state();
@@ -14,7 +15,7 @@ export const metaRoutes =
         name: SERVER_NAME,
         version: ctx.config.version,
         apiVersion: SERVER_API_VERSION,
-        publicUrl: ctx.config.publicUrl,
+        publicUrl: tenantUrl(ctx.config, request),
         auth: ctx.meta.signInMethods(),
         capabilities: ctx.meta.capabilities(),
         ...(hooks !== undefined ? { hooks } : {}),

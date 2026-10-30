@@ -179,14 +179,16 @@ describeDb('the host socket (hosted edition spec §17.3)', () => {
     const bobDir = hostDirectories(h.dataDir, bob.user.id).checkout;
     expect(await readFile(join(aliceDir, 'secrets.json'), 'utf8')).not.toContain('alpha-secret');
     expect(existsSync(join(bobDir, 'secrets.json'))).toBe(false);
-    // Audited by name, never by value.
-    expect(h.audit.filter((event) => event.action === 'secret.written')).toEqual([
-      expect.objectContaining({
-        actor: expect.objectContaining({ kind: 'user', userId: alice.user.id }) as unknown,
-        target: { kind: 'user', id: alice.user.id },
-        details: { name: 'alice key' },
-      }),
-    ]);
+    // Audited by name, never by value. The audit row is written after the call answers, so wait for it.
+    await vi.waitFor(() => {
+      expect(h.audit.filter((event) => event.action === 'secret.written')).toEqual([
+        expect.objectContaining({
+          actor: expect.objectContaining({ kind: 'user', userId: alice.user.id }) as unknown,
+          target: { kind: 'user', id: alice.user.id },
+          details: { name: 'alice key' },
+        }),
+      ]);
+    });
     expect(JSON.stringify(h.audit)).not.toContain('alpha-secret');
   });
 
@@ -322,9 +324,11 @@ describeDb('the host socket (hosted edition spec §17.3)', () => {
         expect(JSON.stringify(literal)).toContain('sk-fake-0123456789abcdef');
         other.close();
         await other.closed;
-        expect(h.audit.filter((event) => event.action === 'secret.resolved')).toContainEqual(
-          expect.objectContaining({ details: { name: 'API_KEY', target: lan } }),
-        );
+        await vi.waitFor(() => {
+          expect(h.audit.filter((event) => event.action === 'secret.resolved')).toContainEqual(
+            expect.objectContaining({ details: { name: 'API_KEY', target: lan } }),
+          );
+        });
         expect(JSON.stringify(h.audit)).not.toContain('sk-fake');
 
         const refused = await client.call('request.sendRest', { sendId: 's2', requestId: 'req-loopback' });

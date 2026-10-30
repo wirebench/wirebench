@@ -1,6 +1,14 @@
 import { isAbsolute, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { CONFIG_VARIABLES, ConfigError, describeConfig, loadConfig } from '../../src/config.js';
+import {
+  CONFIG_VARIABLES,
+  ConfigError,
+  describeConfig,
+  egressPolicyOf,
+  HOSTED_REFUSED,
+  loadConfig,
+  migrationUrlOf,
+} from '../../src/config.js';
 
 const required = {
   WIREBENCH_SERVER_DATABASE_URL: 'postgres://u:p@db/wirebench',
@@ -23,6 +31,18 @@ describe('loadConfig', () => {
       version: '2.1.1',
     });
     expect(config.gitPath).toBeUndefined();
+  });
+
+  it('leaves the migration URL unset by default: migrations run as the one database URL', () => {
+    const config = loadConfig(required, '2.1.1');
+    expect(config.migrationDatabaseUrl).toBeUndefined();
+    expect(migrationUrlOf(config)).toBe(required.WIREBENCH_SERVER_DATABASE_URL);
+    const owner = 'postgres://owner:o@db/wirebench';
+    const both = loadConfig({ ...required, WIREBENCH_SERVER_MIGRATION_DATABASE_URL: owner }, '2.1.1');
+    expect([both.databaseUrl, migrationUrlOf(both)]).toEqual([required.WIREBENCH_SERVER_DATABASE_URL, owner]);
+    const rows = Object.fromEntries(describeConfig(required).map((row) => [row.variable, row.status]));
+    expect(rows.WIREBENCH_SERVER_MIGRATION_DATABASE_URL).toBe('defaulted');
+    expect(CONFIG_VARIABLES.find((v) => v.key === 'migrationDatabaseUrl')?.secret).toBe(true);
   });
 
   it('names every missing required variable in one error and never echoes a value', () => {
@@ -209,6 +229,8 @@ describe('describeConfig', () => {
         'WIREBENCH_SERVER_INVITATION_DAYS',
         'WIREBENCH_SERVER_LOCAL_AUTH',
         'WIREBENCH_SERVER_LOG_LEVEL',
+        'WIREBENCH_SERVER_MIGRATION_DATABASE_URL',
+        'WIREBENCH_SERVER_MODE',
         'WIREBENCH_SERVER_OIDC_CLIENT_ID',
         'WIREBENCH_SERVER_OIDC_CLIENT_SECRET',
         'WIREBENCH_SERVER_OIDC_DISPLAY_NAME',
@@ -615,5 +637,37 @@ describe('browser client and egress configuration (hosted edition spec §17.1, �
       }
       expect((caught as ConfigError).problems.map((p) => p.variable)).toEqual([variable]);
     }
+  });
+});
+
+describe('WIREBENCH_SERVER_MODE (hosted edition spec §19.1)', () => {
+  it('is self-hosted by default and when set so', () => {
+    expect(loadConfig(required, '2.1.1').mode).toBe('self-hosted');
+    expect(loadConfig({ ...required, WIREBENCH_SERVER_MODE: 'self-hosted' }, '2.1.1').mode).toBe('self-hosted');
+    expect(loadConfig(required, '2.1.1').appDomain).toBeUndefined();
+  });
+
+  it('refuses hosted, which arrives with the control plane, and anything else', () => {
+    const problemsOf = (mode: string) => {
+      try {
+        loadConfig({ ...required, WIREBENCH_SERVER_MODE: mode }, '2.1.1');
+      } catch (error) {
+        return (error as ConfigError).problems;
+      }
+      return [];
+    };
+    expect(problemsOf('hosted')).toEqual([{ variable: 'WIREBENCH_SERVER_MODE', message: HOSTED_REFUSED }]);
+    expect(problemsOf('cloud')).toMatchObject([{ variable: 'WIREBENCH_SERVER_MODE' }]);
+    expect(describeConfig({ ...required, WIREBENCH_SERVER_MODE: 'hosted' })).toContainEqual({
+      variable: 'WIREBENCH_SERVER_MODE',
+      status: 'invalid',
+    });
+  });
+
+  it('denies private ranges in hosted mode, whatever the egress variable says', () => {
+    const config = loadConfig(required, '2.1.1');
+    expect(egressPolicyOf(config)).toEqual({ denyPrivate: false });
+    expect(egressPolicyOf({ ...config, egressDenyPrivate: true })).toEqual({ denyPrivate: true });
+    expect(egressPolicyOf({ ...config, mode: 'hosted' })).toEqual({ denyPrivate: true });
   });
 });

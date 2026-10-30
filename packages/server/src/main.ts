@@ -4,6 +4,8 @@ import { runAdmin } from './identity/cli.js';
 import { ExitCode, packageVersion, type ServerIo } from './io.js';
 import { BUILTIN_MODULES } from './modules.js';
 import { runMigrate, startServer, StartupError, type StartOptions } from './serve.js';
+import { runTenancyRole } from './tenancy/cli.js';
+import { operatorPublicUrl } from './tenancy/urls.js';
 
 /** `serveOptions` exists for tests (signals, exit, drain time, modules); the bin passes none. */
 export async function main(argv: readonly string[], io: ServerIo, serveOptions: StartOptions = {}): Promise<number> {
@@ -29,12 +31,12 @@ export async function main(argv: readonly string[], io: ServerIo, serveOptions: 
         const config = loadConfig(io.env, packageVersion());
         if (config.oidcIssuer !== undefined) {
           io.stdout.write(
-            `OIDC redirect URI to register at the issuer: ${config.publicUrl}/api/v1/auth/oidc/callback\n`,
+            `OIDC redirect URI to register at the issuer: ${operatorPublicUrl(config)}/api/v1/auth/oidc/callback\n`,
           );
           // Hosted spec §17.2: sign-ins started from the browser come back to a second one.
           if (config.browserClient)
             io.stdout.write(
-              `OIDC redirect URI for the browser client: ${config.publicUrl}/api/v1/auth/oidc/browser-callback\n`,
+              `OIDC redirect URI for the browser client: ${operatorPublicUrl(config)}/api/v1/auth/oidc/browser-callback\n`,
             );
         }
         return ExitCode.Ok;
@@ -67,6 +69,8 @@ export async function main(argv: readonly string[], io: ServerIo, serveOptions: 
     case 'admin-scim-group-link':
     case 'admin-scim-group-unlink':
       return runAdmin(command, io);
+    case 'admin-tenancy-role':
+      return runTenancyRole(command, io);
     case 'serve': {
       try {
         const server = await startServer(io.env, io, { modules: BUILTIN_MODULES, ...serveOptions });

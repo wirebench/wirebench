@@ -43,6 +43,7 @@ import {
 } from '@wirebench/engine';
 import type { FastifyInstance, FastifyReply, FastifyRequest, preHandlerHookHandler } from 'fastify';
 import { announce, auditSource, recordAudit, type AuditInput, type Querier, type ServerContext } from '../context.js';
+import { tenantUrl } from '../tenancy/urls.js';
 import { isUniqueViolation } from '../db/errors.js';
 import { unauthenticated } from '../identity/errors.js';
 import { RateLimiter, callerKey, chargeKeys, ipKey, rateLimit } from '../identity/rate-limit.js';
@@ -314,7 +315,7 @@ export function agentRoutes(env: AgentRoutesEnv): (app: FastifyInstance) => Prom
         if (paired === undefined) throw failed();
         const answer: AgentPairResponse = {
           pairingId: paired.row.id,
-          origin: ctx.config.publicUrl,
+          origin: tenantUrl(ctx.config, request),
           email: paired.email,
         };
         return reply.code(201).send(answer);

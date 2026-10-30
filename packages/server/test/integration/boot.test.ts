@@ -19,11 +19,14 @@ const slowModule = (ms: number): ServerModule => ({
   },
 });
 
+// Every test starts the server with two URLs on an empty schema: it migrates as the owner, grants, and
+// serves as the app role (spec §19.4). tenancy/app-role.test.ts covers the one-URL start-up.
 describeDb('startServer', () => {
   let dataDir: string;
   let port: number;
   let db: Awaited<ReturnType<typeof testDatabase>>;
   const env = () => ({
+    WIREBENCH_SERVER_MIGRATION_DATABASE_URL: db.ownerUrl,
     WIREBENCH_SERVER_DATABASE_URL: db.url,
     WIREBENCH_SERVER_PUBLIC_URL: 'https://wirebench.test',
     WIREBENCH_SERVER_DATA_DIR: dataDir,
@@ -35,7 +38,7 @@ describeDb('startServer', () => {
   beforeEach(async () => {
     dataDir = await mkTempDir();
     port = await freePort();
-    db = await testDatabase();
+    db = await testDatabase({ migrated: false });
   });
   afterEach(async () => {
     await db.close();
@@ -44,13 +47,15 @@ describeDb('startServer', () => {
 
   it('migrates, prepares the data dir, listens, and answers healthz and meta', async () => {
     const exit = vi.fn();
-    const server = await startServer(env(), io(), { signals: new EventEmitter(), exit });
+    const server = await startServer(env(), io(), { signals: new EventEmitter(), exit, allowNoTenants: true });
     try {
       expect(server.port).toBe(port);
       expect((await fetch(`http://127.0.0.1:${server.port}/healthz`)).status).toBe(200);
       const meta: unknown = await (await fetch(`http://127.0.0.1:${server.port}/api/v1/meta`)).json();
       expect(meta).toMatchObject({ name: 'wirebench-server', apiVersion: 1, publicUrl: 'https://wirebench.test' });
       expect((await db.query('select version from schema_migrations')).rowCount).toBe(1);
+      const me = await server.ctx.db.query<{ me: string }>('select current_user::text as me');
+      expect(me.rows[0]!.me).toBe('wirebench_app');
     } finally {
       await server.close();
     }
@@ -66,7 +71,12 @@ describeDb('startServer', () => {
         return Promise.resolve();
       },
     };
-    const server = await startServer(env(), io(), { signals: new EventEmitter(), exit: vi.fn(), modules: [module] });
+    const server = await startServer(env(), io(), {
+      signals: new EventEmitter(),
+      exit: vi.fn(),
+      modules: [module],
+      allowNoTenants: true,
+    });
     try {
       expect(server.ctx.license).toBe(live);
     } finally {
@@ -77,7 +87,7 @@ describeDb('startServer', () => {
   it('shuts down on SIGTERM after draining an in-flight request', async () => {
     const signals = new EventEmitter();
     const exit = vi.fn();
-    const server = await startServer(env(), io(), { signals, exit, modules: [slowModule(300)] });
+    const server = await startServer(env(), io(), { signals, exit, modules: [slowModule(300)], allowNoTenants: true });
     const inFlight = fetch(`http://127.0.0.1:${server.port}/api/v1/slow`);
     await new Promise((resolve) => setTimeout(resolve, 50));
     signals.emit('SIGTERM');
@@ -91,7 +101,7 @@ describeDb('startServer', () => {
   it('exits 130 at once on a second signal', async () => {
     const signals = new EventEmitter();
     const exit = vi.fn();
-    const server = await startServer(env(), io(), { signals, exit, modules: [slowModule(300)] });
+    const server = await startServer(env(), io(), { signals, exit, modules: [slowModule(300)], allowNoTenants: true });
     const inFlight = fetch(`http://127.0.0.1:${server.port}/api/v1/slow`);
     await new Promise((resolve) => setTimeout(resolve, 50));
     signals.emit('SIGTERM');
@@ -106,7 +116,13 @@ describeDb('startServer', () => {
   it('when draining outlasts drainMs, drops the remaining connections, closes the pool and does not exit', async () => {
     const signals = new EventEmitter();
     const exit = vi.fn();
-    const server = await startServer(env(), io(), { signals, exit, drainMs: 100, modules: [slowModule(2_000)] });
+    const server = await startServer(env(), io(), {
+      signals,
+      exit,
+      drainMs: 100,
+      modules: [slowModule(2_000)],
+      allowNoTenants: true,
+    });
     const inFlight = fetch(`http://127.0.0.1:${server.port}/api/v1/slow`);
     await new Promise((resolve) => setTimeout(resolve, 50));
     const started = Date.now();
@@ -119,7 +135,7 @@ describeDb('startServer', () => {
   });
 
   it('close() lets work holding a repository lock finish before the pool closes, then refuses new work', async () => {
-    const server = await startServer(env(), io(), { signals: new EventEmitter(), exit: vi.fn() });
+    const server = await startServer(env(), io(), { signals: new EventEmitter(), exit: vi.fn(), allowNoTenants: true });
     const workspaceId = '01J8ZC5Q0V7R3T9XK2M4N6P8QA';
     let release: () => void = () => undefined;
     const gate = new Promise<void>((resolve) => {
@@ -144,7 +160,13 @@ describeDb('startServer', () => {
   it('main serve returns 0 after a SIGTERM whose drain timed out', async () => {
     const signals = new EventEmitter();
     const exit = vi.fn();
-    const running = main(['serve'], io(), { signals, exit, drainMs: 100, modules: [slowModule(2_000)] });
+    const running = main(['serve'], io(), {
+      signals,
+      exit,
+      drainMs: 100,
+      modules: [slowModule(2_000)],
+      allowNoTenants: true,
+    });
     let reachable = false;
     for (let attempt = 0; attempt < 100 && !reachable; attempt += 1) {
       reachable = await fetch(`http://127.0.0.1:${port}/healthz`).then(
@@ -163,11 +185,13 @@ describeDb('startServer', () => {
   });
 
   it('refuses to start when the port is taken, naming the address, and releases the pool', async () => {
-    const first = await startServer(env(), io(), { signals: new EventEmitter(), exit: vi.fn() });
+    const first = await startServer(env(), io(), { signals: new EventEmitter(), exit: vi.fn(), allowNoTenants: true });
     try {
-      const error = await startServer(env(), io(), { signals: new EventEmitter(), exit: vi.fn() }).catch(
-        (caught: unknown) => caught,
-      );
+      const error = await startServer(env(), io(), {
+        signals: new EventEmitter(),
+        exit: vi.fn(),
+        allowNoTenants: true,
+      }).catch((caught: unknown) => caught);
       expect(error).toBeInstanceOf(StartupError);
       expect(error).toMatchObject({ exitCode: 2 });
       expect((error as StartupError).message).toContain(`127.0.0.1:${port}`);
@@ -177,10 +201,13 @@ describeDb('startServer', () => {
   });
 
   it('exits 3 when the database is newer than this server', async () => {
-    const first = await startServer(env(), io(), { signals: new EventEmitter(), exit: vi.fn() });
+    const first = await startServer(env(), io(), { signals: new EventEmitter(), exit: vi.fn(), allowNoTenants: true });
     await first.close();
-    await db.query('insert into schema_migrations (version, name) values (99, $1)', ['future']);
-    await expect(startServer(env(), io(), { signals: new EventEmitter(), exit: vi.fn() })).rejects.toMatchObject({
+    // The ledger is the owner's to write; the app role only reads it.
+    await db.owner.query('insert into schema_migrations (version, name) values (99, $1)', ['future']);
+    await expect(
+      startServer(env(), io(), { signals: new EventEmitter(), exit: vi.fn(), allowNoTenants: true }),
+    ).rejects.toMatchObject({
       exitCode: 3,
     });
     for (const command of [['serve'], ['migrate'], ['migrate', '--check']]) {

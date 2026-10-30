@@ -151,3 +151,18 @@ describe('admin commands (§3.7)', () => {
     expect(() => parseServerArgs(['admin', 'license', 'show', '--workspace', 'W1'])).toThrow(/--workspace/);
   });
 });
+
+describe('admin tenancy role (hosted spec §19.4)', () => {
+  it('parses the command and its --print-sql flag', () => {
+    expect(parseServerArgs(['admin', 'tenancy', 'role'])).toEqual({ command: 'admin-tenancy-role', printSql: false });
+    expect(parseServerArgs(['admin', 'tenancy', 'role', '--print-sql'])).toEqual({
+      command: 'admin-tenancy-role',
+      printSql: true,
+    });
+  });
+  it('refuses another tenancy sub-command, and --print-sql anywhere else', () => {
+    expect(() => parseServerArgs(['admin', 'tenancy'])).toThrow(/usage: wirebench-server admin tenancy role/);
+    expect(() => parseServerArgs(['admin', 'tenancy', 'revert'])).toThrow(/usage: wirebench-server admin tenancy role/);
+    expect(() => parseServerArgs(['migrate', '--print-sql'])).toThrow(/--print-sql applies to admin tenancy role only/);
+  });
+});

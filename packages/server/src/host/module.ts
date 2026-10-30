@@ -30,6 +30,7 @@ import { identitySettings } from '../identity/env.js';
 import { tokenByHash } from '../identity/repo.js';
 import { hashToken } from '../identity/tokens.js';
 import { realTimer } from '../live/module.js';
+import { tenantUrl } from '../tenancy/urls.js';
 import { isServedChannel } from './allowlist.js';
 import { browserClientRoutes } from './browser-client.js';
 import { HOST_CLOSE, HOST_LIMITS } from './errors.js';
@@ -163,8 +164,8 @@ export function hostModule(options: HostModuleOptions = {}): ServerModule {
             egress: ctx.egress,
             appVersion: config.version,
             server: {
-              url: config.publicUrl,
-              send: injectSend(app, config.publicUrl, session, refused),
+              url: user.serverUrl,
+              send: injectSend(app, user.serverUrl, session, refused),
               connectLive: () => liveBridge(runLive),
               credential,
             },
@@ -186,7 +187,8 @@ export function hostModule(options: HostModuleOptions = {}): ServerModule {
         const refuse = (code: number, reason: string): void => {
           socket.close(code, reason);
         };
-        if (request.headers.origin !== config.publicUrl) {
+        const serverUrl = tenantUrl(config, request);
+        if (request.headers.origin !== serverUrl) {
           refuse(HOST_CLOSE.forbidden, 'origin refused');
           return;
         }
@@ -196,7 +198,7 @@ export function hostModule(options: HostModuleOptions = {}): ServerModule {
           refuse(HOST_CLOSE.forbidden, 'browser sessions only');
           return;
         }
-        const token = sessionToken(request, config.publicUrl);
+        const token = sessionToken(request, serverUrl);
         if (caller === undefined || token === undefined) {
           refuse(HOST_CLOSE.unauthenticated, 'unauthenticated');
           return;
@@ -212,7 +214,7 @@ export function hostModule(options: HostModuleOptions = {}): ServerModule {
           refuse(HOST_CLOSE.tooManySockets, 'too many host sockets');
           return;
         }
-        const user: HostUser = { id: caller.id, email: caller.email };
+        const user: HostUser = { id: caller.id, email: caller.email, serverUrl };
         /** Set once the socket runs, just below; `instances.open` calls nothing on the handle before then. */
         const running: { socket?: HostSocket } = {};
         const handle: HostSocketHandle = {
