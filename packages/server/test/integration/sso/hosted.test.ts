@@ -1,5 +1,5 @@
 /**
- * Hosted mode serves no SAML route, desktop or browser, and no SCIM base, for any tenant (hosted edition spec
+ * Hosted mode serves no SAML route, desktop or browser, no SCIM base and no SCIM admin route, for any tenant (hosted edition spec
  * §19.1): until slice 7 gives each tenant its own identity provider, the operator's one would sign people into
  * every tenant. A self-hosted server with the same configuration answers every one of them, so a `404` there is
  * the route's absence, not a refusal.
@@ -58,6 +58,10 @@ const ROUTES: readonly {
   { method: 'GET', url: '/scim/v2/Users' },
   { method: 'GET', url: '/scim/v2/ServiceProviderConfig' },
   { method: 'POST', url: '/scim/v2/Users', payload: { userName: 'ada@example.com' } },
+  // The SCIM admin routes go with the base they manage (Task 15 review M2).
+  { method: 'GET', url: '/api/v1/scim-tokens' },
+  { method: 'POST', url: '/api/v1/scim-tokens', payload: { name: 'idp' } },
+  { method: 'GET', url: '/api/v1/scim-groups' },
 ];
 
 const send = (h: IdentityHarness, route: (typeof ROUTES)[number]) =>
@@ -103,9 +107,9 @@ describeDb('SAML and SCIM in hosted mode (spec §19.1)', () => {
     afterAll(() => h.close());
 
     it('answers 404 on every SAML and SCIM route of a tenant it resolves', async () => {
-      // The tenant resolves: a route the module does serve in hosted mode answers.
-      const tokens = await h.app.inject({ method: 'GET', url: '/api/v1/scim-tokens', headers: { host: HOST } });
-      expect(tokens.statusCode).not.toBe(404);
+      // The tenant resolves: a route of the API answers on its host.
+      const meta = await h.app.inject({ method: 'GET', url: '/api/v1/meta', headers: { host: HOST } });
+      expect(meta.statusCode).toBe(200);
       for (const route of ROUTES) {
         const res = await send(h, route);
         expect(res.statusCode, `${route.method} ${route.url}`).toBe(404);

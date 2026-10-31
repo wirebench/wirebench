@@ -4,7 +4,7 @@
  * - The browser's routes need a cookie session (`via: 'cookie'`); identity's guard already refuses a
  *   cookie write whose `Origin` is not the public URL. A bearer caller is treated as not signed in.
  * - `POST /pairings` has no session: the code is the credential. It is limited per address, and failures
- *   are limited server-wide (below).
+ *   are limited per tenant (below).
  * - The agent's own requests (redeem, and an unpair or its port, told at every start) carry the
  *   `AGENT_HEADERS` and are verified against the pairing's Ed25519 key (`signature.ts`). A `DELETE` or
  *   `PATCH` signs the hash of its exact body bytes, so these routes sit in a scope of their own whose JSON
@@ -13,8 +13,9 @@
  * A wrong code cannot be tied to any user or code: the request carries only the code, lookup is by its
  * HMAC, and a wrong guess matches no row. So guessing is bounded by two limits instead: 20 attempts per
  * address in ten minutes (the life of a code; an office behind one NAT address pairs many machines), and 50
- * failed attempts server-wide in ten minutes, after which pairing answers 429 for everyone until the window
- * refills. Against 31^6 ≈ 887 million codes that keeps a distributed guess hopeless.
+ * failed attempts per tenant in ten minutes, after which pairing answers 429 for everyone in that tenant until the
+ * window refills (spec §19.8 guard 5: server-wide, one tenant's attacker would shut pairing for every customer).
+ * Against 31^6 ≈ 887 million codes that keeps a distributed guess hopeless.
  *
  * The agent's signed requests are limited per address loosely (a whole office's agents may share one) and,
  * for a redeem, per pairing once its signature holds: one agent cannot spend its office's allowance, and a

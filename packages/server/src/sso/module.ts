@@ -93,9 +93,13 @@ export function ssoModule(options: SsoOptions = {}): ServerModule {
       shared = env;
       // Hosted mode serves no SAML route, desktop or browser, and no SCIM base, for any tenant (spec §19.1): the
       // operator's one identity provider would sign people into every tenant. They answer `404`, as unknown routes.
-      if (ctx.config.mode !== 'hosted') authSamlRoutes(env)(app);
-      scimTokenRoutes(env)(app);
-      scimGroupRoutes(env)(app);
+      // So do the SCIM token and group admin routes, which manage a base nobody can reach (Task 15 review M2); they
+      // come back with per-tenant SSO in slice 7.
+      if (ctx.config.mode !== 'hosted') {
+        authSamlRoutes(env)(app);
+        scimTokenRoutes(env)(app);
+        scimGroupRoutes(env)(app);
+      }
 
       const interval = options.sweepIntervalMs ?? DAY_MS;
       if (interval > 0) {

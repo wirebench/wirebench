@@ -34,6 +34,15 @@ export function scimSource(request: FastifyRequest): AuditSource {
   return { ...base, actor: { kind: 'scim', tokenId: request.scimToken!.id } };
 }
 
+/** What the scope keys a failed attempt by: the tenant first (spec §19.8 guard 5), then the address. */
+type KeyedRequest = Pick<FastifyRequest, 'ip'> & { readonly tenant: Pick<FastifyRequest['tenant'], 'tenantId'> };
+
+/** The failed-attempt limiter's key, like identity's: one bucket per tenant and address. */
+export const scimLimiterKey = (request: KeyedRequest): string => `${request.tenant.tenantId}:scim:ip:${request.ip}`;
+
+/** The key of the once-a-minute audit of failed attempts: per tenant and address, too. */
+export const scimAuditKey = (request: KeyedRequest): string => `${request.tenant.tenantId}:${request.ip}`;
+
 function bearerOf(header: string | undefined): string | undefined {
   const match = /^Bearer\s+(\S+)$/i.exec(header?.trim() ?? '');
   const token = match?.[1];
@@ -83,7 +92,7 @@ export const scimPlugin =
     );
 
     const refuse = async (request: FastifyRequest, reply: FastifyReply, reason: string): Promise<FastifyReply> => {
-      const decision = env.limiter.take(`${request.tenant.tenantId}:scim:ip:${request.ip}`);
+      const decision = env.limiter.take(scimLimiterKey(request));
       if (!decision.allowed) {
         return reply
           .code(429)
@@ -92,7 +101,7 @@ export const scimPlugin =
           .send(scimError(429, 'Too many failed attempts. Try again shortly.').body());
       }
       const now = env.now().getTime();
-      const addressKey = `${request.tenant.tenantId}:${request.ip}`;
+      const addressKey = scimAuditKey(request);
       const last = auditedAt.get(addressKey);
       if (last === undefined || now - last >= MINUTE_MS) {
         auditedAt.set(addressKey, now);

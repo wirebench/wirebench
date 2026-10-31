@@ -69,6 +69,19 @@ async function auditScope(
   }
 }
 
+/**
+ * Hosted mode serves no SCIM, nor its token and group admin routes, until per-tenant SSO in slice 7 (spec §19.1;
+ * Task 15 review M2): the command line refuses them the same way.
+ */
+function assertScimServed(config: Pick<ServerConfig, 'mode'>): void {
+  if (config.mode === 'hosted') {
+    throw new WirebenchError(
+      'sso-scim-hosted-off',
+      'SCIM is not served in hosted mode until each tenant has its own SSO',
+    );
+  }
+}
+
 /** Why `--tenant` cannot go with this configuration's mode (spec §19.11), or `undefined` when it can. */
 function tenantMisuse(mode: ServerConfig['mode'], tenant: string | undefined): string | undefined {
   if (mode === 'hosted' && tenant === undefined) return '--tenant <slug> is required in hosted mode';
@@ -230,10 +243,12 @@ export async function runAdmin(
       case 'admin-scim-token-create':
       case 'admin-scim-token-list':
       case 'admin-scim-token-revoke':
+        assertScimServed(config);
         return await runScimTokenCommand(command, env, scope, io);
       case 'admin-scim-group-list':
       case 'admin-scim-group-link':
       case 'admin-scim-group-unlink':
+        assertScimServed(config);
         return await runScimGroupCommand(command, env, scope, io);
     }
   } catch (error) {

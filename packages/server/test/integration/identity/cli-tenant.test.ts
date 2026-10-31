@@ -56,6 +56,12 @@ describeDb('admin --tenant (spec §19.11)', () => {
     expect(listed.stdout()).toContain('ada@example.com');
   });
 
+  it('hosted: the SCIM commands are refused, as SCIM is not served there (Task 15 review M2)', async () => {
+    const out = io();
+    expect(await runAdmin({ command: 'admin-scim-token-list', tenant: 'acme' }, out.io, { configure: hosted })).toBe(1);
+    expect(out.stderr()).toContain('sso-scim-hosted-off');
+  });
+
   it('hosted: a slug no tenant has is refused', async () => {
     const out = io();
     expect(await runAdmin({ command: 'admin-list-invitations', tenant: 'nobody' }, out.io, { configure: hosted })).toBe(

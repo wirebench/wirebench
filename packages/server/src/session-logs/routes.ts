@@ -109,7 +109,8 @@ export const sessionLogRoutes =
         const caller = callerOf(request);
         const { workspaceId } = request.workspaceAccess!;
         const body = request.body as SessionLogOpenRequest;
-        // The workspace's switch, the log and its audit line: one unit.
+        // The workspace's switch, the log and its audit line, in one unit. The switch is read, not locked: one
+        // turned off while this commits still lets this log open, as it always has; later chunks are not refused.
         const { log, created } = await unit(request, async (tx) => {
           const workspace = await workspaceById(tx, workspaceId);
           if (workspace === undefined || !workspace.recordSessionLogs) throw recordingOff();
