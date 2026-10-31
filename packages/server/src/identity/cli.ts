@@ -6,7 +6,7 @@
 import type { KeyObject } from 'node:crypto';
 import { WirebenchError } from '@wirebench/engine';
 import type { ServerCommand } from '../args.js';
-import { ConfigError, forgetDatabaseUrls, loadConfig } from '../config.js';
+import { ConfigError, forgetDatabaseUrls, loadConfig, type ServerConfig } from '../config.js';
 import { auditHook } from '../audit-log/hook.js';
 import { chainKeys } from '../audit-log/chain/keys.js';
 import { runAuditCommand, runVerifyCommand } from '../audit-log/cli.js';
@@ -24,7 +24,7 @@ import { allMigrations, StartupError } from '../serve.js';
 import { runScimGroupCommand, runScimTokenCommand } from '../sso/cli.js';
 import type { TenantScope } from '../tenancy/scope.js';
 import { createTenancy, directoryOf, isDefaultTenant, type Tenancy } from '../tenancy/tenancy.js';
-import { urlWithoutScope } from '../tenancy/urls.js';
+import { tenantUrl } from '../tenancy/urls.js';
 import { identitySettings, type InvitationEnv } from './env.js';
 import { createInvitation, invitationSummary, isOpen, revokeOpenInvitation } from './invitations.js';
 import * as repo from './repo.js';
@@ -33,51 +33,63 @@ import * as repo from './repo.js';
 type AdminCommand = Exclude<Extract<ServerCommand, { command: `admin-${string}` }>, { command: 'admin-tenancy-role' }>;
 
 /**
- * The tenant URL an invitation link names. The command line serves the default tenant until Task 16 adds
- * `--tenant`, and `loadConfig` refuses hosted mode, so this is the public URL.
- */
-function cliUrl(config: Parameters<typeof urlWithoutScope>[0]): string {
-  const url = urlWithoutScope(config);
-  if (url === undefined) throw new WirebenchError('tenancy-unscoped', 'the admin command line needs a tenant');
-  return url;
-}
-
-/**
- * The tenant the command line works in: the default one, until Task 16 adds `--tenant` (spec §19.11). The
+ * The tenant the command line works in (spec §19.11): the one `--tenant` names, or, without it, the default one,
+ * which is the only one a self-hosted server has. `runAdmin` has already checked `--tenant` against the mode. The
  * one file outside `src/tenancy/` that `check:tenant-scope` lets name the default scope.
  */
-async function cliScope(tenancy: Tenancy): Promise<TenantScope> {
+async function cliScope(tenancy: Tenancy, slug: string | undefined): Promise<TenantScope> {
   const directory = directoryOf(tenancy);
   if (!(await directory.load())) {
     throw new StartupError(ExitCode.Migration, 'migration 0020 is not applied: the server has no tenants');
   }
-  return directory.defaultScope();
+  if (slug === undefined) return directory.defaultScope();
+  const found = (await directory.list()).find((scope) => scope.slug === slug);
+  if (found === undefined) throw new WirebenchError('tenancy-tenant-unknown', `no tenant has the slug "${slug}"`);
+  return found;
 }
 
 /**
- * The audit commands' tenant: {@link cliScope}'s, or, when `server_identity` has lost its row, the server's only
- * tenant, so export and verify still run on a damaged database (licensing spec §3.7). That tenant is the default
- * one: only a self-hosted server has one tenant.
+ * The audit commands' tenant: {@link cliScope}'s, or, when `server_identity` has lost its row and no `--tenant` was
+ * given, the server's only tenant, so export and verify still run on a damaged database (licensing spec §3.7).
+ * That tenant is the default one: only a self-hosted server has one tenant.
  */
 async function auditScope(
   tenancy: Tenancy,
+  slug: string | undefined,
 ): Promise<{ readonly scope: TenantScope; readonly isDefault: (scope: TenantScope) => boolean }> {
   try {
-    const scope = await cliScope(tenancy);
+    const scope = await cliScope(tenancy, slug);
     return { scope, isDefault: (of) => isDefaultTenant(tenancy, of) };
   } catch (error) {
-    if (!(error instanceof WirebenchError) || error.code !== 'server-identity-missing') throw error;
+    if (slug !== undefined || !(error instanceof WirebenchError) || error.code !== 'server-identity-missing')
+      throw error;
     const only = await directoryOf(tenancy).onlyTenant();
     if (only === undefined) throw error;
     return { scope: only, isDefault: (of) => of.tenantId === only.tenantId };
   }
 }
 
-/** `now` exists for tests; the bin passes nothing. */
+/** Why `--tenant` cannot go with this configuration's mode (spec §19.11), or `undefined` when it can. */
+function tenantMisuse(mode: ServerConfig['mode'], tenant: string | undefined): string | undefined {
+  if (mode === 'hosted' && tenant === undefined) return '--tenant <slug> is required in hosted mode';
+  if (mode !== 'hosted' && tenant !== undefined) {
+    return '--tenant applies to hosted mode only: a self-hosted server has one tenant';
+  }
+  return undefined;
+}
+
+/**
+ * `now` exists for tests, as does `configure`: a hosted configuration, which `loadConfig` refuses (spec §19.1). The
+ * bin passes nothing.
+ */
 export async function runAdmin(
   command: AdminCommand,
   io: ServerIo,
-  options: { readonly now?: () => Date; readonly publicKeys?: readonly KeyObject[] } = {},
+  options: {
+    readonly now?: () => Date;
+    readonly publicKeys?: readonly KeyObject[];
+    readonly configure?: (config: ServerConfig) => ServerConfig;
+  } = {},
 ): Promise<number> {
   let config: ReturnType<typeof loadConfig>;
   let db: ReturnType<typeof createDatabase>;
@@ -85,8 +97,14 @@ export async function runAdmin(
   let hooks: ReturnType<typeof serverHooks>;
   const now = options.now ?? (() => new Date());
   try {
-    config = loadConfig(io.env, packageVersion());
+    const loaded = loadConfig(io.env, packageVersion());
+    config = options.configure?.(loaded) ?? loaded;
     forgetDatabaseUrls();
+    const misuse = tenantMisuse(config.mode, command.tenant);
+    if (misuse !== undefined) {
+      io.stderr.write(`${misuse}\ntry --help\n`);
+      return ExitCode.Config;
+    }
     db = createDatabase(config.databaseUrl, { applicationName: ADMIN_APPLICATION_NAME });
     publicKeys = options.publicKeys ?? PRODUCTION_PUBLIC_KEYS;
     hooks = serverHooks();
@@ -110,7 +128,7 @@ export async function runAdmin(
     // each tenant has its own chain and key (spec §19.7).
     if (command.command === 'admin-audit-export' || command.command === 'admin-audit-verify') {
       const tenancy = createTenancy(db);
-      const { scope, isDefault } = await auditScope(tenancy);
+      const { scope, isDefault } = await auditScope(tenancy, command.tenant);
       if (command.command === 'admin-audit-export') {
         return await runAuditCommand(command, { db: tenancy.db(scope), hooks, now }, io);
       }
@@ -127,7 +145,8 @@ export async function runAdmin(
     ) {
       // In the command line's tenant, as every schedules route works in the request's.
       const tenancy = createTenancy(db);
-      return await runSchedulesCommand(command, { db: tenancy.db(await cliScope(tenancy)), hooks, now }, io);
+      const scope = await cliScope(tenancy, command.tenant);
+      return await runSchedulesCommand(command, { db: tenancy.db(scope), hooks, now }, io);
     }
     // Only now: before migrations the server_identity table may not exist.
     const serverId = await readServerId(db).catch((error: unknown) => {
@@ -138,7 +157,7 @@ export async function runAdmin(
       throw error;
     });
     const tenancy = createTenancy(db);
-    const scope = await cliScope(tenancy);
+    const scope = await cliScope(tenancy, command.tenant);
     const env: InvitationEnv = {
       ctx: {
         db,
@@ -157,7 +176,7 @@ export async function runAdmin(
           serverAdmin: command.serverAdmin,
           createdBy: null,
           source: SYSTEM_SOURCE,
-          serverUrl: cliUrl(config),
+          serverUrl: tenantUrl(config, scope),
         });
         io.stdout.write(
           `Invitation for ${created.email} (${command.serverAdmin ? 'server admin' : 'member'})\n${created.url}\nExpires ${created.expiresAt}\n`,

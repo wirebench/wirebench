@@ -26,9 +26,9 @@ export function tenantUrl(config: UrlConfig, of: ScopeSource): string {
 }
 
 /**
- * The URL where nothing gives a scope yet: the admin command line until `--tenant` (Task 16), and the
- * server-wide SAML provider, which is the default tenant's until slice 7. The public URL in self-hosted mode,
- * where every tenant's URL is that one; `undefined` in hosted mode, where a URL needs a tenant.
+ * The URL where nothing gives a scope yet: the server-wide SAML provider, which is the default tenant's until
+ * slice 7. The public URL in self-hosted mode, where every tenant's URL is that one; `undefined` in hosted mode,
+ * where a URL needs a tenant.
  */
 export function urlWithoutScope(config: UrlConfig): string | undefined {
   return config.mode === 'hosted' ? undefined : config.publicUrl;

@@ -1,9 +1,7 @@
 import { parseArgs } from 'node:util';
 
-export type ServerCommand =
-  | { readonly command: 'serve' }
-  | { readonly command: 'migrate'; readonly check: boolean }
-  | { readonly command: 'config-check' }
+/** The admin commands that work in one tenant: they take `--tenant <slug>` (hosted edition spec §19.11). */
+type TenantAdminCommand =
   | { readonly command: 'admin-invite'; readonly email: string; readonly serverAdmin: boolean }
   | { readonly command: 'admin-list-invitations' }
   | { readonly command: 'admin-revoke-invitation'; readonly id: string }
@@ -32,7 +30,17 @@ export type ServerCommand =
   | { readonly command: 'admin-schedules-list'; readonly workspace?: string }
   | { readonly command: 'admin-schedules-enable'; readonly id: string }
   | { readonly command: 'admin-schedules-disable'; readonly id: string }
-  | { readonly command: 'admin-schedules-runs'; readonly id: string; readonly limit: number }
+  | { readonly command: 'admin-schedules-runs'; readonly id: string; readonly limit: number };
+
+export type ServerCommand =
+  | { readonly command: 'serve' }
+  | { readonly command: 'migrate'; readonly check: boolean }
+  | { readonly command: 'config-check' }
+  /**
+   * `tenant` is the `--tenant` slug: required in hosted mode, refused in self-hosted mode (`identity/cli.ts`
+   * checks it against the configuration, which the parser does not read).
+   */
+  | (TenantAdminCommand & { readonly tenant?: string })
   | { readonly command: 'admin-tenancy-role'; readonly printSql: boolean }
   | { readonly command: 'help' }
   | { readonly command: 'version' };
@@ -81,6 +89,9 @@ Usage:
   wirebench-server --version
   wirebench-server --help
 
+Every admin command but tenancy role takes --tenant <slug>: the tenant it works in. Hosted mode requires it;
+a self-hosted server has one tenant and refuses it.
+
 Configuration is read from WIREBENCH_SERVER_* environment variables; see README.md.
 `;
 
@@ -97,6 +108,7 @@ const OPTIONS = {
   json: { type: 'boolean' },
   limit: { type: 'string' },
   'print-sql': { type: 'boolean' },
+  tenant: { type: 'string' },
 } as const;
 
 const SCHEDULES_USAGE =
@@ -109,6 +121,8 @@ const AUDIT_USAGE =
 /** `<seq>:<hex>`, as the sealer logs a head: a sequence number from 1 and a 32-byte hash in hex. */
 const HEAD = /^([1-9][0-9]{0,18}):([0-9a-fA-F]{64})$/;
 const MAX_SEQ = 2n ** 63n - 1n;
+/** A tenant's slug as `tenants.slug` holds it: one DNS label, lower-case. */
+const TENANT_SLUG = /^[a-z0-9](?:[a-z0-9-]{1,38}[a-z0-9])?$/;
 
 function parseHead(value: string): { seq: bigint; hash: string } {
   const match = HEAD.exec(value);
@@ -154,6 +168,17 @@ export function parseServerArgs(argv: readonly string[]): ServerCommand {
   if (parsed.values['print-sql'] !== undefined && !(word === 'admin' && second === 'tenancy' && third === 'role')) {
     throw new UsageError('--print-sql applies to admin tenancy role only');
   }
+  const tenant = parsed.values.tenant;
+  if (tenant !== undefined) {
+    if (word !== 'admin' || second === 'tenancy') {
+      throw new UsageError('--tenant applies to the admin commands, not to admin tenancy');
+    }
+    if (!TENANT_SLUG.test(tenant))
+      throw new UsageError('--tenant must be a tenant slug: lower-case letters, digits and -');
+  }
+  /** The admin command, in `--tenant`'s tenant when one was named. */
+  const inTenant = (command: TenantAdminCommand): ServerCommand =>
+    tenant === undefined ? command : { ...command, tenant };
   switch (word) {
     case undefined:
     case 'serve':
@@ -168,19 +193,19 @@ export function parseServerArgs(argv: readonly string[]): ServerCommand {
       switch (second) {
         case 'invite':
           if (third === undefined) throw new UsageError('usage: wirebench-server admin invite <email> [--no-admin]');
-          return { command: 'admin-invite', email: third, serverAdmin: parsed.values['no-admin'] !== true };
+          return inTenant({ command: 'admin-invite', email: third, serverAdmin: parsed.values['no-admin'] !== true });
         case 'list-invitations':
-          return { command: 'admin-list-invitations' };
+          return inTenant({ command: 'admin-list-invitations' });
         case 'revoke-invitation':
           if (third === undefined) throw new UsageError('usage: wirebench-server admin revoke-invitation <id>');
-          return { command: 'admin-revoke-invitation', id: third };
+          return inTenant({ command: 'admin-revoke-invitation', id: third });
         case 'audit': {
           if (third === 'verify') {
-            return {
+            return inTenant({
               command: 'admin-audit-verify',
               ...(parsed.values.head !== undefined ? { head: parseHead(parsed.values.head) } : {}),
               json: parsed.values.json === true,
-            };
+            });
           }
           if (third !== 'export') throw new UsageError(AUDIT_USAGE);
           for (const key of ['from', 'to'] as const) {
@@ -189,32 +214,35 @@ export function parseServerArgs(argv: readonly string[]): ServerCommand {
               throw new UsageError(`--${key} must be an ISO 8601 date-time`);
             }
           }
-          return {
+          return inTenant({
             command: 'admin-audit-export',
             ...(parsed.values.from !== undefined ? { from: parsed.values.from } : {}),
             ...(parsed.values.to !== undefined ? { to: parsed.values.to } : {}),
             ...(parsed.values.action !== undefined ? { action: parsed.values.action } : {}),
             ...(parsed.values.workspace !== undefined ? { workspace: parsed.values.workspace } : {}),
-          };
+          });
         }
         case 'schedules':
           switch (third) {
             case 'list':
-              return {
+              return inTenant({
                 command: 'admin-schedules-list',
                 ...(parsed.values.workspace !== undefined ? { workspace: parsed.values.workspace } : {}),
-              };
+              });
             case 'enable':
             case 'disable':
               if (fourth === undefined) throw new UsageError(SCHEDULES_USAGE);
-              return { command: third === 'enable' ? 'admin-schedules-enable' : 'admin-schedules-disable', id: fourth };
+              return inTenant({
+                command: third === 'enable' ? 'admin-schedules-enable' : 'admin-schedules-disable',
+                id: fourth,
+              });
             case 'runs': {
               if (fourth === undefined) throw new UsageError(SCHEDULES_USAGE);
               const limit = parsed.values.limit === undefined ? 50 : Number(parsed.values.limit);
               if (!Number.isInteger(limit) || limit < 1 || limit > 200) {
                 throw new UsageError('--limit must be a whole number from 1 to 200');
               }
-              return { command: 'admin-schedules-runs', id: fourth, limit };
+              return inTenant({ command: 'admin-schedules-runs', id: fourth, limit });
             }
             default:
               throw new UsageError(SCHEDULES_USAGE);
@@ -226,11 +254,11 @@ export function parseServerArgs(argv: readonly string[]): ServerCommand {
           switch (third) {
             case 'install':
               if (fourth === undefined) throw new UsageError('usage: wirebench-server admin license install <file>');
-              return { command: 'admin-license-install', file: fourth };
+              return inTenant({ command: 'admin-license-install', file: fourth });
             case 'show':
-              return { command: 'admin-license-show' };
+              return inTenant({ command: 'admin-license-show' });
             case 'remove':
-              return { command: 'admin-license-remove' };
+              return inTenant({ command: 'admin-license-remove' });
             default:
               throw new UsageError('usage: wirebench-server admin license install <file> | show | remove');
           }
@@ -238,26 +266,26 @@ export function parseServerArgs(argv: readonly string[]): ServerCommand {
           switch (third) {
             case 'create':
               if (fourth === undefined) throw new UsageError('usage: wirebench-server admin scim-token create <name>');
-              return { command: 'admin-scim-token-create', name: fourth };
+              return inTenant({ command: 'admin-scim-token-create', name: fourth });
             case 'list':
-              return { command: 'admin-scim-token-list' };
+              return inTenant({ command: 'admin-scim-token-list' });
             case 'revoke':
               if (fourth === undefined) throw new UsageError('usage: wirebench-server admin scim-token revoke <id>');
-              return { command: 'admin-scim-token-revoke', id: fourth };
+              return inTenant({ command: 'admin-scim-token-revoke', id: fourth });
             default:
               throw new UsageError('usage: wirebench-server admin scim-token create <name> | list | revoke <id>');
           }
         case 'scim-group':
           switch (third) {
             case 'list':
-              return { command: 'admin-scim-group-list' };
+              return inTenant({ command: 'admin-scim-group-list' });
             case 'link':
               if (fourth === undefined || fifth === undefined)
                 throw new UsageError('usage: wirebench-server admin scim-group link <group> <team>');
-              return { command: 'admin-scim-group-link', group: fourth, team: fifth };
+              return inTenant({ command: 'admin-scim-group-link', group: fourth, team: fifth });
             case 'unlink':
               if (fourth === undefined) throw new UsageError('usage: wirebench-server admin scim-group unlink <group>');
-              return { command: 'admin-scim-group-unlink', group: fourth };
+              return inTenant({ command: 'admin-scim-group-unlink', group: fourth });
             default:
               throw new UsageError(
                 'usage: wirebench-server admin scim-group list | link <group> <team> | unlink <group>',

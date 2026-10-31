@@ -7,8 +7,8 @@
  *   route or a module that reached for the default tenant, or branded a scope of its own, would pass every
  *   one-tenant test and serve the wrong tenant in hosted mode, so the name itself is refused, not only a call.
  *   Listing the files inside `src/tenancy/` too keeps a wrapper from re-exporting either. The admin command
- *   line's self-hosted default (§19.11) is on the list: `identity/cli.ts` serves the default tenant until
- *   Task 16 adds `--tenant`.
+ *   line's self-hosted default (§19.11) is on the list: without `--tenant`, `identity/cli.ts` works in the
+ *   default tenant, the only one a self-hosted server has.
  * - **No `directoryOf` outside the files {@link SCOPE_MINTS} names** (Task 6 review m2): the directory's
  *   `list()`, `get(id)` and `resolvable()` hand out scopes, so it is kept off `ctx.tenancy`, and only the
  *   start-up, the resolver's registration and the admin command line reach it.
@@ -83,14 +83,10 @@ export const OPERATOR_URL_ALLOWED: readonly string[] = [
 ];
 
 /**
- * Where nothing gives a scope yet (`tenancy/urls.ts`): the admin command line until Task 16 and the server-wide
- * SAML provider until slice 7.
+ * Where nothing gives a scope yet (`tenancy/urls.ts`): the server-wide SAML provider until slice 7. The admin
+ * command line has its tenant since Task 16 (`--tenant`, or the default one).
  */
-export const URL_WITHOUT_SCOPE_ALLOWED: readonly string[] = [
-  'packages/server/src/identity/cli.ts',
-  'packages/server/src/sso/module.ts',
-  URLS_FILE,
-];
+export const URL_WITHOUT_SCOPE_ALLOWED: readonly string[] = ['packages/server/src/sso/module.ts', URLS_FILE];
 
 export interface ScopeHit {
   readonly file: string;
