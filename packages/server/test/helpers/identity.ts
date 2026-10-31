@@ -173,6 +173,7 @@ export const MOVED_MODULES: readonly ServerModule['name'][] = [
   'live-updates',
   'terminal-shares',
   'scheduled-runs',
+  'audit-log',
 ];
 
 export interface SignedInUser {

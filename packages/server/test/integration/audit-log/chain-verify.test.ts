@@ -17,6 +17,9 @@ import { main } from '../../../src/main.js';
 import { describeDb, testDatabase } from '../../helpers/database.js';
 import { testKeys } from '../../helpers/licensing.js';
 import { manualTimers } from '../../helpers/timers.js';
+import type { TenantDb } from '../../../src/tenancy/tenant-db.js';
+import { createTenancy, type Tenancy } from '../../../src/tenancy/tenancy.js';
+import { defaultTenantDb } from '../../helpers/tenancy.js';
 
 const KEY = 'test-chain-key-0123456789abcdefghij';
 const OTHER_KEY = 'another-chain-key-9876543210zyxwvuts';
@@ -50,6 +53,8 @@ type VerifyFlags = Omit<Extract<ServerCommand, { command: 'admin-audit-verify' }
 
 describeDb('wirebench-server admin audit verify (audit-chain spec §3.4)', () => {
   let db: Awaited<ReturnType<typeof testDatabase>>;
+  let tdb: TenantDb;
+  let tenancy: Tenancy;
   let ids = 0;
   /** Everything every run wrote, scanned for the key at the end of each test. */
   let written: string[] = [];
@@ -97,8 +102,8 @@ describeDb('wirebench-server admin audit verify (audit-chain spec §3.4)', () =>
   const seal = async () =>
     (
       await new AuditSealer({
-        db,
-        key: KEY,
+        tenancy,
+        keys: () => KEY,
         now: () => new Date(),
         setTimer: manualTimers().setTimer,
         log: silentLog,
@@ -124,6 +129,8 @@ describeDb('wirebench-server admin audit verify (audit-chain spec §3.4)', () =>
 
   beforeAll(async () => {
     db = await testDatabase();
+    tdb = await defaultTenantDb(db);
+    tenancy = createTenancy(db);
     const run = io();
     expect(await main(['migrate'], run.io)).toBe(0);
   });
@@ -214,7 +221,9 @@ describeDb('wirebench-server admin audit verify (audit-chain spec §3.4)', () =>
 
   it('a sealed seq at or below the anchor is out of order', async () => {
     const made = await sealed(5);
-    expect(await deleteSealedBefore(db, KEY, new Date(Date.parse(t(2)) + 500), 1000, stops)).toBe(2);
+    expect(
+      await tdb.transaction((tx) => deleteSealedBefore(tx, KEY, new Date(Date.parse(t(2)) + 500), 1000, stops)),
+    ).toBe(2);
     await db.query('update audit_events set chain_seq = 1 where chain_seq = 3');
     const run = await verify();
     expect(run.code).toBe(1);
@@ -280,7 +289,9 @@ describeDb('wirebench-server admin audit verify (audit-chain spec §3.4)', () =>
   it('--head equal to the anchor seq is checked against the anchor hash', async () => {
     await sealed(5);
     const head3 = await hashAt(3);
-    expect(await deleteSealedBefore(db, KEY, new Date(Date.parse(t(3)) + 500), 1000, stops)).toBe(3);
+    expect(
+      await tdb.transaction((tx) => deleteSealedBefore(tx, KEY, new Date(Date.parse(t(3)) + 500), 1000, stops)),
+    ).toBe(3);
     expect(await verify({ head: { seq: 3n, hash: head3 } })).toMatchObject({
       code: 0,
       stdout: 'checked 2 sealed rows, seq 4 to 5; 0 unsealed\nhead 3 matches\nintact\n',
@@ -293,7 +304,9 @@ describeDb('wirebench-server admin audit verify (audit-chain spec §3.4)', () =>
   it('--head older than the kept chain passes once retention moved past it', async () => {
     await sealed(5);
     const head2 = await hashAt(2);
-    expect(await deleteSealedBefore(db, KEY, new Date(Date.parse(t(3)) + 500), 1000, stops)).toBe(3);
+    expect(
+      await tdb.transaction((tx) => deleteSealedBefore(tx, KEY, new Date(Date.parse(t(3)) + 500), 1000, stops)),
+    ).toBe(3);
     expect(await verify({ head: { seq: 2n, hash: head2 } })).toMatchObject({
       code: 0,
       stdout: 'checked 2 sealed rows, seq 4 to 5; 0 unsealed\nhead 2 is older than the kept chain\nintact\n',
@@ -329,8 +342,8 @@ describeDb('wirebench-server admin audit verify (audit-chain spec §3.4)', () =>
       `update audit_events set chain_seq = null, chain_hash = null, details = '{"name":"Forged"}'::jsonb where chain_seq >= 4`,
     );
     const pass = await new AuditSealer({
-      db,
-      key: KEY,
+      tenancy,
+      keys: () => KEY,
       now: () => new Date(),
       setTimer: manualTimers().setTimer,
       log: silentLog,
@@ -473,9 +486,11 @@ describeDb('wirebench-server admin audit verify (audit-chain spec §3.4)', () =>
           }),
         ),
     };
-    const walking = verifyChain(gated, KEY, { pageSize: 2 });
+    const walking = verifyChain(await defaultTenantDb(gated), KEY, { pageSize: 2 });
     await entered;
-    expect(await deleteSealedBefore(db, KEY, new Date(Date.parse(t(4)) + 500), 1000, stops)).toBe(4);
+    expect(
+      await tdb.transaction((tx) => deleteSealedBefore(tx, KEY, new Date(Date.parse(t(4)) + 500), 1000, stops)),
+    ).toBe(4);
     release();
     expect(await walking).toEqual({
       kind: 'checked',
@@ -486,6 +501,6 @@ describeDb('wirebench-server admin audit verify (audit-chain spec §3.4)', () =>
       unsealed: 0,
     });
     // A fresh walk starts from the moved anchor.
-    expect(await verifyChain(db, KEY)).toMatchObject({ result: 'intact', checked: 2, firstSeq: 5n, lastSeq: 6n });
+    expect(await verifyChain(tdb, KEY)).toMatchObject({ result: 'intact', checked: 2, firstSeq: 5n, lastSeq: 6n });
   });
 });

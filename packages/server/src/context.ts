@@ -174,11 +174,6 @@ export interface LicenseService {
   assertSeatAvailable(tx: TenantQuerier): Promise<void>;
   /** A preHandler for after a route's role guard: `licensing-feature-required` without the feature (§3.5). */
   requireFeature(feature: Feature): preHandlerAsyncHookHandler;
-  /**
-   * The license of a server whose jobs do not run per tenant yet: the audit forwarder until Task 14
-   * (`check:tenant-scope` names it). The one tenant's, on a self-hosted server; with several, Community.
-   */
-  stateWithoutScope(): Promise<LicenseState>;
 }
 
 /**
@@ -192,7 +187,6 @@ export function permissiveLicense(): LicenseService {
     state,
     assertSeatAvailable: () => Promise.resolve(),
     requireFeature: (feature) => requireFeature(feature, async () => (await state()).features),
-    stateWithoutScope: state,
   };
 }
 

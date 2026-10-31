@@ -5,6 +5,8 @@ import { afterAll, beforeAll, expect, it } from 'vitest';
 import { verifyChain } from '../../../src/audit-log/chain/verify.js';
 import { FIXTURE_VERSION, loadFixture0019, type Fixture0019 } from '../../fixtures/tenancy/load.js';
 import { describeDb, testDatabase } from '../../helpers/database.js';
+import { scopeOf } from '../../../src/tenancy/scope.js';
+import { tenantDbFactory } from '../../../src/tenancy/tenant-db.js';
 import { mkTempDir, removeTempDir } from '../../helpers/git.js';
 
 /** Plan Task 3: the frozen `0019` fixture loads, fills every table, and its audit chain verifies. */
@@ -83,7 +85,9 @@ describeDb('the frozen 0019 fixture (hosted spec §19.13)', () => {
   // Through the verifier, not `admin audit verify`: the command refuses a schema with migrations pending, and
   // 0020 is pending here.
   it('has an intact audit chain at 0019 under the test chain key', async () => {
-    const outcome = await verifyChain(db, fixture.keys.auditChainKey);
+    // At 0019 there is no tenant: any scope's unit reads the one chain, as the setting names no column yet.
+    const unscoped = tenantDbFactory(db)(scopeOf({ id: '00000000-0000-4000-8000-000000000000', slug: 'none' }));
+    const outcome = await verifyChain(unscoped, fixture.keys.auditChainKey);
     expect(outcome).toMatchObject({
       kind: 'checked',
       result: 'intact',

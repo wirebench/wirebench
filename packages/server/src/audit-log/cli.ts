@@ -5,8 +5,9 @@
  */
 import { auditExportQuerySchema } from '@wirebench/engine';
 import type { ServerCommand } from '../args.js';
-import { recordAudit, SYSTEM_SOURCE, type Database, type Querier, type ServerHooks } from '../context.js';
+import { recordAudit, SYSTEM_SOURCE, type ServerHooks } from '../context.js';
 import { ExitCode, type ServerIo } from '../io.js';
+import type { TenantDb } from '../tenancy/tenant-db.js';
 import { verifyChain, type BrokenLink, type VerifySummary } from './chain/verify.js';
 import { exportedEvent, exportLines, filterOf } from './routes.js';
 
@@ -14,7 +15,7 @@ type AuditCommand = Extract<ServerCommand, { command: 'admin-audit-export' }>;
 
 export async function runAuditCommand(
   command: AuditCommand,
-  env: { readonly db: Querier; readonly hooks: ServerHooks; readonly now: () => Date },
+  env: { readonly db: TenantDb; readonly hooks: ServerHooks; readonly now: () => Date },
   io: ServerIo,
 ): Promise<number> {
   const parsed = auditExportQuerySchema.safeParse({
@@ -80,7 +81,8 @@ function summaryText(summary: VerifySummary, head: VerifyCommand['head']): strin
  */
 export async function runVerifyCommand(
   command: VerifyCommand,
-  env: { readonly db: Database; readonly hooks: ServerHooks; readonly key: string | undefined },
+  /** `key` is the tenant's chain key (`chain/keys.ts`), not necessarily the configured one. */
+  env: { readonly db: TenantDb; readonly hooks: ServerHooks; readonly key: string | undefined },
   io: ServerIo,
 ): Promise<number> {
   if (env.key === undefined) {

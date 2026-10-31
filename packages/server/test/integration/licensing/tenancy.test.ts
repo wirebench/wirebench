@@ -1,18 +1,16 @@
 /**
  * Licensing in a tenant, through its real call sites (tenancy Task 9 review I1, M1, M3, M5): the seat lock as
- * `assertSeatAvailable` takes it, the last-seat race in one tenant, `stateWithoutScope`'s three answers, and the
- * start-up message when `server_identity` has lost its row.
+ * `assertSeatAvailable` takes it, the last-seat race in one tenant, and the start-up message when
+ * `server_identity` has lost its row.
  */
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { WirebenchError } from '@wirebench/engine';
+import { afterEach, beforeEach, expect, it } from 'vitest';
 import { createDatabase } from '../../../src/db/pool.js';
 import * as identityRepo from '../../../src/identity/repo.js';
 import { newId } from '../../../src/identity/tokens.js';
 import { MISSING_SERVER_ID, serverId } from '../../../src/licensing/repo.js';
 import { SEAT_LOCK_KEY, SEAT_LOCK_TENANT_KEY } from '../../../src/licensing/seats.js';
-import { SEVERAL_TENANTS_MESSAGE, createLicenseService } from '../../../src/licensing/service.js';
-import { TenantAdmin, TenantDirectory } from '../../../src/tenancy/directory.js';
-import { directoryOf } from '../../../src/tenancy/tenancy.js';
+import { createLicenseService } from '../../../src/licensing/service.js';
+import { TenantDirectory } from '../../../src/tenancy/directory.js';
 import { describeDb, testDatabase } from '../../helpers/database.js';
 import { signedInUser, type IdentityHarness } from '../../helpers/identity.js';
 import { license, licensingHarness, testKeys, type TestKeys } from '../../helpers/licensing.js';
@@ -97,45 +95,6 @@ describeDb('licensing in a tenant, through its call sites (Task 9 review)', () =
     expect(outcomes.filter((outcome) => outcome.status === 'fulfilled')).toHaveLength(1);
     const refused = outcomes.find((outcome) => outcome.status === 'rejected') as PromiseRejectedResult;
     expect(refused.reason).toMatchObject({ code: 'licensing-seat-limit' });
-  });
-
-  it('stateWithoutScope: the one tenant’s state, Community with a reason (warned once) for several, a failure thrown', async () => {
-    const warn = vi.fn();
-    const service = createLicenseService({
-      tenancy: h.ctx.tenancy,
-      publicKeys: [keys.publicKey],
-      now: () => h.clock.now,
-      serverId: (db) => serverId(db),
-      log: { warn },
-    });
-    const root = await signedInUser(h, { email: 'root@example.com', serverAdmin: true });
-    await call(h, root, 'PUT', '/license', { license: license(keys, { edition: 'enterprise' }) });
-    expect(await service.stateWithoutScope()).toEqual(await service.state(h.tdb.scope));
-    expect((await service.stateWithoutScope()).edition).toBe('enterprise');
-
-    await new TenantAdmin(h.db, directoryOf(h.ctx.tenancy)).create({ slug: 'second', name: 'Second' });
-    for (let pass = 0; pass < 3; pass += 1) {
-      expect(await service.stateWithoutScope()).toMatchObject({
-        edition: 'community',
-        features: [],
-        message: SEVERAL_TENANTS_MESSAGE,
-      });
-    }
-    expect(warn).toHaveBeenCalledTimes(1);
-    // A third tenant changes nothing, and costs nothing: the pass stops at the second (Part B final review).
-    await new TenantAdmin(h.db, directoryOf(h.ctx.tenancy)).create({ slug: 'third', name: 'Third' });
-    h.statements.entries.length = 0;
-    expect((await service.stateWithoutScope()).edition).toBe('community');
-    expect(h.statements.entries.filter((entry) => entry.kind === 'set-config')).toHaveLength(2);
-    expect(h.statements.entries.filter((entry) => entry.text.includes('from license'))).toHaveLength(1);
-
-    const failing = createLicenseService({
-      tenancy: h.ctx.tenancy,
-      publicKeys: [keys.publicKey],
-      now: () => h.clock.now,
-      serverId: () => Promise.reject(new WirebenchError('test-boom', 'the server id could not be read')),
-    });
-    await expect(failing.stateWithoutScope()).rejects.toMatchObject({ code: 'test-boom' });
   });
 });
 

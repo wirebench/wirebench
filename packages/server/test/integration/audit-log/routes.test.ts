@@ -122,7 +122,7 @@ describeDb('GET /audit and /audit/export (audit-log spec §3.4)', () => {
   it('a consumer that stops mid-stream leaves no audit.exported row', async () => {
     const before = (await rowsOf('audit.exported')).length;
     const ended: number[] = [];
-    const lines = exportLines(h.db, { action: 'hook.cleared' }, (count) => {
+    const lines = exportLines(h.tdb, { action: 'hook.cleared' }, (count) => {
       ended.push(count);
       return Promise.resolve();
     });

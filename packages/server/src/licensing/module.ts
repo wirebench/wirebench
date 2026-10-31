@@ -37,7 +37,6 @@ export function licensingModule(options: LicensingOptions = {}): ServerModule {
         publicKeys,
         now,
         serverId,
-        log: ctx.log,
         hosted: ctx.config.mode === 'hosted',
       });
       ctx.license = service;

@@ -95,21 +95,17 @@ describe('check:tenant-scope', () => {
     ]);
   });
 
-  it('keeps stateWithoutScope to the jobs that do not run per tenant yet (tenancy Task 9)', () => {
+  it('refuses stateWithoutScope everywhere, the jobs included (tenancy Task 14)', () => {
     const route = 'packages/server/src/teams/routes/workspaces.ts';
     expect(findScopeMints(route, 'const s = await ctx.license.stateWithoutScope();')).toMatchObject([
       { rule: 'license-without-scope' },
     ]);
-    expect(
-      findScopeMints(
-        'packages/server/src/audit-log/forward/forwarder.ts',
-        'await this.deps.license().stateWithoutScope();',
-      ),
-    ).toEqual([]);
-    // The scheduler reads each tenant's license since Task 13.
-    expect(
-      findScopeMints('packages/server/src/schedules/scheduler.ts', 'await this.env.license().stateWithoutScope();'),
-    ).toHaveLength(1);
+    for (const job of [
+      'packages/server/src/audit-log/forward/forwarder.ts',
+      'packages/server/src/schedules/scheduler.ts',
+    ]) {
+      expect(findScopeMints(job, 'await this.deps.license().stateWithoutScope();'), job).toHaveLength(1);
+    }
   });
 
   it('refuses a new raw read of the public URL, in any spelling', () => {

@@ -1,6 +1,11 @@
-/** The append-only `audit_events` table (audit-log spec §4.2). Raw SQL over `Querier`, like every module's repo. */
+/**
+ * The append-only `audit_events` table (audit-log spec §4.2). Raw SQL. The insert takes any `Querier`, since its
+ * fire sites pass theirs (some still the pool until Tasks 15 and 16); every read, the chain and the forward queue
+ * take a `TenantQuerier`: one tenant's unit, one chain per tenant (hosted edition spec §19.7).
+ */
 import type { AuditDetails, AuditEvent, AuditTargetKind } from '@wirebench/engine';
-import type { AuditInput, Database, Querier } from '../context.js';
+import type { AuditInput, Querier } from '../context.js';
+import type { TenantQuerier } from '../tenancy/tenant-db.js';
 import { anchorMac, anchorMacValid, genesisHash, keyId, link, type CanonicalRow } from './chain/canonical.js';
 import { tryLockChain } from './chain/lock.js';
 import type { RetentionStopLog } from './chain/retention-log.js';
@@ -155,7 +160,7 @@ function select(
 
 /** Newest first; `after` continues below the cursor's row (§3.4). */
 export async function listAuditEvents(
-  db: Querier,
+  db: TenantQuerier,
   filter: AuditFilter,
   page: { readonly after?: Cursor; readonly limit: number },
 ): Promise<AuditEvent[]> {
@@ -165,7 +170,7 @@ export async function listAuditEvents(
 
 /** Oldest first, for the export (§3.4): `after` is the last row of the previous batch. */
 export async function listAuditEventsAscending(
-  db: Querier,
+  db: TenantQuerier,
   filter: AuditFilter,
   after: Cursor | undefined,
   limit: number,
@@ -184,7 +189,7 @@ export async function enqueueForward(db: Querier, eventId: string): Promise<void
  * rows stay locked (`skip locked`, so a concurrent claim takes others) until the caller's transaction
  * ends: call it inside one, and delete with {@link deleteForwarded} once the sink accepts.
  */
-export async function claimForwardBatch(tx: Querier, limit: number): Promise<AuditEvent[]> {
+export async function claimForwardBatch(tx: TenantQuerier, limit: number): Promise<AuditEvent[]> {
   const rows = await tx.query<Raw>(
     `select ${COLUMNS} from audit_forward_queue q join audit_events e on e.id = q.event_id
      order by e.at, e.id limit $1 for update of q skip locked`,
@@ -194,7 +199,7 @@ export async function claimForwardBatch(tx: Querier, limit: number): Promise<Aud
 }
 
 /** Removes forwarded events from the queue; the events themselves stay. */
-export async function deleteForwarded(tx: Querier, ids: readonly string[]): Promise<void> {
+export async function deleteForwarded(tx: TenantQuerier, ids: readonly string[]): Promise<void> {
   if (ids.length === 0) return;
   await tx.query('delete from audit_forward_queue where event_id = any($1::text[])', [ids]);
 }
@@ -204,7 +209,7 @@ export async function deleteForwarded(tx: Querier, ids: readonly string[]): Prom
  * oldest first; returns how many went. Once an anchor exists, retention without the key uses
  * {@link deleteUnsealedBefore} instead.
  */
-export async function deleteAuditEventsBefore(db: Querier, cutoff: Date, limit: number): Promise<number> {
+export async function deleteAuditEventsBefore(db: TenantQuerier, cutoff: Date, limit: number): Promise<number> {
   const result = await db.query(
     'delete from audit_events where id in (select id from audit_events where at < $1 order by at, id limit $2)',
     [cutoff, limit],
@@ -217,7 +222,7 @@ export async function deleteAuditEventsBefore(db: Querier, cutoff: Date, limit: 
  * older than `cutoff`, oldest first. Sealed rows stay, so retention never cuts a gap into the chain while
  * the key is unset; the table grows until the key is back.
  */
-export async function deleteUnsealedBefore(db: Querier, cutoff: Date, limit: number): Promise<number> {
+export async function deleteUnsealedBefore(db: TenantQuerier, cutoff: Date, limit: number): Promise<number> {
   const result = await db.query(
     `delete from audit_events where id in
        (select id from audit_events where chain_seq is null and at < $1 order by at, id limit $2)`,
@@ -269,7 +274,7 @@ type CanonicalRaw = { readonly [K in keyof CanonicalRow]: string | null };
 // pg returns bigint columns as strings; the chain's numbers are compared and incremented as bigint.
 const seqOf = (value: string): bigint => BigInt(value);
 
-export async function readAnchor(db: Querier): Promise<ChainAnchor | undefined> {
+export async function readAnchor(db: TenantQuerier): Promise<ChainAnchor | undefined> {
   const row = (
     await db.query<{ seq: string; hash: Buffer; key_id: string; head_seq: string; mac: Buffer }>(
       'select seq::text as seq, hash, key_id, head_seq::text as head_seq, mac from audit_chain_anchor',
@@ -285,7 +290,12 @@ export async function readAnchor(db: Querier): Promise<ChainAnchor | undefined> 
  * anchor's new MAC in the same statement. `anchor` is the one the pass read (and checked); the head
  * never goes back below its `headSeq`.
  */
-export async function setAnchorHead(tx: Querier, key: string, anchor: ChainAnchor, headSeq: bigint): Promise<void> {
+export async function setAnchorHead(
+  tx: TenantQuerier,
+  key: string,
+  anchor: ChainAnchor,
+  headSeq: bigint,
+): Promise<void> {
   const next = headSeq > anchor.headSeq ? headSeq : anchor.headSeq;
   await tx.query('update audit_chain_anchor set head_seq = $1, mac = $2', [
     next.toString(),
@@ -298,7 +308,7 @@ export async function setAnchorHead(tx: Querier, key: string, anchor: ChainAncho
  * returns the anchor now in place. The sealer calls it under its advisory lock, so the existing anchor
  * wins only a race it cannot lose.
  */
-export async function insertGenesis(tx: Querier, key: string): Promise<ChainAnchor> {
+export async function insertGenesis(tx: TenantQuerier, key: string): Promise<ChainAnchor> {
   const hash = genesisHash(key);
   await tx.query(
     `insert into audit_chain_anchor (seq, hash, key_id, head_seq, mac) values (0, $1, $2, 0, $3)
@@ -312,7 +322,7 @@ export async function insertGenesis(tx: Querier, key: string): Promise<ChainAnch
 }
 
 /** The highest sealed `(seq, hash)`, or `undefined` when no row is sealed (the head is then the anchor). */
-export async function chainHead(db: Querier): Promise<ChainLink | undefined> {
+export async function chainHead(db: TenantQuerier): Promise<ChainLink | undefined> {
   const row = (
     await db.query<{ seq: string; hash: Buffer }>(
       'select chain_seq::text as seq, chain_hash as hash from audit_events where chain_seq is not null order by chain_seq desc limit 1',
@@ -325,7 +335,7 @@ export async function chainHead(db: Querier): Promise<ChainLink | undefined> {
  * Claims up to `limit` unsealed rows in sealing order, `(at, id)`. Call it inside the sealing
  * transaction: the rows stay locked until it ends, and rows not yet committed are invisible to it.
  */
-export async function claimUnsealed(tx: Querier, limit: number): Promise<CanonicalRow[]> {
+export async function claimUnsealed(tx: TenantQuerier, limit: number): Promise<CanonicalRow[]> {
   const rows = await tx.query<CanonicalRaw>(
     // Qualified: a bare `at` in `order by` would name CANONICAL_COLUMNS' text output, which the
     // audit_events_unsealed (tenant_id, at, id) index cannot serve. tenant_id leads the order so that the
@@ -343,7 +353,7 @@ export interface RowSeal extends ChainLink {
 }
 
 /** Seals a pass's batch in one statement, not one update per row. */
-export async function sealRows(tx: Querier, seals: readonly RowSeal[]): Promise<void> {
+export async function sealRows(tx: TenantQuerier, seals: readonly RowSeal[]): Promise<void> {
   if (seals.length === 0) return;
   await tx.query(
     `update audit_events a set chain_seq = v.seq, chain_hash = v.hash
@@ -353,7 +363,7 @@ export async function sealRows(tx: Querier, seals: readonly RowSeal[]): Promise<
 }
 
 /** Sealed rows with a sequence number above `afterSeq`, in chain order, for verify's walk. */
-export async function sealedPage(db: Querier, afterSeq: bigint, limit: number): Promise<SealedRow[]> {
+export async function sealedPage(db: TenantQuerier, afterSeq: bigint, limit: number): Promise<SealedRow[]> {
   const rows = await db.query<CanonicalRaw & { chainSeq: string; chainHash: Buffer }>(
     `select ${CANONICAL_COLUMNS}, chain_seq::text as "chainSeq", chain_hash as "chainHash" from audit_events
      where chain_seq > $1 order by chain_seq limit $2`,
@@ -402,55 +412,54 @@ function expectedLink(key: string, prev: ChainLink, sealed: SealedRow): Buffer |
  * reports it. Returns how many rows went.
  */
 export async function deleteSealedBefore(
-  db: Database,
+  tx: TenantQuerier,
   key: string,
   cutoff: Date,
   limit: number,
   stops: RetentionStopLog,
 ): Promise<number> {
-  return db.transaction(async (tx) => {
-    if (!(await tryLockChain(tx))) return 0;
-    const anchor = await readAnchor(tx);
-    if (anchor === undefined || !anchorMacValid(key, anchor)) return 0;
-    const old: SealedRow[] = [];
-    let prev: ChainLink = { seq: anchor.seq, hash: anchor.hash };
-    for (const sealed of await sealedPage(tx, anchor.seq, limit)) {
-      const next = prev.seq + 1n;
-      // Seqs are unique and above the anchor here, so a row that is not `next` lies past a gap.
-      if (sealed.seq !== next) {
-        stops.stoppedAt(next);
-        break;
-      }
-      const expected = expectedLink(key, prev, sealed);
-      if (expected === undefined || !Buffer.isBuffer(sealed.hash) || !expected.equals(sealed.hash)) {
-        stops.stoppedAt(sealed.seq);
-        break;
-      }
-      if (!olderThan(sealed.row.at, cutoff)) break;
-      old.push(sealed);
-      prev = sealed;
+  // In the caller's unit (the sweep's, one per tenant), which holds the chain's lock to its end.
+  if (!(await tryLockChain(tx))) return 0;
+  const anchor = await readAnchor(tx);
+  if (anchor === undefined || !anchorMacValid(key, anchor)) return 0;
+  const old: SealedRow[] = [];
+  let prev: ChainLink = { seq: anchor.seq, hash: anchor.hash };
+  for (const sealed of await sealedPage(tx, anchor.seq, limit)) {
+    const next = prev.seq + 1n;
+    // Seqs are unique and above the anchor here, so a row that is not `next` lies past a gap.
+    if (sealed.seq !== next) {
+      stops.stoppedAt(next);
+      break;
     }
-    const last = (await unheldByForwarder(tx, old)).at(-1);
-    if (last === undefined) return 0;
-    // Under the lock nothing is sealed meanwhile, and every seq up to `last` was just checked present.
-    const deleted = await tx.query('delete from audit_events where chain_seq > $1 and chain_seq <= $2', [
-      anchor.seq.toString(),
-      last.seq.toString(),
-    ]);
-    await tx.query('update audit_chain_anchor set seq = $1, hash = $2, mac = $3', [
-      last.seq.toString(),
-      last.hash,
-      anchorMac(key, last.seq, last.hash, anchor.headSeq),
-    ]);
-    return deleted.rowCount ?? 0;
-  });
+    const expected = expectedLink(key, prev, sealed);
+    if (expected === undefined || !Buffer.isBuffer(sealed.hash) || !expected.equals(sealed.hash)) {
+      stops.stoppedAt(sealed.seq);
+      break;
+    }
+    if (!olderThan(sealed.row.at, cutoff)) break;
+    old.push(sealed);
+    prev = sealed;
+  }
+  const last = (await unheldByForwarder(tx, old)).at(-1);
+  if (last === undefined) return 0;
+  // Under the lock nothing is sealed meanwhile, and every seq up to `last` was just checked present.
+  const deleted = await tx.query('delete from audit_events where chain_seq > $1 and chain_seq <= $2', [
+    anchor.seq.toString(),
+    last.seq.toString(),
+  ]);
+  await tx.query('update audit_chain_anchor set seq = $1, hash = $2, mac = $3', [
+    last.seq.toString(),
+    last.hash,
+    anchorMac(key, last.seq, last.hash, anchor.headSeq),
+  ]);
+  return deleted.rowCount ?? 0;
 }
 
 /**
  * Locks the prefix's forward-queue rows (`skip locked`), so the delete's cascade never waits, and ends
  * the prefix just before the first row whose queue entry another transaction holds.
  */
-async function unheldByForwarder(tx: Querier, prefix: readonly SealedRow[]): Promise<readonly SealedRow[]> {
+async function unheldByForwarder(tx: TenantQuerier, prefix: readonly SealedRow[]): Promise<readonly SealedRow[]> {
   const ids = prefix.flatMap((sealed) => (sealed.row.id === null ? [] : [sealed.row.id]));
   if (ids.length === 0) return prefix;
   const queued = (

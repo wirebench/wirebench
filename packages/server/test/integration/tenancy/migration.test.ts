@@ -351,8 +351,8 @@ describeDb('migration 0020 on the frozen 0019 fixture (hosted spec §19.3, §19.
     };
     await tokenByHash(asTenantQuerier(explaining), 'no-such-hash');
     await findUserByEmail(asTenantQuerier(explaining), 'admin@example.com');
-    await chainHead(explaining);
-    await listAuditEvents(explaining, {}, { limit: 50 });
+    await chainHead(asTenantQuerier(explaining));
+    await listAuditEvents(asTenantQuerier(explaining), {}, { limit: 50 });
     await deleteCapturesBefore(asTenantQuerier(explaining), new Date(), 100);
     await catchUrlBySecret(asTenantQuerier(explaining), 'no-such-secret');
     await ciTokenByHash(asTenantQuerier(explaining), 'no-such-hash');
@@ -513,8 +513,8 @@ describeDb('migration 0020 on the frozen 0019 fixture (hosted spec §19.3, §19.
     expect(await storedLicense(tdb)).toMatchObject({ text: 'wbl1.replaced', licenseId: 'L-new' });
     expect((await db.query('select count(*)::int as n from license')).rows).toEqual([{ n: 1 }]);
     // audit-log: the anchor, by tenant_id; the fixture's anchor wins.
-    const anchor = await readAnchor(db);
-    expect(await insertGenesis(db, fixture.keys.auditChainKey)).toEqual(anchor);
+    const anchor = await readAnchor(tdb);
+    expect(await insertGenesis(tdb, fixture.keys.auditChainKey)).toEqual(anchor);
     // sso: scim_users, by (tenant_id, user_id).
     const [scimUser] = (await db.query<{ user_id: string }>('select user_id from scim_users')).rows;
     await upsertScimUser(db, scimUser!.user_id, 'ext-replaced', at);

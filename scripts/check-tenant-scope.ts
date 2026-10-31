@@ -12,8 +12,8 @@
  * - **No `directoryOf` outside the files {@link SCOPE_MINTS} names** (Task 6 review m2): the directory's
  *   `list()`, `get(id)` and `resolvable()` hand out scopes, so it is kept off `ctx.tenancy`, and only the
  *   start-up, the resolver's registration and the admin command line reach it.
- * - **No `stateWithoutScope` outside the jobs {@link SCOPE_MINTS} names** (tenancy Task 9): a route that read
- *   the license without its tenant would read another's in hosted mode.
+ * - **No `stateWithoutScope` at all** (tenancy Tasks 9 and 14): a route or a job that read the license without
+ *   its tenant would read another's in hosted mode. Every job reads its tenant's in the job loop.
  * - **No `TenantDirectory` or `TenantAdmin` outside `src/tenancy/`** (Task 8 review I2), in an import, a `new`,
  *   a type or an alias: `new TenantDirectory(ctx.db).list()` would hand a module every tenant's scope, the hole
  *   `directoryOf` closes.
@@ -59,13 +59,9 @@ export const SCOPE_MINTS: Readonly<
     'packages/server/src/serve.ts',
     'packages/server/src/identity/cli.ts',
   ],
-  // The license where no scope exists yet (tenancy Task 9): the audit forwarder until Task 14 moves it into the
-  // job loop. The scheduler's pass and alert outbox read each tenant's since Task 13.
-  stateWithoutScope: [
-    'packages/server/src/context.ts',
-    'packages/server/src/licensing/service.ts',
-    'packages/server/src/audit-log/forward/forwarder.ts',
-  ],
+  // Nowhere: the license without a scope (tenancy Task 9) was removed once its last job, the audit forwarder,
+  // read each tenant's in the job loop (Task 14). The name stays refused, so it does not come back.
+  stateWithoutScope: [],
 };
 
 /** The tenant directory's classes, which only `src/tenancy/` may name (Task 8 review I2). */
@@ -218,7 +214,7 @@ if (process.argv[1] !== undefined && fileURLToPath(import.meta.url) === process.
       'scope-of': 'scopeOf outside the files that may name it',
       'directory-of': 'directoryOf outside the files that may name it',
       'tenant-directory': 'TenantDirectory or TenantAdmin outside src/tenancy/',
-      'license-without-scope': 'stateWithoutScope outside the jobs that may call it; use state(request.tenant)',
+      'license-without-scope': 'stateWithoutScope is gone; use state(request.tenant), or state(scope, tx) in a job',
       'public-url': 'a read of the configured public URL; use tenantUrl(config, request)',
       'operator-url': 'operatorPublicUrl outside main.ts and serve.ts',
       'url-without-scope': 'urlWithoutScope outside its allowed callers',

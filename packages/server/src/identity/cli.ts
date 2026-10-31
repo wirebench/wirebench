@@ -8,6 +8,7 @@ import { WirebenchError } from '@wirebench/engine';
 import type { ServerCommand } from '../args.js';
 import { ConfigError, forgetDatabaseUrls, loadConfig } from '../config.js';
 import { auditHook } from '../audit-log/hook.js';
+import { chainKeys } from '../audit-log/chain/keys.js';
 import { runAuditCommand, runVerifyCommand } from '../audit-log/cli.js';
 import { SYSTEM_SOURCE, serverHooks } from '../context.js';
 import { pendingMigrations } from '../db/migrate.js';
@@ -22,7 +23,7 @@ import { BUILTIN_MODULES } from '../modules.js';
 import { allMigrations, StartupError } from '../serve.js';
 import { runScimGroupCommand, runScimTokenCommand } from '../sso/cli.js';
 import type { TenantScope } from '../tenancy/scope.js';
-import { createTenancy, directoryOf, type Tenancy } from '../tenancy/tenancy.js';
+import { createTenancy, directoryOf, isDefaultTenant, type Tenancy } from '../tenancy/tenancy.js';
 import { urlWithoutScope } from '../tenancy/urls.js';
 import { identitySettings, type InvitationEnv } from './env.js';
 import { createInvitation, invitationSummary, isOpen, revokeOpenInvitation } from './invitations.js';
@@ -51,6 +52,25 @@ async function cliScope(tenancy: Tenancy): Promise<TenantScope> {
     throw new StartupError(ExitCode.Migration, 'migration 0020 is not applied: the server has no tenants');
   }
   return directory.defaultScope();
+}
+
+/**
+ * The audit commands' tenant: {@link cliScope}'s, or, when `server_identity` has lost its row, the server's only
+ * tenant, so export and verify still run on a damaged database (licensing spec §3.7). That tenant is the default
+ * one: only a self-hosted server has one tenant.
+ */
+async function auditScope(
+  tenancy: Tenancy,
+): Promise<{ readonly scope: TenantScope; readonly isDefault: (scope: TenantScope) => boolean }> {
+  try {
+    const scope = await cliScope(tenancy);
+    return { scope, isDefault: (of) => isDefaultTenant(tenancy, of) };
+  } catch (error) {
+    if (!(error instanceof WirebenchError) || error.code !== 'server-identity-missing') throw error;
+    const only = await directoryOf(tenancy).onlyTenant();
+    if (only === undefined) throw error;
+    return { scope: only, isDefault: (of) => of.tenantId === only.tenantId };
+  }
 }
 
 /** `now` exists for tests; the bin passes nothing. */
@@ -85,13 +105,18 @@ export async function runAdmin(
       io.stderr.write(`${pending.length} migrations are pending; run wirebench-server migrate first\n`);
       return ExitCode.Migration;
     }
-    // The audit commands need no license, so they never read the server id: export and verify are the
-    // forensics path and must work on a damaged database.
-    if (command.command === 'admin-audit-export') {
-      return await runAuditCommand(command, { db, hooks, now }, io);
-    }
-    if (command.command === 'admin-audit-verify') {
-      return await runVerifyCommand(command, { db, hooks, key: config.auditChainKey }, io);
+    // The audit commands need no license, so they never check the server id: export and verify are the
+    // forensics path. They do read the default tenant (its row and `server_identity`'s pointer to it), since
+    // each tenant has its own chain and key (spec §19.7).
+    if (command.command === 'admin-audit-export' || command.command === 'admin-audit-verify') {
+      const tenancy = createTenancy(db);
+      const { scope, isDefault } = await auditScope(tenancy);
+      if (command.command === 'admin-audit-export') {
+        return await runAuditCommand(command, { db: tenancy.db(scope), hooks, now }, io);
+      }
+      const configured = config.auditChainKey;
+      const key = configured === undefined ? undefined : chainKeys(configured, config.mode, isDefault)(scope);
+      return await runVerifyCommand(command, { db: tenancy.db(scope), hooks, key }, io);
     }
     // No license either: a server whose license lapsed can still have its schedules switched off.
     if (

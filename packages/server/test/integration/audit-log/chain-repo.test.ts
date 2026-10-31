@@ -11,16 +11,20 @@ import {
 } from '../../../src/audit-log/repo.js';
 import { FIXED_ROW } from '../../helpers/audit-chain.js';
 import { describeDb, testDatabase } from '../../helpers/database.js';
+import type { TenantDb } from '../../../src/tenancy/tenant-db.js';
+import { asTenantQuerier, defaultTenantDb } from '../../helpers/tenancy.js';
 
 const KEY = 'test-chain-key-0123456789abcdefghij';
 const OTHER_KEY = 'another-chain-key-9876543210zyxwvuts';
 
 describeDb('the audit chain repo (audit-chain spec §3.2, §4)', () => {
   let db: Awaited<ReturnType<typeof testDatabase>>;
+  let tdb: TenantDb;
 
   beforeAll(async () => {
     // Every migration, 0020 included: the repositories' upserts name the tenant keys.
     db = await testDatabase();
+    tdb = await defaultTenantDb(db);
   });
   afterAll(() => db.close());
   beforeEach(async () => {
@@ -46,12 +50,12 @@ describeDb('the audit chain repo (audit-chain spec §3.2, §4)', () => {
     );
     const rows = await db.query(`select ${CANONICAL_COLUMNS} from audit_events`);
     expect(rows.rows).toEqual([FIXED_ROW]);
-    expect(await claimUnsealed(db, 10)).toEqual([FIXED_ROW]);
+    expect(await claimUnsealed(tdb, 10)).toEqual([FIXED_ROW]);
   });
 
   it('renders a whole-second at with six fractional digits', async () => {
     await insert('01J9ZK3V8Q0000000000000002', '2026-10-03T00:00:00Z');
-    const [row] = await claimUnsealed(db, 10);
+    const [row] = await claimUnsealed(tdb, 10);
     expect(row?.at).toBe('2026-10-03T00:00:00.000000Z');
     expect(row?.details).toBe('{}');
   });
@@ -59,7 +63,7 @@ describeDb('the audit chain repo (audit-chain spec §3.2, §4)', () => {
   it('marks a BC at, so flipping the era breaks the link', async () => {
     await insert('01J9ZK3V8Q0000000000000003', '2026-10-03T00:00:00Z');
     await insert('01J9ZK3V8Q0000000000000004', '2026-10-03 00:00:00+00 BC');
-    expect((await claimUnsealed(db, 10)).map((r) => r.at).sort()).toEqual([
+    expect((await claimUnsealed(tdb, 10)).map((r) => r.at).sort()).toEqual([
       '2026-10-03T00:00:00.000000Z',
       '2026-10-03T00:00:00.000000Z BC',
     ]);
@@ -77,7 +81,7 @@ describeDb('the audit chain repo (audit-chain spec §3.2, §4)', () => {
         [id, ip],
       );
     }
-    expect((await claimUnsealed(db, 10)).map((r) => r.ip)).toEqual([
+    expect((await claimUnsealed(tdb, 10)).map((r) => r.ip)).toEqual([
       '10.0.0.5',
       '10.0.0.5/24',
       '2001:db8::7',
@@ -93,13 +97,13 @@ describeDb('the audit chain repo (audit-chain spec §3.2, §4)', () => {
       await tx.query('set local enable_sort = off');
       const explained: string[] = [];
       await claimUnsealed(
-        {
+        asTenantQuerier({
           query: async <R extends Record<string, unknown>>(text: string, params?: readonly unknown[]) => {
             const rows = await tx.query<R>(`explain ${text}`, params);
             explained.push(...rows.rows.map((r) => String(r['QUERY PLAN'])));
             return { rows: [], rowCount: 0 };
           },
-        },
+        }),
         500,
       );
       return explained.join('\n');
@@ -109,8 +113,8 @@ describeDb('the audit chain repo (audit-chain spec §3.2, §4)', () => {
   });
 
   it('has no anchor until the genesis, which keeps the first anchor', async () => {
-    expect(await readAnchor(db)).toBeUndefined();
-    const anchor = await insertGenesis(db, KEY);
+    expect(await readAnchor(tdb)).toBeUndefined();
+    const anchor = await insertGenesis(tdb, KEY);
     expect(anchor).toEqual({
       seq: 0n,
       hash: genesisHash(KEY),
@@ -118,18 +122,18 @@ describeDb('the audit chain repo (audit-chain spec §3.2, §4)', () => {
       headSeq: 0n,
       mac: anchorMac(KEY, 0n, genesisHash(KEY), 0n),
     });
-    expect(await insertGenesis(db, OTHER_KEY)).toEqual(anchor);
-    expect(await readAnchor(db)).toEqual(anchor);
+    expect(await insertGenesis(tdb, OTHER_KEY)).toEqual(anchor);
+    expect(await readAnchor(tdb)).toEqual(anchor);
   });
 
   it('claims unsealed rows in (at, id) order, skips sealed ones and reads the chain back', async () => {
     await insert('01J9ZK3V8Q00000000000000B2', '2026-10-03T00:00:02Z');
     await insert('01J9ZK3V8Q00000000000000A1', '2026-10-03T00:00:01Z');
     await insert('01J9ZK3V8Q00000000000000C2', '2026-10-03T00:00:02Z');
-    const anchor = await insertGenesis(db, KEY);
-    expect(await chainHead(db)).toBeUndefined();
+    const anchor = await insertGenesis(tdb, KEY);
+    expect(await chainHead(tdb)).toBeUndefined();
 
-    const claimed = await db.transaction(async (tx) => {
+    const claimed = await tdb.transaction(async (tx) => {
       const rows = await claimUnsealed(tx, 2);
       let head = { seq: anchor.seq, hash: anchor.hash };
       const seals = [];
@@ -143,11 +147,11 @@ describeDb('the audit chain repo (audit-chain spec §3.2, §4)', () => {
     });
     expect(claimed).toEqual(['01J9ZK3V8Q00000000000000A1', '01J9ZK3V8Q00000000000000B2']);
 
-    expect((await claimUnsealed(db, 10)).map((r) => r.id)).toEqual(['01J9ZK3V8Q00000000000000C2']);
-    const head = await chainHead(db);
+    expect((await claimUnsealed(tdb, 10)).map((r) => r.id)).toEqual(['01J9ZK3V8Q00000000000000C2']);
+    const head = await chainHead(tdb);
     expect(head?.seq).toBe(2n);
 
-    const page = await sealedPage(db, 0n, 10);
+    const page = await sealedPage(tdb, 0n, 10);
     expect(page.map((r) => [r.seq, r.row.id])).toEqual([
       [1n, '01J9ZK3V8Q00000000000000A1'],
       [2n, '01J9ZK3V8Q00000000000000B2'],
@@ -155,16 +159,18 @@ describeDb('the audit chain repo (audit-chain spec §3.2, §4)', () => {
     expect(page[1]?.hash).toEqual(head?.hash);
     expect(page[0]?.hash).toEqual(link(KEY, anchor.hash, 1n, page[0]!.row));
     expect(page[1]?.hash).toEqual(link(KEY, page[0]!.hash, 2n, page[1]!.row));
-    expect((await sealedPage(db, 1n, 10)).map((r) => r.seq)).toEqual([2n]);
-    expect(await sealedPage(db, 0n, 1)).toHaveLength(1);
+    expect((await sealedPage(tdb, 1n, 10)).map((r) => r.seq)).toEqual([2n]);
+    expect(await sealedPage(tdb, 0n, 1)).toHaveLength(1);
   });
 
   it('skips rows another transaction holds', async () => {
     await insert('01J9ZK3V8Q00000000000000D1', '2026-10-03T00:00:01Z');
     await insert('01J9ZK3V8Q00000000000000D2', '2026-10-03T00:00:02Z');
-    await db.transaction(async (outer) => {
+    // A second factory over the database: its unit is a connection of its own, not a savepoint of the outer one.
+    const elsewhere = await defaultTenantDb(db);
+    await tdb.transaction(async (outer) => {
       expect((await claimUnsealed(outer, 1)).map((r) => r.id)).toEqual(['01J9ZK3V8Q00000000000000D1']);
-      const other = await db.transaction((inner) => claimUnsealed(inner, 10));
+      const other = await elsewhere.transaction((inner) => claimUnsealed(inner, 10));
       expect(other.map((r) => r.id)).toEqual(['01J9ZK3V8Q00000000000000D2']);
     });
   });

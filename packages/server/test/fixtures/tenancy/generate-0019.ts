@@ -547,7 +547,7 @@ it.runIf(OUT !== undefined)(
         now: () => h.clock.now,
         setTimer: timers.setTimer,
         log: h.app.log,
-      });
+      } as never);
       const sealed = await sealer.runOnce();
       expect(sealed.outcome, JSON.stringify(sealed)).toBe('sealed');
       h.clock.advance(60_000);

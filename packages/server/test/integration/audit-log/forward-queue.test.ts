@@ -14,6 +14,9 @@ import { auditHook } from '../../../src/audit-log/hook.js';
 import { deleteAuditEventsBefore } from '../../../src/audit-log/repo.js';
 import { permissiveLicense, type AuditInput, type LicenseService } from '../../../src/context.js';
 import { describeDb, testDatabase } from '../../helpers/database.js';
+import type { TenantDb } from '../../../src/tenancy/tenant-db.js';
+import { createTenancy, type Tenancy } from '../../../src/tenancy/tenancy.js';
+import { defaultTenantDb } from '../../helpers/tenancy.js';
 
 /** Records every batch; `failWith` makes the next sends reject; `gate` holds sends until released. */
 class FakeSink implements ForwardSink {
@@ -110,6 +113,8 @@ function licensed(features: string[]): LicenseService & { features: string[] } {
 
 describeDb('the audit forward outbox and forwarder (issue #209)', () => {
   let db: Awaited<ReturnType<typeof testDatabase>>;
+  let tdb: TenantDb;
+  let tenancy: Tenancy;
   let tick = Date.parse('2026-10-03T00:00:00Z');
   const clock = () => new Date((tick += 1000));
   const forwarding = auditHook(clock, { forward: true });
@@ -126,7 +131,7 @@ describeDb('the audit forward outbox and forwarder (issue #209)', () => {
     (await db.query<{ n: string }>('select count(*)::text as n from audit_forward_queue')).rows[0]!.n;
   const forwarder = (sink: ForwardSink, extra: Partial<ConstructorParameters<typeof AuditForwarder>[0]> = {}) =>
     new AuditForwarder({
-      db,
+      tenancy,
       sink,
       license: () => licensed(['audit-log']),
       now: clock,
@@ -138,6 +143,8 @@ describeDb('the audit forward outbox and forwarder (issue #209)', () => {
   beforeAll(async () => {
     // Every migration, 0020 included: the repositories' upserts name the tenant keys.
     db = await testDatabase();
+    tdb = await defaultTenantDb(db);
+    tenancy = createTenancy(db);
   });
   afterAll(() => db.close());
   beforeEach(async () => {
@@ -187,7 +194,7 @@ describeDb('the audit forward outbox and forwarder (issue #209)', () => {
     it('a deleted event (retention) takes its queue row with it', async () => {
       await forwarding(db, event(1));
       await forwarding(db, event(2));
-      expect(await deleteAuditEventsBefore(db, new Date(tick + 1), 10)).toBe(2);
+      expect(await deleteAuditEventsBefore(tdb, new Date(tick + 1), 10)).toBe(2);
       expect(await queued()).toBe('0');
     });
   });

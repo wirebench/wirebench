@@ -4,8 +4,8 @@
  * module stops it from an `onClose` hook, which waits for a batch under way before the pool closes.
  *
  * Captures are swept per tenant (hosted edition spec §19.8 guard 6): each pass of the job loop deletes one
- * batch in each tenant's unit, and passes repeat while any tenant had a full batch. The audit, session-log and
- * schedule sweeps reuse this class over the raw pool until their modules move (Tasks 13 to 15).
+ * batch in each tenant's unit, and passes repeat while any tenant had a full batch. The schedule and audit sweeps
+ * run per tenant too (Tasks 13 and 14); the session-log sweep reuses this class over the raw pool until Task 15.
  */
 import type { FastifyBaseLogger } from 'fastify';
 import type { Querier } from '../context.js';
@@ -47,7 +47,7 @@ export interface SweeperDeps {
   readonly label?: string;
 }
 
-/** A sweep over the raw pool, for the modules not moved into a tenant yet (Tasks 13 to 15). */
+/** A sweep over the raw pool, for the modules not moved into a tenant yet (session logs, Task 15). */
 export function rawSweepTarget(
   db: Querier,
   deleteBefore: (db: Querier, cutoff: Date, limit: number) => Promise<number>,

@@ -25,6 +25,32 @@ describeDb('the tenant database and directory (hosted spec §19.4, §19.8)', () 
     await db.close();
   });
 
+  it('a read-only snapshot unit is repeatable read and read only, with its tenant set, and never joins a unit', async () => {
+    const scope = directoryOf(tenancy).defaultScope();
+    const inside = await tenancy.db(scope).transaction(
+      async (tx) =>
+        (
+          await tx.query<{ tenant: string; isolation: string; readOnly: string }>(
+            `select current_setting('wirebench.tenant_id', true) as tenant,
+                    current_setting('transaction_isolation') as isolation,
+                    current_setting('transaction_read_only') as "readOnly"`,
+          )
+        ).rows[0]!,
+      { readOnlySnapshot: true },
+    );
+    expect(inside).toEqual({ tenant: scope.tenantId, isolation: 'repeatable read', readOnly: 'on' });
+    await expect(
+      tenancy.db(scope).transaction((tx) => tx.query("insert into teams (id, name) values ('T-ro', 'Read only')"), {
+        readOnlySnapshot: true,
+      }),
+    ).rejects.toMatchObject({ code: '25006' });
+    await expect(
+      tenancy
+        .db(scope)
+        .transaction(() => tenancy.db(scope).transaction(() => Promise.resolve(1), { readOnlySnapshot: true })),
+    ).rejects.toMatchObject({ code: 'tenancy-snapshot-joined' });
+  });
+
   it('sets the tenant inside a unit, and the pooled connection comes back without it', async () => {
     const scope = directoryOf(tenancy).defaultScope();
     const inside = await tenancy

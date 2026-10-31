@@ -76,6 +76,23 @@ export class TenantDirectory {
     return this.#defaultTenant;
   }
 
+  /**
+   * The one tenant of a server whose `server_identity` row is gone, for the audit commands, the forensics path
+   * that must still run on such a database: `undefined` unless exactly one tenant exists. Only a self-hosted
+   * server has one tenant, and that one is its default.
+   */
+  async onlyTenant(): Promise<TenantScope | undefined> {
+    const rows = await this.#db.query<{ id: string; slug: string }>(
+      'select id::text as id, slug from tenants order by created_at, id limit 2',
+    );
+    return rows.rows.length === 1 ? scopeOf(rows.rows[0]!) : undefined;
+  }
+
+  /** Whether `scope` is the default tenant: a predicate, so a caller learns nothing it could serve. */
+  isDefault(scope: TenantScope): boolean {
+    return this.defaultScope().tenantId === scope.tenantId;
+  }
+
   /** Every tenant not being deleted, as scopes: what the job loop serves. */
   async list(): Promise<TenantScope[]> {
     const rows = await this.#db.query<{ id: string; slug: string }>(

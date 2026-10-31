@@ -44,3 +44,11 @@ export function directoryOf(tenancy: Tenancy): TenantDirectory {
   if (directory === undefined) throw new WirebenchError('tenancy-not-loaded', 'this tenancy has no directory');
   return directory;
 }
+
+/**
+ * Whether `scope` is the default tenant: a predicate, never a scope, so a module that needs to tell it apart
+ * (the audit chain's configured key, spec §19.7) gets no way to reach it. Needs the directory loaded.
+ */
+export function isDefaultTenant(tenancy: Tenancy, scope: TenantScope): boolean {
+  return directoryOf(tenancy).isDefault(scope);
+}

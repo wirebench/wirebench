@@ -40,8 +40,19 @@ export interface TenantQuerier extends Querier {
 
 /** One tenant's database. `query` is one statement in its own unit; `transaction` runs a unit of work. */
 export interface TenantDb extends TenantQuerier {
-  transaction<T>(fn: (tx: TenantQuerier) => Promise<T>): Promise<T>;
+  transaction<T>(fn: (tx: TenantQuerier) => Promise<T>, options?: UnitOptions): Promise<T>;
 }
+
+export interface UnitOptions {
+  /**
+   * A `repeatable read, read only` unit: every statement reads one snapshot (the audit chain's verify walk). It is
+   * set before the tenant, as Postgres requires, so such a unit cannot join one already running.
+   */
+  readonly readOnlySnapshot?: boolean;
+}
+
+/** Sent before the tenant's `set_config` in a {@link UnitOptions.readOnlySnapshot} unit. */
+export const READ_ONLY_SNAPSHOT = 'set transaction isolation level repeatable read, read only';
 
 /** What a test reads: each statement, the unit it ran in, and the tenant that unit had set before it. */
 export interface StatementLogEntry {
@@ -150,16 +161,24 @@ export function tenantDbFactory(db: Database, options: TenancyDbOptions = {}): T
       }
     });
   return (scope) => {
-    const transaction = <T>(fn: (tx: TenantQuerier) => Promise<T>): Promise<T> => {
+    const transaction = <T>(fn: (tx: TenantQuerier) => Promise<T>, unitOptions: UnitOptions = {}): Promise<T> => {
       let outer: ActiveUnit | undefined;
       try {
         outer = outerFor(scope);
       } catch (error) {
         return Promise.reject(error instanceof Error ? error : new Error(String(error)));
       }
-      if (outer !== undefined) return joined(outer, fn);
+      if (outer !== undefined) {
+        if (unitOptions.readOnlySnapshot === true) {
+          return Promise.reject(
+            new WirebenchError('tenancy-snapshot-joined', 'a read-only snapshot unit cannot join a running unit'),
+          );
+        }
+        return joined(outer, fn);
+      }
       return db.transaction(async (raw) => {
         const unit = ++units;
+        if (unitOptions.readOnlySnapshot === true) await raw.query(READ_ONLY_SNAPSHOT);
         await raw.query(SET_TENANT, [scope.tenantId]);
         options.onStatement?.({ unit, kind: 'set-config', tenantId: scope.tenantId, text: SET_TENANT });
         let ended = false;

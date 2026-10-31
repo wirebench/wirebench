@@ -6,12 +6,10 @@
  * (hosted edition spec §19.8 guard 5).
  */
 import type { KeyObject } from 'node:crypto';
-import type { FastifyBaseLogger } from 'fastify';
-import { COMMUNITY_SEATS, type LicenseState } from '@wirebench/engine';
+import type { LicenseState } from '@wirebench/engine';
 import type { LicenseChanged, LicenseService, Querier } from '../context.js';
 import type { TenantScope } from '../tenancy/scope.js';
 import type { TenantQuerier } from '../tenancy/tenant-db.js';
-import { STOP_PASS } from '../tenancy/jobs.js';
 import type { Tenancy } from '../tenancy/tenancy.js';
 import type { ScopeSource } from '../tenancy/urls.js';
 import { licenseInvalid } from './errors.js';
@@ -22,7 +20,7 @@ import { assertSeatAvailable, countEnabledUsers } from './seats.js';
 import { licenseState } from './state.js';
 
 export interface LicenseEnv {
-  readonly tenancy: Pick<Tenancy, 'db' | 'forEachTenant'>;
+  readonly tenancy: Pick<Tenancy, 'db'>;
   readonly publicKeys: readonly KeyObject[];
   readonly now: () => Date;
   /**
@@ -30,18 +28,9 @@ export interface LicenseEnv {
    * is server-wide, so any tenant's unit reads the same row.
    */
   readonly serverId: (db: Querier) => Promise<string>;
-  /** Where `stateWithoutScope` says, once, that it has several tenants to choose from. */
-  readonly log?: Pick<FastifyBaseLogger, 'warn'>;
   /** Hosted mode: the seat check takes no legacy server-wide lock (`seats.ts`). */
   readonly hosted?: boolean;
 }
-
-/**
- * What `stateWithoutScope` answers with several tenants: Community, saying why, so a job that logs the state does
- * not send an operator looking for a license.
- */
-export const SEVERAL_TENANTS_MESSAGE =
-  'several tenants: the jobs that do not run per tenant yet (scheduled runs, alerts, audit forwarding) are off until they do';
 
 /** Reads the server id once, on first use, and keeps it; a failed read is tried again next time. */
 export function cachedServerId(): (db: Querier) => Promise<string> {
@@ -54,9 +43,6 @@ export function cachedServerId(): (db: Querier) => Promise<string> {
     return cached;
   };
 }
-
-/** The job that reads the license of a server whose jobs do not run per tenant yet. */
-export const STATE_WITHOUT_SCOPE_JOB = 'license-without-scope';
 
 export function createLicenseService(env: LicenseEnv): LicenseService {
   // The stored license and the seat count in one unit.
@@ -72,7 +58,6 @@ export function createLicenseService(env: LicenseEnv): LicenseService {
   // seat count (Task 9 review M6). Features never depend on the seats used, so 0 stands in for them.
   const featuresIn = async (tx: TenantQuerier): Promise<readonly string[]> =>
     licenseState((await repo.storedLicense(tx))?.text, env.publicKeys, env.now(), 0, await env.serverId(tx)).features;
-  let warnedSeveral = false;
   const state = (of: ScopeSource, tx?: TenantQuerier): Promise<LicenseState> =>
     tx !== undefined ? stateIn(tx) : env.tenancy.db('tenantId' in of ? of : of.tenant).transaction(stateIn);
   return {
@@ -81,41 +66,6 @@ export function createLicenseService(env: LicenseEnv): LicenseService {
       assertSeatAvailable(tx, stateIn, env.hosted !== undefined ? { hosted: env.hosted } : {}),
     requireFeature: (feature) =>
       requireFeature(feature, (request) => env.tenancy.db(request.tenant).transaction(featuresIn)),
-    stateWithoutScope: async () => {
-      const states: LicenseState[] = [];
-      let failure: Error | undefined;
-      let tenants = 0;
-      await env.tenancy.forEachTenant(
-        STATE_WITHOUT_SCOPE_JOB,
-        async (tx) => {
-          // A second tenant settles the answer (Community, below): no more license reads, and no more units.
-          if (++tenants > 1) return STOP_PASS;
-          try {
-            states.push(await stateIn(tx));
-          } catch (error) {
-            failure ??= error instanceof Error ? error : new Error(String(error));
-            throw error;
-          }
-        },
-        // The failure is the caller's to log, with its job's name: it is thrown below.
-        { error: () => undefined },
-      );
-      if (failure !== undefined) throw failure;
-      // One tenant is a self-hosted server, whose license this is. With several, which only hosted-mode
-      // tests make, no one license is the server's, and Community grants no feature: said once, not per pass.
-      if (tenants === 1) return states[0]!;
-      if (tenants > 1 && !warnedSeveral) {
-        warnedSeveral = true;
-        env.log?.warn(SEVERAL_TENANTS_MESSAGE);
-      }
-      return {
-        edition: 'community',
-        status: 'none',
-        seats: { used: 0, limit: COMMUNITY_SEATS },
-        features: [],
-        ...(tenants > 1 ? { message: SEVERAL_TENANTS_MESSAGE } : {}),
-      };
-    },
   };
 }
 
