@@ -21,8 +21,14 @@ const silent = { error: () => undefined, warn: () => undefined, info: () => unde
 
 const turn = (): Promise<void> => new Promise((done) => setImmediate(done));
 
-function cast(queued: Record<string, string[]>, features: Record<string, readonly Feature[]> = {}) {
+function cast(
+  queued: Record<string, string[]>,
+  features: Record<string, readonly Feature[]> = {},
+  /** Tenants whose claim throws. */
+  broken: readonly string[] = [],
+) {
   const tenants = [ONE, TWO];
+  const errors: unknown[][] = [];
   const started: { tenant: string; runId: string; release: () => void }[] = [];
   const license: LicenseService = {
     ...permissiveLicense(),
@@ -40,7 +46,7 @@ function cast(queued: Record<string, string[]>, features: Record<string, readonl
     settings: { concurrency: 1 },
     now: () => new Date('2026-10-30T12:00:00Z'),
     setTimer: () => ({ cancel: () => undefined }),
-    log: silent,
+    log: { ...silent, error: (...args: unknown[]) => errors.push(args) },
     license: () => license,
     tenancy: {
       forEachTenant: async (_job: string, fn: (tx: TenantQuerier, scope: TenantScope) => Promise<unknown>) => {
@@ -54,13 +60,15 @@ function cast(queued: Record<string, string[]>, features: Record<string, readonl
       }),
     },
     claimQueued: (tx: TenantQuerier, limit: number) =>
-      Promise.resolve((queued[tx.scope.tenantId] ?? []).splice(0, limit)),
+      broken.includes(tx.scope.tenantId)
+        ? Promise.reject(new Error('this tenant’s unit cannot open'))
+        : Promise.resolve((queued[tx.scope.tenantId] ?? []).splice(0, limit)),
     execute: (runId: string, _signal: AbortSignal, scope: TenantScope) =>
       new Promise<void>((release) => {
         started.push({ tenant: scope.slug, runId, release });
       }),
   } as unknown as SchedulerEnv;
-  return { scheduler: new Scheduler(env), started };
+  return { scheduler: new Scheduler(env), started, errors };
 }
 
 /** Releases the running run, lets the freed slot's start happen, until nothing new starts. */
@@ -93,6 +101,24 @@ describe('Scheduler across tenants', () => {
     await scheduler.runOnce();
     await drain(started);
     expect(started.map((run) => run.runId)).toEqual(['b1']);
+    await scheduler.idle();
+  });
+
+  it('moves past a tenant whose claim fails, so the tenants after it still start their runs', async () => {
+    const { scheduler, started, errors } = cast(
+      { [ONE.tenantId]: ['a1', 'a2'], [TWO.tenantId]: ['b1', 'b2', 'b3'] },
+      {},
+      [ONE.tenantId],
+    );
+    await scheduler.runOnce();
+    await drain(started);
+    expect(started.map((run) => run.runId)).toEqual(['b1', 'b2', 'b3']);
+    // Once per round: the pass's, and each finished run's.
+    expect(errors.length).toBeLessThanOrEqual(started.length + 1);
+    expect(errors[0]).toEqual([
+      { tenantId: ONE.tenantId, message: 'this tenant’s unit cannot open' },
+      'scheduler could not claim a queued run for one tenant',
+    ]);
     await scheduler.idle();
   });
 });

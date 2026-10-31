@@ -12,7 +12,9 @@
  * Every pass goes through the job loop, one unit per tenant (hosted edition spec §19.8 guard 6): each tenant's
  * license is read there, so a tenant without `scheduled-runs` skips only its own schedules. Queued runs start
  * round-robin across the licensed tenants under the unchanged server-wide cap, from a pass and from a finished
- * run alike, so one tenant's backlog cannot starve another's. Runs in flight are keyed `tenantId:runId`.
+ * run alike, so one tenant's backlog cannot starve another's. Runs in flight are keyed `tenantId:runId`. A
+ * finished run's start uses the licensed tenants the last pass found, so a license change shows within one pass
+ * (15 s): a tenant that lost the feature may start a queued run until then, and one that gained it waits for it.
  */
 import type { LicenseService } from '../context.js';
 import { newId } from '../identity/tokens.js';
@@ -197,10 +199,29 @@ export class Scheduler {
     );
     let started = 0;
     let idle = 0;
+    const failing = new Set<string>();
     for (let i = from; idle < tenants.length; i = (i + 1) % tenants.length) {
       if (this.stopped || this.settingsFree() <= 0) break;
       const scope = tenants[i]!;
-      const [runId] = await this.env.tenancy.db(scope).transaction((tx) => claim(tx, 1, this.env.now()));
+      if (failing.has(scope.tenantId)) {
+        idle++;
+        continue;
+      }
+      let runId: string | undefined;
+      try {
+        [runId] = await this.env.tenancy.db(scope).transaction((tx) => claim(tx, 1, this.env.now()));
+      } catch (error) {
+        // One tenant whose claim fails is an empty turn for the rest of this round, and the rotation moves past
+        // it: it never holds up the tenants after it. Logged once per round.
+        failing.add(scope.tenantId);
+        this.env.log.error(
+          { tenantId: scope.tenantId, message: messageOf(error) },
+          'scheduler could not claim a queued run for one tenant',
+        );
+        if (this.turn === scope.tenantId) this.turn = tenants[(i + 1) % tenants.length]!.tenantId;
+        idle++;
+        continue;
+      }
       if (runId === undefined) {
         idle++;
         continue;

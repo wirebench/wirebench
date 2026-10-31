@@ -2,6 +2,7 @@ import { mkdtemp, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { SyncFile } from '@wirebench/engine';
+import type { FastifyBaseLogger } from 'fastify';
 import { afterEach, beforeEach, expect, it } from 'vitest';
 import { executeRun, type ExecutorEnv } from '../../../src/schedules/executor.js';
 import * as repo from '../../../src/schedules/repo.js';
@@ -104,6 +105,42 @@ describeDb('executeRun (scheduled-runs spec §3.2)', () => {
       },
     ]);
     expect(JSON.stringify(queued.rows)).not.toContain(API_KEY);
+  });
+
+  it('an alert that cannot be queued is skipped with a warning; the run, its audit line and its state are stored', async () => {
+    const alerts = {
+      targets: sealAlertTargets(testSettings(), [{ kind: 'webhook', url: 'https://hooks.example.test/in' }]),
+      muteAfter: 3,
+    };
+    const warns: unknown[][] = [];
+    const log = Object.assign(Object.create(quietLog()) as FastifyBaseLogger, {
+      warn: (...args: unknown[]) => {
+        warns.push(args);
+      },
+    });
+    // The alert's link is built inside its savepoint: a throw there must undo only the alert's statements.
+    const settings = testSettings({
+      linkUrl: () => {
+        throw new Error('no link for this tenant');
+      },
+    });
+    const { run } = await runOnce(
+      await workspaceSnapshot([probe('Fail', `${server.url}/fail`)]),
+      { alerts },
+      { settings, log },
+    );
+    expect(run).toMatchObject({ status: 'failed', reason: null });
+    expect(run.summary).toMatchObject({ failed: 1 });
+    const audit = await c.h.db.query<{ runId: string }>(
+      "select details->>'runId' as \"runId\" from audit_events where action = 'schedule.run_finished'",
+    );
+    expect(audit.rows.map((row) => row.runId)).toContain(run.id);
+    expect((await c.h.db.query('select 1 from schedule_alert_outbox where run_id = $1', [run.id])).rows).toEqual([]);
+    // The alert state moved in the same savepoint, so it is undone with it; the next failure tries again.
+    const schedule = await repo.runWithSchedule(c.h.tdb, run.id);
+    expect(schedule!.schedule).toMatchObject({ alertState: 'ok', failureStreak: 0 });
+    expect(warns).toHaveLength(1);
+    expect(warns[0]![1]).toBe('a schedule alert could not be queued; the run is stored without it');
   });
 
   it('an unreachable host errors the run', async () => {
