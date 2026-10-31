@@ -274,7 +274,7 @@ export class AlertOutbox {
   private async pass(): Promise<OutboxPass> {
     if (this.stopped) return { delivered: 0, failed: 0 };
     // Without the feature nothing goes out; the rows wait for a license.
-    const state = await this.env.license().state();
+    const state = await this.env.license().stateWithoutScope();
     if (!state.features.includes('scheduled-runs')) return { delivered: 0, failed: 0 };
     const claimed = await this.claim();
     const outcomes = await Promise.all(claimed.map((row) => this.deliverOne(row)));

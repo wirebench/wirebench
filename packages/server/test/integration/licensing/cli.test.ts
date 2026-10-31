@@ -8,6 +8,7 @@ import { MISSING_SERVER_ID } from '../../../src/licensing/repo.js';
 import { main } from '../../../src/main.js';
 import { describeDb, testDatabase } from '../../helpers/database.js';
 import { mkTempDir, removeTempDir } from '../../helpers/git.js';
+import { defaultTenantDb } from '../../helpers/tenancy.js';
 import { license, PAYLOAD, testKeys } from '../../helpers/licensing.js';
 
 const keys = testKeys();
@@ -113,8 +114,9 @@ describeDb('wirebench-server admin license (licensing spec §3.7)', () => {
   });
 
   it('admin invite is refused at the Community limit, and a Team license installed here lifts it', async () => {
+    const tdb = await defaultTenantDb(db);
     for (let i = 0; i < 5; i += 1) {
-      await identityRepo.insertUser(db, {
+      await identityRepo.insertUser(tdb, {
         id: newId(),
         email: `u${i}@example.com`,
         displayName: `u${i}`,
@@ -138,7 +140,8 @@ describeDb('wirebench-server admin license (licensing spec §3.7)', () => {
     await db.owner.query('delete from server_identity');
     const out = io();
     const code = await runAdmin({ command: 'admin-license-show' }, out.io, options);
-    expect(code).not.toBe(0);
+    // A configuration problem, as `serve` reports it, not a pending migration (Part B final review).
+    expect(code).toBe(2);
     expect(out.stderr()).toBe(`${MISSING_SERVER_ID}\n`);
     expect(out.stderr()).not.toContain('    at ');
   });

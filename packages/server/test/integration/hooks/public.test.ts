@@ -33,9 +33,9 @@ async function setUp(env: Record<string, string> = {}): Promise<Cast> {
 }
 
 async function stored(c: Cast): Promise<repo.CaptureRow[]> {
-  const page = await repo.listCaptures(c.h.db, c.hook.id, {}, 200);
+  const page = await repo.listCaptures(c.h.tdb, c.hook.id, {}, 200);
   const rows: repo.CaptureRow[] = [];
-  for (const summary of page) rows.push((await repo.captureById(c.h.db, c.hook.id, summary.id))!);
+  for (const summary of page) rows.push((await repo.captureById(c.h.tdb, c.hook.id, summary.id))!);
   return rows;
 }
 
@@ -77,7 +77,7 @@ describeDb('the public route: bodies and headers (§3.3 steps 1, 4, 6)', () => {
     });
     expect(row!.body.toString('utf8')).toBe('{"id":"evt_1"}');
     expect(header(row!, 'x-signature')).toEqual(['t=1,v1=abc']);
-    expect(heard).toEqual([{ workspaceId, hookId: hook.id, captureId: row!.id }]);
+    expect(heard).toEqual([{ tenantId: h.tdb.scope.tenantId, workspaceId, hookId: hook.id, captureId: row!.id }]);
   });
 
   it('stores form, binary and empty bodies byte for byte, on every method and with no subpath', async () => {
@@ -150,7 +150,7 @@ describeDb('the public route: truncation and the body limit (§3.3 step 1)', () 
 
   it('stores exactly the limit whole, cuts one byte more, and still answers as configured', async () => {
     const { h, hook } = c!;
-    await repo.updateCatchUrl(h.db, hook.id, { response: { status: 202 } });
+    await repo.updateCatchUrl(h.tdb, hook.id, { response: { status: 202 } });
     const exact = await h.app.inject({
       method: 'POST',
       url: `/hooks/${hook.secret}/a`,
@@ -190,7 +190,7 @@ describeDb('the public route: the configured answer (§3.3 step 6, §5)', () => 
 
   it('sends the configured status, content type and body, echoing nothing', async () => {
     const { h, hook } = c!;
-    await repo.updateCatchUrl(h.db, hook.id, {
+    await repo.updateCatchUrl(h.tdb, hook.id, {
       response: { status: 201, contentType: 'application/json', body: '{"received":true}' },
     });
     const res = await h.app.inject({ method: 'POST', url: `/hooks/${hook.secret}`, payload: 'secret-payload' });
@@ -202,7 +202,7 @@ describeDb('the public route: the configured answer (§3.3 step 6, §5)', () => 
 
   it('waits the configured delay on a timer, after the capture is stored and announced', async () => {
     const { h, hook, heard } = c!;
-    await repo.updateCatchUrl(h.db, hook.id, { response: { delayMs: 1500 } });
+    await repo.updateCatchUrl(h.tdb, hook.id, { response: { delayMs: 1500 } });
     let answered = false;
     const pending = h.app.inject({ method: 'POST', url: `/hooks/${hook.secret}` }).then((res) => {
       answered = true;
@@ -224,14 +224,14 @@ describeDb('the public route: refusals (§3.3 steps 2, 3, 5)', () => {
     const disabled = await seedCatchUrl(h, workspaceId, 'Off', { enabled: false });
     const rotated = await seedCatchUrl(h, workspaceId, 'Rotated');
     const newSecret = 'Z'.repeat(26);
-    await repo.rotateSecret(h.db, rotated.id, newSecret);
+    await repo.rotateSecret(h.tdb, rotated.id, newSecret);
     for (const secret of ['0'.repeat(26), 'not-a-secret', disabled.secret, rotated.secret]) {
       const res = await h.app.inject({ method: 'POST', url: `/hooks/${secret}/x`, payload: 'x' });
       expect([res.statusCode, res.body]).toEqual([404, '']);
     }
     // The rotated catch URL still answers, on its new URL only.
     expect((await h.app.inject({ method: 'POST', url: `/hooks/${newSecret}` })).statusCode).toBe(200);
-    expect((await repo.listCaptures(h.db, disabled.id, {}, 10)).length).toBe(0);
+    expect((await repo.listCaptures(h.tdb, disabled.id, {}, 10)).length).toBe(0);
     expect(heard.map((event) => event.hookId)).toEqual([rotated.id]);
   });
 

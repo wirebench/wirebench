@@ -21,15 +21,17 @@ import { effectiveRole } from '../teams/roles.js';
 import { liveOriginRefused } from './errors.js';
 import { LiveHub, type LiveHubDeps } from './hub.js';
 import { runLiveSocket, type LiveConnection, type SocketLoopDeps } from './socket.js';
+import type { TenantScope } from '../tenancy/scope.js';
 
 declare module 'fastify' {
   interface FastifyInstance {
     /**
      * Runs the live socket loop on a connection that did not come through `/live`: the server host's
      * in-process live client (hosted edition spec §17.3). Auth, subscriptions and the hub's fan-out are
-     * the same as for any socket. Decorated by the live module, so only modules after it see it.
+     * the same as for any socket. Decorated by the live module, so only modules after it see it. `tenant`
+     * is the host's: the token is looked up there.
      */
-    liveConnection?: (connection: LiveConnection) => void;
+    liveConnection?: (connection: LiveConnection, tenant: TenantScope) => void;
   }
 }
 
@@ -89,11 +91,12 @@ export function liveModule(options: LiveOptions = {}): ServerModule {
     async register(app: FastifyInstance, ctx: ServerContext): Promise<void> {
       const settings = identitySettings(ctx.config);
       const hub = new LiveHub({
-        effectiveRole: (userId, workspaceId) => effectiveRole(ctx.db, userId, workspaceId),
-        workspaceIdsOfTeam: (teamId) => workspaceIdsOfTeam(ctx.db, teamId),
+        effectiveRole: (userId, workspaceId, tenant) => effectiveRole(ctx.tenancy.db(tenant), userId, workspaceId),
+        workspaceIdsOfTeam: (teamId, tenant) => workspaceIdsOfTeam(ctx.tenancy.db(tenant), teamId),
         log: ctx.log,
         now: () => now().getTime(),
         setTimer,
+        hosted: ctx.config.mode === 'hosted',
       });
       let heartbeat: { cancel(): void } | undefined;
       // Re-armed before the work, so one failing beat cannot stop every later one: a socket that
@@ -141,19 +144,21 @@ export function liveModule(options: LiveOptions = {}): ServerModule {
         },
       });
 
-      const loop: SocketLoopDeps = {
+      // A socket's token is found in the tenant it connected to (spec §19.8 guard 2).
+      const loopFor = (tenant: TenantScope): SocketLoopDeps => ({
         hub,
-        authenticate: (token) => callerForToken({ db: ctx.db, settings, now }, token),
+        authenticate: (token) => callerForToken({ db: ctx.tenancy.db(tenant), settings, now }, token),
         tokenMaxMs: settings.tokenMaxMs,
         setTimer,
         log: ctx.log,
-      };
-      app.decorate('liveConnection', (connection: LiveConnection) => {
-        runLiveSocket(connection, loop);
+        tenant,
+      });
+      app.decorate('liveConnection', (connection: LiveConnection, tenant: TenantScope) => {
+        runLiveSocket(connection, loopFor(tenant));
       });
       // A plain GET (a proxy that strips `Upgrade`) is answered 404 by the plugin (§3.5).
-      app.get(ROUTE, { websocket: true, onRequest: originCheck(ctx.config) }, (socket) => {
-        runLiveSocket(socket, loop);
+      app.get(ROUTE, { websocket: true, onRequest: originCheck(ctx.config) }, (socket, request) => {
+        runLiveSocket(socket, loopFor(request.tenant));
       });
 
       ctx.hooks.headMoved.push((event) => {

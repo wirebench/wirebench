@@ -36,7 +36,7 @@ export const scimGroupRoutes =
       (request) => {
         const { id } = request.params as { readonly id: string };
         const { teamId } = request.body as ScimGroupLinkRequest;
-        return setGroupLink(env, id, teamId, auditSource(request), request.log);
+        return setGroupLink(env, request.tenant, id, teamId, auditSource(request), request.log);
       },
     );
 
@@ -44,6 +44,13 @@ export const scimGroupRoutes =
       '/scim-groups/:id/team',
       { preHandler, schema: { params, response: { 200: jsonSchema(scimGroupSummarySchema) } } },
       (request) =>
-        setGroupLink(env, (request.params as { readonly id: string }).id, null, auditSource(request), request.log),
+        setGroupLink(
+          env,
+          request.tenant,
+          (request.params as { readonly id: string }).id,
+          null,
+          auditSource(request),
+          request.log,
+        ),
     );
   };

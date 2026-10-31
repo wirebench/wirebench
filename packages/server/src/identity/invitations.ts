@@ -12,8 +12,10 @@ import {
   type PasswordResetCreated,
   type SignInResponse,
 } from '@wirebench/engine';
-import { announce, recordAudit, runInvitationAccepted, type AuditSource, type Querier } from '../context.js';
+import { announce, recordAudit, runInvitationAccepted, type AuditSource } from '../context.js';
 import { isUniqueViolation } from '../db/errors.js';
+import type { TenantScope } from '../tenancy/scope.js';
+import type { TenantQuerier } from '../tenancy/tenant-db.js';
 import type { IdentityEnv, InvitationEnv } from './env.js';
 import { invitationExists, invitationInvalid, methodDisabled, passwordTooShort, userExists } from './errors.js';
 import { hashPassword } from './passwords.js';
@@ -37,21 +39,23 @@ export interface CreateInvitationInput {
 /**
  * `attach` runs in the insert's transaction with the new invitation's id: teams-access writes its
  * `team_invitations` row through it (teams spec §3.4), so a team invitation never exists without
- * its team.
+ * its team. Every function here works in `scope`, the request's tenant or the admin command line's.
  */
 export async function createInvitation(
   env: InvitationEnv,
+  scope: TenantScope,
   input: CreateInvitationInput,
-  attach?: (tx: Querier, invitationId: string) => Promise<void>,
+  attach?: (tx: TenantQuerier, invitationId: string) => Promise<void>,
 ): Promise<InvitationCreated> {
   const lower = emailLower(input.email);
   const now = env.now();
-  if ((await repo.findUserByEmail(env.ctx.db, lower)) !== undefined) throw userExists();
-  if ((await repo.openInvitationByEmail(env.ctx.db, lower, now)) !== undefined) throw invitationExists();
+  const db = env.ctx.tenancy.db(scope);
+  if ((await repo.findUserByEmail(db, lower)) !== undefined) throw userExists();
+  if ((await repo.openInvitationByEmail(db, lower, now)) !== undefined) throw invitationExists();
   const { secret, hash } = mintSecret();
   let row: repo.InvitationRow;
   try {
-    row = await env.ctx.db.transaction(async (tx) => {
+    row = await db.transaction(async (tx) => {
       // licensing §3.4: refused here, so the admin learns before the invitee does. Every caller shares
       // this function: POST /invitations, a team invitation, and `admin invite`.
       await env.ctx.license.assertSeatAvailable(tx);
@@ -87,6 +91,7 @@ export async function createInvitation(
 /** A `reset` row for an existing user; any earlier open reset for them is closed first. */
 export async function createPasswordReset(
   env: InvitationEnv,
+  scope: TenantScope,
   user: repo.UserRow,
   createdBy: string,
   source: AuditSource,
@@ -94,7 +99,7 @@ export async function createPasswordReset(
 ): Promise<PasswordResetCreated> {
   const now = env.now();
   const { secret, hash } = mintSecret();
-  const row = await env.ctx.db.transaction(async (tx) => {
+  const row = await env.ctx.tenancy.db(scope).transaction(async (tx) => {
     await repo.revokeOpenResetsOf(tx, user.id, now);
     const inserted = await repo.insertInvitation(tx, {
       id: newId(),
@@ -125,14 +130,19 @@ export function isOpen(row: repo.InvitationRow, now: Date): boolean {
 /** The row behind a secret while it is still usable; `undefined` for unknown, used, revoked or expired. */
 export async function openInvitationBySecret(
   env: InvitationEnv,
+  scope: TenantScope,
   secret: string,
 ): Promise<repo.InvitationRow | undefined> {
-  const row = await repo.invitationBySecretHash(env.ctx.db, hashSecret(secret));
+  const row = await repo.invitationBySecretHash(env.ctx.tenancy.db(scope), hashSecret(secret));
   return row !== undefined && isOpen(row, env.now()) ? row : undefined;
 }
 
-export async function lookupInvitation(env: InvitationEnv, secret: string): Promise<InvitationLookupResponse> {
-  const row = await openInvitationBySecret(env, secret);
+export async function lookupInvitation(
+  env: InvitationEnv,
+  scope: TenantScope,
+  secret: string,
+): Promise<InvitationLookupResponse> {
+  const row = await openInvitationBySecret(env, scope, secret);
   if (row === undefined) throw invitationInvalid();
   return { email: row.email, methods: { local: env.settings.local, oidc: env.settings.oidc !== undefined } };
 }
@@ -148,16 +158,17 @@ export async function lookupInvitation(env: InvitationEnv, secret: string): Prom
  */
 export async function acceptInvitation(
   env: IdentityEnv,
+  scope: TenantScope,
   input: InvitationAcceptRequest,
   source: AuditSource,
 ): Promise<SignInResponse> {
   if (!env.settings.local) throw methodDisabled();
   if (input.password.length < MIN_PASSWORD_LENGTH) throw passwordTooShort();
-  const invitation = await openInvitationBySecret(env, input.secret);
+  const invitation = await openInvitationBySecret(env, scope, input.secret);
   if (invitation === undefined) throw invitationInvalid();
   const hash = await hashPassword(input.password);
   const now = env.now();
-  const user = await env.ctx.db.transaction(async (tx) => {
+  const user = await env.ctx.tenancy.db(scope).transaction(async (tx) => {
     if (!(await repo.acceptInvitation(tx, invitation.id, now))) throw invitationInvalid();
     if (invitation.kind === 'reset') {
       const existing = invitation.userId === null ? undefined : await repo.findUserById(tx, invitation.userId);
@@ -200,15 +211,22 @@ export async function acceptInvitation(
   });
   // A reset revoked every device of the user above. There is no request here, and the CLI never
   // accepts (it builds only an InvitationEnv), so the server's own logger is the one at hand.
-  if (invitation.kind === 'reset') announce(env.ctx.hooks.sessionEnded, { userId: user.id }, env.ctx.log);
-  return signIn(env, user, 'local', input.device.name, source);
+  if (invitation.kind === 'reset')
+    announce(env.ctx.hooks.sessionEnded, { tenantId: scope.tenantId, userId: user.id }, env.ctx.log);
+  return signIn(env, scope, user, 'local', input.device.name, source);
 }
 
 /** Revokes an open `invite`; `false` when there is no such open invitation. */
-export async function revokeOpenInvitation(env: InvitationEnv, id: string, source: AuditSource): Promise<boolean> {
-  const row = await repo.invitationById(env.ctx.db, id);
+export async function revokeOpenInvitation(
+  env: InvitationEnv,
+  scope: TenantScope,
+  id: string,
+  source: AuditSource,
+): Promise<boolean> {
+  const db = env.ctx.tenancy.db(scope);
+  const row = await repo.invitationById(db, id);
   if (row === undefined || row.kind !== 'invite' || !isOpen(row, env.now())) return false;
-  await env.ctx.db.transaction(async (tx) => {
+  await db.transaction(async (tx) => {
     await repo.revokeInvitation(tx, id, env.now());
     await recordAudit(env.ctx.hooks, tx, {
       ...source,

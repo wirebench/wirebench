@@ -18,11 +18,11 @@ import { whileRepositoryExists, type SyncEnv } from '../env.js';
 export const headRoutes =
   (env: SyncEnv) =>
   (app: FastifyInstance): void => {
-    const { db, repos } = env.ctx;
+    const { repos } = env.ctx;
     app.get(
       '/workspaces/:workspaceId/sync/head',
       {
-        preHandler: requireWorkspaceRole(db, 'viewer'),
+        preHandler: requireWorkspaceRole(env.ctx.tenancy, 'viewer'),
         schema: {
           params: jsonSchema(teamWorkspaceParamsSchema, { io: 'input' }),
           querystring: jsonSchema(syncHeadQuerySchema, { io: 'input' }),
@@ -35,7 +35,7 @@ export const headRoutes =
         return whileRepositoryExists(repos, workspaceId, async () => {
           const head = await env.store.head(workspaceId);
           const { commits, behind } = await env.store.counts(workspaceId, from, head);
-          const workspace = await workspaceById(db, workspaceId);
+          const workspace = await workspaceById(env.ctx.tenancy.db(request.tenant), workspaceId);
           return {
             head,
             commits,

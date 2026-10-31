@@ -106,7 +106,7 @@ export async function schedulesHarness(
   const stranger = await signedInUser(h, { email: 'stranger@example.com' });
   const team = await seedTeam(h, { name: 'Operations', admins: [admin], members: [editor, viewer] });
   const workspaceId = await seedWorkspace(h, { team, name: 'Smoke', defaultRole: 'viewer' });
-  await upsertGrant(h.db, { workspaceId, userId: editor.user.id, role: 'editor', at: h.clock.now });
+  await upsertGrant(h.tdb, { workspaceId, userId: editor.user.id, role: 'editor', at: h.clock.now });
   const install = async (edition: 'team' | 'enterprise', features?: readonly Feature[]): Promise<void> => {
     const res = await h.app.inject({
       method: 'PUT',

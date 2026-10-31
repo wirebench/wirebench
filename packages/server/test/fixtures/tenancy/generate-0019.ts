@@ -287,13 +287,15 @@ it.runIf(OUT !== undefined)(
       });
       expect(accepted.status, JSON.stringify(accepted.body)).toBeLessThan(300);
       note('users', accepted.body.user.id);
-      await identityRepo.insertOidcIdentity(h.db, {
+      // Run at `e9bdc5af1`, whose repository takes a plain querier; this tree's takes a tenant one, so the
+      // harness's database is cast for both to compile.
+      await identityRepo.insertOidcIdentity(h.db as never, {
         issuer: 'https://idp.example.test',
         subject: 'oidc-subject-editor',
         userId: editor.user.id,
         at,
       });
-      await identityRepo.insertFlow(h.db, {
+      await identityRepo.insertFlow(h.db as never, {
         id: newId(),
         codeChallenge: sha256('verifier-0019'),
         loopbackPort: 53682,
@@ -319,7 +321,7 @@ it.runIf(OUT !== undefined)(
         [editor, 'member'],
         [viewer, 'member'],
       ] as const) {
-        await teamsRepo.insertMember(h.db, { teamId, userId: user.user.id, role, at });
+        await teamsRepo.insertMember(h.db as never, { teamId, userId: user.user.id, role, at });
       }
       const teamInvite = await call(h, alice, 'POST', `/teams/${teamId}/invitations`, {
         email: 'contractor@example.com',
@@ -336,7 +338,7 @@ it.runIf(OUT !== undefined)(
       const billing = await workspace('Billing');
       const retired = await workspace('Retired');
       for (const workspaceId of [staging, billing]) {
-        await teamsRepo.upsertGrant(h.db, { workspaceId, userId: editor.user.id, role: 'editor', at });
+        await teamsRepo.upsertGrant(h.db as never, { workspaceId, userId: editor.user.id, role: 'editor', at });
       }
       expect((await call(h, alice, 'DELETE', `/workspaces/${retired}`)).status).toBeLessThan(300);
 
@@ -389,7 +391,7 @@ it.runIf(OUT !== undefined)(
         name: 'Payments callback',
       });
       expect(hook.status, JSON.stringify(hook.body)).toBe(201);
-      await hooksRepo.updateCatchUrl(h.db, hook.body.id, {
+      await hooksRepo.updateCatchUrl(h.db as never, hook.body.id, {
         signature: {
           scheme: { kind: 'hmac', algorithm: 'sha256', encoding: 'hex', header: 'X-Signature', prefix: 'sha256=' },
           sealedSecret: sealHookSecret(Buffer.from(FIXTURE_KEYS.hooksSecretKey, 'base64'), FIXTURE_PLAINTEXTS.hookSignatureSecret),
@@ -407,7 +409,7 @@ it.runIf(OUT !== undefined)(
         expect(captured.statusCode, captured.body).toBeLessThan(300);
       }
       // Then the catch URL rejects unverified requests: an unsigned one is answered 401 and stored as rejected.
-      await hooksRepo.updateCatchUrl(h.db, hook.body.id, { rejectUnverified: true });
+      await hooksRepo.updateCatchUrl(h.db as never, hook.body.id, { rejectUnverified: true });
       const rejected = await h.app.inject({
         method: 'POST',
         url: `/hooks/${secret}/events`,

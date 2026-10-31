@@ -47,7 +47,7 @@ describeDb('team invitations (§3.2, §3.4)', () => {
       expect.objectContaining({ id: res.body.id, email: 'Bob@example.com', role: 'member', createdBy: admin.user.id }),
     ]);
     expect(JSON.stringify(list.body)).not.toContain(secretOf(res.body.url));
-    expect((await identityRepo.invitationById(h.db, res.body.id))?.serverAdmin).toBe(false);
+    expect((await identityRepo.invitationById(h.tdb, res.body.id))?.serverAdmin).toBe(false);
   });
 
   it('refuses an existing user with the hint, a member with 403 and an outsider with 404', async () => {
@@ -80,12 +80,12 @@ describeDb('team invitations (§3.2, §3.4)', () => {
     const root = await signedInUser(h, { email: 'root@example.com', serverAdmin: true });
     const plain = await call<{ url: string }>(h, root, 'POST', '/invitations', { email: 'carol@example.com' });
     const carol = await accept(plain.body.url, 'Carol');
-    expect(await repo.teamsOfUser(h.db, carol.body.user.id)).toEqual([]);
+    expect(await repo.teamsOfUser(h.tdb, carol.body.user.id)).toEqual([]);
     const { url } = (await invite('dan@example.com')).body;
-    await repo.deleteTeam(h.db, team.id);
+    await repo.deleteTeam(h.tdb, team.id);
     const dan = await accept(url, 'Dan');
     expect(dan.status).toBe(201);
-    expect(await repo.teamsOfUser(h.db, dan.body.user.id)).toEqual([]);
+    expect(await repo.teamsOfUser(h.tdb, dan.body.user.id)).toEqual([]);
   });
 
   it('revoke: only this team’s open invitations, and only once', async () => {
@@ -145,6 +145,6 @@ describeDb('team invitations over OIDC (§3.4, §13.1)', () => {
       codeVerifier: VERIFIER,
     });
     expect(done.status).toBe(201);
-    expect(await repo.memberRole(h.db, team.id, done.body.user.id)).toBe('member');
+    expect(await repo.memberRole(h.tdb, team.id, done.body.user.id)).toBe('member');
   });
 });

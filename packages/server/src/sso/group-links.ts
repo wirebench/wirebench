@@ -5,6 +5,7 @@
 import type { ScimGroupSummary } from '@wirebench/engine';
 import type { FastifyBaseLogger } from 'fastify';
 import type { AuditSource } from '../context.js';
+import type { TenantScope } from '../tenancy/scope.js';
 import { problem } from '../problem.js';
 import * as teamsRepo from '../teams/repo.js';
 import { teamNotFound } from '../teams/errors.js';
@@ -35,6 +36,7 @@ async function summaryOf(env: ProvisioningEnv, groupId: string): Promise<ScimGro
 /** Links `groupId` to `teamId`, or unlinks it with `null`; access changes are announced after commit. */
 export async function setGroupLink(
   env: ProvisioningEnv,
+  scope: TenantScope,
   groupId: string,
   teamId: string | null,
   source: AuditSource,
@@ -42,7 +44,7 @@ export async function setGroupLink(
   log?: FastifyBaseLogger,
 ): Promise<ScimGroupSummary> {
   const changes: AccessChanges = [];
-  await env.ctx.db.transaction(async (tx) => {
+  await env.ctx.tenancy.db(scope).transaction(async (tx) => {
     const group = await repo.scimGroupById(tx, groupId);
     if (group === undefined) throw scimGroupNotFound();
     if (teamId === null) {
@@ -52,6 +54,6 @@ export async function setGroupLink(
     if ((await teamsRepo.teamById(tx, teamId)) === undefined) throw teamNotFound();
     await linkGroup(env, tx, group, teamId, source, changes);
   });
-  if (log !== undefined) announceAccess(env, changes, log);
+  if (log !== undefined) announceAccess(env, scope, changes, log);
   return summaryOf(env, groupId);
 }

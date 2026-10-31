@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, it, vi } from 'vitest';
 import type { Database } from '../../../src/context.js';
 import { createDatabase } from '../../../src/db/pool.js';
 import { TenantAdmin } from '../../../src/tenancy/directory.js';
-import { createTenancy, type Tenancy } from '../../../src/tenancy/tenancy.js';
+import { createTenancy, directoryOf, type Tenancy } from '../../../src/tenancy/tenancy.js';
 import { describeDb, testDatabase } from '../../helpers/database.js';
 import { expectAllScoped, loggedTenancy } from '../../helpers/tenancy.js';
 
@@ -18,7 +18,7 @@ describeDb('the tenant database and directory (hosted spec §19.4, §19.8)', () 
     db = await testDatabase();
     one = createDatabase(db.url, { max: 1 });
     tenancy = createTenancy(one);
-    await tenancy.directory.load();
+    await directoryOf(tenancy).load();
   });
   afterAll(async () => {
     await one.close();
@@ -26,7 +26,7 @@ describeDb('the tenant database and directory (hosted spec §19.4, §19.8)', () 
   });
 
   it('sets the tenant inside a unit, and the pooled connection comes back without it', async () => {
-    const scope = tenancy.directory.defaultScope();
+    const scope = directoryOf(tenancy).defaultScope();
     const inside = await tenancy
       .db(scope)
       .transaction(async (tx) => (await tx.query<{ tenant: string; pid: number }>(SETTING)).rows[0]!);
@@ -37,7 +37,7 @@ describeDb('the tenant database and directory (hosted spec §19.4, §19.8)', () 
   });
 
   it('rolls a throwing unit back', async () => {
-    const scope = tenancy.directory.defaultScope();
+    const scope = directoryOf(tenancy).defaultScope();
     await expect(
       tenancy.db(scope).transaction(async (tx) => {
         await tx.query("insert into teams (id, name) values ('T-rolled-back', 'Rolled back')");
@@ -50,7 +50,7 @@ describeDb('the tenant database and directory (hosted spec §19.4, §19.8)', () 
   // `pg-pool` drops a client whose socket closed whatever `release` is given, so this shows the next unit gets a
   // live connection, not that `release(err)` is called: `test/unit/db/pool.test.ts` pins that over a stub.
   it('runs the next unit on a fresh connection after one died mid-unit', async () => {
-    const scope = tenancy.directory.defaultScope();
+    const scope = directoryOf(tenancy).defaultScope();
     let pid = 0;
     await expect(
       tenancy.db(scope).transaction(async (tx) => {
@@ -68,7 +68,7 @@ describeDb('the tenant database and directory (hosted spec §19.4, §19.8)', () 
   });
 
   it('throws tenancy-scope-ended for a querier used after its unit, and runs nothing', async () => {
-    const scope = tenancy.directory.defaultScope();
+    const scope = directoryOf(tenancy).defaultScope();
     let late: Promise<unknown> | undefined;
     await tenancy.db(scope).transaction(async (tx) => {
       await tx.query('select 1');
@@ -83,8 +83,8 @@ describeDb('the tenant database and directory (hosted spec §19.4, §19.8)', () 
 
   it('logs every statement after the set_config of its unit', async () => {
     const { tenancy: logged, log } = loggedTenancy(one);
-    await logged.directory.load();
-    const scope = logged.directory.defaultScope();
+    await directoryOf(logged).load();
+    const scope = directoryOf(logged).defaultScope();
     await logged.db(scope).query('select 1');
     await logged.db(scope).transaction(async (tx) => {
       await tx.query('select 2');
@@ -95,14 +95,14 @@ describeDb('the tenant database and directory (hosted spec §19.4, §19.8)', () 
 
   it("lists the tenants, creates one off ctx.tenancy, tells the directory's listeners, and serves each in forEachTenant", async () => {
     const listener = vi.fn();
-    const off = tenancy.directory.onChange(listener);
-    const acme = await new TenantAdmin(one, tenancy.directory).create({ slug: 'acme', name: 'Acme' });
+    const off = directoryOf(tenancy).onChange(listener);
+    const acme = await new TenantAdmin(one, directoryOf(tenancy)).create({ slug: 'acme', name: 'Acme' });
     off();
     expect(listener).toHaveBeenCalledTimes(1);
     expect(acme).toMatchObject({ slug: 'acme', name: 'Acme', edition: 'community', status: 'active', region: 'eu' });
-    expect((await tenancy.directory.get(acme.id))?.scope).toEqual(acme.scope);
-    expect(await tenancy.directory.get('00000000-0000-4000-8000-000000000000')).toBeUndefined();
-    const listed = await tenancy.directory.list();
+    expect((await directoryOf(tenancy).get(acme.id))?.scope).toEqual(acme.scope);
+    expect(await directoryOf(tenancy).get('00000000-0000-4000-8000-000000000000')).toBeUndefined();
+    const listed = await directoryOf(tenancy).list();
     expect(listed.map((s) => s.slug)).toEqual(['default', 'acme']);
 
     await one.query("update tenants set status = 'deleting' where slug = 'acme'").catch(() => undefined);
@@ -122,10 +122,10 @@ describeDb('the tenant database and directory (hosted spec §19.4, §19.8)', () 
       { error },
     );
     expect(seen).toEqual(['default:set', 'acme:set']);
-    expect(pass).toEqual({ served: 1, failed: [tenancy.directory.defaultScope().tenantId] });
+    expect(pass).toEqual({ served: 1, failed: [directoryOf(tenancy).defaultScope().tenantId] });
     expect(error.mock.calls[0]![0]).toMatchObject({
       job: 'probe',
-      tenantId: tenancy.directory.defaultScope().tenantId,
+      tenantId: directoryOf(tenancy).defaultScope().tenantId,
     });
   });
 });

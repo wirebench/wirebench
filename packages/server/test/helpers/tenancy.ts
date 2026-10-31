@@ -8,7 +8,13 @@
 import { WirebenchError } from '@wirebench/engine';
 import { expect } from 'vitest';
 import type { Database, Querier, ServerContext } from '../../src/context.js';
-import type { StatementLogEntry } from '../../src/tenancy/tenant-db.js';
+import { TenantDirectory } from '../../src/tenancy/directory.js';
+import {
+  tenantDbFactory,
+  type StatementLogEntry,
+  type TenantDb,
+  type TenantQuerier,
+} from '../../src/tenancy/tenant-db.js';
 import { createTenancy, type Tenancy } from '../../src/tenancy/tenancy.js';
 
 /**
@@ -43,6 +49,21 @@ export interface StatementLog {
 export function statementLog(): StatementLog {
   const entries: StatementLogEntry[] = [];
   return { entries, onStatement: (entry) => entries.push(entry) };
+}
+
+/** The default tenant's database over `db`: for a suite that writes fixtures through a moved repository. */
+export async function defaultTenantDb(db: Database): Promise<TenantDb> {
+  const directory = new TenantDirectory(db);
+  if (!(await directory.load())) throw new Error('this schema has no tenants: migrate it first');
+  return tenantDbFactory(db)(directory.defaultScope());
+}
+
+/**
+ * Test only: a plain querier passed where a repository takes a tenant one, for a test that reads the SQL a
+ * repository sends (an `explain`) rather than running it in a unit.
+ */
+export function asTenantQuerier(querier: Querier): TenantQuerier {
+  return querier as TenantQuerier;
 }
 
 /** A tenancy over `db` that records every statement. */

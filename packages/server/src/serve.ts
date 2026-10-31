@@ -30,7 +30,7 @@ import { checkAppRole, checkPostgresVersion } from './tenancy/checks.js';
 import { TENANCY_MIGRATIONS_DIR } from './tenancy/migrations.js';
 import { RunningLock, type RunningLockOptions } from './tenancy/running-lock.js';
 import { operatorPublicUrl } from './tenancy/urls.js';
-import { createTenancy } from './tenancy/tenancy.js';
+import { createTenancy, directoryOf } from './tenancy/tenancy.js';
 import { ensureAppRole, roleMode } from './tenancy/roles.js';
 import { ExitCode, packageVersion, type ServerIo } from './io.js';
 import { NO_HOOKS_DIR, RepoStore } from './repos/repo-store.js';
@@ -333,7 +333,7 @@ export async function startServer(
   try {
     await checkAppRole(db, config.mode, (message, details) => warnings.push({ message, details }));
     // A module list that stops short of 0019 leaves 0020 out (`allMigrations`), and with it every tenant.
-    if (!(await tenancy.directory.load()) && options.allowNoTenants !== true) {
+    if (!(await directoryOf(tenancy).load()) && options.allowNoTenants !== true) {
       return fail(new StartupError(ExitCode.Migration, 'migration 0020 is not applied: the server has no tenants'));
     }
   } catch (error) {

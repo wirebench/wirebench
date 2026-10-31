@@ -102,6 +102,8 @@ function licensed(features: string[]): LicenseService & { features: string[] } {
         seats: { used: 0, limit: null },
         features: [...service.features],
       }),
+    // The forwarder reads the license without a scope until Task 14 runs it per tenant.
+    stateWithoutScope: (): Promise<LicenseState> => service.state(),
   };
   return service;
 }

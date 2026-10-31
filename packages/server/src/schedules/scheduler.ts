@@ -107,7 +107,7 @@ export class Scheduler {
   private async pass(): Promise<SchedulerPass> {
     if (this.stopped) return { fired: 0, started: 0 };
     // Without the feature nothing new fires or starts; runs under way finish.
-    const state = await this.env.license().state();
+    const state = await this.env.license().stateWithoutScope();
     if (!state.features.includes('scheduled-runs')) return { fired: 0, started: 0 };
     // A run whose server died ends `interrupted` once past its deadline, frees its schedule and counts as
     // an errored run for its alerts.

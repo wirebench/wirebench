@@ -4,6 +4,10 @@ import { afterEach, beforeEach, expect, it } from 'vitest';
 import type { GitCli } from '@wirebench/engine';
 import { isWorkspaceId, NO_HOOKS_DIR, RepoStore } from '../../src/repos/repo-store.js';
 import { describeGit, mkTempDir, removeTempDir, testGit } from '../helpers/git.js';
+import { scopeOf } from '../../src/tenancy/scope.js';
+
+/** Any tenant: these locks are about one workspace id, not tenants. */
+const LOCK_SCOPE = scopeOf({ id: '00000000-0000-4000-8000-000000000001', slug: 'default' });
 
 const ID = '01J8ZC5Q0V7R3T9XK2M4N6P8QA';
 const OTHER = '01J8ZC5Q0V7R3T9XK2M4N6P8QB';
@@ -59,17 +63,17 @@ describeGit('RepoStore', () => {
     const gate = new Promise<void>((resolve) => {
       releaseFirst = resolve;
     });
-    const a1 = store.withLock(ID, async () => {
+    const a1 = store.withLock(LOCK_SCOPE, ID, async () => {
       order.push('a1-start');
       await gate;
       order.push('a1-end');
       return 1;
     });
-    const a2 = store.withLock(ID, () => {
+    const a2 = store.withLock(LOCK_SCOPE, ID, () => {
       order.push('a2');
       return Promise.resolve(2);
     });
-    const b = store.withLock(OTHER, () => {
+    const b = store.withLock(LOCK_SCOPE, OTHER, () => {
       order.push('b');
       return Promise.resolve(3);
     });
@@ -80,9 +84,30 @@ describeGit('RepoStore', () => {
     expect(order).toEqual(['a1-start', 'b', 'a1-end', 'a2']);
   });
 
+  it('withLock keys on the tenant too: one workspace id in two tenants never serialises (spec §19.8 guard 5)', async () => {
+    const other = scopeOf({ id: '00000000-0000-4000-8000-000000000002', slug: 'other' });
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const held = store.withLock(LOCK_SCOPE, ID, () => gate);
+    // Would wait for `held` if the queue were keyed by the workspace id alone.
+    expect(await store.withLock(other, ID, () => Promise.resolve('other tenant'))).toBe('other tenant');
+    let sameTenant = false;
+    const queued = store.withLock(LOCK_SCOPE, ID, () => {
+      sameTenant = true;
+      return Promise.resolve();
+    });
+    await Promise.resolve();
+    expect(sameTenant).toBe(false);
+    release();
+    await Promise.all([held, queued]);
+    expect(sameTenant).toBe(true);
+  });
+
   it('withLock releases the lock when the function throws', async () => {
-    await expect(store.withLock(ID, () => Promise.reject(new Error('x')))).rejects.toThrow('x');
-    expect(await store.withLock(ID, () => Promise.resolve('ok'))).toBe('ok');
+    await expect(store.withLock(LOCK_SCOPE, ID, () => Promise.reject(new Error('x')))).rejects.toThrow('x');
+    expect(await store.withLock(LOCK_SCOPE, ID, () => Promise.resolve('ok'))).toBe('ok');
   });
 
   it('builds under tmp/ and renames into place: a failed init leaves nothing at the real path', async () => {
@@ -108,17 +133,19 @@ describeGit('RepoStore', () => {
       release = resolve;
     });
     const done: string[] = [];
-    const running = store.withLock(ID, async () => {
+    const running = store.withLock(LOCK_SCOPE, ID, async () => {
       await gate;
       done.push('running');
     });
     // Caught at once, so its rejection is never unhandled while the drain is pending.
-    const failing = store.withLock(ID, () => Promise.reject(new Error('boom'))).catch((error: unknown) => error);
-    const queued = store.withLock(ID, () => {
+    const failing = store
+      .withLock(LOCK_SCOPE, ID, () => Promise.reject(new Error('boom')))
+      .catch((error: unknown) => error);
+    const queued = store.withLock(LOCK_SCOPE, ID, () => {
       done.push('queued');
       return Promise.resolve();
     });
-    const other = store.withLock(OTHER, async () => {
+    const other = store.withLock(LOCK_SCOPE, OTHER, async () => {
       await gate;
       done.push('other');
     });
@@ -128,11 +155,11 @@ describeGit('RepoStore', () => {
     });
 
     // Refused as a rejected promise (never a throw), for every workspace, as soon as the drain began.
-    await expect(store.withLock(ID, () => Promise.resolve('late'))).rejects.toMatchObject({
+    await expect(store.withLock(LOCK_SCOPE, ID, () => Promise.resolve('late'))).rejects.toMatchObject({
       code: 'server-shutting-down',
       details: { status: 503 },
     });
-    await expect(store.withLock(OTHER, () => Promise.resolve('late'))).rejects.toMatchObject({
+    await expect(store.withLock(LOCK_SCOPE, OTHER, () => Promise.resolve('late'))).rejects.toMatchObject({
       code: 'server-shutting-down',
     });
     await new Promise((resolve) => setTimeout(resolve, 20));
@@ -149,8 +176,10 @@ describeGit('RepoStore', () => {
   it('drain resolves at once when nothing is queued, and again when called twice', async () => {
     await store.drain();
     await store.drain();
-    await expect(store.withLock(ID, () => Promise.resolve(1))).rejects.toMatchObject({ code: 'server-shutting-down' });
+    await expect(store.withLock(LOCK_SCOPE, ID, () => Promise.resolve(1))).rejects.toMatchObject({
+      code: 'server-shutting-down',
+    });
     // An invalid id is still a programming error, thrown before the drain check.
-    expect(() => store.withLock('../etc', () => Promise.resolve(1))).toThrow();
+    expect(() => store.withLock(LOCK_SCOPE, '../etc', () => Promise.resolve(1))).toThrow();
   });
 });

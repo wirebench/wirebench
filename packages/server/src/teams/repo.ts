@@ -1,10 +1,10 @@
 /**
- * Every SQL statement of the teams-access module (spec §4.1), one function each over a `Querier`
- * so a route can run several inside one `db.transaction`. Columns come back aliased to camelCase;
+ * Every SQL statement of the teams-access module (spec §4.1), one function each over a `TenantQuerier`
+ * so a route can run several inside one tenant unit (hosted edition spec §19.8 guard 2). Columns come back aliased to camelCase;
  * timestamps leave as ISO-8601 strings, the only date shape the wire schemas know.
  */
 import type { DefaultRole, TeamRole, WorkspaceRole } from '@wirebench/engine';
-import type { Querier } from '../context.js';
+import type { TenantQuerier } from '../tenancy/tenant-db.js';
 
 export interface TeamRow {
   readonly id: string;
@@ -88,7 +88,7 @@ const WORKSPACE_SELECT = `select w.id, w.name, w.team_id as "teamId", t.name as 
 // ---- teams -------------------------------------------------------------------------------
 
 export async function insertTeam(
-  db: Querier,
+  db: TenantQuerier,
   input: { readonly id: string; readonly name: string; readonly at: Date },
 ): Promise<TeamRow> {
   const rows = (
@@ -101,17 +101,17 @@ export async function insertTeam(
   return dated<TeamRow>(rows[0]!, ['createdAt']);
 }
 
-export async function teamById(db: Querier, id: string): Promise<TeamRow | undefined> {
+export async function teamById(db: TenantQuerier, id: string): Promise<TeamRow | undefined> {
   const row = (await db.query(`select ${TEAM_COLUMNS} from teams where id = $1`, [id])).rows[0];
   return row === undefined ? undefined : dated<TeamRow>(row, ['createdAt']);
 }
 
-export async function renameTeam(db: Querier, id: string, name: string): Promise<TeamRow> {
+export async function renameTeam(db: TenantQuerier, id: string, name: string): Promise<TeamRow> {
   const rows = (await db.query(`update teams set name = $2 where id = $1 returning ${TEAM_COLUMNS}`, [id, name])).rows;
   return dated<TeamRow>(rows[0]!, ['createdAt']);
 }
 
-export async function deleteTeam(db: Querier, id: string): Promise<void> {
+export async function deleteTeam(db: TenantQuerier, id: string): Promise<void> {
   await db.query('delete from teams where id = $1', [id]);
 }
 
@@ -120,18 +120,18 @@ export async function deleteTeam(db: Querier, id: string): Promise<void> {
  * admin takes it first (§3.2), so two admins demoting each other are serialised. `false` when the
  * team does not exist.
  */
-export async function lockTeam(tx: Querier, id: string): Promise<boolean> {
+export async function lockTeam(tx: TenantQuerier, id: string): Promise<boolean> {
   return ((await tx.query('select id from teams where id = $1 for update', [id])).rowCount ?? 0) > 0;
 }
 
-export async function allTeams(db: Querier): Promise<readonly TeamRow[]> {
+export async function allTeams(db: TenantQuerier): Promise<readonly TeamRow[]> {
   return (await db.query(`select ${TEAM_COLUMNS} from teams order by lower(name)`)).rows.map((row) =>
     dated<TeamRow>(row, ['createdAt']),
   );
 }
 
 export async function teamsOfUser(
-  db: Querier,
+  db: TenantQuerier,
   userId: string,
 ): Promise<readonly (TeamRow & { readonly role: TeamRole })[]> {
   return (
@@ -144,24 +144,24 @@ export async function teamsOfUser(
   ).rows.map((row) => dated<TeamRow & { readonly role: TeamRole }>(row, ['createdAt']));
 }
 
-export async function teamHasWorkspaces(db: Querier, id: string): Promise<boolean> {
+export async function teamHasWorkspaces(db: TenantQuerier, id: string): Promise<boolean> {
   return ((await db.query('select 1 from workspaces where team_id = $1 limit 1', [id])).rowCount ?? 0) > 0;
 }
 
 // ---- members -----------------------------------------------------------------------------
 
-export async function listMembers(db: Querier, teamId: string): Promise<readonly MemberRow[]> {
+export async function listMembers(db: TenantQuerier, teamId: string): Promise<readonly MemberRow[]> {
   return (await db.query(`${MEMBER_SELECT} where m.team_id = $1 order by lower(u.email)`, [teamId])).rows.map((row) =>
     dated<MemberRow>(row, ['addedAt']),
   );
 }
 
-export async function memberOf(db: Querier, teamId: string, userId: string): Promise<MemberRow | undefined> {
+export async function memberOf(db: TenantQuerier, teamId: string, userId: string): Promise<MemberRow | undefined> {
   const row = (await db.query(`${MEMBER_SELECT} where m.team_id = $1 and m.user_id = $2`, [teamId, userId])).rows[0];
   return row === undefined ? undefined : dated<MemberRow>(row, ['addedAt']);
 }
 
-export async function memberRole(db: Querier, teamId: string, userId: string): Promise<TeamRole | undefined> {
+export async function memberRole(db: TenantQuerier, teamId: string, userId: string): Promise<TeamRole | undefined> {
   const row = (
     await db.query<{ role: TeamRole }>('select role from team_members where team_id = $1 and user_id = $2', [
       teamId,
@@ -176,7 +176,7 @@ export async function memberRole(db: Querier, teamId: string, userId: string): P
  * when it does but the user is not on it, and the role otherwise.
  */
 export async function teamMemberRole(
-  db: Querier,
+  db: TenantQuerier,
   teamId: string,
   userId: string,
 ): Promise<TeamRole | null | undefined> {
@@ -191,7 +191,7 @@ export async function teamMemberRole(
 
 /** `false` when the user is already on the team: the caller decides whether that is a conflict. */
 export async function insertMember(
-  db: Querier,
+  db: TenantQuerier,
   input: { readonly teamId: string; readonly userId: string; readonly role: TeamRole; readonly at: Date },
 ): Promise<boolean> {
   const result = await db.query(
@@ -201,15 +201,15 @@ export async function insertMember(
   return (result.rowCount ?? 0) > 0;
 }
 
-export async function setMemberRole(db: Querier, teamId: string, userId: string, role: TeamRole): Promise<void> {
+export async function setMemberRole(db: TenantQuerier, teamId: string, userId: string, role: TeamRole): Promise<void> {
   await db.query('update team_members set role = $3 where team_id = $1 and user_id = $2', [teamId, userId, role]);
 }
 
-export async function deleteMember(db: Querier, teamId: string, userId: string): Promise<void> {
+export async function deleteMember(db: TenantQuerier, teamId: string, userId: string): Promise<void> {
   await db.query('delete from team_members where team_id = $1 and user_id = $2', [teamId, userId]);
 }
 
-export async function countAdmins(db: Querier, teamId: string): Promise<number> {
+export async function countAdmins(db: TenantQuerier, teamId: string): Promise<number> {
   const row = (
     await db.query<{ count: string }>(
       "select count(*) as count from team_members where team_id = $1 and role = 'admin'",
@@ -220,7 +220,7 @@ export async function countAdmins(db: Querier, teamId: string): Promise<number> 
 }
 
 /** Every grant `userId` holds in the team's workspaces: removal from the team ends them (§6). */
-export async function deleteGrantsInTeam(db: Querier, teamId: string, userId: string): Promise<void> {
+export async function deleteGrantsInTeam(db: TenantQuerier, teamId: string, userId: string): Promise<void> {
   await db.query(
     'delete from workspace_grants g using workspaces w where g.workspace_id = w.id and w.team_id = $1 and g.user_id = $2',
     [teamId, userId],
@@ -230,7 +230,7 @@ export async function deleteGrantsInTeam(db: Querier, teamId: string, userId: st
 // ---- invitations -------------------------------------------------------------------------
 
 export async function insertTeamInvitation(
-  db: Querier,
+  db: TenantQuerier,
   input: { readonly invitationId: string; readonly teamId: string; readonly role: TeamRole },
 ): Promise<void> {
   await db.query('insert into team_invitations (invitation_id, team_id, role) values ($1, $2, $3)', [
@@ -241,7 +241,7 @@ export async function insertTeamInvitation(
 }
 
 export async function teamInvitationOf(
-  db: Querier,
+  db: TenantQuerier,
   invitationId: string,
 ): Promise<{ readonly teamId: string; readonly role: TeamRole } | undefined> {
   return (
@@ -254,7 +254,7 @@ export async function teamInvitationOf(
 
 /** Unaccepted, unrevoked, unexpired invitations of one team, newest first. */
 export async function openTeamInvitations(
-  db: Querier,
+  db: TenantQuerier,
   teamId: string,
   now: Date,
 ): Promise<readonly TeamInvitationRow[]> {
@@ -269,7 +269,7 @@ export async function openTeamInvitations(
   ).rows.map((row) => dated<TeamInvitationRow>(row, ['createdAt', 'expiresAt']));
 }
 
-export async function isTeamInvitation(db: Querier, teamId: string, invitationId: string): Promise<boolean> {
+export async function isTeamInvitation(db: TenantQuerier, teamId: string, invitationId: string): Promise<boolean> {
   const result = await db.query('select 1 from team_invitations where team_id = $1 and invitation_id = $2', [
     teamId,
     invitationId,
@@ -280,7 +280,7 @@ export async function isTeamInvitation(db: Querier, teamId: string, invitationId
 // ---- workspaces --------------------------------------------------------------------------
 
 export async function insertWorkspace(
-  db: Querier,
+  db: TenantQuerier,
   input: {
     readonly id: string;
     readonly name: string;
@@ -296,13 +296,13 @@ export async function insertWorkspace(
   );
 }
 
-export async function workspaceById(db: Querier, id: string): Promise<WorkspaceRow | undefined> {
+export async function workspaceById(db: TenantQuerier, id: string): Promise<WorkspaceRow | undefined> {
   const row = (await db.query(`${WORKSPACE_SELECT} where w.id = $1`, [id])).rows[0];
   return row === undefined ? undefined : dated<WorkspaceRow>(row, ['createdAt']);
 }
 
 export async function updateWorkspace(
-  db: Querier,
+  db: TenantQuerier,
   id: string,
   patch: {
     readonly name?: string;
@@ -333,7 +333,7 @@ export function normalizeDisabledFeatures(ids: readonly string[]): string[] {
   return [...new Set(ids)].sort();
 }
 
-export async function deleteWorkspace(db: Querier, id: string): Promise<void> {
+export async function deleteWorkspace(db: TenantQuerier, id: string): Promise<void> {
   await db.query('delete from workspaces where id = $1', [id]);
 }
 
@@ -342,14 +342,14 @@ export async function deleteWorkspace(db: Querier, id: string): Promise<void> {
  * live hub resolves a team-scoped access change with this one query and intersects the result with
  * the workspaces it has subscribers on (live-updates spec §3.3).
  */
-export async function workspaceIdsOfTeam(db: Querier, teamId: string): Promise<string[]> {
+export async function workspaceIdsOfTeam(db: TenantQuerier, teamId: string): Promise<string[]> {
   const { rows } = await db.query<{ id: string }>('select id from workspaces where team_id = $1', [teamId]);
   return rows.map((row) => row.id);
 }
 
 /** `undefined` when the workspace or the user does not exist: both mean `none`. */
 export async function workspaceFacts(
-  db: Querier,
+  db: TenantQuerier,
   userId: string,
   workspaceId: string,
 ): Promise<WorkspaceFactsRow | undefined> {
@@ -372,7 +372,7 @@ export async function workspaceFacts(
  * them, anyone else those of their teams. `resolveRole` then drops the `none` ones.
  */
 export async function visibleWorkspaces(
-  db: Querier,
+  db: TenantQuerier,
   userId: string,
   serverAdmin: boolean,
 ): Promise<readonly VisibleWorkspaceRow[]> {
@@ -396,7 +396,7 @@ export async function visibleWorkspaces(
 // ---- access ------------------------------------------------------------------------------
 
 /** Every member of the workspace's team with what decides their role there, by email. */
-export async function accessRows(db: Querier, workspaceId: string): Promise<readonly AccessRow[]> {
+export async function accessRows(db: TenantQuerier, workspaceId: string): Promise<readonly AccessRow[]> {
   return (
     await db.query<AccessRow & Raw>(
       `select u.id as "userId", u.email, u.display_name as "displayName", u.server_admin as "serverAdmin",
@@ -412,7 +412,11 @@ export async function accessRows(db: Querier, workspaceId: string): Promise<read
   ).rows;
 }
 
-export async function isTeamMemberOfWorkspace(db: Querier, workspaceId: string, userId: string): Promise<boolean> {
+export async function isTeamMemberOfWorkspace(
+  db: TenantQuerier,
+  workspaceId: string,
+  userId: string,
+): Promise<boolean> {
   const result = await db.query(
     'select 1 from workspaces w join team_members m on m.team_id = w.team_id where w.id = $1 and m.user_id = $2',
     [workspaceId, userId],
@@ -421,7 +425,7 @@ export async function isTeamMemberOfWorkspace(db: Querier, workspaceId: string, 
 }
 
 export async function upsertGrant(
-  db: Querier,
+  db: TenantQuerier,
   input: { readonly workspaceId: string; readonly userId: string; readonly role: WorkspaceRole; readonly at: Date },
 ): Promise<void> {
   await db.query(
@@ -433,7 +437,7 @@ export async function upsertGrant(
 
 /** The removed grant's role, or `undefined` when there was none, so a no-op delete records nothing (audit-log plan ruling 7). */
 export async function deleteGrant(
-  db: Querier,
+  db: TenantQuerier,
   workspaceId: string,
   userId: string,
 ): Promise<WorkspaceRole | undefined> {

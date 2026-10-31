@@ -33,9 +33,12 @@ import { jsonSchema } from '../schema.js';
 import { teamRequired } from './errors.js';
 import { decodeCursor, encodeCursor, type Cursor } from './cursor.js';
 import { listAuditEvents, listAuditEventsAscending, type AuditFilter } from './repo.js';
+import type { Tenancy } from '../tenancy/tenancy.js';
 
 export interface AuditRoutesEnv {
   readonly db: Querier;
+  /** The tenant databases: the role guard and teams' reads run in the request's tenant (tenancy Task 9). */
+  readonly tenancy: Pick<Tenancy, 'db'>;
   readonly hooks: ServerHooks;
   /** Read per request, never at registration: `ctx.license` is replaced when a license is installed (context.ts). */
   readonly license: () => LicenseService;
@@ -83,14 +86,14 @@ export async function* exportLines(
  * or not a member → `404 teams-team-not-found`, a plain member → `403 teams-forbidden`, no `teamId`
  * → `403 audit-team-required`. `filterOf` carries the `teamId`, so no other filter can widen the read.
  */
-export function requireAuditScope(db: Querier): preHandlerAsyncHookHandler {
+export function requireAuditScope(tenancy: Pick<Tenancy, 'db'>): preHandlerAsyncHookHandler {
   return async (request) => {
     const caller = request.caller;
     if (caller === undefined) throw unauthenticated();
     if (caller.serverAdmin) return;
     const { teamId } = request.query as { readonly teamId?: string };
     if (teamId === undefined) throw teamRequired();
-    const role = await teamsRepo.teamMemberRole(db, teamId, caller.id);
+    const role = await teamsRepo.teamMemberRole(tenancy.db(request.tenant), teamId, caller.id);
     if (role === undefined || role === null) throw teamNotFound();
     if (role !== 'admin') throw teamsForbidden();
   };
@@ -125,7 +128,7 @@ export const auditRoutes =
     const feature: preHandlerAsyncHookHandler = async function (request, reply) {
       await env.license().requireFeature('audit-log').call(this, request, reply);
     };
-    const guards = [requireAuditScope(env.db), feature];
+    const guards = [requireAuditScope(env.tenancy), feature];
 
     app.get(
       '/audit',

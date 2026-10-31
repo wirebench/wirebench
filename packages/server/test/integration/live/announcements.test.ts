@@ -89,9 +89,12 @@ async function setUp(): Promise<Cast> {
   const root = await signedInUser(h, { email: 'root@example.com', serverAdmin: true });
   const team = await seedTeam(h, { name: 'Payments QA', admins: [admin], members: [editor, viewer] });
   const workspaceId = await seedSyncWorkspace(h, { team, name: 'Staging' });
-  await teamsRepo.upsertGrant(h.db, { workspaceId, userId: editor.user.id, role: 'editor', at: h.clock.now });
+  await teamsRepo.upsertGrant(h.tdb, { workspaceId, userId: editor.user.id, role: 'editor', at: h.clock.now });
   return { h, admin, editor, viewer, stranger, root, teamId: team.id, workspaceId, heard: probe(h), clients: [] };
 }
+
+/** The tenant fields every announcement of the cast's one tenant carries. */
+const inTenant = (c: Cast) => ({ tenantId: c.h.tdb.scope.tenantId, tenant: c.h.tdb.scope });
 
 async function tearDown(c: Cast): Promise<void> {
   for (const client of c.clients) client.close();
@@ -102,7 +105,7 @@ async function tearDown(c: Cast): Promise<void> {
 async function secondDevice(c: Cast, user: SignedInUser): Promise<SignedInUser> {
   const { token, hash } = mintToken();
   const tokenId = newId();
-  await identityRepo.insertToken(c.h.db, {
+  await identityRepo.insertToken(c.h.tdb, {
     id: tokenId,
     userId: user.user.id,
     tokenHash: hash,
@@ -198,7 +201,15 @@ describeDb('announcements from server-sync and teams-access (§3.2)', () => {
     await settled(pusher);
     expect(count(pusher, 'head')).toBe(0);
     expect(c.heard.take()).toEqual([
-      { hook: 'headMoved', event: { workspaceId: c.workspaceId, head: res.body.head, tokenId: c.editor.tokenId } },
+      {
+        hook: 'headMoved',
+        event: {
+          tenantId: c.h.tdb.scope.tenantId,
+          workspaceId: c.workspaceId,
+          head: res.body.head,
+          tokenId: c.editor.tokenId,
+        },
+      },
     ]);
   });
 
@@ -244,7 +255,7 @@ describeDb('announcements from server-sync and teams-access (§3.2)', () => {
     // The hub resolves every subscribed user before it sends (§3.3), so the check is over for all three.
     await Promise.all([settled(admin), settled(editor)]);
     expect(count(admin, 'access') + count(editor, 'access')).toBe(0);
-    expect(c.heard.take()).toEqual([{ hook: 'accessChanged', event: { workspaceId: c.workspaceId } }]);
+    expect(c.heard.take()).toEqual([{ hook: 'accessChanged', event: { ...inTenant(c), workspaceId: c.workspaceId } }]);
 
     const pushed = await push(c, c.editor, null, 'a\n');
     expect((await viewer.next('head')).head).toBe(pushed.body.head);
@@ -274,7 +285,9 @@ describeDb('announcements from server-sync and teams-access (§3.2)', () => {
         users: remaining,
       });
     }
-    expect(c.heard.take()).toEqual([{ hook: 'accessChanged', event: { teamId: c.teamId, userId: c.viewer.user.id } }]);
+    expect(c.heard.take()).toEqual([
+      { hook: 'accessChanged', event: { ...inTenant(c), teamId: c.teamId, userId: c.viewer.user.id } },
+    ]);
 
     // The socket stays open, but the workspace is no longer on it: the next push passes it by.
     await push(c, c.editor, null, 'a\n');
@@ -297,7 +310,7 @@ describeDb('announcements from server-sync and teams-access (§3.2)', () => {
     for (const client of [admin, editor, viewer]) {
       expect(await client.next('access')).toEqual({ type: 'access', workspaceId: c.workspaceId });
     }
-    expect(c.heard.take()).toEqual([{ hook: 'accessChanged', event: { workspaceId: c.workspaceId } }]);
+    expect(c.heard.take()).toEqual([{ hook: 'accessChanged', event: { ...inTenant(c), workspaceId: c.workspaceId } }]);
   });
 
   it('deleting the workspace still sends access when the repository move then fails', async () => {
@@ -311,7 +324,7 @@ describeDb('announcements from server-sync and teams-access (§3.2)', () => {
       move.mockRestore();
     }
     expect(await viewer.next('access')).toEqual({ type: 'access', workspaceId: c.workspaceId });
-    expect(c.heard.take()).toEqual([{ hook: 'accessChanged', event: { workspaceId: c.workspaceId } }]);
+    expect(c.heard.take()).toEqual([{ hook: 'accessChanged', event: { ...inTenant(c), workspaceId: c.workspaceId } }]);
   });
 
   it('each teams-access site announces its scope once and only on success; a rename announces nothing (§3.2)', async () => {
@@ -326,7 +339,9 @@ describeDb('announcements from server-sync and teams-access (§3.2)', () => {
       events: readonly AccessChanged[],
     ): Promise<void> => {
       expect((await request).status).toBe(status);
-      expect(c.heard.take()).toEqual(events.map((event) => ({ hook: 'accessChanged', event })));
+      expect(c.heard.take()).toEqual(
+        events.map((event) => ({ hook: 'accessChanged', event: { ...inTenant(c), ...event } })),
+      );
     };
 
     await expectHeard(byAdmin('PUT', `/workspaces/${ws}/access/${c.viewer.user.id}`, { role: 'editor' }), 204, [
@@ -378,7 +393,9 @@ describeDb('announcements from identity (§3.2, R4)', () => {
     expect((await call(c.h, c.editor, 'POST', '/auth/sign-out')).status).toBe(204);
     await expectEnded(laptop);
     await expectOpen(other, bystander);
-    expect(c.heard.take()).toEqual([{ hook: 'sessionEnded', event: { tokenId: c.editor.tokenId } }]);
+    expect(c.heard.take()).toEqual([
+      { hook: 'sessionEnded', event: { tenantId: c.h.tdb.scope.tenantId, tokenId: c.editor.tokenId } },
+    ]);
   });
 
   it('removing a device ends that device’s sockets only (§3.1)', async () => {
@@ -389,7 +406,9 @@ describeDb('announcements from identity (§3.2, R4)', () => {
     expect((await call(c.h, c.editor, 'DELETE', `/me/devices/${phone.tokenId}`)).status).toBe(204);
     await expectEnded(removed);
     await expectOpen(laptop);
-    expect(c.heard.take()).toEqual([{ hook: 'sessionEnded', event: { tokenId: phone.tokenId } }]);
+    expect(c.heard.take()).toEqual([
+      { hook: 'sessionEnded', event: { tenantId: c.h.tdb.scope.tenantId, tokenId: phone.tokenId } },
+    ]);
   });
 
   it('a password change ends every other device of the user and keeps the one that changed it (§3.1)', async () => {
@@ -406,7 +425,10 @@ describeDb('announcements from identity (§3.2, R4)', () => {
     await expectEnded(other);
     await expectOpen(laptop, bystander);
     expect(c.heard.take()).toEqual([
-      { hook: 'sessionEnded', event: { userId: c.editor.user.id, exceptTokenId: c.editor.tokenId } },
+      {
+        hook: 'sessionEnded',
+        event: { tenantId: c.h.tdb.scope.tenantId, userId: c.editor.user.id, exceptTokenId: c.editor.tokenId },
+      },
     ]);
   });
 
@@ -420,7 +442,9 @@ describeDb('announcements from identity (§3.2, R4)', () => {
     await expectEnded(laptop);
     await expectEnded(other);
     await expectOpen(bystander);
-    expect(c.heard.take()).toEqual([{ hook: 'sessionEnded', event: { userId: c.editor.user.id } }]);
+    expect(c.heard.take()).toEqual([
+      { hook: 'sessionEnded', event: { tenantId: c.h.tdb.scope.tenantId, userId: c.editor.user.id } },
+    ]);
 
     expect((await call(c.h, c.root, 'PATCH', `/users/${c.editor.user.id}`, { disabled: false })).status).toBe(200);
     expect(c.heard.take()).toEqual([]);
@@ -429,8 +453,8 @@ describeDb('announcements from identity (§3.2, R4)', () => {
     expect(both.status).toBe(200);
     // The sockets close first, so the background access check finds none of them.
     expect(c.heard.take()).toEqual([
-      { hook: 'sessionEnded', event: { userId: c.viewer.user.id } },
-      { hook: 'accessChanged', event: { userId: c.viewer.user.id } },
+      { hook: 'sessionEnded', event: { tenantId: c.h.tdb.scope.tenantId, userId: c.viewer.user.id } },
+      { hook: 'accessChanged', event: { ...inTenant(c), userId: c.viewer.user.id } },
     ]);
     await expectEnded(bystander);
   });
@@ -447,7 +471,7 @@ describeDb('announcements from identity (§3.2, R4)', () => {
     expect(await viewer.next('access')).toEqual({ type: 'access', workspaceId: c.workspaceId });
     await settled(admin);
     expect(count(admin, 'access')).toBe(0);
-    expect(c.heard.take()).toEqual([{ hook: 'accessChanged', event: { userId: c.viewer.user.id } }]);
+    expect(c.heard.take()).toEqual([{ hook: 'accessChanged', event: { ...inTenant(c), userId: c.viewer.user.id } }]);
   });
 
   it('an accepted password reset ends every socket the user had, and no one else’s (§3.1)', async () => {
@@ -470,7 +494,9 @@ describeDb('announcements from identity (§3.2, R4)', () => {
     await expectEnded(laptop);
     await expectEnded(other);
     await expectOpen(bystander);
-    expect(c.heard.take()).toEqual([{ hook: 'sessionEnded', event: { userId: c.editor.user.id } }]);
+    expect(c.heard.take()).toEqual([
+      { hook: 'sessionEnded', event: { tenantId: c.h.tdb.scope.tenantId, userId: c.editor.user.id } },
+    ]);
   });
 
   it('refused identity calls announce nothing (§3.2)', async () => {

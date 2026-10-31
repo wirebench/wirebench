@@ -109,7 +109,7 @@ export async function browserClientRoutes(
       { cause: error },
     );
   }
-  const tokens = { db: ctx.db, settings: identitySettings(ctx.config), now };
+  const settings = identitySettings(ctx.config);
 
   await app.register(fastifyStatic, {
     root: join(root, 'assets'),
@@ -131,7 +131,8 @@ export async function browserClientRoutes(
     const token = sessionToken(request, urlOf(request));
     if (token === undefined) return false;
     try {
-      await callerForToken(tokens, token, 'cookie');
+      // In the request's tenant, as the guard looks the token up.
+      await callerForToken({ db: ctx.tenancy.db(request.tenant), settings, now }, token, 'cookie');
       return true;
     } catch (error) {
       if (

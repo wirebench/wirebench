@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, it } from 'vitest';
-import { CaptureSweeper } from '../../../src/hooks/sweep.js';
+import { CaptureSweeper, rawSweepTarget } from '../../../src/hooks/sweep.js';
 import { newId } from '../../../src/identity/tokens.js';
 import * as repo from '../../../src/schedules/repo.js';
 import { describeDb } from '../../helpers/database.js';
@@ -59,13 +59,12 @@ describeDb('schedule retention (scheduled-runs spec §3.6)', () => {
     const recent = await run(10);
     await c.h.db.query(`insert into schedule_results (run_id, ordinal, result) values ($1, 0, '{}')`, [old[0]]);
     const sweeper = new CaptureSweeper({
-      db: c.h.db,
+      target: rawSweepTarget(c.h.db, repo.deleteRunsBefore),
       maxAgeDays: 90,
       now: () => c.h.clock.now,
       setTimer: c.timers.setTimer,
       log: quietLog(),
       batchSize: 2,
-      deleteBefore: repo.deleteRunsBefore,
     });
     expect(await sweeper.runOnce()).toBe(3);
     expect(await ids('schedule_runs')).toEqual([stuck, recent].sort());

@@ -16,6 +16,7 @@ import type { RawData, WebSocket } from 'ws';
 import type { AuditSource } from '../context.js';
 import type { TokenCaller } from '../identity/guard.js';
 import type { ShareRegistry, SharePeer } from './registry.js';
+import type { TenantScope } from '../tenancy/scope.js';
 
 export interface ShareSocketDeps {
   readonly registry: ShareRegistry;
@@ -28,6 +29,8 @@ export interface ShareSocketDeps {
   readonly log: FastifyBaseLogger;
   /** The upgrade request's IP and user agent, for audit rows. */
   readonly request: Omit<AuditSource, 'actor'>;
+  /** The tenant the socket connected to: a share is joined only there. */
+  readonly tenant: TenantScope;
 }
 
 const REFUSED_SESSION: ReadonlySet<string> = new Set(['identity-unauthenticated', 'identity-user-disabled']);
@@ -104,6 +107,7 @@ export function runShareSocket(ws: WebSocket, deps: ShareSocketDeps): void {
     }
     const { caller } = found;
     const outcome = deps.registry.attach(
+      deps.tenant,
       peer,
       {
         userId: caller.id,

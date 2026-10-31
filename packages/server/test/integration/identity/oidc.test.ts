@@ -36,7 +36,13 @@ describeDb('OIDC sign-in (§3.1, §3.3, §13.3)', () => {
   /** Injects env through the harness's module: `createInvitation` wants an IdentityEnv-shaped object. */
   const env = () =>
     ({
-      ctx: { db: h.db, config: { publicUrl: 'https://wirebench.test' }, hooks: h.hooks, license: permissiveLicense() },
+      ctx: {
+        db: h.db,
+        tenancy: h.ctx.tenancy,
+        config: { publicUrl: 'https://wirebench.test' },
+        hooks: h.hooks,
+        license: permissiveLicense(),
+      },
       settings: { invitationMs: 7 * 86_400_000 },
       now: () => h.clock.now,
     }) as never;
@@ -84,7 +90,7 @@ describeDb('OIDC sign-in (§3.1, §3.3, §13.3)', () => {
       accepted(event);
       return Promise.resolve();
     });
-    const invitation = await createInvitation(env(), {
+    const invitation = await createInvitation(env(), h.tdb.scope, {
       email: 'Alice@example.com',
       serverAdmin: true,
       createdBy: null,
@@ -110,13 +116,13 @@ describeDb('OIDC sign-in (§3.1, §3.3, §13.3)', () => {
       headers: { authorization: `Bearer ${body.token}` },
     });
     expect(me.json()).toMatchObject({ methods: { local: false, oidc: [{ issuer: idp.url }] } });
-    expect(await repo.flowById(h.db, flowId)).toBeUndefined(); // single use
+    expect(await repo.flowById(h.tdb, flowId)).toBeUndefined(); // single use
     expect(idp.tokenRequests).toBe(1);
   });
 
   it('the first sign-in of an invited user records user.created then auth.signed_in, both with method oidc', async () => {
     const events = recordingAudit(h.hooks);
-    await createInvitation(env(), {
+    await createInvitation(env(), h.tdb.scope, {
       email: 'alice@example.com',
       serverAdmin: false,
       createdBy: null,
@@ -171,7 +177,7 @@ describeDb('OIDC sign-in (§3.1, §3.3, §13.3)', () => {
     ['no email_verified claim', { sub: 's2', email: 'bob@example.com' }, 'identity-email-unverified'],
     ['an uninvited email', { sub: 's3', email: 'nobody@example.com', email_verified: true }, 'identity-not-invited'],
   ])('refuses %s by redirecting the browser to the loopback with the code', async (_name, user, code) => {
-    await createInvitation(env(), {
+    await createInvitation(env(), h.tdb.scope, {
       email: 'bob@example.com',
       serverAdmin: false,
       createdBy: null,
@@ -182,20 +188,20 @@ describeDb('OIDC sign-in (§3.1, §3.3, §13.3)', () => {
     const { flowId, cb } = await signInUpToGrant();
     expect(cb.statusCode).toBe(302);
     expect(loopback(cb).searchParams.get('error')).toBe(code);
-    expect(await repo.flowById(h.db, flowId)).toBeUndefined();
-    expect(await repo.findUserByEmail(h.db, 'nobody@example.com')).toBeUndefined();
+    expect(await repo.flowById(h.tdb, flowId)).toBeUndefined();
+    expect(await repo.findUserByEmail(h.tdb, 'nobody@example.com')).toBeUndefined();
   });
 
   it('refuses a disabled user whether matched by identity or by email', async () => {
     const bob = await signedInUser(h, { email: 'bob@example.com', disabled: true });
     idp.nextUser({ sub: 'sub-bob', email: 'bob@example.com', email_verified: true });
     expect(loopback((await signInUpToGrant()).cb).searchParams.get('error')).toBe('identity-user-disabled');
-    await repo.insertOidcIdentity(h.db, { issuer: idp.url, subject: 'sub-bob', userId: bob.user.id, at: h.clock.now });
+    await repo.insertOidcIdentity(h.tdb, { issuer: idp.url, subject: 'sub-bob', userId: bob.user.id, at: h.clock.now });
     expect(loopback((await signInUpToGrant()).cb).searchParams.get('error')).toBe('identity-user-disabled');
   });
 
   it('refuses a wrong state, a reused grant, a wrong verifier and an expired flow', async () => {
-    await createInvitation(env(), {
+    await createInvitation(env(), h.tdb.scope, {
       email: 'alice@example.com',
       serverAdmin: false,
       createdBy: null,
@@ -223,12 +229,12 @@ describeDb('OIDC sign-in (§3.1, §3.3, §13.3)', () => {
     h.clock.advance(11 * 60_000);
     const expired = await callback(authorizationUrl);
     expect(expired.statusCode).toBe(400);
-    expect(await repo.flowById(h.db, lateId)).toBeDefined(); // the sweep removes it; the callback only refuses
+    expect(await repo.flowById(h.tdb, lateId)).toBeDefined(); // the sweep removes it; the callback only refuses
   });
 
   it('redirects the IdP’s refusal to the loopback as identity-oidc-refused', async () => {
     const { flowId } = (await start()).json<{ flowId: string }>();
-    const flow = await repo.flowById(h.db, flowId);
+    const flow = await repo.flowById(h.tdb, flowId);
     const res = await h.app.inject({
       method: 'GET',
       url: `/api/v1/auth/oidc/callback?error=access_denied&state=${flow!.state}`,
@@ -238,7 +244,7 @@ describeDb('OIDC sign-in (§3.1, §3.3, §13.3)', () => {
   });
 
   it('redeems a grant once when two completes race', async () => {
-    await createInvitation(env(), {
+    await createInvitation(env(), h.tdb.scope, {
       email: 'alice@example.com',
       serverAdmin: false,
       createdBy: null,

@@ -70,13 +70,14 @@ describeDb('seats on Community (licensing spec §3.4, §13.1)', () => {
     const env = {
       ctx: {
         db: h.db,
+        tenancy: h.ctx.tenancy,
         config,
         hooks: h.hooks,
         license: createLicenseService({
-          db: h.db,
+          tenancy: h.ctx.tenancy,
           publicKeys: [keys.publicKey],
           now: () => h.clock.now,
-          serverId: SERVER_ID,
+          serverId: () => Promise.resolve(SERVER_ID),
         }),
       },
       settings: identitySettings(config),
@@ -86,6 +87,7 @@ describeDb('seats on Community (licensing spec §3.4, §13.1)', () => {
     await expect(
       createInvitation(
         env,
+        h.tdb.scope,
         {
           email: 'team@example.com',
           serverAdmin: false,
@@ -111,7 +113,7 @@ describeDb('seats on Community (licensing spec §3.4, §13.1)', () => {
     const refused = await accept(h, invited.body.url, 'Late');
     expect(refused.statusCode).toBe(409);
     expect(refused.json<{ code: string }>().code).toBe('licensing-seat-limit');
-    expect((await identityRepo.invitationById(h.db, invited.body.id))?.acceptedAt).toBeNull();
+    expect((await identityRepo.invitationById(h.tdb, invited.body.id))?.acceptedAt).toBeNull();
 
     expect((await call(h, admin, 'PATCH', `/users/${users[0]!.user.id}`, { disabled: true })).status).toBe(200);
     expect((await accept(h, invited.body.url, 'Late')).statusCode).toBe(201);
@@ -123,7 +125,7 @@ describeDb('seats on Community (licensing spec §3.4, §13.1)', () => {
     const refused = await call<{ code: string }>(h, admin, 'PATCH', `/users/${parked.user.id}`, { disabled: false });
     expect(refused.status).toBe(409);
     expect(refused.body.code).toBe('licensing-seat-limit');
-    expect((await identityRepo.findUserById(h.db, parked.user.id))?.disabledAt).not.toBeNull();
+    expect((await identityRepo.findUserById(h.tdb, parked.user.id))?.disabledAt).not.toBeNull();
     expect((await call(h, admin, 'PATCH', `/users/${users[0]!.user.id}`, { disabled: false })).status).toBe(200);
   });
 
@@ -139,7 +141,7 @@ describeDb('seats on Community (licensing spec §3.4, §13.1)', () => {
     await call(h, admin, 'PUT', '/license', { license: license(keys) });
     for (let i = 0; i < 6; i += 1) await signedInUser(h, { email: `extra${i}@example.com` });
     expect((await call(h, admin, 'DELETE', '/license')).status).toBe(204);
-    const users = await identityRepo.listUsers(h.db);
+    const users = await identityRepo.listUsers(h.tdb);
     expect(users.filter((user) => user.disabledAt === null)).toHaveLength(10);
     expect((await call(h, admin, 'GET', '/me')).status).toBe(200);
     expect(
@@ -160,7 +162,7 @@ describeDb('seats on Community (licensing spec §3.4, §13.1)', () => {
     const second = await call<{ url: string }>(h, admin, 'POST', '/invitations', { email: 'second@example.com' });
     const results = await Promise.all([accept(h, first.body.url, 'First'), accept(h, second.body.url, 'Second')]);
     expect(results.map((res) => res.statusCode).sort()).toEqual([201, 409]);
-    const enabled = (await identityRepo.listUsers(h.db)).filter((user) => user.disabledAt === null);
+    const enabled = (await identityRepo.listUsers(h.tdb)).filter((user) => user.disabledAt === null);
     expect(enabled).toHaveLength(5);
   });
 });
@@ -200,7 +202,7 @@ describeDb('the first OIDC sign-in counts a seat (licensing spec §3.4)', () => 
     const callback = await h.app.inject({ method: 'GET', url: `${back.pathname}${back.search}` });
     expect(callback.statusCode).toBe(302);
     expect(new URL(String(callback.headers['location'])).searchParams.get('error')).toBe('licensing-seat-limit');
-    expect((await identityRepo.invitationById(h.db, invited.body.id))?.acceptedAt).toBeNull();
-    expect(await identityRepo.findUserByEmail(h.db, 'alice@example.com')).toBeUndefined();
+    expect((await identityRepo.invitationById(h.tdb, invited.body.id))?.acceptedAt).toBeNull();
+    expect(await identityRepo.findUserByEmail(h.tdb, 'alice@example.com')).toBeUndefined();
   });
 });

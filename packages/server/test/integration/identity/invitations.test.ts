@@ -37,7 +37,7 @@ describeDb('invitations (§3.1, §3.7)', () => {
     const body = res.json<{ id: string; email: string; url: string; expiresAt: string }>();
     expect(body.url).toMatch(/^https:\/\/wirebench\.test\/invite\/[A-Za-z0-9_-]{43}$/);
     expect(body.expiresAt).toBe(new Date(h.clock.now.getTime() + 7 * DAY).toISOString());
-    const row = await repo.invitationById(h.db, body.id);
+    const row = await repo.invitationById(h.tdb, body.id);
     expect(row).toMatchObject({ email: 'Bob@example.com', serverAdmin: false, createdBy: admin.user.id });
     expect(row?.secretHash).not.toContain(secretOf(body.url).slice(0, 10));
     const list = await h.app.inject({ method: 'GET', url: '/api/v1/invitations', headers: admin.headers });
@@ -97,7 +97,7 @@ describeDb('invitations (§3.1, §3.7)', () => {
       (await h.app.inject({ method: 'GET', url: '/api/v1/me', headers: { authorization: `Bearer ${body.token}` } }))
         .statusCode,
     ).toBe(200);
-    expect((await repo.invitationById(h.db, id))?.acceptedAt).toBe(h.clock.now.toISOString());
+    expect((await repo.invitationById(h.tdb, id))?.acceptedAt).toBe(h.clock.now.toISOString());
     expect(
       (await accept({ secret: secretOf(url), displayName: 'Bob', password: PASSWORD, device: { name: 'x' } }))
         .statusCode,
@@ -202,7 +202,7 @@ describeDb('invitations (§3.1, §3.7)', () => {
       device: { name: 'x' },
     });
     expect(res.statusCode).toBe(500);
-    expect(await repo.findUserByEmail(h.db, 'carol@example.com')).toBeUndefined();
+    expect(await repo.findUserByEmail(h.tdb, 'carol@example.com')).toBeUndefined();
     expect((await lookup(secretOf(url))).statusCode).toBe(200);
   });
 
@@ -214,13 +214,20 @@ describeDb('invitations (§3.1, §3.7)', () => {
 
   it('createInvitation runs attach in the insert transaction: a failing attach leaves no invitation', async () => {
     const env = {
-      ctx: { db: h.db, config: { publicUrl: 'https://wirebench.test' }, hooks: h.hooks, license: permissiveLicense() },
+      ctx: {
+        db: h.db,
+        tenancy: h.ctx.tenancy,
+        config: { publicUrl: 'https://wirebench.test' },
+        hooks: h.hooks,
+        license: permissiveLicense(),
+      },
       settings: { invitationMs: 7 * DAY },
       now: () => h.clock.now,
     } as never;
     await expect(
       createInvitation(
         env,
+        h.tdb.scope,
         {
           email: 'erin@example.com',
           serverAdmin: false,
@@ -231,10 +238,11 @@ describeDb('invitations (§3.1, §3.7)', () => {
         () => Promise.reject(new Error('attach failed')),
       ),
     ).rejects.toThrow('attach failed');
-    expect(await repo.openInvitationByEmail(h.db, 'erin@example.com', h.clock.now)).toBeUndefined();
+    expect(await repo.openInvitationByEmail(h.tdb, 'erin@example.com', h.clock.now)).toBeUndefined();
     const attached: string[] = [];
     const created = await createInvitation(
       env,
+      h.tdb.scope,
       {
         email: 'erin@example.com',
         serverAdmin: false,

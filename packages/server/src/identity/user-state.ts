@@ -5,13 +5,14 @@
  * re-reads the user there, and answers whether anything changed; the caller announces `sessionEnded`
  * after commit.
  */
-import { recordAudit, type AuditSource, type Querier } from '../context.js';
+import { recordAudit, type AuditSource } from '../context.js';
+import type { TenantQuerier } from '../tenancy/tenant-db.js';
 import type { IdentityEnv } from './env.js';
 import * as repo from './repo.js';
 
 export async function setUserDisabled(
   env: Pick<IdentityEnv, 'ctx' | 'now'>,
-  tx: Querier,
+  tx: TenantQuerier,
   userId: string,
   disabled: boolean,
   source: AuditSource,

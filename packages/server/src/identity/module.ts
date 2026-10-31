@@ -53,7 +53,8 @@ export function identityModule(options: IdentityOptions = {}): ServerModule {
 
     async register(app: FastifyInstance, ctx: ServerContext): Promise<void> {
       const settings = identitySettings(ctx.config);
-      let provider = options.provider;
+      // Hosted mode builds none, even a test's (spec §19.1): `settings.oidc` is unset there.
+      let provider = settings.oidc === undefined ? undefined : options.provider;
       if (settings.oidc !== undefined && provider === undefined) {
         provider = await discoverOidc({
           issuer: settings.oidc.issuer,
@@ -84,6 +85,7 @@ export function identityModule(options: IdentityOptions = {}): ServerModule {
       const interval = options.sweepIntervalMs ?? DAY_MS;
       if (interval > 0) {
         const timer = setInterval(() => {
+          // One unit per tenant; a tenant's own failure is logged by the job loop with its id.
           sweepExpired(identity).catch((error: unknown) => ctx.log.warn({ err: error }, 'identity sweep failed'));
         }, interval);
         timer.unref();
@@ -94,7 +96,7 @@ export function identityModule(options: IdentityOptions = {}): ServerModule {
     },
 
     async registerPublic(root: FastifyInstance, ctx: ServerContext): Promise<void> {
-      const identity = envFor(ctx, options.provider);
+      const identity = envFor(ctx, identitySettings(ctx.config).oidc === undefined ? undefined : options.provider);
       invitePageRoutes(identity)(root);
       // Hosted spec §17.2: the browser's sign-in page and flows, only when the operator asked for them.
       if (ctx.config.browserClient) browserSignInRoutes(identity)(root);

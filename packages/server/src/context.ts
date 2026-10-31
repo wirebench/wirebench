@@ -16,7 +16,9 @@ import type { ServerConfig } from './config.js';
 import { requireFeature } from './licensing/gate.js';
 import type { RepoStore } from './repos/repo-store.js';
 import type { TenantScope } from './tenancy/scope.js';
+import { outsideTenantUnit, type TenantQuerier } from './tenancy/tenant-db.js';
 import type { Tenancy } from './tenancy/tenancy.js';
+import type { ScopeSource } from './tenancy/urls.js';
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -48,7 +50,8 @@ export interface InvitationAccepted {
   readonly userId: string;
 }
 
-export type InvitationAcceptedHook = (tx: Querier, accepted: InvitationAccepted) => Promise<void>;
+/** Runs in identity's accepting unit, in the invitation's tenant. */
+export type InvitationAcceptedHook = (tx: TenantQuerier, accepted: InvitationAccepted) => Promise<void>;
 
 /**
  * A push moved a workspace's main (live-updates spec §3.2). `tokenId` is the pushing session, whose
@@ -72,8 +75,41 @@ export interface AccessChanged {
   readonly userId?: string;
 }
 
+/**
+ * `accessChanged` as it is announced: with `tenantId`, as every announcement carries (hosted edition spec §19.8
+ * guard 5), and the tenant's scope, which the live hub needs to look a team's workspaces up there.
+ */
+export type AccessChangedEvent = AccessChanged & { readonly tenantId: string; readonly tenant: TenantScope };
+
+/** The `tenantId` and `tenant` an announcement made for a request carries. */
+export function tenantOf(request: { readonly tenant: TenantScope }): {
+  readonly tenantId: string;
+  readonly tenant: TenantScope;
+} {
+  return { tenantId: request.tenant.tenantId, tenant: request.tenant };
+}
+
 /** One device token ended, or every token of a user except `exceptTokenId` (live-updates spec §3.2). */
 export type SessionEnded = { readonly tokenId: string } | { readonly userId: string; readonly exceptTokenId?: string };
+
+/**
+ * `sessionEnded` as identity announces it: with the tenant the token or user belongs to (hosted edition spec
+ * §19.8 guard 5). The listeners read it from Task 11.
+ */
+export type SessionEndedEvent = SessionEnded & { readonly tenantId: string };
+
+/**
+ * `headMoved`, `captureReceived` and `hooksChanged` as they are announced: with the tenant's id (hosted edition
+ * spec §19.8 guard 5). Their listeners key on it from Task 11; none needs the scope to query.
+ */
+export type HeadMovedEvent = HeadMoved & { readonly tenantId: string };
+export type CaptureReceivedEvent = CaptureReceived & { readonly tenantId: string };
+export type HooksChangedEvent = HooksChanged & { readonly tenantId: string };
+/**
+ * `scheduleRunFinished` with its tenant when the announcer has one: a cancel's request does, the executor not
+ * until Task 13 runs it per tenant.
+ */
+export type ScheduleRunFinishedEvent = ScheduleRunFinished & { readonly tenantId?: string };
 
 /** A catch URL stored a capture (webhook-capture spec §3.6); fired after the insert's transaction committed. */
 export interface CaptureReceived {
@@ -118,16 +154,35 @@ export interface LicenseChanged {
 }
 
 /**
- * The server's license (licensing spec §5.1). Read at request time, never at registration: identity
- * registers before licensing replaces the host's permissive default.
+ * `licenseChanged` as the routes announce it: with `tenantId`, as every announcement carries (hosted edition
+ * spec §19.8 guard 5), and the request's scope, since the audit module's listener writes its event in that
+ * tenant's unit (guard 6) and cannot brand a scope from an id.
+ */
+export type LicenseChangedEvent = LicenseChanged & { readonly tenantId: string; readonly tenant: TenantScope };
+
+/**
+ * A tenant's license (licensing spec §5.1; hosted edition spec §19.8 guard 5): each tenant has its own row and
+ * its own seats. Read at request time, never at registration: identity registers before licensing replaces the
+ * host's permissive default.
  */
 export interface LicenseService {
-  /** Computed on demand from the stored row, the clock and one count (§3.3). Pass `tx` inside a transaction. */
-  state(tx?: Querier): Promise<LicenseState>;
-  /** Inside the caller's transaction: refuses with `licensing-seat-limit` when no seat is free (§3.4). */
-  assertSeatAvailable(tx: Querier): Promise<void>;
+  /**
+   * Computed on demand from the tenant's stored row, the clock and one count of its users (§3.3), in one unit.
+   * `of` is the scope, or a request for its `tenant`, which is read only when a license service needs it: a
+   * server without licensing answers `/meta` with no tenant at all. Pass `tx`, one of that tenant's units, to
+   * read inside it.
+   */
+  state(of: ScopeSource, tx?: TenantQuerier): Promise<LicenseState>;
+  /** Inside the caller's tenant unit: refuses with `licensing-seat-limit` when no seat is free there (§3.4). */
+  assertSeatAvailable(tx: TenantQuerier): Promise<void>;
   /** A preHandler for after a route's role guard: `licensing-feature-required` without the feature (§3.5). */
   requireFeature(feature: Feature): preHandlerAsyncHookHandler;
+  /**
+   * The license of a server whose jobs do not run per tenant yet: the scheduler's pass and alert outbox until
+   * Task 13, and the audit forwarder until Task 14 (`check:tenant-scope` names them). The one tenant's, on a
+   * self-hosted server; with several, Community.
+   */
+  stateWithoutScope(): Promise<LicenseState>;
 }
 
 /**
@@ -140,7 +195,8 @@ export function permissiveLicense(): LicenseService {
   return {
     state,
     assertSeatAvailable: () => Promise.resolve(),
-    requireFeature: (feature) => requireFeature(feature, state),
+    requireFeature: (feature) => requireFeature(feature, async () => (await state()).features),
+    stateWithoutScope: state,
   };
 }
 
@@ -191,13 +247,13 @@ export const ANONYMOUS_SOURCE: AuditSource = { actor: { kind: 'anonymous' } };
 export interface ServerHooks {
   readonly invitationAccepted: InvitationAcceptedHook[];
   readonly audit: AuditHook[];
-  readonly headMoved: Announcement<HeadMoved>[];
-  readonly accessChanged: Announcement<AccessChanged>[];
-  readonly sessionEnded: Announcement<SessionEnded>[];
-  readonly captureReceived: Announcement<CaptureReceived>[];
-  readonly hooksChanged: Announcement<HooksChanged>[];
-  readonly licenseChanged: Announcement<LicenseChanged>[];
-  readonly scheduleRunFinished: Announcement<ScheduleRunFinished>[];
+  readonly headMoved: Announcement<HeadMovedEvent>[];
+  readonly accessChanged: Announcement<AccessChangedEvent>[];
+  readonly sessionEnded: Announcement<SessionEndedEvent>[];
+  readonly captureReceived: Announcement<CaptureReceivedEvent>[];
+  readonly hooksChanged: Announcement<HooksChangedEvent>[];
+  readonly licenseChanged: Announcement<LicenseChangedEvent>[];
+  readonly scheduleRunFinished: Announcement<ScheduleRunFinishedEvent>[];
   readonly agentUnpaired: Announcement<AgentUnpaired>[];
 }
 
@@ -223,7 +279,7 @@ export function serverHooks(): ServerHooks {
 /** Runs every `invitationAccepted` hook in registration order; the first throw propagates. */
 export async function runInvitationAccepted(
   hooks: ServerHooks,
-  tx: Querier,
+  tx: TenantQuerier,
   accepted: InvitationAccepted,
 ): Promise<void> {
   for (const hook of hooks.invitationAccepted) await hook(tx, accepted);
@@ -279,8 +335,18 @@ const ANNOUNCEMENT_FAILED = 'an announcement listener failed';
  * at warn and swallowed, and the next listener still runs. A listener that returns a promise anyway
  * has its rejection caught the same way, so it can never become an unhandled rejection. Never throws
  * and never awaits: a push or an access change must not fail or wait because of the hub (§12).
+ *
+ * The listeners run outside any tenant unit (Task 6 re-review R4): nobody awaits them, so a listener that
+ * queried through `ctx.tenancy.db` from inside a running unit would join it and make the unit fail with
+ * `tenancy-unawaited`.
  */
 export function announce<E>(listeners: readonly Announcement<E>[], event: E, log: FastifyBaseLogger): void {
+  outsideTenantUnit(() => {
+    callListeners(listeners, event, log);
+  });
+}
+
+function callListeners<E>(listeners: readonly Announcement<E>[], event: E, log: FastifyBaseLogger): void {
   for (const listener of listeners) {
     try {
       const returned: unknown = listener(event);

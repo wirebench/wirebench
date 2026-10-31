@@ -19,11 +19,18 @@ export interface IdentitySettings {
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+/**
+ * Hosted mode has no OIDC (spec §19.1): the configured provider is the operator's one, which until slice 7
+ * gives each tenant its own would sign people into any tenant with a matching email. So the OIDC routes answer
+ * `404`, as they do on a server without OIDC, and nothing reports it.
+ */
 export function identitySettings(config: ServerConfig): IdentitySettings {
   return {
     local: config.localAuth,
     oidc:
-      config.oidcIssuer === undefined ? undefined : { issuer: config.oidcIssuer, displayName: config.oidcDisplayName },
+      config.mode === 'hosted' || config.oidcIssuer === undefined
+        ? undefined
+        : { issuer: config.oidcIssuer, displayName: config.oidcDisplayName },
     tokenIdleMs: config.tokenIdleDays * DAY_MS,
     tokenMaxMs: config.tokenMaxDays * DAY_MS,
     invitationMs: config.invitationDays * DAY_MS,
@@ -43,7 +50,7 @@ export interface IdentityEnv {
 
 /** What the invitation functions need: the CLI builds one without a Fastify app or a provider. */
 export interface InvitationEnv {
-  readonly ctx: Pick<ServerContext, 'db' | 'config' | 'hooks' | 'license'>;
+  readonly ctx: Pick<ServerContext, 'db' | 'tenancy' | 'config' | 'hooks' | 'license'>;
   readonly settings: Pick<IdentitySettings, 'invitationMs' | 'local' | 'oidc'>;
   readonly now: () => Date;
 }

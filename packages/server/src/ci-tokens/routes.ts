@@ -9,8 +9,8 @@ import {
   teamWorkspaceParamsSchema,
   type CiTokenSummary,
 } from '@wirebench/engine';
-import type { FastifyInstance } from 'fastify';
-import { auditSource, recordAudit, type Database, type ServerHooks } from '../context.js';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
+import { auditSource, recordAudit, type ServerHooks } from '../context.js';
 import { isUniqueViolation } from '../db/errors.js';
 import { unauthenticated } from '../identity/errors.js';
 import { mintToken, newId } from '../identity/tokens.js';
@@ -19,9 +19,11 @@ import { requireWorkspaceRole } from '../teams/roles.js';
 import * as teamsRepo from '../teams/repo.js';
 import { ciTokenNameBlank, ciTokenNameTaken, ciTokenNotFound, ciTokenRequired } from './errors.js';
 import * as repo from './repo.js';
+import type { Tenancy } from '../tenancy/tenancy.js';
 
 export interface CiTokensEnv {
-  readonly db: Database;
+  /** The tenant databases: the role guard and teams' reads run in the request's tenant (tenancy Task 9). */
+  readonly tenancy: Pick<Tenancy, 'db'>;
   readonly hooks: ServerHooks;
   readonly now: () => Date;
 }
@@ -50,18 +52,19 @@ export const ciRoutes =
     app.get('/ci/whoami', { schema: { response: { 200: jsonSchema(ciWhoamiResponseSchema) } } }, async (request) => {
       const ci = request.ciCaller;
       if (ci === undefined) throw request.caller === undefined ? unauthenticated() : ciTokenRequired();
-      const workspace = await teamsRepo.workspaceById(env.db, ci.workspaceId);
+      const workspace = await teamsRepo.workspaceById(env.tenancy.db(request.tenant), ci.workspaceId);
       // The token goes with its workspace (cascade), so this is a race with a delete at most.
       if (workspace === undefined) throw unauthenticated();
       return { workspaceId: ci.workspaceId, workspaceName: workspace.name, tokenName: ci.tokenName };
     });
-    const { db } = env;
+    // The request's tenant database (spec §19.8 guard 2).
+    const tdb = (request: FastifyRequest) => env.tenancy.db(request.tenant);
     const workspaceParams = jsonSchema(teamWorkspaceParamsSchema, { io: 'input' });
 
     app.post(
       '/workspaces/:workspaceId/ci-tokens',
       {
-        preHandler: requireWorkspaceRole(db, 'editor'),
+        preHandler: requireWorkspaceRole(env.tenancy, 'editor'),
         schema: {
           params: workspaceParams,
           body: jsonSchema(createBodySchema, { io: 'input' }),
@@ -75,7 +78,7 @@ export const ciRoutes =
         const minted = mintToken();
         const id = newId();
         try {
-          await db.transaction(async (tx) => {
+          await tdb(request).transaction(async (tx) => {
             await repo.insertCiToken(tx, {
               id,
               workspaceId,
@@ -104,23 +107,23 @@ export const ciRoutes =
     app.get(
       '/workspaces/:workspaceId/ci-tokens',
       {
-        preHandler: requireWorkspaceRole(db, 'editor'),
+        preHandler: requireWorkspaceRole(env.tenancy, 'editor'),
         schema: { params: workspaceParams, response: { 200: jsonSchema(ciTokensResponseSchema) } },
       },
       async (request): Promise<CiTokenSummary[]> =>
-        (await repo.ciTokensOfWorkspace(db, request.workspaceAccess!.workspaceId)).map(summaryOf),
+        (await repo.ciTokensOfWorkspace(tdb(request), request.workspaceAccess!.workspaceId)).map(summaryOf),
     );
 
     app.delete(
       '/workspaces/:workspaceId/ci-tokens/:tokenId',
       {
-        preHandler: requireWorkspaceRole(db, 'editor'),
+        preHandler: requireWorkspaceRole(env.tenancy, 'editor'),
         schema: { params: jsonSchema(ciTokenParamsSchema, { io: 'input' }) },
       },
       async (request, reply) => {
         const { tokenId } = request.params as { readonly tokenId: string };
         const workspaceId = request.workspaceAccess!.workspaceId;
-        await db.transaction(async (tx) => {
+        await tdb(request).transaction(async (tx) => {
           const name = await repo.revokeCiToken(tx, workspaceId, tokenId, env.now());
           if (name === undefined) throw ciTokenNotFound();
           await recordAudit(env.hooks, tx, {

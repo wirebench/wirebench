@@ -17,8 +17,8 @@ import {
   type TeamWorkspaceUpdateRequest,
   type WorkspaceRole,
 } from '@wirebench/engine';
-import type { FastifyInstance } from 'fastify';
-import { announce, auditSource, recordAudit } from '../../context.js';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
+import { announce, auditSource, recordAudit, tenantOf } from '../../context.js';
 import { isForeignKeyViolation, isUniqueViolation } from '../../db/errors.js';
 import { requireUser } from '../../identity/guard.js';
 import { featureRequired } from '../../licensing/errors.js';
@@ -62,7 +62,9 @@ const isMissing = (error: unknown): boolean => (error as NodeJS.ErrnoException |
 export const workspaceRoutes =
   (env: TeamsEnv) =>
   (app: FastifyInstance): void => {
-    const { db, repos } = env.ctx;
+    const { repos } = env.ctx;
+    // The request's tenant database (spec §19.8 guard 2).
+    const tdb = (request: FastifyRequest) => env.ctx.tenancy.db(request.tenant);
     const params = jsonSchema(teamWorkspaceParamsSchema, { io: 'input' });
     const one = jsonSchema(teamWorkspaceSchema);
 
@@ -71,7 +73,7 @@ export const workspaceRoutes =
       { preHandler: requireUser, schema: { response: { 200: jsonSchema(teamWorkspacesResponseSchema) } } },
       async (request) => {
         const caller = request.caller!;
-        const rows = await repo.visibleWorkspaces(db, caller.id, caller.serverAdmin);
+        const rows = await repo.visibleWorkspaces(tdb(request), caller.id, caller.serverAdmin);
         return rows.flatMap((row) => {
           const found = resolveRole(factsOf({ ...row, disabled: false, serverAdmin: caller.serverAdmin }));
           return found.role === 'none' ? [] : [toWorkspace(row, found.role, found.source)];
@@ -82,7 +84,7 @@ export const workspaceRoutes =
     app.post(
       '/teams/:teamId/workspaces',
       {
-        preHandler: requireTeamRole(db, 'member'),
+        preHandler: requireTeamRole(env.ctx.tenancy, 'member'),
         schema: {
           params: jsonSchema(teamParamsSchema, { io: 'input' }),
           body: jsonSchema(teamWorkspaceCreateRequestSchema, { io: 'input' }),
@@ -99,7 +101,7 @@ export const workspaceRoutes =
         // An object, not a `let`: the flag is set inside the transaction callback.
         const progress = { built: false };
         try {
-          await db.transaction(async (tx) => {
+          await tdb(request).transaction(async (tx) => {
             await repo.insertWorkspace(tx, {
               id,
               name,
@@ -122,14 +124,14 @@ export const workspaceRoutes =
               details: { name, defaultRole: body.defaultRole ?? 'viewer' },
             });
             // §3.7: built before commit, so a failure here rolls the row back.
-            await repos.withLock(id, () => repos.create(id));
+            await repos.withLock(request.tenant, id, () => repos.create(id));
             progress.built = true;
           });
         } catch (error) {
           if (progress.built) {
             // The commit failed after the repository existed: move it away so the id is usable again.
             await repos
-              .withLock(id, () => repos.remove(id))
+              .withLock(request.tenant, id, () => repos.remove(id))
               .catch((cause: unknown) => {
                 request.log.warn(
                   { err: cause, workspaceId: id },
@@ -142,8 +144,10 @@ export const workspaceRoutes =
           if (isForeignKeyViolation(error, 'workspaces_team_id_fkey')) throw teamNotFound();
           conflictOr(error);
         }
-        const row = (await repo.workspaceById(db, id))!;
-        const found = await effectiveRole(db, caller.id, id);
+        const { row, found } = await tdb(request).transaction(async (tx) => ({
+          row: (await repo.workspaceById(tx, id))!,
+          found: await effectiveRole(tx, caller.id, id),
+        }));
         if (found.role === 'none') throw workspaceNotFound();
         return reply.code(201).send(toWorkspace(row, found.role, found.source));
       },
@@ -151,17 +155,17 @@ export const workspaceRoutes =
 
     app.get(
       '/workspaces/:workspaceId',
-      { preHandler: requireWorkspaceRole(db, 'viewer'), schema: { params, response: { 200: one } } },
+      { preHandler: requireWorkspaceRole(env.ctx.tenancy, 'viewer'), schema: { params, response: { 200: one } } },
       async (request) => {
         const access = request.workspaceAccess!;
-        return toWorkspace((await repo.workspaceById(db, access.workspaceId))!, access.role, access.source);
+        return toWorkspace((await repo.workspaceById(tdb(request), access.workspaceId))!, access.role, access.source);
       },
     );
 
     app.patch(
       '/workspaces/:workspaceId',
       {
-        preHandler: requireWorkspaceRole(db, 'admin'),
+        preHandler: requireWorkspaceRole(env.ctx.tenancy, 'admin'),
         schema: { params, body: jsonSchema(teamWorkspaceUpdateRequestSchema, { io: 'input' }), response: { 200: one } },
       },
       async (request) => {
@@ -169,9 +173,12 @@ export const workspaceRoutes =
         const body = request.body as TeamWorkspaceUpdateRequest;
         const name = body.name !== undefined ? cleanName(body.name) : undefined;
         // Turning recording on needs the feature; turning it off never does, so a lapsed license can stop it.
-        if (body.recordSessionLogs === true && !(await env.ctx.license.state()).features.includes('session-logs'))
+        if (
+          body.recordSessionLogs === true &&
+          !(await env.ctx.license.state(request.tenant)).features.includes('session-logs')
+        )
           throw featureRequired('session-logs');
-        await db
+        await tdb(request)
           .transaction(async (tx) => {
             const previous = await repo.workspaceById(tx, access.workspaceId);
             if (previous === undefined) throw workspaceNotFound();
@@ -248,23 +255,23 @@ export const workspaceRoutes =
           body.recordSessionLogs !== undefined ||
           body.disabledFeatures !== undefined
         )
-          announce(env.ctx.hooks.accessChanged, { workspaceId: access.workspaceId }, request.log);
-        return toWorkspace((await repo.workspaceById(db, access.workspaceId))!, access.role, access.source);
+          announce(env.ctx.hooks.accessChanged, { ...tenantOf(request), workspaceId: access.workspaceId }, request.log);
+        return toWorkspace((await repo.workspaceById(tdb(request), access.workspaceId))!, access.role, access.source);
       },
     );
 
     app.delete(
       '/workspaces/:workspaceId',
-      { preHandler: requireWorkspaceRole(db, 'admin'), schema: { params } },
+      { preHandler: requireWorkspaceRole(env.ctx.tenancy, 'admin'), schema: { params } },
       async (request, reply) => {
         const { workspaceId } = request.workspaceAccess!;
         // The row delete and the repository move run inside the same per-workspace lock as
         // `create`, so a re-create of this id cannot interleave between them — otherwise it could
         // either see a spurious 409 (the old repository still on disk when it tries to build) or
         // have its brand-new repository moved away by this delete's cleanup.
-        await repos.withLock(workspaceId, async () => {
-          const ws = await repo.workspaceById(db, workspaceId);
-          await db.transaction(async (tx) => {
+        await repos.withLock(request.tenant, workspaceId, async () => {
+          await tdb(request).transaction(async (tx) => {
+            const ws = await repo.workspaceById(tx, workspaceId);
             await repo.deleteWorkspace(tx, workspaceId); // grants go by cascade
             await recordAudit(env.ctx.hooks, tx, {
               ...auditSource(request),
@@ -277,7 +284,7 @@ export const workspaceRoutes =
           });
           // The row is gone and its grants with it: every subscriber's role is now none (§3.1). Said
           // here, before the repository move, so a move that fails (a 500) still tells the sockets.
-          announce(env.ctx.hooks.accessChanged, { workspaceId }, request.log);
+          announce(env.ctx.hooks.accessChanged, { ...tenantOf(request), workspaceId }, request.log);
           // §3.7: the row is the source of truth; the repository moves under tmp/, never deleted.
           await repos.remove(workspaceId).catch((error: unknown) => {
             if (!isMissing(error)) throw error;

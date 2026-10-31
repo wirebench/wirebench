@@ -1,13 +1,14 @@
 /**
  * Every SQL statement of the webhook-capture module (spec §3.2, §3.4), one function each over a
- * `Querier`, so the public route runs its insert and its prune inside one transaction. Columns come
+ * `TenantQuerier`, so the public route runs its insert and its prune inside one tenant unit (hosted edition
+ * spec §19.8 guard 2). A secret is looked up within the request's tenant. Columns come
  * back aliased to camelCase; timestamps leave as ISO-8601 strings, headers as parsed pairs (jsonb) and
  * bodies as Buffers (bytea).
  */
 import { signatureSchemeSchema, toSignatureScheme } from '@wirebench/engine';
 import type { CatchUrlResponse, SignatureFailure, SignatureScheme, SignatureVerdict } from '@wirebench/engine';
 import { monotonicFactory } from 'ulidx';
-import type { Querier } from '../context.js';
+import type { TenantQuerier } from '../tenancy/tenant-db.js';
 
 /** The unique index a duplicate name trips (§3.5 → `409 hooks-name-taken`). */
 export const CATCH_URL_NAME_INDEX = 'catch_urls_workspace_name_lower';
@@ -198,13 +199,13 @@ function summaryOf(row: Raw): CaptureSummaryRow {
  * Holds the workspace row until the transaction ends, so two creates count the catch URLs one after
  * the other (§3.5's per-workspace cap). `false` when the workspace does not exist.
  */
-export async function lockWorkspace(tx: Querier, workspaceId: string): Promise<boolean> {
+export async function lockWorkspace(tx: TenantQuerier, workspaceId: string): Promise<boolean> {
   return (
     ((await tx.query('select id from workspaces where id = $1 for no key update', [workspaceId])).rowCount ?? 0) > 0
   );
 }
 
-export async function countCatchUrls(db: Querier, workspaceId: string): Promise<number> {
+export async function countCatchUrls(db: TenantQuerier, workspaceId: string): Promise<number> {
   const row = (
     await db.query<{ n: number }>('select count(*)::int as n from catch_urls where workspace_id = $1', [workspaceId])
   ).rows[0];
@@ -212,7 +213,7 @@ export async function countCatchUrls(db: Querier, workspaceId: string): Promise<
 }
 
 export async function insertCatchUrl(
-  db: Querier,
+  db: TenantQuerier,
   input: {
     readonly id: string;
     readonly workspaceId: string;
@@ -249,7 +250,7 @@ export async function insertCatchUrl(
 }
 
 /** A workspace's catch URLs by name (case-insensitive), then id. */
-export async function catchUrlsOfWorkspace(db: Querier, workspaceId: string): Promise<CatchUrlListRow[]> {
+export async function catchUrlsOfWorkspace(db: TenantQuerier, workspaceId: string): Promise<CatchUrlListRow[]> {
   const rows = (
     await db.query(
       `select ${LISTED_COLUMNS} from catch_urls h where h.workspace_id = $1 order by lower(h.name), h.id`,
@@ -261,7 +262,7 @@ export async function catchUrlsOfWorkspace(db: Querier, workspaceId: string): Pr
 
 /** One catch URL, only when it belongs to `workspaceId`: another workspace's id finds nothing (§3.5). */
 export async function catchUrlInWorkspace(
-  db: Querier,
+  db: TenantQuerier,
   workspaceId: string,
   id: string,
 ): Promise<CatchUrlListRow | undefined> {
@@ -274,7 +275,7 @@ export async function catchUrlInWorkspace(
   return row === undefined ? undefined : listedOf(row);
 }
 
-export async function catchUrlBySecret(db: Querier, secret: string): Promise<PublicCatchUrl | undefined> {
+export async function catchUrlBySecret(db: TenantQuerier, secret: string): Promise<PublicCatchUrl | undefined> {
   const row = (
     await db.query(
       `select h.id, h.workspace_id as "workspaceId", h.enabled, h.response_status as "status",
@@ -299,7 +300,7 @@ export async function catchUrlBySecret(db: Querier, secret: string): Promise<Pub
 
 /** Sets only what `patch` names; `null` in `response.contentType` or `response.body` clears it. */
 /** `false` when there was no row to update (deleted out from under the caller). */
-export async function updateCatchUrl(db: Querier, id: string, patch: CatchUrlPatch): Promise<boolean> {
+export async function updateCatchUrl(db: TenantQuerier, id: string, patch: CatchUrlPatch): Promise<boolean> {
   const params: unknown[] = [id];
   const sets: string[] = [];
   const set = (column: string, value: unknown): void => {
@@ -335,25 +336,25 @@ export async function updateCatchUrl(db: Querier, id: string, patch: CatchUrlPat
 }
 
 /** `false` when there was no row to rotate (deleted out from under the caller). */
-export async function rotateSecret(db: Querier, id: string, secret: string): Promise<boolean> {
+export async function rotateSecret(db: TenantQuerier, id: string, secret: string): Promise<boolean> {
   return ((await db.query('update catch_urls set secret = $2 where id = $1', [id, secret])).rowCount ?? 0) > 0;
 }
 
 /** Catch URLs that check signatures: start-up warns when there are some and no key to open them (§3.1). */
-export async function countSignedCatchUrls(db: Querier): Promise<number> {
+export async function countSignedCatchUrls(db: TenantQuerier): Promise<number> {
   const row = (await db.query<{ n: number }>('select count(*)::int as n from catch_urls where signature is not null'))
     .rows[0];
   return row?.n ?? 0;
 }
 
 /** `false` when there was nothing to delete. Its captures go with it (cascade). */
-export async function deleteCatchUrl(db: Querier, id: string): Promise<boolean> {
+export async function deleteCatchUrl(db: TenantQuerier, id: string): Promise<boolean> {
   return ((await db.query('delete from catch_urls where id = $1', [id])).rowCount ?? 0) > 0;
 }
 
 // ---- captures -----------------------------------------------------------------------------
 
-export async function insertCapture(tx: Querier, capture: NewCapture): Promise<void> {
+export async function insertCapture(tx: TenantQuerier, capture: NewCapture): Promise<void> {
   const signature = capture.signature ?? null;
   await tx.query(
     `insert into captures (id, catch_url_id, received_at, method, subpath, query, headers, body, body_size, truncated,
@@ -383,7 +384,7 @@ export async function insertCapture(tx: Querier, capture: NewCapture): Promise<v
  * `keep + 1`-th newest id; everything at or below it goes. With `keep` or fewer rows it is `null`, and
  * `id <= null` deletes nothing. Returns how many went.
  */
-export async function pruneCaptures(tx: Querier, catchUrlId: string, keep: number): Promise<number> {
+export async function pruneCaptures(tx: TenantQuerier, catchUrlId: string, keep: number): Promise<number> {
   const result = await tx.query(
     `delete from captures where catch_url_id = $1 and id <= (
        select id from captures where catch_url_id = $1 order by id desc offset $2 limit 1)`,
@@ -398,7 +399,7 @@ export async function pruneCaptures(tx: Querier, catchUrlId: string, keep: numbe
  * is then reversed to newest first like every other.
  */
 export async function listCaptures(
-  db: Querier,
+  db: TenantQuerier,
   catchUrlId: string,
   page: CapturePage,
   limit: number,
@@ -430,7 +431,11 @@ export async function listCaptures(
   return rows.map(summaryOf);
 }
 
-export async function captureById(db: Querier, catchUrlId: string, captureId: string): Promise<CaptureRow | undefined> {
+export async function captureById(
+  db: TenantQuerier,
+  catchUrlId: string,
+  captureId: string,
+): Promise<CaptureRow | undefined> {
   const row = (
     await db.query(
       `select ${SUMMARY_COLUMNS}, query, headers, body from captures where catch_url_id = $1 and id = $2`,
@@ -446,7 +451,7 @@ export async function captureById(db: Querier, catchUrlId: string, captureId: st
   };
 }
 
-export async function clearCaptures(db: Querier, catchUrlId: string): Promise<number> {
+export async function clearCaptures(db: TenantQuerier, catchUrlId: string): Promise<number> {
   return (await db.query('delete from captures where catch_url_id = $1', [catchUrlId])).rowCount ?? 0;
 }
 
@@ -454,7 +459,7 @@ export async function clearCaptures(db: Querier, catchUrlId: string): Promise<nu
  * One batch of the age sweep (§3.4): at most `batchSize` captures received strictly before `cutoff`,
  * oldest first. The caller repeats until a batch comes back short, so no statement holds a long lock.
  */
-export async function deleteCapturesBefore(db: Querier, cutoff: Date, batchSize: number): Promise<number> {
+export async function deleteCapturesBefore(db: TenantQuerier, cutoff: Date, batchSize: number): Promise<number> {
   const result = await db.query(
     `delete from captures where id in (
        select id from captures where received_at < $1 order by received_at limit $2)`,

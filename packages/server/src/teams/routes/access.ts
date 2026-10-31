@@ -10,8 +10,8 @@ import {
   type AccessEntry,
   type SetAccessRequest,
 } from '@wirebench/engine';
-import type { FastifyInstance } from 'fastify';
-import { announce, auditSource, recordAudit } from '../../context.js';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
+import { announce, auditSource, recordAudit, tenantOf } from '../../context.js';
 import { jsonSchema } from '../../schema.js';
 import type { TeamsEnv } from '../env.js';
 import { notAMember } from '../errors.js';
@@ -40,31 +40,32 @@ export function toAccessEntry(row: repo.AccessRow): AccessEntry {
 export const accessRoutes =
   (env: TeamsEnv) =>
   (app: FastifyInstance): void => {
-    const db = env.ctx.db;
+    // The request's tenant database (spec §19.8 guard 2).
+    const tdb = (request: FastifyRequest) => env.ctx.tenancy.db(request.tenant);
     const params = jsonSchema(accessParamsSchema, { io: 'input' });
 
     app.get(
       '/workspaces/:workspaceId/access',
       {
-        preHandler: requireWorkspaceRole(db, 'admin'),
+        preHandler: requireWorkspaceRole(env.ctx.tenancy, 'admin'),
         schema: {
           params: jsonSchema(teamWorkspaceParamsSchema, { io: 'input' }),
           response: { 200: jsonSchema(accessResponseSchema) },
         },
       },
-      async (request) => (await repo.accessRows(db, request.workspaceAccess!.workspaceId)).map(toAccessEntry),
+      async (request) => (await repo.accessRows(tdb(request), request.workspaceAccess!.workspaceId)).map(toAccessEntry),
     );
 
     app.put(
       '/workspaces/:workspaceId/access/:userId',
       {
-        preHandler: requireWorkspaceRole(db, 'admin'),
+        preHandler: requireWorkspaceRole(env.ctx.tenancy, 'admin'),
         schema: { params, body: jsonSchema(setAccessRequestSchema, { io: 'input' }) },
       },
       async (request, reply) => {
         const { workspaceId, userId } = request.params as AccessParams;
         const { role } = request.body as SetAccessRequest;
-        await db.transaction(async (tx) => {
+        await tdb(request).transaction(async (tx) => {
           if (!(await repo.isTeamMemberOfWorkspace(tx, workspaceId, userId))) throw notAMember();
           await repo.upsertGrant(tx, { workspaceId, userId, role, at: env.now() });
           const ws = await repo.workspaceById(tx, workspaceId);
@@ -78,17 +79,17 @@ export const accessRoutes =
           });
         });
         // Committed: the hub re-resolves the workspace's subscribers and tells the changed ones (§3.2).
-        announce(env.ctx.hooks.accessChanged, { workspaceId }, request.log);
+        announce(env.ctx.hooks.accessChanged, { ...tenantOf(request), workspaceId }, request.log);
         return reply.code(204).send();
       },
     );
 
     app.delete(
       '/workspaces/:workspaceId/access/:userId',
-      { preHandler: requireWorkspaceRole(db, 'admin'), schema: { params } },
+      { preHandler: requireWorkspaceRole(env.ctx.tenancy, 'admin'), schema: { params } },
       async (request, reply) => {
         const { workspaceId, userId } = request.params as AccessParams;
-        await db.transaction(async (tx) => {
+        await tdb(request).transaction(async (tx) => {
           const removed = await repo.deleteGrant(tx, workspaceId, userId);
           if (removed !== undefined) {
             await recordAudit(env.ctx.hooks, tx, {
@@ -100,7 +101,7 @@ export const accessRoutes =
             });
           }
         });
-        announce(env.ctx.hooks.accessChanged, { workspaceId }, request.log);
+        announce(env.ctx.hooks.accessChanged, { ...tenantOf(request), workspaceId }, request.log);
         return reply.code(204).send();
       },
     );

@@ -79,7 +79,7 @@ describeDb('group → team links and provisioned memberships (saml-scim spec §3
     });
   const unlink = (groupId: string) =>
     h.app.inject({ method: 'DELETE', url: `/api/v1/scim-groups/${groupId}/team`, headers: admin.headers });
-  const members = async () => (await teamsRepo.listMembers(h.db, teamId)).map((m) => m.email).sort();
+  const members = async () => (await teamsRepo.listMembers(h.tdb, teamId)).map((m) => m.email).sort();
   const addMember = (groupId: string, user: SignedInUser) =>
     scim('PATCH', `/Groups/${groupId}`, {
       schemas: [PATCH_OP],
@@ -93,7 +93,7 @@ describeDb('group → team links and provisioned memberships (saml-scim spec §3
 
   it('linking adds enabled members as member with provisioned rows; existing and disabled people are left alone', async () => {
     const dis = await signedInUser(h, { email: 'dis@example.com', disabled: true });
-    await teamsRepo.insertMember(h.db, { teamId, userId: bob.user.id, role: 'member', at: h.clock.now });
+    await teamsRepo.insertMember(h.tdb, { teamId, userId: bob.user.id, role: 'member', at: h.clock.now });
     const groupId = await group('Payments eng', [ada, bob, dis]);
     const res = await link(groupId);
     expect(res.statusCode, res.body).toBe(200);
@@ -133,7 +133,7 @@ describeDb('group → team links and provisioned memberships (saml-scim spec §3
   it('someone promoted to team admin by hand is never removed by SCIM', async () => {
     const groupId = await group('Payments eng', [ada]);
     await link(groupId);
-    await teamsRepo.setMemberRole(h.db, teamId, ada.user.id, 'admin');
+    await teamsRepo.setMemberRole(h.tdb, teamId, ada.user.id, 'admin');
     await removeMember(groupId, ada);
     expect(await members()).toContain('ada@example.com');
   });
@@ -141,12 +141,12 @@ describeDb('group → team links and provisioned memberships (saml-scim spec §3
   it('removing a provisioned member by hand drops their rows', async () => {
     const groupId = await group('Payments eng', [ada]);
     await link(groupId);
-    await teamsRepo.deleteMember(h.db, teamId, ada.user.id);
+    await teamsRepo.deleteMember(h.tdb, teamId, ada.user.id);
     expect(await repo.countProvisioned(h.db, teamId, ada.user.id)).toBe(0);
   });
 
   it('unlinking or deleting the group removes the SCIM-added members and keeps the hand-added ones', async () => {
-    await teamsRepo.insertMember(h.db, { teamId, userId: bob.user.id, role: 'member', at: h.clock.now });
+    await teamsRepo.insertMember(h.tdb, { teamId, userId: bob.user.id, role: 'member', at: h.clock.now });
     const groupId = await group('Payments eng', [ada, bob]);
     await link(groupId);
     expect((await unlink(groupId)).json()).toMatchObject({ team: null });
@@ -162,7 +162,7 @@ describeDb('group → team links and provisioned memberships (saml-scim spec §3
   it('deleting the team clears the link', async () => {
     const groupId = await group('Payments eng', [ada]);
     await link(groupId);
-    await teamsRepo.deleteTeam(h.db, teamId);
+    await teamsRepo.deleteTeam(h.tdb, teamId);
     expect((await repo.scimGroupById(h.db, groupId))!.teamId).toBeNull();
   });
 

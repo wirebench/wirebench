@@ -7,6 +7,10 @@ import { LiveHub } from '../../../src/live/hub.js';
 import { runLiveSocket } from '../../../src/live/socket.js';
 import type { Effective } from '../../../src/teams/roles.js';
 import { manualTimers } from '../../helpers/timers.js';
+import { scopeOf } from '../../../src/tenancy/scope.js';
+
+/** The tenant the socket connects to. */
+const TENANT = scopeOf({ id: '00000000-0000-4000-8000-000000000001', slug: 'default' });
 
 const USER_ID = '01J8ZC5Q0V7R3T9XK2M4N6P8QA';
 const TOKEN_ID = '01J8ZC5Q0V7R3T9XK2M4N6P8QB';
@@ -83,6 +87,7 @@ function hubSetup(
       authenticate: auth,
       tokenMaxMs: TOKEN_MAX_MS,
       setTimer: timers.setTimer,
+      tenant: TENANT,
       log: LOG,
     });
     return { ws, auth };
@@ -114,6 +119,7 @@ describe('runLiveSocket (live-updates §3.1, §3.3)', () => {
       userId: USER_ID,
       name: 'Ana',
       expiresAt: Date.parse(CREATED_AT) + TOKEN_MAX_MS,
+      tenant: TENANT,
     });
     expect(timers.pending(LIVE_LIMITS.authTimeoutMs)).toBe(0);
     expect(ws.closedWith).toBeUndefined();

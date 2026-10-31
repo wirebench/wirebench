@@ -20,7 +20,7 @@ export async function seedSyncWorkspace(
   input: { readonly team: teamsRepo.TeamRow; readonly name: string; readonly defaultRole?: DefaultRole },
 ): Promise<string> {
   const id = newId();
-  await teamsRepo.insertWorkspace(h.db, {
+  await teamsRepo.insertWorkspace(h.tdb, {
     id,
     name: input.name,
     teamId: input.team.id,
@@ -28,7 +28,7 @@ export async function seedSyncWorkspace(
     createdBy: null,
     at: h.clock.now,
   });
-  await h.repos.withLock(id, () => h.repos.create(id));
+  await h.repos.withLock(h.tdb.scope, id, () => h.repos.create(id));
   return id;
 }
 
@@ -54,6 +54,6 @@ export async function syncFixture(options: { readonly env?: Record<string, strin
   const stranger = await signedInUser(h, { email: 'stranger@example.com' });
   const team = await seedTeam(h, { name: 'Payments QA', admins: [admin], members: [editor, viewer] });
   const workspaceId = await seedSyncWorkspace(h, { team, name: 'Staging' });
-  await teamsRepo.upsertGrant(h.db, { workspaceId, userId: editor.user.id, role: 'editor', at: h.clock.now });
+  await teamsRepo.upsertGrant(h.tdb, { workspaceId, userId: editor.user.id, role: 'editor', at: h.clock.now });
   return { h, admin, editor, viewer, stranger, workspaceId };
 }

@@ -27,7 +27,7 @@ async function setUp(env: Record<string, string> = {}): Promise<Cast> {
   const viewer = await signedInUser(h, { email: 'viewer@example.com' });
   const team = await seedTeam(h, { name: 'Payments QA', admins: [admin], members: [editor, viewer] });
   const workspaceId = await seedWorkspace(h, { team, name: 'Integration' });
-  await teamsRepo.upsertGrant(h.db, { workspaceId, userId: editor.user.id, role: 'editor', at: h.clock.now });
+  await teamsRepo.upsertGrant(h.tdb, { workspaceId, userId: editor.user.id, role: 'editor', at: h.clock.now });
   const hook = (await call<CatchUrl>(h, editor, 'POST', `/workspaces/${workspaceId}/hooks`, { name: 'Signed' })).body;
   return { h, editor, viewer, workspaceId, hook };
 }
@@ -120,11 +120,15 @@ describeDb('the management API: signatures (§3.4, §6)', () => {
     c = await setUp(KEY_ENV);
     await patch(c, c.editor, { signature: { scheme: HMAC, secret: SECRET } });
     const warn = vi.fn();
-    await warnUnopenableSignatures(c.h.db, { enabled: true }, { warn });
+    await warnUnopenableSignatures(c.h.ctx.tenancy, { enabled: true }, { warn, error: vi.fn() });
     expect(warn).toHaveBeenCalledTimes(1);
     expect(JSON.stringify(warn.mock.calls)).not.toContain(SECRET);
     warn.mockClear();
-    await warnUnopenableSignatures(c.h.db, { enabled: true, secretKey: Buffer.alloc(32, 7) }, { warn });
+    await warnUnopenableSignatures(
+      c.h.ctx.tenancy,
+      { enabled: true, secretKey: Buffer.alloc(32, 7) },
+      { warn, error: vi.fn() },
+    );
     expect(warn).not.toHaveBeenCalled();
   });
 });

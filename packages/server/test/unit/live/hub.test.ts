@@ -9,6 +9,14 @@ import {
 } from '@wirebench/engine';
 import { CAPTURE_WINDOW_MS, LiveHub, type LiveSession, type LiveSocket } from '../../../src/live/hub.js';
 import type { Effective } from '../../../src/teams/roles.js';
+import { scopeOf } from '../../../src/tenancy/scope.js';
+
+/** The one tenant these sessions and announcements are in. */
+const TENANT = scopeOf({ id: '00000000-0000-4000-8000-000000000001', slug: 'default' });
+const IN_TENANT = { tenantId: TENANT.tenantId, tenant: TENANT };
+/** A second tenant with the very same workspace, user and token ids (spec §19.8 guard 5). */
+const TENANT_TWO = scopeOf({ id: '00000000-0000-4000-8000-000000000002', slug: 'two' });
+const IN_TENANT_TWO = { tenantId: TENANT_TWO.tenantId, tenant: TENANT_TWO };
 
 const T0 = Date.parse('2026-09-26T10:00:00.000Z');
 const HOUR = 60 * 60 * 1000;
@@ -125,7 +133,7 @@ function fakeLog(warnings: unknown[][]): FastifyBaseLogger {
   return log as unknown as FastifyBaseLogger;
 }
 
-function fixture() {
+function fixture(options: { readonly hosted?: boolean } = {}) {
   const clock = fakeClock();
   const warnings: unknown[][] = [];
   const roles = new Map<string, WorkspaceRole>();
@@ -156,6 +164,7 @@ function fixture() {
     log: fakeLog(warnings),
     now: clock.now,
     setTimer: clock.setTimer,
+    ...(options.hosted !== undefined ? { hosted: options.hosted } : {}),
   });
   return {
     hub,
@@ -199,6 +208,7 @@ type Fixture = ReturnType<typeof fixture>;
 interface SessionOptions {
   readonly name?: string;
   readonly expiresAt?: number;
+  readonly tenant?: typeof TENANT;
 }
 
 function session(userId: string, tokenId: string, options: SessionOptions = {}): LiveSession {
@@ -207,6 +217,7 @@ function session(userId: string, tokenId: string, options: SessionOptions = {}):
     userId,
     name: options.name ?? NAMES[userId] ?? userId,
     expiresAt: options.expiresAt ?? T0 + 180 * DAY,
+    tenant: options.tenant ?? TENANT,
   };
 }
 
@@ -270,7 +281,7 @@ describe('LiveHub — subscribe (§3.1)', () => {
     const ana = open(f, ANA, 'tok-ana');
     await f.hub.subscribe(ana, WS_A);
     expect(ana.take()).toEqual([{ type: 'refused', workspaceId: WS_A, code: 'teams-workspace-not-found' }]);
-    f.hub.headMoved({ workspaceId: WS_A, head: HEAD, tokenId: 'tok-ben' });
+    f.hub.headMoved({ ...IN_TENANT, workspaceId: WS_A, head: HEAD, tokenId: 'tok-ben' });
     expect(ana.sent).toEqual([]);
   });
 
@@ -283,7 +294,7 @@ describe('LiveHub — subscribe (§3.1)', () => {
     await f.hub.subscribe(ana, WS_A);
     expect(ana.sent).toEqual([]);
     expect(f.roleCalls).toEqual([`${ANA} ${WS_A}`]);
-    f.hub.headMoved({ workspaceId: WS_A, head: HEAD, tokenId: 'tok-ben' });
+    f.hub.headMoved({ ...IN_TENANT, workspaceId: WS_A, head: HEAD, tokenId: 'tok-ben' });
     expect(ana.take()).toEqual([head(WS_A)]);
   });
 
@@ -409,7 +420,7 @@ describe('LiveHub — headMoved (§3.1, §3.2)', () => {
     const cat = await joined(f, CAT, 'tok-cat', WS_B);
     settle(laptop, desk, ben, cat);
 
-    f.hub.headMoved({ workspaceId: WS_A, head: HEAD, tokenId: 'tok-ana-laptop' });
+    f.hub.headMoved({ ...IN_TENANT, workspaceId: WS_A, head: HEAD, tokenId: 'tok-ana-laptop' });
     expect(laptop.sent).toEqual([]);
     expect(desk.take()).toEqual([head(WS_A)]); // the same user on another device still hears it
     expect(ben.take()).toEqual([head(WS_A)]);
@@ -428,7 +439,7 @@ describe('LiveHub — accessChanged (§3.2, §3.3)', () => {
 
     f.grant(ANA, WS_A, 'editor');
     const gate = f.hold();
-    f.hub.accessChanged({ workspaceId: WS_A });
+    f.hub.accessChanged({ ...IN_TENANT, workspaceId: WS_A });
     expect(laptop.sent).toEqual([]); // the check runs in the background
     gate.release();
     await f.hub.idle();
@@ -438,19 +449,19 @@ describe('LiveHub — accessChanged (§3.2, §3.3)', () => {
     expect(ben.sent).toEqual([]);
 
     // The new role was recorded, so the same event again messages nobody.
-    f.hub.accessChanged({ workspaceId: WS_A });
+    f.hub.accessChanged({ ...IN_TENANT, workspaceId: WS_A });
     await f.hub.idle();
     expect([...laptop.sent, ...desk.sent, ...ben.sent]).toEqual([]);
 
     f.grant(ANA, WS_A, 'none');
-    f.hub.accessChanged({ workspaceId: WS_A });
+    f.hub.accessChanged({ ...IN_TENANT, workspaceId: WS_A });
     await f.hub.idle();
     expect(laptop.take()).toEqual([access(WS_A)]);
     expect(desk.take()).toEqual([access(WS_A)]);
     expect(ben.take()).toEqual([presence(WS_A, BEN)]);
     expect(laptop.isOpen).toBe(true); // dropped from the workspace, not disconnected
 
-    f.hub.headMoved({ workspaceId: WS_A, head: HEAD, tokenId: 'tok-cat' });
+    f.hub.headMoved({ ...IN_TENANT, workspaceId: WS_A, head: HEAD, tokenId: 'tok-cat' });
     expect([...laptop.sent, ...desk.sent]).toEqual([]);
     expect(ben.take()).toEqual([head(WS_A)]);
   });
@@ -468,7 +479,7 @@ describe('LiveHub — accessChanged (§3.2, §3.3)', () => {
     f.roleCalls.length = 0;
 
     for (const id of [WS_A, WS_B, WS_C]) f.grant(ANA, id, 'none');
-    f.hub.accessChanged({ teamId: TEAM, userId: ANA }); // Ana removed from the team
+    f.hub.accessChanged({ ...IN_TENANT, teamId: TEAM, userId: ANA }); // Ana removed from the team
     await f.hub.idle();
     expect(f.teamCalls).toEqual([TEAM]);
     expect(f.roleCalls).toEqual([`${ANA} ${WS_A}`, `${ANA} ${WS_B}`]);
@@ -476,7 +487,7 @@ describe('LiveHub — accessChanged (§3.2, §3.3)', () => {
     expect(ben.take()).toEqual([presence(WS_A, BEN)]);
 
     // WS_C belongs to another team, so that subscription stands.
-    f.hub.headMoved({ workspaceId: WS_C, head: HEAD, tokenId: 'tok-ben' });
+    f.hub.headMoved({ ...IN_TENANT, workspaceId: WS_C, head: HEAD, tokenId: 'tok-ben' });
     expect(ana.take()).toEqual([head(WS_C)]);
   });
 
@@ -491,7 +502,7 @@ describe('LiveHub — accessChanged (§3.2, §3.3)', () => {
 
     f.grant(ANA, WS_A, 'admin'); // made a server admin (R4)
     f.grant(ANA, WS_B, 'admin');
-    f.hub.accessChanged({ userId: ANA });
+    f.hub.accessChanged({ ...IN_TENANT, userId: ANA });
     await f.hub.idle();
     expect(f.teamCalls).toEqual([]);
     expect(f.roleCalls).toEqual([`${ANA} ${WS_A}`, `${ANA} ${WS_B}`]);
@@ -504,21 +515,21 @@ describe('LiveHub — accessChanged (§3.2, §3.3)', () => {
     f.team(TEAM, [WS_A]);
     const ana = await joined(f, ANA, 'tok-ana', WS_A);
     f.fail(new Error('connection reset'));
-    f.hub.accessChanged({ teamId: TEAM });
+    f.hub.accessChanged({ ...IN_TENANT, teamId: TEAM });
     await f.hub.idle();
     expect(f.warnings).toHaveLength(1);
     expect(ana.sent).toEqual([]);
 
     f.fail(undefined);
-    f.hub.headMoved({ workspaceId: WS_A, head: HEAD, tokenId: 'tok-ben' });
+    f.hub.headMoved({ ...IN_TENANT, workspaceId: WS_A, head: HEAD, tokenId: 'tok-ben' });
     expect(ana.take()).toEqual([head(WS_A)]);
   });
 
   it('makes no query at all while nothing is subscribed', () => {
     const f = fixture();
     open(f, ANA, 'tok-ana');
-    f.hub.accessChanged({ teamId: TEAM });
-    f.hub.accessChanged({ userId: ANA });
+    f.hub.accessChanged({ ...IN_TENANT, teamId: TEAM });
+    f.hub.accessChanged({ ...IN_TENANT, userId: ANA });
     expect(f.teamCalls).toEqual([]);
     expect(f.roleCalls).toEqual([]);
   });
@@ -530,10 +541,10 @@ describe('LiveHub — accessChanged (§3.2, §3.3)', () => {
 
     f.grant(ANA, WS_A, 'editor');
     const first = f.hold({ once: true });
-    f.hub.accessChanged({ workspaceId: WS_A });
+    f.hub.accessChanged({ ...IN_TENANT, workspaceId: WS_A });
     await until(() => f.roleCalls.length === 1); // the first check has read `editor` and waits
     f.grant(ANA, WS_A, 'viewer');
-    f.hub.accessChanged({ workspaceId: WS_A });
+    f.hub.accessChanged({ ...IN_TENANT, workspaceId: WS_A });
     await flush();
     expect(f.roleCalls).toHaveLength(1); // the second waits for the first
     first.release();
@@ -543,7 +554,7 @@ describe('LiveHub — accessChanged (§3.2, §3.3)', () => {
 
     // `viewer` was recorded last, so the next real change to `editor` is still announced.
     f.grant(ANA, WS_A, 'editor');
-    f.hub.accessChanged({ workspaceId: WS_A });
+    f.hub.accessChanged({ ...IN_TENANT, workspaceId: WS_A });
     await f.hub.idle();
     expect(ana.take()).toEqual([access(WS_A)]);
   });
@@ -557,7 +568,7 @@ describe('LiveHub — accessChanged (§3.2, §3.3)', () => {
 
     f.grant(ANA, WS_A, 'none');
     const gate = f.hold();
-    f.hub.accessChanged({ workspaceId: WS_A });
+    f.hub.accessChanged({ ...IN_TENANT, workspaceId: WS_A });
     await until(() => f.roleCalls.length === 1);
     f.hub.remove(ana);
     expect(ben.take()).toEqual([presence(WS_A, BEN)]);
@@ -573,13 +584,13 @@ describe('LiveHub — accessChanged (§3.2, §3.3)', () => {
 
     f.grant(ANA, WS_A, 'editor');
     const gate = f.hold();
-    f.hub.accessChanged({ workspaceId: WS_A });
+    f.hub.accessChanged({ ...IN_TENANT, workspaceId: WS_A });
     await until(() => f.roleCalls.length === 1);
     f.hub.unsubscribe(ana, WS_A);
     gate.release();
     await f.hub.idle();
     expect(ana.sent).toEqual([]);
-    f.hub.headMoved({ workspaceId: WS_A, head: HEAD, tokenId: 'tok-ben' });
+    f.hub.headMoved({ ...IN_TENANT, workspaceId: WS_A, head: HEAD, tokenId: 'tok-ben' });
     expect(ana.sent).toEqual([]);
   });
 
@@ -594,7 +605,7 @@ describe('LiveHub — accessChanged (§3.2, §3.3)', () => {
     f.grant(ANA, WS_A, 'none');
     f.grant(ANA, WS_B, 'none');
     const gate = f.hold();
-    f.hub.accessChanged({ userId: ANA });
+    f.hub.accessChanged({ ...IN_TENANT, userId: ANA });
     await until(() => f.roleCalls.length === 1);
     f.hub.closeAll();
     gate.release();
@@ -614,18 +625,18 @@ describe('LiveHub — sessionEnded (§3.1, §3.2)', () => {
     const ben = await joined(f, BEN, 'tok-ben', WS_A);
     settle(laptop, desk, phone, ben);
 
-    f.hub.sessionEnded({ tokenId: 'tok-ana-laptop' }); // signed out, or that device removed
+    f.hub.sessionEnded({ ...IN_TENANT, tokenId: 'tok-ana-laptop' }); // signed out, or that device removed
     expect(laptop.take()).toEqual(ENDED);
     expect(laptop.closed?.code).toBe(LIVE_CLOSE.unauthenticated);
     expect([...desk.sent, ...phone.sent, ...ben.sent]).toEqual([]); // Ana is still here on two devices
 
-    f.hub.sessionEnded({ userId: ANA, exceptTokenId: 'tok-ana-desk' }); // password changed on the desk
+    f.hub.sessionEnded({ ...IN_TENANT, userId: ANA, exceptTokenId: 'tok-ana-desk' }); // password changed on the desk
     expect(phone.take()).toEqual(ENDED);
     expect(phone.closed?.code).toBe(LIVE_CLOSE.unauthenticated);
     expect(desk.isOpen).toBe(true);
     expect([...desk.sent, ...ben.sent]).toEqual([]);
 
-    f.hub.sessionEnded({ userId: ANA }); // disabled, or a reset accepted
+    f.hub.sessionEnded({ ...IN_TENANT, userId: ANA }); // disabled, or a reset accepted
     expect(desk.take()).toEqual(ENDED);
     expect(desk.closed?.code).toBe(LIVE_CLOSE.unauthenticated);
     expect(ben.take()).toEqual([presence(WS_A, BEN)]);
@@ -646,13 +657,13 @@ describe('LiveHub — dead sockets and heartbeat (§3.3)', () => {
     settle(ana, ben, cat);
 
     ben.failSend = true;
-    f.hub.headMoved({ workspaceId: WS_A, head: HEAD, tokenId: 'tok-x' });
+    f.hub.headMoved({ ...IN_TENANT, workspaceId: WS_A, head: HEAD, tokenId: 'tok-x' });
     expect(ben.terminated).toBe(true);
     expect(ana.take()).toEqual([head(WS_A), presence(WS_A, ANA, CAT)]);
     expect(cat.take()).toEqual([head(WS_A), presence(WS_A, ANA, CAT)]);
 
     ben.failSend = false;
-    f.hub.headMoved({ workspaceId: WS_A, head: HEAD, tokenId: 'tok-x' });
+    f.hub.headMoved({ ...IN_TENANT, workspaceId: WS_A, head: HEAD, tokenId: 'tok-x' });
     expect(ben.sent).toEqual([]); // no longer indexed
   });
 
@@ -663,7 +674,7 @@ describe('LiveHub — dead sockets and heartbeat (§3.3)', () => {
     settle(ana, ben);
 
     ben.closed = { code: 1006 }; // the peer vanished; its close event has not arrived yet
-    f.hub.headMoved({ workspaceId: WS_A, head: HEAD, tokenId: 'tok-x' });
+    f.hub.headMoved({ ...IN_TENANT, workspaceId: WS_A, head: HEAD, tokenId: 'tok-x' });
     expect(ben.terminated).toBe(true);
     expect(ana.take()).toEqual([head(WS_A), presence(WS_A, ANA)]);
   });
@@ -730,9 +741,9 @@ describe('LiveHub — closeAll (§3.3, §5.1)', () => {
     expect([ana.closed?.code, ben.closed?.code]).toEqual([LIVE_CLOSE.goingAway, LIVE_CLOSE.goingAway]);
     expect(f.clock.armed()).toEqual([]);
 
-    f.hub.headMoved({ workspaceId: WS_A, head: HEAD, tokenId: 'tok-x' });
-    f.hub.accessChanged({ teamId: TEAM });
-    f.hub.sessionEnded({ userId: ANA });
+    f.hub.headMoved({ ...IN_TENANT, workspaceId: WS_A, head: HEAD, tokenId: 'tok-x' });
+    f.hub.accessChanged({ ...IN_TENANT, teamId: TEAM });
+    f.hub.sessionEnded({ ...IN_TENANT, userId: ANA });
     f.hub.heartbeat();
     f.hub.remove(ana);
     await f.hub.idle();
@@ -769,7 +780,7 @@ describe('LiveHub — captureReceived (webhook-capture §3.6)', () => {
     const cat = await joined(f, CAT, 'tok-cat', WS_B, 'admin');
     settle(ana, ben, cat);
 
-    f.hub.captureReceived({ workspaceId: WS_A, hookId: HOOK_1, captureId: cap(1) });
+    f.hub.captureReceived({ ...IN_TENANT, workspaceId: WS_A, hookId: HOOK_1, captureId: cap(1) });
     expect(ana.take()).toEqual([captured(WS_A, HOOK_1, 1)]);
     expect(ben.take()).toEqual([captured(WS_A, HOOK_1, 1)]);
     expect(cat.sent).toEqual([]);
@@ -780,10 +791,10 @@ describe('LiveHub — captureReceived (webhook-capture §3.6)', () => {
     const ana = await joined(f, ANA, 'tok-ana', WS_A);
     settle(ana);
 
-    f.hub.captureReceived({ workspaceId: WS_A, hookId: HOOK_1, captureId: cap(1) });
-    f.hub.captureReceived({ workspaceId: WS_A, hookId: HOOK_1, captureId: cap(2) });
-    f.hub.captureReceived({ workspaceId: WS_A, hookId: HOOK_1, captureId: cap(3) });
-    f.hub.captureReceived({ workspaceId: WS_A, hookId: HOOK_2, captureId: cap(4) }); // its own window
+    f.hub.captureReceived({ ...IN_TENANT, workspaceId: WS_A, hookId: HOOK_1, captureId: cap(1) });
+    f.hub.captureReceived({ ...IN_TENANT, workspaceId: WS_A, hookId: HOOK_1, captureId: cap(2) });
+    f.hub.captureReceived({ ...IN_TENANT, workspaceId: WS_A, hookId: HOOK_1, captureId: cap(3) });
+    f.hub.captureReceived({ ...IN_TENANT, workspaceId: WS_A, hookId: HOOK_2, captureId: cap(4) }); // its own window
     expect(ana.take()).toEqual([captured(WS_A, HOOK_1, 1), captured(WS_A, HOOK_2, 4)]);
 
     f.clock.advance(CAPTURE_WINDOW_MS - 1);
@@ -796,7 +807,7 @@ describe('LiveHub — captureReceived (webhook-capture §3.6)', () => {
     expect(ana.sent).toEqual([]);
     expect(windows(f)).toBe(0); // quiet: nothing armed
 
-    f.hub.captureReceived({ workspaceId: WS_A, hookId: HOOK_1, captureId: cap(5) });
+    f.hub.captureReceived({ ...IN_TENANT, workspaceId: WS_A, hookId: HOOK_1, captureId: cap(5) });
     expect(ana.take()).toEqual([captured(WS_A, HOOK_1, 5)]); // leading edge again
   });
 
@@ -805,9 +816,9 @@ describe('LiveHub — captureReceived (webhook-capture §3.6)', () => {
     const ana = await joined(f, ANA, 'tok-ana', WS_A);
     settle(ana);
 
-    f.hub.captureReceived({ workspaceId: WS_A, hookId: HOOK_1, captureId: cap(1) });
-    f.hub.captureReceived({ workspaceId: WS_A, hookId: HOOK_1, captureId: cap(3) });
-    f.hub.captureReceived({ workspaceId: WS_A, hookId: HOOK_1, captureId: cap(2) });
+    f.hub.captureReceived({ ...IN_TENANT, workspaceId: WS_A, hookId: HOOK_1, captureId: cap(1) });
+    f.hub.captureReceived({ ...IN_TENANT, workspaceId: WS_A, hookId: HOOK_1, captureId: cap(3) });
+    f.hub.captureReceived({ ...IN_TENANT, workspaceId: WS_A, hookId: HOOK_1, captureId: cap(2) });
     f.clock.advance(CAPTURE_WINDOW_MS);
     expect(ana.take()).toEqual([captured(WS_A, HOOK_1, 1), captured(WS_A, HOOK_1, 3)]);
   });
@@ -816,14 +827,14 @@ describe('LiveHub — captureReceived (webhook-capture §3.6)', () => {
     const f = fixture();
     const ana = await joined(f, ANA, 'tok-ana', WS_A);
     settle(ana);
-    f.hub.captureReceived({ workspaceId: WS_A, hookId: HOOK_1, captureId: cap(1) });
-    f.hub.captureReceived({ workspaceId: WS_A, hookId: HOOK_1, captureId: cap(2) });
+    f.hub.captureReceived({ ...IN_TENANT, workspaceId: WS_A, hookId: HOOK_1, captureId: cap(1) });
+    f.hub.captureReceived({ ...IN_TENANT, workspaceId: WS_A, hookId: HOOK_1, captureId: cap(2) });
     ana.take();
 
     f.hub.closeAll();
     expect(windows(f)).toBe(0);
-    f.hub.captureReceived({ workspaceId: WS_A, hookId: HOOK_2, captureId: cap(3) });
-    f.hub.hooksChanged({ workspaceId: WS_A });
+    f.hub.captureReceived({ ...IN_TENANT, workspaceId: WS_A, hookId: HOOK_2, captureId: cap(3) });
+    f.hub.hooksChanged({ ...IN_TENANT, workspaceId: WS_A });
     f.clock.advance(CAPTURE_WINDOW_MS);
     expect(ana.sent).toEqual([]);
     expect(windows(f)).toBe(0);
@@ -838,8 +849,8 @@ describe('LiveHub — hooksChanged (webhook-capture §3.6)', () => {
     const cat = await joined(f, CAT, 'tok-cat', WS_B);
     settle(ana, ben, cat);
 
-    f.hub.hooksChanged({ workspaceId: WS_A });
-    f.hub.hooksChanged({ workspaceId: WS_A });
+    f.hub.hooksChanged({ ...IN_TENANT, workspaceId: WS_A });
+    f.hub.hooksChanged({ ...IN_TENANT, workspaceId: WS_A });
     const hooks: LiveServerMessage = { type: 'hooks', workspaceId: WS_A };
     expect(ana.take()).toEqual([hooks, hooks]);
     expect(ben.take()).toEqual([hooks, hooks]);
@@ -857,14 +868,93 @@ describe('LiveHub — scheduleRunFinished (scheduled-runs §3.5)', () => {
     const cat = await joined(f, CAT, 'tok-cat', WS_B);
     settle(ana, cat);
 
-    f.hub.scheduleRunFinished({ workspaceId: WS_A, scheduleId: SCHEDULE, runId: RUN, status: 'failed' });
+    f.hub.scheduleRunFinished({ ...IN_TENANT, workspaceId: WS_A, scheduleId: SCHEDULE, runId: RUN, status: 'failed' });
     expect(ana.take()).toEqual([
       { type: 'schedule-run', workspaceId: WS_A, scheduleId: SCHEDULE, runId: RUN, status: 'failed' },
     ]);
     expect(cat.sent).toEqual([]);
 
     f.hub.closeAll();
-    f.hub.scheduleRunFinished({ workspaceId: WS_A, scheduleId: SCHEDULE, runId: RUN, status: 'passed' });
+    f.hub.scheduleRunFinished({ ...IN_TENANT, workspaceId: WS_A, scheduleId: SCHEDULE, runId: RUN, status: 'passed' });
     expect(ana.take()).toEqual([]);
+  });
+});
+
+describe('LiveHub — two tenants with the same ids (hosted edition spec §19.8 guard 5; tenancy Task 11)', () => {
+  /** Ana in each tenant, same user and token ids, on a workspace of the same id. */
+  async function twoTenants(options: { readonly hosted?: boolean } = {}) {
+    const f = fixture(options);
+    const one = await joined(f, ANA, 'tok-ana', WS_A);
+    const two = await joined(f, ANA, 'tok-ana', WS_A, 'viewer', { tenant: TENANT_TWO });
+    // The second Ana is someone else: she is not present in tenant one's room, nor the first in hers.
+    expect([...one.take(), ...two.take()]).toEqual([]);
+    return { f, one, two };
+  }
+
+  it("delivers a head, a capture, the hooks and a run to the announcing tenant's room only", async () => {
+    const { f, one, two } = await twoTenants();
+    f.hub.headMoved({ ...IN_TENANT, workspaceId: WS_A, head: 'b'.repeat(40), tokenId: 'tok-other' });
+    f.hub.captureReceived({ ...IN_TENANT, workspaceId: WS_A, hookId: HOOK_1, captureId: cap(1) });
+    f.hub.hooksChanged({ ...IN_TENANT, workspaceId: WS_A });
+    f.hub.scheduleRunFinished({
+      ...IN_TENANT,
+      workspaceId: WS_A,
+      scheduleId: '01J8ZC5Q0V7R3T9XK2M4N6S001',
+      runId: '01J8ZC5Q0V7R3T9XK2M4N6R001',
+      status: 'passed',
+    });
+    expect(one.take().map((m) => m.type)).toEqual(['head', 'capture', 'hooks', 'schedule-run']);
+    expect(two.take()).toEqual([]);
+    // The same catch URL id in tenant two has a window of its own: its first capture goes out at once.
+    f.hub.captureReceived({ ...IN_TENANT_TWO, workspaceId: WS_A, hookId: HOOK_1, captureId: cap(2) });
+    expect(two.take().map((m) => m.type)).toEqual(['capture']);
+    expect(one.take()).toEqual([]);
+  });
+
+  it('ends only the announcing tenant’s sessions, whatever token or user id they share', async () => {
+    const { f, one, two } = await twoTenants();
+    f.hub.sessionEnded({ ...IN_TENANT, tokenId: 'tok-ana' });
+    expect(one.closed?.code).toBe(LIVE_CLOSE.unauthenticated);
+    expect(two.closed).toBeUndefined();
+    f.hub.sessionEnded({ ...IN_TENANT, userId: ANA });
+    expect(two.closed).toBeUndefined();
+    f.hub.sessionEnded({ ...IN_TENANT_TWO, userId: ANA });
+    expect(two.closed?.code).toBe(LIVE_CLOSE.unauthenticated);
+  });
+
+  it("re-checks access in the announcing tenant's rooms only", async () => {
+    const { f, one, two } = await twoTenants();
+    f.grant(ANA, WS_A, 'none');
+    f.hub.accessChanged({ ...IN_TENANT_TWO, workspaceId: WS_A });
+    await f.hub.idle();
+    expect(two.take().map((m) => m.type)).toEqual(['access']);
+    expect(one.take()).toEqual([]);
+  });
+
+  // The executor's run has no tenant until Task 13 runs it per tenant. Task 13 makes `tenantId` required and
+  // deletes this path, and with it these two cases (Task 11 review I1).
+  const RUN_ENDED = {
+    workspaceId: WS_A,
+    scheduleId: '01J8ZC5Q0V7R3T9XK2M4N6S001',
+    runId: '01J8ZC5Q0V7R3T9XK2M4N6R001',
+    status: 'passed',
+  } as const;
+
+  it('self-hosted: a run that names no tenant reaches the workspace id’s rooms in every tenant', async () => {
+    const { f, one, two } = await twoTenants();
+    f.hub.scheduleRunFinished(RUN_ENDED);
+    expect(one.take().map((m) => m.type)).toEqual(['schedule-run']);
+    expect(two.take().map((m) => m.type)).toEqual(['schedule-run']);
+  });
+
+  it('hosted: a run that names no tenant reaches no one, and is warned about once', async () => {
+    const { f, one, two } = await twoTenants({ hosted: true });
+    f.hub.scheduleRunFinished(RUN_ENDED);
+    f.hub.scheduleRunFinished(RUN_ENDED);
+    expect([...one.take(), ...two.take()]).toEqual([]);
+    expect(f.warnings).toHaveLength(1);
+    // One that names its tenant still goes through.
+    f.hub.scheduleRunFinished({ ...IN_TENANT, ...RUN_ENDED });
+    expect(one.take().map((m) => m.type)).toEqual(['schedule-run']);
   });
 });

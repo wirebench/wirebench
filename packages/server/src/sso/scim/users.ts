@@ -4,7 +4,7 @@
  * last enabled server admin is never disabled from here.
  */
 import type { FastifyInstance, FastifyRequest } from 'fastify';
-import { announce, recordAudit, runInvitationAccepted, type Querier } from '../../context.js';
+import { announce, recordAudit, runInvitationAccepted } from '../../context.js';
 import { isUniqueViolation } from '../../db/errors.js';
 import * as identityRepo from '../../identity/repo.js';
 import { newId } from '../../identity/tokens.js';
@@ -60,8 +60,9 @@ export const userRoutes =
     async function update(request: FastifyRequest, id: string, compute: (state: UserState) => UserState) {
       const source = scimSource(request);
       const now = env.now();
-      const result = await db
-        .transaction(async (tx: Querier) => {
+      const result = await env.ctx.tenancy
+        .db(request.tenant)
+        .transaction(async (tx) => {
           const view = await repo.scimUserView(tx, id);
           if (view === undefined) throw notFound();
           const next = compute(stateOf(view));
@@ -100,7 +101,8 @@ export const userRoutes =
           throw error;
         });
       // Sockets first: a disabled user's live connections close before anything reads them again.
-      if (result.disabled) announce(env.ctx.hooks.sessionEnded, { userId: id }, request.log);
+      if (result.disabled)
+        announce(env.ctx.hooks.sessionEnded, { tenantId: request.tenant.tenantId, userId: id }, request.log);
       return userResource(result.view, base(request));
     }
 
@@ -133,8 +135,9 @@ export const userRoutes =
       const email = assertEmail(input.userName);
       const source = scimSource(request);
       const now = env.now();
-      const view = await db
-        .transaction(async (tx: Querier) => {
+      const view = await env.ctx.tenancy
+        .db(request.tenant)
+        .transaction(async (tx) => {
           if ((await identityRepo.findUserByEmail(tx, email.toLowerCase())) !== undefined) throw uniqueness();
           // An open invitation is the admin's intent for this address: the creation accepts it (§3.5).
           const open = await identityRepo.openInvitationByEmail(tx, email.toLowerCase(), now);

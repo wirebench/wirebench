@@ -79,6 +79,10 @@ All notable changes to this project are documented here. The format follows
 - **Server: the migration to tenants (#798).** The first start migrates the database to the multi-tenant
   layout (migration `0020`): a single default tenant holds everything, and nothing users see changes. Large
   databases take longer to start once; measure it on a copy first.
+- **Server: a lost `server_identity` row stops start-up with its advice again (#798).** Start-up fails with
+  `server-identity-missing` and says to restore the row from a backup rather than insert a new one, which
+  would mint a new server id that no license is bound to. `wirebench-server admin` exits with code 2 for it,
+  as start-up does.
 - **Server: a database restart no longer leaves the server running blind (#798).** The server holds a
   lock for its whole life. When the database goes away it takes the lock back as soon as the database
   returns, for up to about two minutes, and then exits with code 3 for its supervisor to restart.

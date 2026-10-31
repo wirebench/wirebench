@@ -45,12 +45,12 @@ export async function seedTeam(
     readonly members?: readonly SignedInUser[];
   },
 ): Promise<teamsRepo.TeamRow> {
-  const team = await teamsRepo.insertTeam(h.db, { id: newId(), name: input.name, at: h.clock.now });
+  const team = await teamsRepo.insertTeam(h.tdb, { id: newId(), name: input.name, at: h.clock.now });
   for (const user of input.admins ?? []) {
-    await teamsRepo.insertMember(h.db, { teamId: team.id, userId: user.user.id, role: 'admin', at: h.clock.now });
+    await teamsRepo.insertMember(h.tdb, { teamId: team.id, userId: user.user.id, role: 'admin', at: h.clock.now });
   }
   for (const user of input.members ?? []) {
-    await teamsRepo.insertMember(h.db, { teamId: team.id, userId: user.user.id, role: 'member', at: h.clock.now });
+    await teamsRepo.insertMember(h.tdb, { teamId: team.id, userId: user.user.id, role: 'member', at: h.clock.now });
   }
   return team;
 }
@@ -61,7 +61,7 @@ export async function seedWorkspace(
   input: { readonly team: teamsRepo.TeamRow; readonly name: string; readonly defaultRole?: DefaultRole },
 ): Promise<string> {
   const id = newId();
-  await teamsRepo.insertWorkspace(h.db, {
+  await teamsRepo.insertWorkspace(h.tdb, {
     id,
     name: input.name,
     teamId: input.team.id,

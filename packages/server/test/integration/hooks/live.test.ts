@@ -62,7 +62,7 @@ describeDb('live capture and hooks messages (§3.6)', () => {
     const stranger = await signedInUser(h, { email: 'stranger@example.com' });
     const team = await seedTeam(h, { name: 'Payments QA', members: [editor, viewer] });
     const workspaceId = await seedWorkspace(h, { team, name: 'Integration' });
-    await teamsRepo.upsertGrant(h.db, { workspaceId, userId: editor.user.id, role: 'editor', at: h.clock.now });
+    await teamsRepo.upsertGrant(h.tdb, { workspaceId, userId: editor.user.id, role: 'editor', at: h.clock.now });
     const hook = (await call<CatchUrl>(h, editor, 'POST', `/workspaces/${workspaceId}/hooks`, { name: 'Payments' }))
       .body;
     c = { h, editor, viewer, stranger, workspaceId, hook, clients: [] };

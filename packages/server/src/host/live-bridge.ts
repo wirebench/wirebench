@@ -11,6 +11,7 @@
 import { EventEmitter } from 'node:events';
 import type { ConnectedWebSocket } from '@wirebench/engine';
 import type { LiveConnection } from '../live/socket.js';
+import { outsideTenantUnit } from '../tenancy/tenant-db.js';
 
 const CONNECTING = 0;
 const OPEN = 1;
@@ -19,8 +20,15 @@ const CLOSED = 3;
 /** What a dropped connection reports, as `ws` does for one closed without a close frame. */
 const ABNORMAL = 1006;
 
+/**
+ * On a later microtask, and outside any tenant unit (Task 8 review M5): a frame or close the host sends while
+ * one of its calls has a unit open must not run the live socket's handlers, or the host's own, inside it. A
+ * listener that queried from there would join that unit, which then fails with `tenancy-unawaited`.
+ */
 function later(fn: () => void): void {
-  void Promise.resolve().then(fn);
+  outsideTenantUnit(() => {
+    void Promise.resolve().then(fn);
+  });
 }
 
 /** One in-memory connection: both ends share its state, so they can never disagree about it. */

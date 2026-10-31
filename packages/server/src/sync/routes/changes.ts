@@ -19,11 +19,11 @@ type ChangesQuery = z.infer<typeof syncChangesQuerySchema>;
 export const changesRoutes =
   (env: SyncEnv) =>
   (app: FastifyInstance): void => {
-    const { db, repos } = env.ctx;
+    const { repos } = env.ctx;
     app.get(
       '/workspaces/:workspaceId/sync/changes',
       {
-        preHandler: requireWorkspaceRole(db, 'viewer'),
+        preHandler: requireWorkspaceRole(env.ctx.tenancy, 'viewer'),
         schema: {
           params: jsonSchema(teamWorkspaceParamsSchema, { io: 'input' }),
           querystring: jsonSchema(syncChangesQuerySchema, { io: 'input' }),
