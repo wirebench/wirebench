@@ -237,8 +237,8 @@ describeDb('team session logs (#430)', () => {
         (await h.db.query(`select count(*)::int as n from ${table}`)).rows[0]!['n'] as number;
       const before = await count('session_logs');
       expect(before).toBeGreaterThan(0);
-      expect(await removeLogsBefore(h.db, new Date('2026-09-24T00:00:00Z'), 1000)).toBe(0);
-      expect(await removeLogsBefore(h.db, new Date('2026-09-25T00:00:00Z'), 1000)).toBe(before);
+      expect(await removeLogsBefore(h.tdb, new Date('2026-09-24T00:00:00Z'), 1000)).toBe(0);
+      expect(await removeLogsBefore(h.tdb, new Date('2026-09-25T00:00:00Z'), 1000)).toBe(before);
       expect(await count('session_log_chunks')).toBe(0);
     });
   });

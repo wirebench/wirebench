@@ -19,8 +19,10 @@ export const scimGroupRoutes =
     const preHandler = [requireServerAdmin, env.ctx.license.requireFeature('sso-provisioning')];
     const params = jsonSchema(identityIdParamsSchema, { io: 'input' });
 
-    app.get('/scim-groups', { preHandler, schema: { response: { 200: jsonSchema(scimGroupsResponseSchema) } } }, () =>
-      listGroupSummaries(env),
+    app.get(
+      '/scim-groups',
+      { preHandler, schema: { response: { 200: jsonSchema(scimGroupsResponseSchema) } } },
+      (request) => listGroupSummaries(env, request.tenant),
     );
 
     app.put(

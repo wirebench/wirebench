@@ -17,7 +17,7 @@ export type ScimTokenCommand = Extract<ServerCommand, { command: `admin-scim-tok
 export type ScimGroupCommand = Extract<ServerCommand, { command: `admin-scim-group-${string}` }>;
 
 export interface ScimCliEnv {
-  readonly ctx: Pick<ServerContext, 'db' | 'tenancy' | 'hooks'> & { readonly license: Pick<LicenseService, 'state'> };
+  readonly ctx: Pick<ServerContext, 'tenancy' | 'hooks'> & { readonly license: Pick<LicenseService, 'state'> };
   readonly now: () => Date;
 }
 
@@ -32,7 +32,7 @@ export async function runScimTokenCommand(
     throw featureRequired('sso-provisioning');
   switch (command.command) {
     case 'admin-scim-token-create': {
-      const created = await createScimToken(env, command.name, null, SYSTEM_SOURCE);
+      const created = await createScimToken(env, scope, command.name, null, SYSTEM_SOURCE);
       io.stdout.write(
         `SCIM token ${created.name} (${created.id})\n${created.token}\nGive it to the identity provider now: it is not shown again.\n`,
       );
@@ -40,7 +40,7 @@ export async function runScimTokenCommand(
     }
     case 'admin-scim-token-list': {
       io.stdout.write(`${'id'.padEnd(26)}  ${'name'.padEnd(32)}  ${'created'.padEnd(24)}  last used\n`);
-      for (const row of await repo.listScimTokens(env.ctx.db)) {
+      for (const row of await repo.listScimTokens(env.ctx.tenancy.db(scope))) {
         io.stdout.write(
           `${row.id}  ${row.name.padEnd(32)}  ${row.createdAt.padEnd(24)}  ${row.lastUsedAt ?? 'never'}\n`,
         );
@@ -48,15 +48,15 @@ export async function runScimTokenCommand(
       return ExitCode.Ok;
     }
     case 'admin-scim-token-revoke':
-      await revokeScimToken(env, command.id, SYSTEM_SOURCE);
+      await revokeScimToken(env, scope, command.id, SYSTEM_SOURCE);
       io.stdout.write(`Revoked ${command.id}\n`);
       return ExitCode.Ok;
   }
 }
 
 /** A group by id, or by its name ignoring case. */
-async function groupIdOf(env: ScimCliEnv, value: string): Promise<string> {
-  const groups = await listGroupSummaries(env);
+async function groupIdOf(env: ScimCliEnv, scope: TenantScope, value: string): Promise<string> {
+  const groups = await listGroupSummaries(env, scope);
   const found =
     groups.find((group) => group.id === value) ??
     groups.find((group) => group.displayName.toLowerCase() === value.toLowerCase());
@@ -85,7 +85,7 @@ export async function runScimGroupCommand(
   switch (command.command) {
     case 'admin-scim-group-list': {
       io.stdout.write(`${'id'.padEnd(26)}  ${'name'.padEnd(32)}  members  team\n`);
-      for (const group of await listGroupSummaries(env)) {
+      for (const group of await listGroupSummaries(env, scope)) {
         io.stdout.write(
           `${group.id}  ${group.displayName.padEnd(32)}  ${String(group.memberCount).padStart(7)}  ${group.team?.name ?? '(not linked)'}\n`,
         );
@@ -96,7 +96,7 @@ export async function runScimGroupCommand(
       const linked = await setGroupLink(
         env,
         scope,
-        await groupIdOf(env, command.group),
+        await groupIdOf(env, scope, command.group),
         await teamIdOf(env, scope, command.team),
         SYSTEM_SOURCE,
       );
@@ -104,7 +104,7 @@ export async function runScimGroupCommand(
       return ExitCode.Ok;
     }
     case 'admin-scim-group-unlink': {
-      const unlinked = await setGroupLink(env, scope, await groupIdOf(env, command.group), null, SYSTEM_SOURCE);
+      const unlinked = await setGroupLink(env, scope, await groupIdOf(env, scope, command.group), null, SYSTEM_SOURCE);
       io.stdout.write(`Unlinked ${unlinked.displayName}\n`);
       return ExitCode.Ok;
     }

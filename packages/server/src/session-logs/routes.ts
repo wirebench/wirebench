@@ -24,14 +24,7 @@ import {
   type SessionLogTextResponse,
 } from '@wirebench/engine';
 import type { FastifyInstance, FastifyRequest, preHandlerAsyncHookHandler } from 'fastify';
-import {
-  auditSource,
-  recordAudit,
-  type Database,
-  type LicenseService,
-  type Querier,
-  type ServerHooks,
-} from '../context.js';
+import { auditSource, recordAudit, type LicenseService, type ServerHooks } from '../context.js';
 import { newId } from '../identity/tokens.js';
 import { jsonSchema } from '../schema.js';
 import { forbidden } from '../teams/errors.js';
@@ -39,11 +32,11 @@ import { workspaceById } from '../teams/repo.js';
 import { requireWorkspaceRole } from '../teams/roles.js';
 import { logEnded, logNotFound, offsetMismatch, recordingOff } from './errors.js';
 import * as repo from './repo.js';
+import type { TenantQuerier } from '../tenancy/tenant-db.js';
 import type { Tenancy } from '../tenancy/tenancy.js';
 
 export interface SessionLogRoutesEnv {
-  readonly db: Database;
-  /** The tenant databases: the role guard and teams' reads run in the request's tenant (tenancy Task 9). */
+  /** The tenant databases: every read and write runs in the request's tenant, one unit per request (Task 15). */
   readonly tenancy: Pick<Tenancy, 'db'>;
   readonly hooks: ServerHooks;
   readonly license: () => LicenseService;
@@ -82,7 +75,9 @@ interface LogParams {
 export const sessionLogRoutes =
   (env: SessionLogRoutesEnv) =>
   (app: FastifyInstance): void => {
-    const { db, hooks } = env;
+    const { hooks } = env;
+    const unit = <T>(request: FastifyRequest, fn: (tx: TenantQuerier) => Promise<T>): Promise<T> =>
+      env.tenancy.db(request.tenant).transaction(fn);
     const feature: preHandlerAsyncHookHandler = async function (request, reply) {
       await env.license().requireFeature('session-logs').call(this, request, reply);
     };
@@ -96,7 +91,7 @@ export const sessionLogRoutes =
     const about = (log: SessionLog) => ({ hostName: log.hostName, userId: log.userId });
 
     /** The log, locked, if the caller opened it; anyone else hears "not found". */
-    const ownLog = async (tx: Querier, request: FastifyRequest): Promise<SessionLog> => {
+    const ownLog = async (tx: TenantQuerier, request: FastifyRequest): Promise<SessionLog> => {
       const caller = callerOf(request);
       const { workspaceId, logId } = request.params as LogParams;
       const log = await repo.logById(tx, workspaceId, logId, { forUpdate: true });
@@ -114,9 +109,10 @@ export const sessionLogRoutes =
         const caller = callerOf(request);
         const { workspaceId } = request.workspaceAccess!;
         const body = request.body as SessionLogOpenRequest;
-        const workspace = await workspaceById(env.tenancy.db(request.tenant), workspaceId);
-        if (workspace === undefined || !workspace.recordSessionLogs) throw recordingOff();
-        const { log, created } = await db.transaction(async (tx) => {
+        // The workspace's switch, the log and its audit line: one unit.
+        const { log, created } = await unit(request, async (tx) => {
+          const workspace = await workspaceById(tx, workspaceId);
+          if (workspace === undefined || !workspace.recordSessionLogs) throw recordingOff();
           const opened = await repo.openLog(tx, {
             ...body,
             id: newId(),
@@ -146,7 +142,7 @@ export const sessionLogRoutes =
         callerOf(request);
         const body = request.body as SessionLogChunkRequest;
         const data = Buffer.from(body.data, 'base64');
-        return db.transaction(async (tx) => {
+        return unit(request, async (tx) => {
           const log = await ownLog(tx, request);
           if (!log.live) throw logEnded();
           if (body.offset !== log.size) throw offsetMismatch();
@@ -167,7 +163,7 @@ export const sessionLogRoutes =
       async (request, reply) => {
         callerOf(request);
         const body = request.body as SessionLogEndRequest;
-        await db.transaction(async (tx) => {
+        await unit(request, async (tx) => {
           const log = await ownLog(tx, request);
           // Ending twice (a retried request) changes nothing.
           if (!log.live) return;
@@ -198,7 +194,7 @@ export const sessionLogRoutes =
         callerOf(request);
         const query = sessionLogsQuerySchema.parse(request.query);
         const limit = query.limit ?? SESSION_LOG_LIMITS.defaultPageSize;
-        const logs = await repo.listLogs(db, request.workspaceAccess!.workspaceId, {
+        const logs = await repo.listLogs(env.tenancy.db(request.tenant), request.workspaceAccess!.workspaceId, {
           ...(query.hostId !== undefined ? { hostId: query.hostId } : {}),
           ...(query.userId !== undefined ? { userId: query.userId } : {}),
           ...(query.before !== undefined ? { before: query.before } : {}),
@@ -215,22 +211,24 @@ export const sessionLogRoutes =
         callerOf(request);
         const { workspaceId, logId } = request.params as LogParams;
         const { offset = 0 } = sessionLogTextQuerySchema.parse(request.query);
-        const log = await repo.logById(db, workspaceId, logId);
-        if (log === undefined) throw logNotFound();
-        const start = Math.min(offset, log.size);
-        const bytes = await repo.readBytes(db, log.id, start, SESSION_LOG_LIMITS.maxReadBytes);
-        // A character still arriving is left for the next read. At the end of a finished log nothing more
-        // comes, so what is there is decoded as it is.
-        const cut = log.live || start + bytes.length < log.size ? wholeCharacters(bytes) : bytes.length;
-        const sent = bytes.subarray(0, cut);
-        await db.transaction((tx) =>
-          recordAudit(hooks, tx, {
+        // The log, its bytes and the read's audit line: one unit.
+        const { log, start, sent } = await unit(request, async (tx) => {
+          const log = await repo.logById(tx, workspaceId, logId);
+          if (log === undefined) throw logNotFound();
+          const start = Math.min(offset, log.size);
+          const bytes = await repo.readBytes(tx, log.id, start, SESSION_LOG_LIMITS.maxReadBytes);
+          // A character still arriving is left for the next read. At the end of a finished log nothing more
+          // comes, so what is there is decoded as it is.
+          const cut = log.live || start + bytes.length < log.size ? wholeCharacters(bytes) : bytes.length;
+          const sent = bytes.subarray(0, cut);
+          await recordAudit(hooks, tx, {
             ...auditSource(request),
             ...logScope(log),
             action: 'session_log.read',
             details: { ...about(log), offset: start, bytes: sent.length },
-          }),
-        );
+          });
+          return { log, start, sent };
+        });
         return {
           offset: start,
           text: sent.toString('utf8'),
@@ -248,7 +246,7 @@ export const sessionLogRoutes =
       async (request, reply) => {
         callerOf(request);
         const { workspaceId, logId } = request.params as LogParams;
-        await db.transaction(async (tx) => {
+        await unit(request, async (tx) => {
           const log = await repo.logById(tx, workspaceId, logId, { forUpdate: true });
           if (log === undefined) throw logNotFound();
           await repo.removeLog(tx, log.id);

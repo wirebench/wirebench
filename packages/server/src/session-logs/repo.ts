@@ -3,7 +3,7 @@
  * keyed by their offset, appended in order and never rewritten; `size_bytes` is the next offset.
  */
 import type { SessionLog, SessionLogOpenRequest, SessionLogReason } from '@wirebench/engine';
-import type { Querier } from '../context.js';
+import type { TenantQuerier } from '../tenancy/tenant-db.js';
 
 type Raw = Record<string, unknown>;
 
@@ -42,7 +42,7 @@ function toLog(row: Raw): SessionLog {
 
 /** Opens a log, or finds the one this user already opened under the same client id (a resumed upload). */
 export async function openLog(
-  db: Querier,
+  db: TenantQuerier,
   input: SessionLogOpenRequest & {
     readonly id: string;
     readonly workspaceId: string;
@@ -81,7 +81,7 @@ export async function openLog(
 
 /** One log of a workspace; `forUpdate` locks its row for the rest of the caller's transaction. */
 export async function logById(
-  db: Querier,
+  db: TenantQuerier,
   workspaceId: string,
   logId: string,
   options: { readonly forUpdate?: boolean } = {},
@@ -94,7 +94,7 @@ export async function logById(
 
 /** Appends `data` at `offset` (the current size) and moves the size; `truncated` stops every later byte. */
 export async function appendChunk(
-  db: Querier,
+  db: TenantQuerier,
   input: {
     readonly logId: string;
     readonly offset: number;
@@ -117,7 +117,7 @@ export async function appendChunk(
 }
 
 export async function endLog(
-  db: Querier,
+  db: TenantQuerier,
   input: {
     readonly logId: string;
     readonly endedAt: Date;
@@ -136,7 +136,7 @@ export async function endLog(
 
 /** A page of a workspace's logs, newest first: ids are ULIDs the server minted, so they sort by creation. */
 export async function listLogs(
-  db: Querier,
+  db: TenantQuerier,
   workspaceId: string,
   query: { readonly hostId?: string; readonly userId?: string; readonly before?: string; readonly limit: number },
 ): Promise<SessionLog[]> {
@@ -150,7 +150,7 @@ export async function listLogs(
 }
 
 /** Up to `max` bytes of a log from `offset`, cut out of the chunks that overlap them, in order. */
-export async function readBytes(db: Querier, logId: string, offset: number, max: number): Promise<Buffer> {
+export async function readBytes(db: TenantQuerier, logId: string, offset: number, max: number): Promise<Buffer> {
   const end = offset + max;
   const rows = (
     await db.query(
@@ -171,12 +171,12 @@ export async function readBytes(db: Querier, logId: string, offset: number, max:
   return Buffer.concat(parts);
 }
 
-export async function removeLog(db: Querier, logId: string): Promise<void> {
+export async function removeLog(db: TenantQuerier, logId: string): Promise<void> {
   await db.query('delete from session_logs where id = $1', [logId]);
 }
 
 /** Retention (spec A1): logs last written before `cutoff`, at most `limit` per call; their chunks cascade. */
-export async function removeLogsBefore(db: Querier, cutoff: Date, limit: number): Promise<number> {
+export async function removeLogsBefore(db: TenantQuerier, cutoff: Date, limit: number): Promise<number> {
   const result = await db.query(
     `delete from session_logs where id in (
        select id from session_logs where last_write_at < $1 order by last_write_at limit $2)`,

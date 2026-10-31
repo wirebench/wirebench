@@ -10,13 +10,15 @@ import { fileURLToPath } from 'node:url';
 import type { FastifyInstance } from 'fastify';
 import type { ServerContext, ServerModule } from '../context.js';
 import type { SetTimer } from '../hooks/env.js';
-import { CaptureSweeper, rawSweepTarget } from '../hooks/sweep.js';
+import { CaptureSweeper } from '../hooks/sweep.js';
 import { realTimer } from '../live/module.js';
 import { removeLogsBefore } from './repo.js';
 import { sessionLogRoutes } from './routes.js';
 
 export const SESSION_LOGS_MIGRATIONS_DIR = fileURLToPath(new URL('../../migrations/session-logs/', import.meta.url));
 export const SESSION_LOGS_CAPABILITY = 'session-logs';
+/** The session-log sweep's name in the job loop's log lines. */
+export const SESSION_LOG_SWEEP_JOB = 'session-log-retention';
 
 export interface SessionLogsOptions {
   readonly now?: () => Date;
@@ -33,7 +35,6 @@ export function sessionLogsModule(options: SessionLogsOptions = {}): ServerModul
       // The workspace `recordSessionLogs` switch and these routes; a server without it hides both in the desktop.
       ctx.meta.addCapability(SESSION_LOGS_CAPABILITY);
       sessionLogRoutes({
-        db: ctx.db,
         tenancy: ctx.tenancy,
         hooks: ctx.hooks,
         license: () => ctx.license,
@@ -45,7 +46,8 @@ export function sessionLogsModule(options: SessionLogsOptions = {}): ServerModul
         now,
         setTimer,
         log: ctx.log,
-        target: rawSweepTarget(ctx.db, removeLogsBefore),
+        // Per tenant, through the job loop (hosted edition spec §19.8 guard 6).
+        target: { tenancy: ctx.tenancy, job: SESSION_LOG_SWEEP_JOB, deleteBefore: removeLogsBefore },
         label: 'session-log sweep',
       });
       sweeper.start();

@@ -174,6 +174,9 @@ export const MOVED_MODULES: readonly ServerModule['name'][] = [
   'terminal-shares',
   'scheduled-runs',
   'audit-log',
+  'sso',
+  'session-logs',
+  'agent',
 ];
 
 export interface SignedInUser {

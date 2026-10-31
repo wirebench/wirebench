@@ -141,7 +141,7 @@ async function answerResponse(
 
 /** The `auth.sign_in_failed` event of a refused SAML response. */
 const recordRefusal = (env: SsoEnv, request: FastifyRequest, reason: string, email?: string) =>
-  recordAudit(env.ctx.hooks, env.ctx.db, {
+  recordAudit(env.ctx.hooks, env.ctx.tenancy.db(request.tenant), {
     ...auditSource(request),
     ...ANONYMOUS_SOURCE,
     action: 'auth.sign_in_failed',
@@ -183,7 +183,7 @@ export const authSamlRoutes =
         const requestId = `_${randomBytes(20).toString('hex')}`;
         const relayState = mintSecret().secret;
         const expiresAt = new Date(now.getTime() + FLOW_TTL_MS);
-        await repo.insertSamlFlow(env.ctx.db, {
+        await repo.insertSamlFlow(env.ctx.tenancy.db(request.tenant), {
           id,
           requestId,
           codeChallenge: body.codeChallenge,
@@ -223,7 +223,10 @@ export const authSamlRoutes =
           if (saml === undefined) throw methodDisabled();
           const relayState = formField(request.body, 'RelayState');
           const samlResponse = formField(request.body, 'SAMLResponse');
-          const flow = relayState === '' ? undefined : await repo.samlFlowByRelayState(env.ctx.db, relayState);
+          const flow =
+            relayState === ''
+              ? undefined
+              : await repo.samlFlowByRelayState(env.ctx.tenancy.db(request.tenant), relayState);
           if (flow === undefined || flow.grantHash !== null || Date.parse(flow.expiresAt) <= env.now().getTime())
             return htmlPage(reply, 400, EXPIRED);
           const answer = await answerResponse({ ...env, saml }, request, {
@@ -233,13 +236,13 @@ export const authSamlRoutes =
             flowId: flow.id,
           });
           if (!answer.ok) {
-            await repo.deleteSamlFlow(env.ctx.db, flow.id);
+            await repo.deleteSamlFlow(env.ctx.tenancy.db(request.tenant), flow.id);
             await recordRefusal(env, request, answer.code, answer.email);
             return redirectToLoopback(reply, flow, { error: answer.code });
           }
           const grant = mintSecret();
           // Single grant, whatever happens next: the same response posted twice finds the flow granted.
-          if (!(await repo.grantSamlFlow(env.ctx.db, flow.id, grant.hash, answer.user.id)))
+          if (!(await repo.grantSamlFlow(env.ctx.tenancy.db(request.tenant), flow.id, grant.hash, answer.user.id)))
             return htmlPage(reply, 400, EXPIRED);
           return redirectToLoopback(reply, flow, { grant: grant.secret });
         },
@@ -295,7 +298,7 @@ export const authSamlRoutes =
       async (request, reply) => {
         if (env.saml === undefined) throw methodDisabled();
         const body = request.body as SamlCompleteRequest;
-        const flow = await repo.samlFlowById(env.ctx.db, body.flowId);
+        const flow = await repo.samlFlowById(env.ctx.tenancy.db(request.tenant), body.flowId);
         if (
           flow === undefined ||
           flow.grantHash === null ||
@@ -309,7 +312,8 @@ export const authSamlRoutes =
         )
           throw flowInvalid();
         // Single use, whatever happens next: only the request that removed the row goes on.
-        if (!(await repo.claimGrantedSamlFlow(env.ctx.db, flow.id, flow.grantHash))) throw flowInvalid();
+        if (!(await repo.claimGrantedSamlFlow(env.ctx.tenancy.db(request.tenant), flow.id, flow.grantHash)))
+          throw flowInvalid();
         const user = await identityRepo.findUserById(env.ctx.tenancy.db(request.tenant), flow.userId);
         if (user === undefined || user.disabledAt !== null) throw flowInvalid();
         return reply

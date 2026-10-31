@@ -51,7 +51,6 @@ export const userRoutes =
   (scim: FastifyInstance): void => {
     // The SCIM base of the request's tenant (spec §19.5).
     const base = (request: FastifyRequest): string => env.urlsFor(request).scimBaseUrl;
-    const db = env.ctx.db;
 
     /**
      * Moves user `id` to `compute(current)` in one transaction: the profile fields, then `active`. Answers
@@ -114,7 +113,12 @@ export const userRoutes =
         'emails.value',
       ]);
       const { startIndex, count } = pageOf(query);
-      const page = await repo.listScimUserViews(db, filter as repo.ScimUserFilter | undefined, startIndex - 1, count);
+      const page = await repo.listScimUserViews(
+        env.ctx.tenancy.db(request.tenant),
+        filter as repo.ScimUserFilter | undefined,
+        startIndex - 1,
+        count,
+      );
       return {
         schemas: [LIST_RESPONSE_SCHEMA],
         totalResults: page.total,
@@ -125,7 +129,7 @@ export const userRoutes =
     });
 
     scim.get('/Users/:id', async (request) => {
-      const view = await repo.scimUserView(db, (request.params as { id: string }).id);
+      const view = await repo.scimUserView(env.ctx.tenancy.db(request.tenant), (request.params as { id: string }).id);
       if (view === undefined) throw notFound();
       return userResource(view, base(request));
     });

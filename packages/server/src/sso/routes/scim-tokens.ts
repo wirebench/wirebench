@@ -33,14 +33,17 @@ export const scimTokenRoutes =
       },
       async (request, reply) => {
         const { name } = request.body as z.infer<typeof createBodySchema>;
-        return reply.code(201).send(await createScimToken(env, name, request.caller!.id, auditSource(request)));
+        return reply
+          .code(201)
+          .send(await createScimToken(env, request.tenant, name, request.caller!.id, auditSource(request)));
       },
     );
 
     app.get(
       '/scim-tokens',
       { preHandler, schema: { response: { 200: jsonSchema(scimTokensResponseSchema) } } },
-      async (): Promise<ScimTokenSummary[]> => (await repo.listScimTokens(env.ctx.db)).map(scimTokenSummary),
+      async (request): Promise<ScimTokenSummary[]> =>
+        (await repo.listScimTokens(env.ctx.tenancy.db(request.tenant))).map(scimTokenSummary),
     );
 
     app.delete(
@@ -48,7 +51,7 @@ export const scimTokenRoutes =
       { preHandler, schema: { params: jsonSchema(identityIdParamsSchema, { io: 'input' }) } },
       async (request, reply) => {
         const { id } = request.params as { readonly id: string };
-        await revokeScimToken(env, id, auditSource(request));
+        await revokeScimToken(env, request.tenant, id, auditSource(request));
         return reply.code(204).send();
       },
     );

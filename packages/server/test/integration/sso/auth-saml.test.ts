@@ -177,7 +177,7 @@ describeDb('SAML sign-in (saml-scim spec §3.2, §3.3, §6.1)', () => {
         headers: { authorization: `Bearer ${body.token}` },
       });
       expect(me.statusCode).toBe(200);
-      expect(await repo.samlIdentityOf(h.db, IDP_ENTITY_ID, 'ada-persistent-id')).toMatchObject({
+      expect(await repo.samlIdentityOf(h.tdb, IDP_ENTITY_ID, 'ada-persistent-id')).toMatchObject({
         userId: body.user.id,
       });
       const signedIn = await h.db.query<{ details: { method: string } }>(
@@ -226,7 +226,7 @@ describeDb('SAML sign-in (saml-scim spec §3.2, §3.3, §6.1)', () => {
       });
       expect(res.statusCode).toBe(302);
       expect(loopback(res).searchParams.get('error')).toBe(reason);
-      expect(await repo.samlFlowById(h.db, flow.flowId)).toBeUndefined();
+      expect(await repo.samlFlowById(h.tdb, flow.flowId)).toBeUndefined();
       expect(await failures()).toEqual([expect.objectContaining({ method: 'saml', reason })]);
       await expectNoSecretsInAudit(h.db);
     });
@@ -271,8 +271,8 @@ describeDb('SAML sign-in (saml-scim spec §3.2, §3.3, §6.1)', () => {
         b.relayState,
       );
       expect(loopback(res).searchParams.get('error')).toBe('saml-in-response-to');
-      expect(await repo.samlFlowById(h.db, b.flowId)).toBeUndefined();
-      expect(await repo.samlFlowById(h.db, a.flowId)).toBeDefined();
+      expect(await repo.samlFlowById(h.tdb, b.flowId)).toBeUndefined();
+      expect(await repo.samlFlowById(h.tdb, a.flowId)).toBeDefined();
     });
 
     it('an unknown or expired RelayState gets the expired page', async () => {

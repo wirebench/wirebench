@@ -356,7 +356,7 @@ describeDb('migration 0020 on the frozen 0019 fixture (hosted spec §19.3, §19.
     await deleteCapturesBefore(asTenantQuerier(explaining), new Date(), 100);
     await catchUrlBySecret(asTenantQuerier(explaining), 'no-such-secret');
     await ciTokenByHash(asTenantQuerier(explaining), 'no-such-hash');
-    await scimTokenByHash(explaining, 'no-such-hash');
+    await scimTokenByHash(asTenantQuerier(explaining), 'no-such-hash');
     const [token, email, head, listing, retention, secret, ciToken, scimToken] = plans;
     expect(token).toContain('device_tokens_token_hash_key_0019');
     expect(email).toContain('users_email_lower_key_0019');
@@ -517,7 +517,7 @@ describeDb('migration 0020 on the frozen 0019 fixture (hosted spec §19.3, §19.
     expect(await insertGenesis(tdb, fixture.keys.auditChainKey)).toEqual(anchor);
     // sso: scim_users, by (tenant_id, user_id).
     const [scimUser] = (await db.query<{ user_id: string }>('select user_id from scim_users')).rows;
-    await upsertScimUser(db, scimUser!.user_id, 'ext-replaced', at);
+    await upsertScimUser(tdb, scimUser!.user_id, 'ext-replaced', at);
     expect((await db.query('select external_id from scim_users where user_id = $1', [scimUser!.user_id])).rows).toEqual(
       [{ external_id: 'ext-replaced' }],
     );
@@ -528,7 +528,7 @@ describeDb('migration 0020 on the frozen 0019 fixture (hosted spec §19.3, §19.
           from session_logs`,
       )
     ).rows;
-    const resumed = await openLog(db, {
+    const resumed = await openLog(tdb, {
       id: 'LOG-new',
       workspaceId: log!.workspace_id as string,
       userId: log!.user_id as string,
@@ -544,7 +544,7 @@ describeDb('migration 0020 on the frozen 0019 fixture (hosted spec §19.3, §19.
     expect(resumed).toMatchObject({ created: false, log: { id: log!.id } });
     // agent: the code by (tenant_id, user_id), and the pairing by (tenant_id, user_id, agent_id).
     const [code] = (await db.query<{ user_id: string }>('select user_id from agent_pairing_codes')).rows;
-    await replaceCode(db, { userId: code!.user_id, codeHash: 'hash-replaced', expiresAt: at });
+    await replaceCode(tdb, { userId: code!.user_id, codeHash: 'hash-replaced', expiresAt: at });
     expect((await db.query('select code_hash from agent_pairing_codes')).rows).toEqual([
       { code_hash: 'hash-replaced' },
     ]);
@@ -553,7 +553,7 @@ describeDb('migration 0020 on the frozen 0019 fixture (hosted spec §19.3, §19.
         'select id, user_id, agent_id from agent_pairings',
       )
     ).rows;
-    const upserted = await upsertPairing(db, {
+    const upserted = await upsertPairing(tdb, {
       id: 'P-new',
       userId: pairing!.user_id,
       agentId: pairing!.agent_id,

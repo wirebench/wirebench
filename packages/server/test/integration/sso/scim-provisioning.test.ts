@@ -99,8 +99,8 @@ describeDb('group → team links and provisioned memberships (saml-scim spec §3
     expect(res.statusCode, res.body).toBe(200);
     expect(res.json()).toMatchObject({ memberCount: 3, team: { id: teamId, name: 'Payments' } });
     expect(await members()).toEqual(['ada@example.com', 'bob@example.com', 'root@example.com']);
-    expect(await repo.countProvisioned(h.db, teamId, ada.user.id)).toBe(1);
-    expect(await repo.countProvisioned(h.db, teamId, bob.user.id)).toBe(0);
+    expect(await repo.countProvisioned(h.tdb, teamId, ada.user.id)).toBe(1);
+    expect(await repo.countProvisioned(h.tdb, teamId, bob.user.id)).toBe(0);
     expect(access).toEqual([{ teamId, userId: ada.user.id }]);
     const added = events.filter((e) => e.action === 'team.member_added');
     expect(added).toHaveLength(1);
@@ -123,7 +123,7 @@ describeDb('group → team links and provisioned memberships (saml-scim spec §3
     const two = await group('Two', [ada]);
     await link(one);
     await link(two);
-    expect(await repo.countProvisioned(h.db, teamId, ada.user.id)).toBe(2);
+    expect(await repo.countProvisioned(h.tdb, teamId, ada.user.id)).toBe(2);
     await removeMember(one, ada);
     expect(await members()).toContain('ada@example.com');
     await removeMember(two, ada);
@@ -142,7 +142,7 @@ describeDb('group → team links and provisioned memberships (saml-scim spec §3
     const groupId = await group('Payments eng', [ada]);
     await link(groupId);
     await teamsRepo.deleteMember(h.tdb, teamId, ada.user.id);
-    expect(await repo.countProvisioned(h.db, teamId, ada.user.id)).toBe(0);
+    expect(await repo.countProvisioned(h.tdb, teamId, ada.user.id)).toBe(0);
   });
 
   it('unlinking or deleting the group removes the SCIM-added members and keeps the hand-added ones', async () => {
@@ -163,7 +163,7 @@ describeDb('group → team links and provisioned memberships (saml-scim spec §3
     const groupId = await group('Payments eng', [ada]);
     await link(groupId);
     await teamsRepo.deleteTeam(h.tdb, teamId);
-    expect((await repo.scimGroupById(h.db, groupId))!.teamId).toBeNull();
+    expect((await repo.scimGroupById(h.tdb, groupId))!.teamId).toBeNull();
   });
 
   it('the API is admin-only, feature-gated, and refuses an unknown team or group', async () => {

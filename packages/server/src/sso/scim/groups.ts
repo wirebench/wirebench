@@ -3,7 +3,8 @@
  * a team until a server admin links it (§3.6). Members are SCIM user ids, which are Wirebench user ids.
  */
 import type { FastifyInstance, FastifyRequest } from 'fastify';
-import { recordAudit, type Querier } from '../../context.js';
+import { recordAudit } from '../../context.js';
+import type { TenantQuerier } from '../../tenancy/tenant-db.js';
 import { isUniqueViolation } from '../../db/errors.js';
 import { newId } from '../../identity/tokens.js';
 import type { SsoEnv } from '../env.js';
@@ -47,13 +48,11 @@ function excludesMembers(request: FastifyRequest): boolean {
 export const groupRoutes =
   (env: SsoEnv) =>
   (scim: FastifyInstance): void => {
-    const db = env.ctx.db;
-
     async function resources(
       request: FastifyRequest,
       rows: readonly repo.ScimGroupRow[],
       withMembers: boolean,
-      q: Querier = db,
+      q: TenantQuerier = env.ctx.tenancy.db(request.tenant),
     ) {
       // The SCIM base of the request's tenant (spec §19.5).
       const base = env.urlsFor(request).scimBaseUrl;
@@ -86,7 +85,7 @@ export const groupRoutes =
       }));
     }
 
-    async function assertUsers(tx: Querier, ids: readonly string[]): Promise<void> {
+    async function assertUsers(tx: TenantQuerier, ids: readonly string[]): Promise<void> {
       const unknown = await repo.unknownUserIds(tx, ids);
       if (unknown.length > 0) throw scimError(400, `No user with id ${unknown[0]!}.`, 'invalidValue');
     }
@@ -142,20 +141,30 @@ export const groupRoutes =
         'externalId',
       ]);
       const { startIndex, count } = pageOf(query);
-      const page = await repo.listScimGroupPage(db, filter as repo.ScimGroupFilter | undefined, startIndex - 1, count);
-      return {
-        schemas: [LIST_RESPONSE_SCHEMA],
-        totalResults: page.total,
-        startIndex,
-        itemsPerPage: page.groups.length,
-        Resources: await resources(request, page.groups, !excludesMembers(request)),
-      };
+      // The page and its members: one unit.
+      return env.ctx.tenancy.db(request.tenant).transaction(async (tx) => {
+        const page = await repo.listScimGroupPage(
+          tx,
+          filter as repo.ScimGroupFilter | undefined,
+          startIndex - 1,
+          count,
+        );
+        return {
+          schemas: [LIST_RESPONSE_SCHEMA],
+          totalResults: page.total,
+          startIndex,
+          itemsPerPage: page.groups.length,
+          Resources: await resources(request, page.groups, !excludesMembers(request), tx),
+        };
+      });
     });
 
     scim.get('/Groups/:id', async (request) => {
-      const row = await repo.scimGroupById(db, (request.params as { id: string }).id);
-      if (row === undefined) throw notFound();
-      return (await resources(request, [row], !excludesMembers(request)))[0];
+      return env.ctx.tenancy.db(request.tenant).transaction(async (tx) => {
+        const row = await repo.scimGroupById(tx, (request.params as { id: string }).id);
+        if (row === undefined) throw notFound();
+        return (await resources(request, [row], !excludesMembers(request), tx))[0];
+      });
     });
 
     scim.post('/Groups', async (request, reply) => {

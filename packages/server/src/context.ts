@@ -136,6 +136,8 @@ export interface ScheduleRunFinished {
 export interface AgentUnpaired {
   readonly pairingId: string;
   readonly userId: string;
+  /** The tenant the pairing was in (hosted edition spec §19.8): a user id means nothing without it. */
+  readonly tenantId: string;
 }
 
 /** An after-commit listener: synchronous, never awaited, and its throw never reaches the caller (R3). */
