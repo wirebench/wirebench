@@ -18,6 +18,7 @@ import type { AuditEvent } from '@wirebench/engine';
 import type { FastifyBaseLogger } from 'fastify';
 import type { LicenseService } from '../../context.js';
 import type { SetTimer } from '../../hooks/env.js';
+import { STOP_PASS } from '../../tenancy/jobs.js';
 import type { Tenancy } from '../../tenancy/tenancy.js';
 import { claimForwardBatch, deleteForwarded } from '../repo.js';
 
@@ -121,13 +122,16 @@ export class AuditForwarder {
 
   private async pass(): Promise<ForwardPass> {
     if (this.stopped) return { outcome: 'stopped', sent: 0, nextDelayMs: 0 };
-    let sent = 0;
     let licensed = 0;
     let failure: unknown;
-    // The job loop's error line for a unit that failed is taken here, so a failure is logged once (below).
+    /** By tenant: what the sink accepted in that tenant's unit; it counts only once the unit committed. */
+    const sentIn = new Map<string, number>();
+    // The job loop's error line for a unit that failed is taken here, so a failure is logged once (below). A unit
+    // that failed to commit after its send deleted nothing: its events go again next pass, and are not counted.
     const loopLog = {
-      error: (fields: { readonly err?: unknown }) => {
+      error: (fields: { readonly err?: unknown; readonly tenantId?: string }) => {
         failure ??= fields.err;
+        if (fields.tenantId !== undefined) sentIn.delete(fields.tenantId);
       },
     };
     try {
@@ -149,31 +153,36 @@ export class AuditForwarder {
           }
           licensed++;
           const events = await claimForwardBatch(tx, this.deps.batchSize ?? FORWARD_BATCH);
-          if (events.length === 0) return;
+          if (events.length === 0) return this.stopped ? STOP_PASS : undefined;
           try {
             await this.deps.sink.send(events);
           } catch (error) {
-            // Nothing was deleted: the unit commits as it is, releasing the rows for the next pass.
+            // Nothing was deleted: the unit commits as it is, releasing the rows for the next pass. The sink is the
+            // server's one (until slice 7), so the tenants after this one would only wait on it too.
             failure ??= error;
-            return;
+            return STOP_PASS;
           }
           await deleteForwarded(
             tx,
             events.map((event) => event.id),
           );
-          sent += events.length;
+          sentIn.set(scope.tenantId, events.length);
+          // A stop waits for this tenant's batch, not for every tenant's.
+          return this.stopped ? STOP_PASS : undefined;
         },
         loopLog,
       );
     } catch (error) {
       failure ??= error;
     }
-    if (failure !== undefined && sent === 0) {
-      // One line when forwarding starts failing, never one per failure. Only the error's class and
-      // message: a sink's error must never carry the token or an event body.
+    const sent = [...sentIn.values()].reduce((sum, count) => sum + count, 0);
+    if (failure !== undefined) {
+      // One line when forwarding starts failing, never one per failure, even when another tenant's batch went.
+      // Only the error's class and message: a sink's error must never carry the token or an event body.
       if (this.failures === 0) this.deps.log.warn({ reason: reasonOf(failure) }, 'audit forwarding failing');
       this.failures += 1;
-      return { outcome: 'failed', sent: 0, nextDelayMs: backoff(this.failures) };
+      if (sent === 0) return { outcome: 'failed', sent: 0, nextDelayMs: backoff(this.failures) };
+      return { outcome: 'sent', sent, nextDelayMs: FORWARD_BUSY_MS };
     }
     if (licensed === 0) return { outcome: 'unlicensed', sent: 0, nextDelayMs: FORWARD_UNLICENSED_MS };
     if (this.failures > 0) this.deps.log.info({ failures: this.failures }, 'audit forwarding recovered');

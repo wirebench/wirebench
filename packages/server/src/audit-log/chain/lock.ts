@@ -5,9 +5,12 @@
  *
  * Advisory locks are database-wide, so the lock is keyed by the schema and the tenant together (hosted edition
  * spec §19.8 guard 5): the two-int form takes {@link AUDIT_CHAIN_LOCK_CLASS} and
- * `hashtext(current_schema() || ':' || tenant_id)`. One chain per tenant, so two tenants' passes never wait on
- * each other, and servers (or test files) on different schemas of one database never share it.
+ * `hashtext(<schema> || ':' || tenant_id)`. One chain per tenant, so two tenants' passes never wait on each other,
+ * and servers (or test files) on different schemas of one database never share it. The schema is the server's,
+ * as the seat and running locks name it (`SERVER_SCHEMA`), coalesced to `''`: with an empty `search_path`,
+ * `current_schema()` is null, the key would be null, and the lock would read as held for ever (Task 14 review M2).
  */
+import { SERVER_SCHEMA } from '../../tenancy/running-lock.js';
 import type { TenantQuerier } from '../../tenancy/tenant-db.js';
 
 /** The lock's first key, an int4 (the ASCII of "wbac"); the second hashes the schema and the tenant. */
@@ -16,7 +19,7 @@ export const AUDIT_CHAIN_LOCK_CLASS = 0x77626163;
 /** Takes the unit's tenant's chain lock if it is free, without waiting; true when taken. */
 export async function tryLockChain(tx: TenantQuerier): Promise<boolean> {
   const result = await tx.query<{ locked: boolean }>(
-    "select pg_try_advisory_xact_lock($1::int, hashtext(current_schema() || ':' || $2::text)) as locked",
+    `select pg_try_advisory_xact_lock($1::int, hashtext(coalesce(${SERVER_SCHEMA}, '') || ':' || $2::text)) as locked`,
     [AUDIT_CHAIN_LOCK_CLASS, tx.scope.tenantId],
   );
   return result.rows[0]?.locked === true;

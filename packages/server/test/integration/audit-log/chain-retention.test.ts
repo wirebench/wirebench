@@ -374,6 +374,17 @@ describeDb('retention with a chain key (audit-chain spec §3.3)', () => {
     expect(await walk()).toEqual([3, 4]);
   });
 
+  it('the lock is taken with an empty search_path too, never read as held for ever (Task 14 review M2)', async () => {
+    const taken = await tdb.transaction(async (tx) => {
+      await tx.query("select set_config('search_path', '', true)");
+      expect(
+        (await tx.query<{ schema: string | null }>('select current_schema() as schema')).rows[0]!.schema,
+      ).toBeNull();
+      return tryLockChain(tx);
+    });
+    expect(taken).toBe(true);
+  });
+
   it('the lock is per schema: a pass holding it here does not hold it for another schema of the database', async () => {
     const other = await testDatabase();
     try {

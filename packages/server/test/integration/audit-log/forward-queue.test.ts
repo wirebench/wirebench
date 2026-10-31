@@ -93,20 +93,19 @@ function recordingLog() {
   return { lines, log: logger as unknown as FastifyBaseLogger };
 }
 
-function licensed(features: string[]): LicenseService & { features: string[] } {
+/** `features` for the tenant `tenantId()` names, and none for any other: a read of the wrong tenant's license shows. */
+function licensed(features: string[], tenantId: () => string): LicenseService & { features: string[] } {
   const base = permissiveLicense();
   const service = {
     ...base,
     features,
-    state: (): Promise<LicenseState> =>
+    state: (of: Parameters<LicenseService['state']>[0]): Promise<LicenseState> =>
       Promise.resolve({
         edition: 'enterprise',
         status: 'active',
         seats: { used: 0, limit: null },
-        features: [...service.features],
+        features: ('tenantId' in of ? of.tenantId : of.tenant.tenantId) === tenantId() ? [...service.features] : [],
       }),
-    // The forwarder reads the license without a scope until Task 14 runs it per tenant.
-    stateWithoutScope: (): Promise<LicenseState> => service.state(),
   };
   return service;
 }
@@ -133,7 +132,7 @@ describeDb('the audit forward outbox and forwarder (issue #209)', () => {
     new AuditForwarder({
       tenancy,
       sink,
-      license: () => licensed(['audit-log']),
+      license: () => licensed(['audit-log'], () => tdb.scope.tenantId),
       now: clock,
       setTimer: manualTimer().setTimer,
       log: recordingLog().log,
@@ -248,7 +247,7 @@ describeDb('the audit forward outbox and forwarder (issue #209)', () => {
     it('without the audit-log feature sends nothing, keeps the rows, and checks again after 60 s', async () => {
       await forwarding(db, event(1));
       const sink = new FakeSink();
-      const license = licensed([]);
+      const license = licensed([], () => tdb.scope.tenantId);
       const { lines, log } = recordingLog();
       const f = forwarder(sink, { license: () => license, log });
       expect(await f.runOnce()).toEqual({ outcome: 'unlicensed', sent: 0, nextDelayMs: FORWARD_UNLICENSED_MS });
