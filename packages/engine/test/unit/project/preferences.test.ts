@@ -527,7 +527,7 @@ describe('ui.palette', () => {
   });
 
   it('lists the colour themes in the order the picker shows them', () => {
-    expect(PALETTES).toEqual(['default', 'field-kit', 'sandstone', 'dusk', 'seed', 'pith', 'rind']);
+    expect(PALETTES).toEqual(['default', 'field-kit', 'sandstone', 'dusk', 'seed', 'pith', 'rind', 'plume']);
   });
 
   it.each(PALETTES)('keeps the known palette %s', (palette) => {

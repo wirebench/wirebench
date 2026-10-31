@@ -65,7 +65,7 @@ async function closeSettings(page: Page): Promise<void> {
 async function openColourThemePicker(page: Page): Promise<void> {
   await runCommand(page, 'Theme: choose colour theme');
   await expect(page.getByTestId('quick-open-input')).toBeVisible({ timeout: 20_000 });
-  await expect(page.locator('[data-testid="palette-colour-theme"]')).toHaveCount(7);
+  await expect(page.locator('[data-testid="palette-colour-theme"]')).toHaveCount(8);
 }
 
 test.describe('request properties and preferences', () => {
