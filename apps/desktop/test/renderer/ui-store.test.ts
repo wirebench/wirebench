@@ -83,6 +83,8 @@ describe('ui persistence', () => {
       // Carried forward from the removed `details` slice; see ui-state-v4.test.tsx.
       slideOver: { ...DEFAULT_UI_STATE.slideOver, codeShell: 'powershell' },
       theme: 'light',
+      // A v3 blob predates the colour theme.
+      palette: 'default',
       editorLineNumbers: false,
       editorLayout: { orientation: 'stacked', mode: 'tabs' },
       workspaces: { w1: { tabs: [{ kind: 'request', id: 'req-1' }], activeId: 'req-1' } },
@@ -284,6 +286,7 @@ describe('useUiStore', () => {
       'console',
       'editorLayout',
       'editorLineNumbers',
+      'palette',
       'sidebar',
       'slideOver',
       'theme',

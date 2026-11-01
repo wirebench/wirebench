@@ -711,9 +711,10 @@ describe('PreferencesEditor — Appearance and Behaviour', () => {
     for (const label of ['Font family', 'Font size', 'Tab size', 'Line numbers', 'Word wrap']) {
       expect(screen.getByLabelText(label)).toBeTruthy();
     }
-    expect(screen.getByRole('radiogroup', { name: 'Theme' })).toBeTruthy();
+    expect(screen.getByRole('radiogroup', { name: 'Colour theme' })).toBeTruthy();
+    // The theme's mode and the default layout's mode.
+    expect(screen.getAllByRole('radiogroup', { name: 'Mode' })).toHaveLength(2);
     expect(screen.getByRole('radiogroup', { name: 'Orientation' })).toBeTruthy();
-    expect(screen.getByRole('radiogroup', { name: 'Mode' })).toBeTruthy();
     for (const label of ['Validate before sending', 'Autosave projects', 'History entries kept']) {
       expect(screen.queryByLabelText(label)).toBeNull();
     }
@@ -731,7 +732,7 @@ describe('PreferencesEditor — Appearance and Behaviour', () => {
     ]) {
       expect(screen.getByLabelText(label)).toBeTruthy();
     }
-    expect(screen.queryByRole('radiogroup', { name: 'Theme' })).toBeNull();
+    expect(screen.queryByRole('radiogroup', { name: 'Colour theme' })).toBeNull();
     expect(screen.queryByLabelText('Tab size')).toBeNull();
   });
 });

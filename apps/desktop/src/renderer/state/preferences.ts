@@ -21,6 +21,7 @@ import { useUiStore } from './ui.js';
  * The theme lives in two places by design. `preferences.ui.theme` is the persisted truth, but
  * the shell reads the `ui` store many times per render and must not wait on IPC, so every
  * incoming document is also pushed into that store — and the title-bar toggle writes back here.
+ * The colour theme (`ui.palette`) is mirrored the same way.
  */
 export interface PreferencesStore {
   readonly preferences: PreferencesWire;
@@ -65,6 +66,7 @@ export const usePreferencesStore = create<PreferencesStore>((set, get) => {
     setKeybindingOverrides(preferences.shortcuts);
     const ui = useUiStore.getState();
     ui.setTheme(preferences.ui.theme);
+    ui.setPalette(preferences.ui.palette);
     ui.setEditorLineNumbers(preferences.editor.lineNumbers);
     ui.setEditorLayout(preferences.ui.defaultLayout);
     useExchangesStore.getState().setLogCap(preferences.ui.logSize);

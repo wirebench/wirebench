@@ -34,8 +34,9 @@ export function ActivityBar({ platform }: { readonly platform: Platform }) {
   return (
     <nav
       data-testid="activity-bar"
+      data-chrome=""
       aria-label="Views"
-      className="flex w-activity-bar shrink-0 flex-col items-center gap-1 border-r border-hairline bg-surface-sunken py-2"
+      className="flex w-activity-bar shrink-0 flex-col items-center gap-1 border-r border-hairline bg-surface-chrome py-2"
     >
       {AREAS.filter((area) => enabledAreas.includes(area.id)).map((area) => {
         const Icon = AREA_ICONS[area.rail.icon];

@@ -96,6 +96,7 @@ const context: CommandContext = {
     console: DEFAULT_UI_STATE.console,
     slideOver: DEFAULT_UI_STATE.slideOver,
     theme: DEFAULT_UI_STATE.theme,
+    palette: DEFAULT_UI_STATE.palette,
     editorLineNumbers: DEFAULT_UI_STATE.editorLineNumbers,
     editorLayout: DEFAULT_UI_STATE.editorLayout,
   },

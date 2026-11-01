@@ -34,7 +34,7 @@ you press <kbd>Enter</kbd> or move on, and <kbd>Escape</kbd> puts back the previ
 
 | Group | Section | What it covers |
 | --- | --- | --- |
-| General | **Appearance** | Theme (system, light or dark); the editor's font family and size, tab size, line numbers and word wrap; the default request layout (side by side or stacked, split or tabs) |
+| General | **Appearance** | Theme (system, light or dark) and colour theme; the editor's font family and size, tab size, line numbers and word wrap; the default request layout (side by side or stacked, split or tabs) |
 | | **Behaviour** | Validate before sending, format responses, autosave, confirm before deleting, preview tabs, and how many history entries and HTTP Log rows to keep |
 | | **Features** | Which protocols and optional features this machine has on; a change applies at the next start, and a row says when a team policy or a requirement keeps it off — see [Feature switches](/wirebench/docs/guides/feature-switches/) |
 | | **Keyboard shortcuts** | Every command's keybinding, and a way to change it |
@@ -154,8 +154,28 @@ login shell (`-l`). A change applies to the next local terminal you open.
 
 ## Theme
 
-Settings → Appearance → **Theme** switches between **System** (follow the operating system), **Light**, and
+Settings → Appearance → **Mode** switches between **System** (follow the operating system), **Light**, and
 **Dark**.
+
+### Colour themes
+
+A colour theme sets the colours; the mode above still decides light or dark, so every colour theme comes
+in both and **System** keeps following the operating system whichever one you pick.
+
+- **Default** — the warm neutral surfaces and terracotta accent Wirebench has always had.
+- **Field kit** — espresso-brown surfaces with an orange accent; at its best in dark mode.
+- **Sandstone** — tan surfaces with a violet accent, orange kept for errors; at its best in light mode.
+- **Dusk** — a violet title bar and activity bar around a neutral work area, with an orange accent.
+- **Seed** — red throughout: cream or burgundy surfaces with a wine accent; errors show in amber.
+- **Pith** — calm stone and charcoal surfaces, with crimson only on the accent; errors show in amber.
+- **Rind** — a maroon title bar and activity bar around a neutral work area, with a crimson accent.
+- **Plume** — cool grey and charcoal surfaces with a mauve accent and mint for success.
+
+Choose one from the cards under **Colour theme** in Settings → Appearance, or run
+**Theme: choose colour theme…** from the command palette: moving through the list with the arrow keys
+previews each theme on the whole window, <kbd>Enter</kbd> keeps the one under the highlight and
+<kbd>Escape</kbd> puts back the one you had. The status bar names the colour theme and the mode; clicking
+it cycles the mode.
 
 ## Rebinding shortcuts
 

@@ -3,6 +3,7 @@ import {
   DEFAULT_PREFERENCES,
   describePreferenceLimit,
   mergePreferences,
+  PALETTES,
   PREFERENCE_NUMBER_LIMITS,
   preferencesPatchProblems,
   preferencesSchema,
@@ -513,5 +514,39 @@ describe('the features section (phase 4 spec §4.1)', () => {
     const merged = mergePreferences({ features: { 'Not An Id': false }, updates: { checkOnLaunch: true } });
     expect(merged.features).toEqual({});
     expect(merged.updates.checkOnLaunch).toBe(true);
+  });
+});
+
+describe('ui.palette', () => {
+  it('defaults to the default palette', () => {
+    expect(DEFAULT_PREFERENCES.ui.palette).toBe('default');
+  });
+
+  it('merges a document without a palette to the default palette', () => {
+    expect(mergePreferences({ ui: { theme: 'light' } }).ui).toMatchObject({ theme: 'light', palette: 'default' });
+  });
+
+  it('lists the colour themes in the order the picker shows them', () => {
+    expect(PALETTES).toEqual(['default', 'field-kit', 'sandstone', 'dusk', 'seed', 'pith', 'rind', 'plume']);
+  });
+
+  it.each(PALETTES)('keeps the known palette %s', (palette) => {
+    expect(mergePreferences({ ui: { palette } }).ui.palette).toBe(palette);
+    expect(preferencesPatchProblems({ ui: { palette } })).toEqual([]);
+  });
+
+  it('loads an unknown palette as the default one and keeps the rest of the section', () => {
+    // A newer build may know a palette this one does not; the file must still load, mode included.
+    const merged = mergePreferences({ ui: { palette: 'neon', theme: 'light', historyCap: 25 } });
+    expect(merged.ui).toMatchObject({ palette: 'default', theme: 'light', historyCap: 25 });
+  });
+
+  it('refuses an unknown palette in a patch', () => {
+    expect(preferencesPatchProblems({ ui: { palette: 'neon' } })).not.toEqual([]);
+    expect(preferencesPatchProblems({ ui: { palette: 'dusk' } })).toEqual([]);
+  });
+
+  it('accepts an unknown ui key so an older build can read a newer file', () => {
+    expect(preferencesSchema.shape.ui.safeParse({ theme: 'dark', somethingNewer: true }).success).toBe(true);
   });
 });

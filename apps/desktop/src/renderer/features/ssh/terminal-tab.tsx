@@ -622,12 +622,13 @@ function TerminalPane({
         copySelection();
       }, COPY_ON_SELECT_DEBOUNCE_MS);
     });
-    // The app theme switching restyles a terminal that follows it; a palette scheme stays as it is.
+    // The app's mode or colour theme switching restyles a terminal that follows it; a terminal scheme
+    // (Preferences → Terminal, or the host's) stays as it is.
     const themeWatch = new MutationObserver(() => {
       term.options.theme = look().theme;
       highlights.refresh();
     });
-    themeWatch.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+    themeWatch.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'data-palette'] });
 
     let disposed = false;
     typeAhead.current.clear();
@@ -887,7 +888,8 @@ function TerminalPane({
     <div
       className={`flex h-full min-w-0 flex-col ${
         receiving
-          ? 'outline-2 -outline-offset-2 outline-status-danger'
+          ? // Dashed, so a receiving pane differs from the focused one by more than colour (#803).
+            'outline-2 -outline-offset-2 outline-dashed outline-status-danger'
           : split && focused
             ? 'outline-1 -outline-offset-1 outline-accent'
             : ''

@@ -268,6 +268,8 @@ interface RowProps {
   readonly aside?: React.ReactNode;
   /** A line under the hint, inside the row: why the control is unavailable here. */
   readonly note?: React.ReactNode;
+  /** The control sits under the label, full width, instead of beside it (a grid of cards). */
+  readonly block?: boolean;
   readonly children: React.ReactNode;
 }
 
@@ -303,6 +305,7 @@ function Row({
   errorId,
   aside,
   note,
+  block = false,
   children,
 }: RowProps) {
   const variant = useContext(VariantContext);
@@ -342,7 +345,7 @@ function Row({
       data-setting-row=""
       {...(locked ? { 'data-locked': 'true' } : {})}
       {...(modified ? { 'data-modified': 'true' } : {})}
-      className="group/row flex min-h-14 items-center gap-4 border-t border-hairline px-4 py-2.5"
+      className={`group/row flex min-h-14 gap-4 border-t border-hairline px-4 py-2.5 ${block ? 'flex-col items-stretch gap-2.5' : 'items-center'}`}
     >
       <div className="min-w-0 flex-1">
         {search !== undefined && (
@@ -380,7 +383,7 @@ function Row({
         {note !== undefined && <div className="mt-0.5 text-xs text-fg-subtle">{note}</div>}
         {error !== undefined && <RowError id={errorId} message={error} />}
       </div>
-      <div className="flex shrink-0 items-center gap-2">
+      <div className={block ? 'min-w-0' : 'flex shrink-0 items-center gap-2'}>
         {children}
         {aside}
       </div>
@@ -394,19 +397,39 @@ export interface SettingsRowProps {
   readonly locked?: boolean;
   /** The id of the control inside, for the `<label>`; omit when there is no single control. */
   readonly htmlFor?: string;
+  /** The `<label>`'s id, for a control that names itself with `aria-labelledby` (a radio group). */
+  readonly labelId?: string;
+  /** The dotted preference key this row edits, for the modified dot and per-row Reset. */
+  readonly setting?: string;
+  /** Puts the control under the label at full width, for a control too wide to sit beside it. */
+  readonly block?: boolean;
   readonly children: React.ReactNode;
 }
 
 /**
  * A row with a custom control — a keychain field, a pair of Browse…/Clear buttons, a version
- * readout. Same layout, search and lock behaviour as the typed rows.
+ * readout, the colour theme cards. Same layout, search and lock behaviour as the typed rows.
  */
-export function SettingsRow({ label, hint, locked = false, htmlFor, children }: SettingsRowProps) {
+export function SettingsRow({
+  label,
+  hint,
+  locked: lockedProp = false,
+  htmlFor,
+  labelId,
+  setting,
+  block = false,
+  children,
+}: SettingsRowProps) {
+  const row = useRowState(setting, lockedProp);
   return (
     <Row
       label={label}
-      locked={locked}
+      locked={row.locked}
+      modified={row.modified}
+      onReset={row.reset}
+      block={block}
       {...(htmlFor === undefined ? {} : { htmlFor })}
+      {...(labelId === undefined ? {} : { labelId })}
       {...(hint === undefined ? {} : { hint })}
     >
       {children}

@@ -73,6 +73,9 @@ describe('Settings → Features (phase 4 spec §4.3)', () => {
     // Rendered outside the Settings page's card provider, the row is the compact checkbox.
     expect(screen.getByTestId<HTMLInputElement>('feature-switch-grpc').checked).toBe(false);
     expect(screen.getByTestId('feature-stage-mcp').textContent).toContain('Experimental');
+    // The accent as text on accent-muted is under 4.5:1; the chip's word takes the default foreground (#803).
+    expect(screen.getByTestId('feature-stage-mcp').className).toMatch(/\btext-fg-default\b/);
+    expect(screen.getByTestId('feature-stage-mcp').className).not.toMatch(/\btext-accent\b/);
     expect(screen.getByTestId('feature-note-rest').textContent).toContain('Off by team policy for Payments');
     expect(screen.getByTestId<HTMLInputElement>('feature-switch-rest').disabled).toBe(true);
     expect(screen.getByTestId('feature-note-webhooks').textContent).toContain('Requires REST');

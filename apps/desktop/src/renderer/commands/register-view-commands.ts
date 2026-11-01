@@ -28,11 +28,11 @@ const RESPONSE_VIEWS: readonly (readonly [id: CommandId, view: ResponseViewType]
 
 /**
  * Registers the General and View commands: the palette, the panel toggles, the activity-bar
- * views and the theme switch.
+ * views, the theme switch and the colour theme picker.
  *
  * @param openPalette - Opens the command palette in the given mode; owned by the shell.
  */
-export function registerViewCommands(openPalette: (mode: 'commands' | 'quick-open') => void): void {
+export function registerViewCommands(openPalette: (mode: 'commands' | 'quick-open' | 'palette') => void): void {
   registerCommand({
     ...catalogEntry('palette.open'),
     run: () => {
@@ -112,6 +112,12 @@ export function registerViewCommands(openPalette: (mode: 'commands' | 'quick-ope
     ...catalogEntry('view.toggleTheme'),
     run: () => {
       cycleTheme();
+    },
+  });
+  registerCommand({
+    ...catalogEntry('view.choosePalette'),
+    run: () => {
+      openPalette('palette');
     },
   });
 

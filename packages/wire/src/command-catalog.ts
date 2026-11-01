@@ -359,6 +359,11 @@ export const COMMAND_CATALOG: Readonly<Record<CommandId, CommandCatalogEntry>> =
     label: 'Cycle Theme (Dark, Light, System)',
     category: 'View',
   },
+  'view.choosePalette': {
+    id: 'view.choosePalette',
+    label: 'Theme: choose colour theme…',
+    category: 'View',
+  },
   'preferences.open': {
     id: 'preferences.open',
     label: 'Open Preferences',

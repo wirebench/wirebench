@@ -84,6 +84,7 @@ export interface SettingsNavGroup {
 
 /** Appearance: how things look. Fields only; nothing here changes what they store. */
 export const APPEARANCE_KEYS = [
+  'ui.palette',
   'ui.theme',
   'editor.fontFamily',
   'editor.fontSize',

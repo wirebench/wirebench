@@ -1372,6 +1372,24 @@ describe('split panes', () => {
     expect(lastTerminal()).toBe(term);
   });
 
+  it('a terminal following the app restyles when the colour theme alone changes', async () => {
+    await mount();
+    const term = lastTerminal();
+    const root = document.documentElement;
+    try {
+      // The style attribute is not watched, so only the data-palette flip below can pick this up.
+      root.style.setProperty('--wb-bg-sunken', '#121010');
+      root.dataset['palette'] = 'pith';
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(optionsOf(term).theme?.background).toBe('#121010');
+    } finally {
+      root.style.removeProperty('--wb-bg-sunken');
+      delete root.dataset['palette'];
+    }
+  });
+
   it('⌘+ / ⌘− / ⌘0 zoom the focused terminal only, and the shell never sees them', async () => {
     await mount();
     await splitOnSameHost();

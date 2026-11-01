@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
-import { ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronDown, ChevronLeft, ChevronRight, Radio } from 'lucide-react';
 import { CookieManager } from '../features/cookies/cookie-manager.js';
 import { StartPage } from '../features/explorer/start-page.js';
 import { ChangedOnDiskBanner } from '../features/project/changed-on-disk-banner.js';
@@ -543,14 +543,17 @@ export function EditorArea() {
                   {recording && <RecordingMark />}
                   {forwarding !== undefined && <AgentForwardingMark state={forwarding} />}
                   {broadcasting[tab.id]?.on === true && (
-                    // Never missed while on (spec R8): drawn red, and named for screen readers.
+                    // Never missed while on (spec R8): drawn red, and named for screen readers. The
+                    // broadcast icon, not a dot: a red dot differs from the unsaved dot by colour alone.
                     <span
                       data-testid="editor-tab-broadcast"
                       title="Broadcasting"
                       aria-label="Broadcasting"
                       role="img"
-                      className="size-1.5 shrink-0 rounded-full bg-status-danger"
-                    />
+                      className="inline-flex shrink-0 text-status-danger"
+                    >
+                      <Radio size={11} aria-hidden="true" />
+                    </span>
                   )}
                   {dirty && (
                     // Announced, not just drawn: the dot is the only thing distinguishing a tab

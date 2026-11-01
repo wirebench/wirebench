@@ -20,6 +20,7 @@ import {
   Loader2,
   UnfoldVertical,
   Webhook,
+  XCircle,
 } from 'lucide-react';
 import { Button } from '../../components/button.js';
 import { showToast } from '../../components/toast.js';
@@ -58,7 +59,8 @@ import { openCatchUrlTab } from '../webhooks/webhooks-actions.js';
 import { useSyncStore } from '../../state/sync.js';
 import { useWebhooksStore } from '../../state/webhooks.js';
 import { scheduleStateOf, schedulesShown, useSchedulesStore } from '../../state/schedules.js';
-import { describeCron, STATE_DOT, STATE_LABEL } from '../schedules/schedule-format.js';
+import { describeCron } from '../schedules/schedule-format.js';
+import { ScheduleStateMark } from '../schedules/schedule-state-mark.js';
 import { openScheduleTab } from '../schedules/schedules-actions.js';
 import { useScriptValuesStore } from '../../state/script-values.js';
 import { ConvertScriptsDialog } from '../scripts/convert-scripts-dialog.js';
@@ -351,14 +353,7 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
           ) : node.data.kind === 'webhook-request' && node.data.method !== undefined ? (
             <MethodBadge method={node.data.method} title={`${node.data.method} ${label}`} compact />
           ) : node.data.kind === 'schedule' && node.data.scheduleState !== undefined ? (
-            <span
-              role="img"
-              data-testid="schedule-dot"
-              data-state={node.data.scheduleState}
-              aria-label={STATE_LABEL[node.data.scheduleState]}
-              title={STATE_LABEL[node.data.scheduleState]}
-              className={`mr-1 h-2 w-2 rounded-full ${STATE_DOT[node.data.scheduleState]}`}
-            />
+            <ScheduleStateMark state={node.data.scheduleState} />
           ) : (
             Icon !== undefined && <Icon size={13} />
           )}
@@ -504,7 +499,8 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
           </span>
         )}
         {node.data.problemCount !== undefined && node.data.problemCount > 0 && (
-          <span className="shrink-0 rounded-full bg-status-danger px-1.5 text-xs text-fg-on-accent">
+          <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-status-danger px-1.5 text-xs text-fg-on-accent">
+            <XCircle size={10} aria-hidden="true" />
             {node.data.problemCount}
           </span>
         )}
@@ -524,8 +520,9 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
           <span
             data-testid="schedule-failing"
             title={node.data.kind === 'schedule' ? 'Failing runs in a row' : 'Schedules failing now'}
-            className="shrink-0 rounded-full bg-status-danger px-1.5 text-xs text-fg-on-accent"
+            className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-status-danger px-1.5 text-xs text-fg-on-accent"
           >
+            <XCircle size={10} aria-hidden="true" />
             {String(node.data.failing)}
           </span>
         )}
