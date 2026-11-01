@@ -24,7 +24,7 @@ export interface TabsProps<T extends string> {
 const CHEVRON_PX = 18;
 
 const TAB_CLASS = 'inline-flex shrink-0 items-center gap-2 whitespace-nowrap border-b-2 px-3 text-sm transition-colors';
-const SELECTED_CLASS = 'border-accent text-fg-default';
+const SELECTED_CLASS = 'border-highlight text-fg-default';
 const UNSELECTED_CLASS = 'border-transparent text-fg-subtle hover:bg-surface-hover hover:text-fg-muted';
 /** Shows an element's `data-text` without putting it in the DOM's text. */
 const MEASURE_TEXT = 'before:content-[attr(data-text)]';

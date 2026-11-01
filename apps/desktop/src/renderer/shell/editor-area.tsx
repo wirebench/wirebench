@@ -94,10 +94,10 @@ function panelId(id: string): string {
 const STRIP_BUTTON_CLASS =
   'inline-flex w-7 shrink-0 items-center justify-center text-fg-subtle hover:bg-surface-raised hover:text-fg-default';
 
-// The open tab carries an accent bar along its bottom edge so it reads at a glance. It is a
+// The open tab carries a highlight bar along its bottom edge so it reads at a glance. It is a
 // pseudo-element, not a box-shadow, because the drag-and-drop marker already uses box-shadow.
 const ACTIVE_TAB_CLASS =
-  'relative bg-surface-raised text-fg-default after:pointer-events-none after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 after:bg-accent';
+  'relative bg-surface-raised text-fg-default after:pointer-events-none after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 after:bg-highlight';
 const INACTIVE_TAB_CLASS = 'text-fg-subtle hover:bg-surface-raised hover:text-fg-muted';
 
 const MENU_ITEM_CLASS =

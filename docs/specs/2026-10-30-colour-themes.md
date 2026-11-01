@@ -32,17 +32,21 @@ Date: 2026-10-30 · Status: approved · Branch: not started.
      follow-up**, not this change.
   8. **Plume added 2026-10-30 after the pigeon preview** (§3.6a), placed last in the picker.
   9. **Kiln added 2026-11-01 after its preview** (§3.6b), placed after Plume.
+ 10. **Trail added 2026-11-01** (§3.6c), after the grasshopper reel's own product shots: brown for
+     the body, slate blue for the panels, orange only in small hits. Placed after Kiln. Its orange
+     needs a **new highlight token** (§3.9), chosen over a tokens-only version that would have
+     been almost Sandstone.
 
 ## 1. Objective
 
 Wirebench has one look: a warm near-black ramp with a single terracotta accent, in dark or light.
-People who sit in the app all day want to pick a look they like. This change adds **eight colour
+People who sit in the app all day want to pick a look they like. This change adds **nine colour
 themes** next to today's, each with a light and a dark mode, chosen in Settings or the command
 palette and applied at once without a restart.
 
 Success means:
 
-- A user can pick Default, Field kit, Sandstone, Dusk, Seed, Pith, Rind, Plume or Kiln, and separately Dark,
+- A user can pick Default, Field kit, Sandstone, Dusk, Seed, Pith, Rind, Plume, Kiln or Trail, and separately Dark,
   Light or System.
 - The whole window follows: chrome, editors (Monaco), terminals, method badges, status colours.
 - The first frame after launch already has the chosen theme (no flash of Default).
@@ -56,14 +60,14 @@ They stay separate so `system` keeps following the OS for every palette.
 | Setting      | Values                                                                  | Default   |
 | ------------ | ----------------------------------------------------------------------- | --------- |
 | `ui.theme`   | `dark`, `light`, `system` (unchanged)                                   | `dark`    |
-| `ui.palette` | `default`, `field-kit`, `sandstone`, `dusk`, `seed`, `pith`, `rind`, `plume`, `kiln` | `default` |
+| `ui.palette` | `default`, `field-kit`, `sandstone`, `dusk`, `seed`, `pith`, `rind`, `plume`, `kiln`, `trail` | `default` |
 
 The order of `ui.palette`'s values is the order the picker shows them.
 
 The DOM carries both: `<html data-theme="dark" data-palette="sandstone">`. `default` sets no
 `data-palette` attribute, so today's CSS keeps working untouched.
 
-## 3. The eight palettes
+## 3. The nine palettes
 
 Each palette gives every colour token in `tokens.css` a value in both modes. Spacing, radius, type,
 geometry and layers are not palette tokens and never change. The values below are the starting
@@ -340,6 +344,44 @@ raised; and dark `--wb-status-danger` lightens to `#EF7D72` because Default's re
 on the `#252525` raised surface. Light restates Default's danger and focus values so the dark ones do
 not leak.
 
+### 3.6c Trail — sand and espresso, slate-blue accent, orange highlights
+
+The grasshopper palette as the reel applies it to a backpack, a watch and boots: brown and tan for
+the body, slate blue for the structural panels, orange only in small hits (zipper pulls, dial
+numbers), espresso for straps and soles. In the app that is sand (light) or espresso (dark)
+surfaces, slate blue as the accent — buttons, selection, links, the focus ring — and orange as the
+highlight (§3.9): the open tab's bar, the selected view tab's underline, count pills and
+changed-value dots. It uses no chrome colour of its own.
+
+| Token                 | Dark      | Light     |
+| --------------------- | --------- | --------- |
+| `--wb-bg-sunken`      | `#1A1210` | `#F2EBE3` |
+| `--wb-bg-base`        | `#231915` | `#F5EFE8` |
+| `--wb-bg-raised`      | `#2B201B` | `#FFFFFF` |
+| `--wb-bg-overlay`     | `#33261F` | `#FFFFFF` |
+| `--wb-bg-hover`       | `#34271F` | `#EDE4DA` |
+| `--wb-bg-active`      | `#3D2E25` | `#E3D7CA` |
+| `--wb-bg-selected`    | `#3E3D62` | `#DADAEC` |
+| `--wb-fg-default`     | `#F1E8DF` | `#452C24` |
+| `--wb-fg-muted`       | `#C9AE9A` | `#684A36` |
+| `--wb-fg-subtle`      | `#B09582` | `#7A5C48` |
+| `--wb-border-default` | `#3A2C25` | `#DCCDBE` |
+| `--wb-accent-default` | `#A5A5D6` | `#46467A` |
+| `--wb-accent-hover`   | `#B8B8E0` | `#383866` |
+| `--wb-accent-surface` | `#2C2A3D` | `#ECECF5` |
+| `--wb-accent-muted`   | `#4A4970` | `#C9C9E2` |
+| `--wb-fg-on-accent`   | `#1A1210` | `#FFFFFF` |
+| `--wb-fg-faint`       | `#A88A75` | `#7E6250` |
+| `--wb-border-strong`  | `#86705F` | `#9A8270` |
+| `--wb-highlight`      | `#E2734F` | `#B53D1D` |
+| `--wb-fg-on-highlight` | `#1A1210` | `#FFFFFF` |
+| `--wb-status-danger`  | `#F07A8A` | `#B02A3A` |
+
+The gate moved two values from the preview: the light sunken surface (title bar, status bar)
+lightens from tan `#E3D5C6` to `#F2EBE3` so status text — info blue at 3.78:1 was the lowest —
+clears 4.5:1, and the dark `--wb-border-strong` lifts to `#86705F` for 3:1 on raised. Danger
+takes Field kit's pinker reds (§3.8): Default's `#E0685F` sat almost on the orange highlight.
+
 ### 3.7 Tokens a palette does not list
 
 A token not in a palette's table keeps the value it has for that mode in Default. That covers the
@@ -381,6 +423,19 @@ Default's `--wb-status-danger` and `--wb-status-warning` in both modes.
 
 Kiln's accent is the same clay as Default's and it keeps Default's danger hue (only lightened in
 dark for contrast, §3.6b), so it relies on the same icon-or-word rule Default does.
+
+Trail's orange highlight sits where Default's danger red would, so it takes Field kit's pinker
+reds (dark `#F07A8A`, light `#B02A3A`); the highlight only marks selection and counts, never
+failure, and danger keeps its icon or word.
+
+### 3.9 The highlight token
+
+`--wb-highlight` (with `--wb-fg-on-highlight` for text on it) colours the small marks: the open
+editor tab's bar, the selected view tab's underline, the explorer's and console filter's count
+pills, and the "changed from default" dots in Settings and the variables table. The base block
+declares it as `var(--wb-accent-default)` (and the text as `var(--wb-fg-on-accent)`), so every
+palette that does not set it looks exactly as before. Trail is the one palette that sets it, to
+orange. The gate checks it as a 3:1 mark on base and raised, and its text at 4.5:1.
 
 ## 4. CSS structure
 

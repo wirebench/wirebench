@@ -34,6 +34,7 @@ export const PALETTE_LABEL: Readonly<Record<Palette, string>> = {
   rind: 'Rind',
   plume: 'Plume',
   kiln: 'Kiln',
+  trail: 'Trail',
 };
 
 /**

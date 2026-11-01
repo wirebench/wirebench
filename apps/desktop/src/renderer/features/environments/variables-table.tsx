@@ -222,7 +222,7 @@ function CurrentDot() {
       aria-label={CURRENT_NOTE}
       title={CURRENT_NOTE}
       data-testid="env-variable-current-dot"
-      className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-accent"
+      className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-highlight"
     />
   );
 }
