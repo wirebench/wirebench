@@ -2,7 +2,7 @@
  * The per-tenant layout (hosted edition spec §19.6): `tenantRoot` is the one builder of `tenants/<id>`, and every
  * tenant path derives from it.
  */
-import { mkdirSync, symlinkSync } from 'node:fs';
+import { chmodSync, mkdirSync, readdirSync, symlinkSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { hostDirectories } from '../../../src/host/server-platform.js';
@@ -85,6 +85,50 @@ describe('tenant paths', () => {
     // The root is a real directory, but it is not under the data directory's own tenants/.
     expect(() => tenantRoot(dataDir, A)).toThrow(expect.objectContaining({ code: 'tenancy-tenant-path-refused' }));
   });
+
+  it('refuses a missing root behind a tenants/ that links elsewhere, and the store writes nothing there (Task 21 review I1)', async () => {
+    const outside = join(dataDir, 'elsewhere');
+    mkdirSync(outside, { recursive: true });
+    symlinkSync(outside, join(dataDir, 'tenants'), 'dir');
+    expect(() => tenantRoot(dataDir, A)).toThrow(expect.objectContaining({ code: 'tenancy-tenant-path-refused' }));
+    const { NO_HOOKS_DIR, RepoStore } = await import('../../../src/repos/repo-store.js');
+    const { testGit } = await import('../../helpers/git.js');
+    const store = new RepoStore({ git: testGit(join(dataDir, NO_HOOKS_DIR)), dataDir });
+    await expect(store.create(A, '01J8ZC5Q0V7R3T9XK2M4N6P8QA')).rejects.toMatchObject({
+      code: 'tenancy-tenant-path-refused',
+    });
+    expect(readdirSync(outside)).toEqual([]);
+  });
+
+  it('refuses a directory beneath the root that links into another tenant (Task 21 review M2)', () => {
+    mkdirSync(join(dataDir, 'tenants', B.tenantId, 'repos'), { recursive: true });
+    mkdirSync(join(dataDir, 'tenants', A.tenantId, 'tmp'), { recursive: true });
+    symlinkSync(join(dataDir, 'tenants', B.tenantId, 'repos'), join(dataDir, 'tenants', A.tenantId, 'repos'), 'dir');
+    expect(() => tenantPaths(dataDir, A)).toThrow(expect.objectContaining({ code: 'tenancy-tenant-path-refused' }));
+    expect(tenantPaths(dataDir, B).repos).toBe(join(dataDir, 'tenants', B.tenantId, 'repos'));
+  });
+
+  it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)(
+    'refuses a root it cannot read with a message that names no path (Task 21 review M1)',
+    () => {
+      mkdirSync(join(dataDir, 'tenants', A.tenantId), { recursive: true });
+      chmodSync(join(dataDir, 'tenants'), 0o000);
+      try {
+        let caught: unknown;
+        try {
+          tenantRoot(dataDir, A);
+        } catch (error) {
+          caught = error;
+        }
+        expect(caught).toMatchObject({ code: 'tenancy-tenant-path-refused' });
+        expect((caught as Error).message).not.toContain(A.tenantId);
+        expect((caught as Error).message).not.toContain(dataDir);
+        expect(JSON.stringify(caught)).not.toContain(A.tenantId);
+      } finally {
+        chmodSync(join(dataDir, 'tenants'), 0o755);
+      }
+    },
+  );
 
   it('accepts a root that does not exist yet: the store creates it', () => {
     expect(tenantRoot(dataDir, A)).toBe(join(dataDir, 'tenants', A.tenantId));

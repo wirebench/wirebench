@@ -15,9 +15,9 @@
  * {@link tenantRoot} is the one function that builds `tenants/<id>`; every other tenant path derives from it. A
  * workspace or user id is only ever joined beneath a root it returned, so one id in two tenants is two places.
  */
-import { lstatSync, realpathSync } from 'node:fs';
+import { lstatSync, realpathSync, type Stats } from 'node:fs';
 import { readdir } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
+import { join, relative, resolve } from 'node:path';
 import { WirebenchError } from '@wirebench/engine';
 import type { TenantScope } from './scope.js';
 
@@ -50,9 +50,10 @@ export function tenantsDir(dataDir: string): string {
 /**
  * `<dataDir>/tenants/<scope.tenantId>`, absolute. It need not exist yet.
  *
- * @throws WirebenchError `tenancy-tenant-path-refused` when the id is not a canonical lower-case UUID, or the root
- *   exists and is a symlink, is not a directory, or resolves anywhere but the data directory's own
- *   `tenants/<id>` (a `tenants/` that is itself a link elsewhere). The data directory may sit under a symlink.
+ * @throws WirebenchError `tenancy-tenant-path-refused` when the id is not a canonical lower-case UUID, or when
+ *   `tenants/` or the root exists and is a symlink, is not a directory, or resolves anywhere but the data
+ *   directory's own `tenants/` and `tenants/<id>`; checked whether the root exists yet or not. A failed `lstat` or
+ *   `realpath` is a refusal too, naming no path. The data directory may sit under a symlink.
  */
 export function tenantRoot(dataDir: string, scope: TenantScope): string {
   return checkedRoot(dataDir, scope.tenantId);
@@ -66,21 +67,55 @@ export function tenantRootById(dataDir: string, tenantId: string): string {
   return checkedRoot(dataDir, tenantId);
 }
 
+/**
+ * The `lstat` of `path`, or `undefined` when nothing is there. Any other failure is a refusal that names no path:
+ * Node's own error holds `…/tenants/<id>`, and it would reach a request's log or the start-up error (Task 21 review
+ * M1).
+ */
+function statOf(path: string): Stats | undefined {
+  try {
+    return lstatSync(path);
+  } catch (error) {
+    if (isMissing(error)) return undefined;
+    throw refused(`it could not be read (${codeOf(error)})`);
+  }
+}
+
+function realOf(path: string): string {
+  try {
+    return realpathSync(path);
+  } catch (error) {
+    throw refused(`it could not be resolved (${codeOf(error)})`);
+  }
+}
+
+const codeOf = (error: unknown): string => (error as NodeJS.ErrnoException | null)?.code ?? 'unknown error';
+
+/** A directory that exists must be a real directory at `expected`, never a link or a file. */
+function assertRealDirectory(path: string, expected: string): void {
+  const stat = statOf(path);
+  if (stat === undefined) return;
+  if (stat.isSymbolicLink()) throw refused('it is a symlink');
+  if (!stat.isDirectory()) throw refused('it is not a directory');
+  if (realOf(path) !== expected) throw refused('it resolves outside the tenants directory');
+}
+
+/**
+ * The checks of {@link tenantRoot}. They hold against the server's own inputs (an id, a path it builds), not against
+ * someone who can write to the data directory: a root swapped for a link between this check and the use of the
+ * path (git, rename, a host's whole life) is not caught. Fd-relative opens with `O_NOFOLLOW` on every component
+ * would be, but `git -C` takes a path (Task 21 review M3).
+ */
 function checkedRoot(dataDir: string, tenantId: string): string {
   if (!CANONICAL_UUID.test(tenantId)) throw refused('the tenant id is not a canonical UUID');
   const root = join(tenantsDir(dataDir), tenantId);
-  let stat;
-  try {
-    stat = lstatSync(root);
-  } catch (error) {
-    if (isMissing(error)) return root;
-    throw error;
-  }
-  if (stat.isSymbolicLink()) throw refused('it is a symlink');
-  if (!stat.isDirectory()) throw refused('it is not a directory');
-  if (realpathSync(root) !== join(realpathSync(resolve(dataDir)), TENANTS_DIR, tenantId)) {
-    throw refused('it resolves outside the tenants directory');
-  }
+  // No data directory yet: nothing beneath it exists to be a link.
+  if (statOf(resolve(dataDir)) === undefined) return root;
+  const realTenants = join(realOf(resolve(dataDir)), TENANTS_DIR);
+  // tenants/ itself first: a missing root behind a tenants/ that links elsewhere would otherwise be made there by
+  // the first mkdir (Task 21 review I1).
+  assertRealDirectory(tenantsDir(dataDir), realTenants);
+  assertRealDirectory(root, join(realTenants, tenantId));
   return root;
 }
 
@@ -88,7 +123,7 @@ function checkedRoot(dataDir: string, tenantId: string): string {
 export function tenantPaths(dataDir: string, scope: TenantScope): TenantPaths {
   const root = tenantRoot(dataDir, scope);
   const tmp = join(root, 'tmp');
-  return {
+  const paths = {
     root,
     repos: join(root, 'repos'),
     checkouts: join(root, 'checkouts'),
@@ -96,6 +131,15 @@ export function tenantPaths(dataDir: string, scope: TenantScope): TenantPaths {
     schedules: join(tmp, 'schedules'),
     hosts: join(tmp, 'hosts'),
   };
+  // The directories beneath the root too (Task 21 review M2): a tenants/A/repos linked to tenants/B/repos would
+  // hand A's paths into B. The root is real by now, so each must resolve to itself under it.
+  if (statOf(root) === undefined) return paths;
+  const realRoot = realOf(root);
+  for (const [name, path] of Object.entries(paths)) {
+    if (name === 'root') continue;
+    assertRealDirectory(path, join(realRoot, relative(root, path)));
+  }
+  return paths;
 }
 
 /**

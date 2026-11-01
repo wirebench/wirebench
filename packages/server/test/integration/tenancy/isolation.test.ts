@@ -311,6 +311,7 @@ describeDb('the cross-tenant isolation suite (spec §19.13)', () => {
       expect(made.status).toBe(201);
       const id = made.body.id;
       const repos = w.t.h.repos;
+      const deletes: number[] = [];
       const res = await w.b.tenant.call<{ id: string }>(w.b.admin, 'POST', `/teams/${w.b.teamId}/workspaces`, {
         name: 'beta copy',
         id,
@@ -333,13 +334,15 @@ describeDb('the cross-tenant isolation suite (spec §19.13)', () => {
         expect(inA.status).toBe(200);
         expect(inA.body.head).toBeNull();
       } finally {
+        // Best effort, and no assertion in here, so a failure above is the one reported (Task 21 review M4).
         for (const [tenant, admin] of [
           [w.b.tenant, w.b.admin],
           [w.a.tenant, w.a.admin],
         ] as const) {
-          expect((await tenant.call(admin, 'DELETE', `/workspaces/${id}`)).status).toBe(204);
+          deletes.push((await tenant.call(admin, 'DELETE', `/workspaces/${id}`)).status);
         }
       }
+      expect(deletes).toEqual([204, 204]);
       expect(await repos.exists(w.b.tenant.scope, id)).toBe(false);
       expect(await repos.exists(w.a.tenant.scope, id)).toBe(false);
       expect(await repos.exists(w.a.tenant.scope, w.a.workspaceId)).toBe(true);
