@@ -26,6 +26,7 @@
  */
 import { WirebenchError } from '@wirebench/engine';
 import { APPLICATION_NAME, openSession, type Session } from '../db/pool.js';
+import type { Database } from '../db/querier.js';
 
 /** The advisory-lock class of the running lock; the schema's hash is the other half of the key. */
 export const SERVER_RUNNING_CLASS = 0x57425352; // "WBSR"
@@ -236,4 +237,18 @@ export class RunningLock {
     clearInterval(this.heartbeat);
     await this.session?.close();
   }
+}
+
+/**
+ * Whether a server holds the running lock, or a revert holds it exclusively: a transaction-level exclusive try,
+ * released when it commits, so nothing here is held past the answer (`migrate`'s check at `done`, Part D review m3).
+ * A server starting just after the answer is not seen.
+ */
+export async function serverRunning(db: Database): Promise<boolean> {
+  return db.transaction(async (tx) => {
+    const tried = await tx.query<{ ok: boolean }>(`select pg_try_advisory_xact_lock($1, ${LOCK_SCHEMA_KEY}) as ok`, [
+      SERVER_RUNNING_CLASS,
+    ]);
+    return tried.rows[0]?.ok !== true;
+  });
 }

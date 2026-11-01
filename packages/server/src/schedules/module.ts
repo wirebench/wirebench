@@ -4,15 +4,15 @@
  * `scheduled-runs` feature after the role guard, and the scheduler fires nothing without it. It is
  * registered after live-updates, whose hub listens to its announcement, and before audit-log.
  */
-import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { FastifyInstance } from 'fastify';
 import type { ServerContext, ServerModule } from '../context.js';
 import type { SetTimer } from '../hooks/env.js';
 import { realTimer } from '../live/module.js';
-import { TMP_DIR } from '../repos/repo-store.js';
 import { CaptureSweeper } from '../hooks/sweep.js';
 import { CommitStore } from '../sync/commit-store.js';
+import { tenantPaths } from '../tenancy/paths.js';
+import type { TenantScope } from '../tenancy/scope.js';
 import { AlertOutbox, alertDelivery, type DeliverAlert } from './alerts/outbox.js';
 import { deleteOutboxBefore, deleteRunsBefore } from './repo.js';
 import { scheduleRunRoutes } from './run-routes.js';
@@ -23,8 +23,10 @@ import { schedulesSettings } from './settings.js';
 /** Beside `dist/`, like every module's migrations (`ServerModule.migrationsDir`). */
 export const SCHEDULES_MIGRATIONS_DIR = fileURLToPath(new URL('../../migrations/scheduled-runs/', import.meta.url));
 
-/** Under `<dataDir>/tmp`: each run's private copy of its workspace. */
-export const SCHEDULES_TMP_DIR = 'schedules';
+/** Where each run's private copy of its workspace goes: its tenant's `tmp/schedules/` (spec §19.6). */
+export function runCopiesRoot(dataDir: string): (scope: TenantScope) => string {
+  return (scope) => tenantPaths(dataDir, scope).schedules;
+}
 
 const MIB = 1024 * 1024;
 /** Delivered and dead alert deliveries are kept this long, for a look at what went out. */
@@ -61,12 +63,10 @@ export function schedulesModule(options: SchedulesOptions = {}): ServerModule {
         return;
       }
       ctx.meta.addCapability('scheduled-runs');
-      const tmpDir = resolve(ctx.config.dataDir, TMP_DIR);
       // Snapshots only: the store's own cap is lifted to the schedules' one, which materialise enforces.
       const store = new CommitStore({
         git: ctx.git.withPlumbing(),
         repos: ctx.repos,
-        tmpDir,
         limitBytes: Math.max(settings.maxSnapshotBytes, ctx.config.bodyLimitMb * MIB),
       });
       const license = (): typeof ctx.license => ctx.license;
@@ -74,9 +74,8 @@ export function schedulesModule(options: SchedulesOptions = {}): ServerModule {
         tenancy: ctx.tenancy,
         hooks: ctx.hooks,
         settings,
-        // The store's path is still the workspace id's until the per-tenant layout (Task 21).
-        snapshot: (_scope, workspaceId) => store.snapshot(workspaceId),
-        tmpRoot: resolve(tmpDir, SCHEDULES_TMP_DIR),
+        snapshot: (scope, workspaceId) => store.snapshot(scope, workspaceId),
+        tmpRoot: runCopiesRoot(ctx.config.dataDir),
         version: ctx.config.version,
         now,
         setTimer,

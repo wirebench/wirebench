@@ -409,7 +409,8 @@ describe('the context a module registers with (spec §19.8 guard 2)', () => {
 
   it("hands a module no tenant directory, so no scope but the request's or the job loop's (Task 6 review m2)", async () => {
     const ctx = await testContext();
-    expect(Object.keys(ctx.tenancy).sort()).toEqual(['db', 'forEachTenant', 'reachable']);
+    // `dataKey` (Task 23) takes a scope the module already has and hands none out; `stepDone` (Task 24) a boolean.
+    expect(Object.keys(ctx.tenancy).sort()).toEqual(['dataKey', 'db', 'forEachTenant', 'reachable', 'stepDone']);
     expect('directory' in ctx.tenancy).toBe(false);
     // The start-up, the resolver and the admin command line reach it through `directoryOf` alone.
     expect(directoryOf(ctx.tenancy)).toBeInstanceOf(TenantDirectory);

@@ -72,7 +72,7 @@ describeDb('server-sync, webhook capture and CI tokens in two tenants (tenancy T
         createdBy: null,
         at: t.h.clock.now,
       });
-      await t.h.repos.withLock(tenant.scope, workspaceId, () => t.h.repos.create(workspaceId));
+      await t.h.repos.withLock(tenant.scope, workspaceId, () => t.h.repos.create(tenant.scope, workspaceId));
       casts[tenant.slug] = { admin, root, teamId: team.id, workspaceId };
     }
   });

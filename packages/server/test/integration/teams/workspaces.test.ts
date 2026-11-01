@@ -1,5 +1,4 @@
 import { readdirSync } from 'node:fs';
-import { join } from 'node:path';
 import { afterEach, beforeEach, expect, it } from 'vitest';
 import { GitCli } from '@wirebench/engine';
 import type { TeamWorkspace } from '@wirebench/engine';
@@ -43,7 +42,7 @@ describeDb('/workspaces (§3.2, §3.6, §3.7)', () => {
       myRole: 'admin',
       source: 'grant',
     });
-    expect(await h.repos.exists(res.body.id)).toBe(true);
+    expect(await h.repos.exists(h.tdb.scope, res.body.id)).toBe(true);
     expect(await list(bob)).toEqual([['Integration', 'viewer', 'default']]);
     expect(await list(admin)).toEqual([['Integration', 'admin', 'team-admin']]);
     expect(await list(stranger)).toEqual([]);
@@ -62,7 +61,7 @@ describeDb('/workspaces (§3.2, §3.6, §3.7)', () => {
       body: { code: 'teams-workspace-name-taken' },
     });
     const orphan = newId();
-    await h.repos.withLock(h.tdb.scope, orphan, () => h.repos.create(orphan));
+    await h.repos.withLock(h.tdb.scope, orphan, () => h.repos.create(h.tdb.scope, orphan));
     expect(await create(bob, { id: orphan, name: 'C' })).toMatchObject({
       status: 409,
       body: { code: 'teams-workspace-exists' },
@@ -89,7 +88,7 @@ describeDb('/workspaces (§3.2, §3.6, §3.7)', () => {
       });
       expect(res.status).toBeGreaterThanOrEqual(500);
       expect(await repo.workspaceById(broken.tdb, id)).toBeUndefined();
-      expect(await broken.repos.exists(id)).toBe(false);
+      expect(await broken.repos.exists(broken.tdb.scope, id)).toBe(false);
     } finally {
       await broken.close();
     }
@@ -128,8 +127,8 @@ describeDb('/workspaces (§3.2, §3.6, §3.7)', () => {
     expect((await call<{ code: string }>(h, bob, 'DELETE', `/workspaces/${id}`)).body.code).toBe('teams-forbidden');
     expect((await call(h, alice, 'DELETE', `/workspaces/${id}`)).status).toBe(204);
     expect(await repo.workspaceById(h.tdb, id)).toBeUndefined();
-    expect(await h.repos.exists(id)).toBe(false);
-    expect(readdirSync(join(h.dataDir, 'tmp')).some((name) => name.startsWith(`removed-${id}-`))).toBe(true);
+    expect(await h.repos.exists(h.tdb.scope, id)).toBe(false);
+    expect(readdirSync(h.repos.tmpDir(h.tdb.scope)).some((name) => name.startsWith(`removed-${id}-`))).toBe(true);
     const bare = await seedWorkspace(h, { team, name: 'No repository' });
     expect((await call(h, admin, 'DELETE', `/workspaces/${bare}`)).status).toBe(204);
     expect((await call(h, admin, 'GET', `/workspaces/${bare}`)).status).toBe(404);

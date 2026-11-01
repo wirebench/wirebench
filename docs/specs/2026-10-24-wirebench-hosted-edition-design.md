@@ -886,7 +886,9 @@ Plan: `docs/plans/2026-10-27-browser-client.md`.
   `/sign-in`, and so does a `401` or `403` from `GET /api/v1/me`, which the bootstrap asks after an
   upgrade fails (a disabled user's upgrade is refused with HTTP `403`, which a socket cannot read). Calls
   pending at a drop resolve to `{ ok: false, error: { code: 'host-disconnected' } }`. `env` also carries
-  the sign-out action (17.2).
+  the sign-out action (17.2). A `4503` close (the server's key does not open the tenant's data key, §19.7) says the
+  server cannot open the user's saved data, and keeps retrying with backoff, without a session check. A `1013` close
+  (the upgrade's keys step is not done, §19.10) is a dropped socket like any other.
 - The server serves the build from `dist/browser/` with `@fastify/static`, hashed assets cached as
   immutable, and the CSP `default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:
   blob:; connect-src 'self' ws://127.0.0.1:47615 … ws://127.0.0.1:47634; object-src 'none'; base-uri 'none';
@@ -1489,10 +1491,16 @@ tenant through its own column, not only through `users`. The same email in two t
     root (§17.1). The key is created the first time the root exists.
   - A lazy creation is a compare-and-set: `update tenants set data_key = $1 where id = $2 and data_key is null
     returning id`. A process that loses re-reads the row and uses the winner's key.
+- **A root that no longer opens the key.** A stored data key that does not open under the configured root (the
+  key was changed) refuses every host of that tenant with `4503` until the old root is restored. The server logs the
+  code and the tenant id, never a key; `admin tenancy status` reports whether the key opens.
 - **The one-time re-wrap.** Every blob the server platform sealed before slice 4 is under the old per-user key,
   `HKDF(root, …, userId)`. The key step re-seals each one under the new user key. The step must finish before any
   host opens, because a blob the cookie store cannot open is set aside as `.corrupt` (`cookie-store.ts`): a
-  half-done re-wrap would lose cookie jars quietly rather than fail (§19.10).
+  half-done re-wrap would lose cookie jars quietly rather than fail (§19.10). Each file is written durably before the
+  step records `done`, after which the old key opens nothing. At `done` the same idempotent re-wrap runs again at
+  every start-up and `migrate`, so a user's directory restored from a backup made before the upgrade is re-sealed
+  before a host opens it.
 - **No `tenant_secrets` table** (my call; amends §3.5 and §4.3, settles §17.4's deferral). The host's own
   `SecretStore` is the one resolver of a sealed name, and its file is already per user inside the tenant's
   directory, under the tenant's key. A table would be a second store beside it, and would not change who can read a
@@ -1690,13 +1698,20 @@ Two forward steps, each resumable; a way back, also resumable; and a stated cost
     to the setting expression, calls `tenant_scope()` on the 36 tables, and creates `for_each_tenant()`.
   - A crash rolls back the migration it was in, and the next start-up runs it again.
 - **Step 2: files, at start-up.** It also runs from `wirebench-server migrate`. **The start-up order** is: the
-  migrations, then this step, then `RepoStore.prepare` (now making only `tenants/` and `no-hooks/`) and the
-  writability check of `tenants/`, then `buildServer`. `prepare` can therefore never make an empty `repos/` beside a
-  half-moved one. `migrate --check` exits `1` while `tenancy_step` is not `done`. `tenancy_step` drives the step:
+  left-behind check (below), the migrations, then this step, then `RepoStore.prepare` (now making only `tenants/` and
+  `no-hooks/`) and the writability check of `tenants/`, then `buildServer`. `prepare` can therefore never make an
+  empty `repos/` beside a half-moved one.
+  - **One unit.** The step runs in one transaction on the migration URL's connection, under
+    `pg_advisory_xact_lock(FILE_STEP_CLASS, hashtext(current_schema()))`, so two processes never move the same
+    directory. A kill or a refusal rolls `tenancy_step` back to where the unit found it, and the next start resumes:
+    every part is due or done by what is on disk.
+  - **`tenancy_step`** takes `files`, `keys`, `done`, and the revert's `reverting-keys`, `reverting-files` and
+    `reverting-rows`. A `reverting-*` step refuses the forward step (`tenancy-reverting`) **first**, before the
+    re-arm and before the check at `done`: a revert's renames back to the root look exactly like what the re-arm
+    reacts to, and its `back` re-wrap is what the check would undo. A database before `0020` has no step.
   - **`files`:**
     - Rename `repos/` and `checkouts/` into `tenants/<defaultId>/`. A rename is done when the source is gone and the
-      destination is there, and is due when the reverse holds; both present refuses start-up with
-      `tenancy-move-conflict`, naming the paths.
+      destination is there, and is due when the reverse holds.
     - From the old `tmp/`, move the `removed-…` repositories, which are deleted workspaces kept on purpose, into the
       tenant's `tmp/`, and delete the rest. The rest is scratch that is rebuilt as needed: `creating-…` staging,
       sync's index files, `tmp/schedules/` run copies, and the hosts' `tmp/<userId>/` directories.
@@ -1704,17 +1719,79 @@ Two forward steps, each resumable; a way back, also resumable; and a stated cost
       a linked project, but a file that holds one is listed and refuses the step, rather than breaking later. The
       test runs this check on a checkout a real host wrote with a server workspace open, so ordinary installations
       pass.
+    - **Refusals.** A pre-flight that only reads makes every one before anything moves, so a refused step changes
+      nothing on disk and stays `files`:
+      - `tenancy-move-conflict`: a directory (or a kept `removed-…`) is in both its old and its new place; names
+        both.
+      - `tenancy-move-link`: a source is a symbolic link; the new layout follows no link.
+      - `tenancy-move-cross-device`: a source is on another filesystem than the data directory, where a rename
+        cannot go.
+      - `tenancy-prefix-found`: a state file names the old checkouts path; names the file.
+      - `tenancy-data-dir-empty`: the data directory holds no repositories or checkouts while the database has
+        workspaces or browser sign-ins, so it is not the server's own. Start-up exits `2`. `migrate` exits `0` with
+        a note: the schema is migrated, and the server moves its real directory at its next start (the image's empty
+        `/data` with no volume mounted).
     - Then `tenancy_step = 'keys'`.
   - **`keys`:**
     - With the root configured, create the default tenant's data key and re-wrap every blob (§19.7) in each user's
       `secrets.json` and `cookie-jars/*.json`.
-    - A blob that opens under the new key is already done; one that opens under the old key is re-sealed, and the
-      file is written atomically. One that opens under neither is left exactly as it is and counted in the log line,
-      never set aside.
-    - Then `tenancy_step = 'done'`.
+    - The data key is made by `TenantKeys`' compare-and-set on the pool, **outside** the step's unit, so it is
+      committed before anything is sealed under it, and a rolled-back unit reuses it. It refuses with
+      `tenancy-data-key-refused` when the stored key does not open under the root, and `tenancy-tenant-id-invalid`
+      for a default tenant id that is not canonical; the step stays where it was.
+    - A blob that opens under the new key is already done; one that opens under the old key is re-sealed. One that
+      opens under neither, and a file or entry that does not parse, is left exactly as it is and counted in the log
+      line, never set aside. A link, or anything else that is not a regular file or directory where a user's
+      directory or a blob file is expected, is never followed and is counted as skipped: the host would follow it.
+    - Each file is written durably: an exclusive temporary file beside it with the original's mode, fsynced, renamed
+      over it (retried while Windows holds it), and the directory fsynced (not on Windows, which cannot, and whose
+      file system journals the rename).
+    - Then, only once every file is durable, `tenancy_step = 'done'`.
+    - The keys step is strict: a file it cannot read or write fails start-up and `migrate` (exit `2`) with its errno
+      code alone, never its path, and the step resumes at the next run.
     - Without the root, the step stays `keys` and blocks only the host module, which cannot be on without the root
-      anyway.
-  - The server listens from `keys`; host sockets are accepted only at `done`.
+      anyway. Start-up and `migrate` say why on stderr; start-up logs it at `info`.
+  - **`done`:**
+    - With the root and no data key (the root set only after the upgrade, or a build before the keys step): `keys`
+      again, in the same unit.
+    - With the root and a stored key the root refuses: the step stays `done`, the server starts, and only the host
+      module is blocked (`4503`, below). Nothing is re-wrapped.
+    - With the root and a key that opens: **the check**. The forward re-wrap runs again at every start-up and
+      `migrate`. It re-seals what is still under the old key, such as a user's directory restored from a backup made
+      before the upgrade, which a host would otherwise set aside. It is lenient: a file it cannot read or write is
+      counted by its errno code, never named, and tried again at the next start, and start-up and `migrate` go on.
+      With nothing to do it writes nothing and says nothing. A re-seal or an unreadable file is logged at `warn`; a
+      steady count of blobs under neither key, or of links, at `info`. `migrate` skips the check while another
+      server holds the running lock, whose hosts may be writing the same files, and says so; the server re-seals at
+      its next start.
+  - **The re-arm** (`keys` or `done` → `files`). A move recorded as made while this data directory still holds
+    `repos/`, `checkouts/` or `tmp/` at its root (a `migrate` run against another directory, such as one without the
+    volume mounted, or a re-armed move cut short) is moved again, in the same unit, through `files`' pre-flight:
+    - only when every new place is absent or empty (empty ones are removed first), and every workspace of the
+      database has its `<id>.git` at the old place or the new one;
+    - when root is set, only when the stored data key opens under it (or there is none yet), so a changed root
+      refuses before anything moves;
+    - it writes a line naming the directories only, on stderr and in the start-up log at `warn`;
+    - a kill or a refusal rolls the unit back to the step it came from, with what is still at the root, so the next
+      start re-arms again: a refusal is a fixed point, never a loop.
+    - Otherwise it refuses, changing nothing: `tenancy-files-left-behind` when a new place already holds data (it
+      names what to merge by hand), and `tenancy-workspaces-missing` when a workspace's repository is in neither
+      place (an older copy of the directory).
+  - **Before the migrations**, start-up and `migrate` make the same left-behind judgement (`checkNothingLeftBehind`,
+    read only) and refuse the same way, so a refused directory leaves the schema as it was too.
+  - **Host sockets.** The server listens from `keys`; host sockets are accepted only at `done`. Before it a host
+    socket closes `1013` (try again later) before any frame, and no host is built and no data key is made; the tab
+    says the server is finishing an upgrade. At `done`, a stored key the root refuses closes `4503`, logged with the
+    code and the tenant id.
+  - **`migrate`** applies the migrations, then runs the step. With the data directory not there it skips the step
+    and says so (the server moves it at its next start). It prints the re-wrap's counts, the re-arm's line, and the
+    refusals with their codes (exit `2`, `0` for `tenancy-data-dir-empty`).
+  - **`migrate --check`** changes nothing, and exits `1` when migrations are pending, when a step is due (`files`;
+    `keys` with the root; `done` with the root and no data key), when a re-arm is due, and on a left-behind or
+    missing-workspace refusal. `keys` without the root is not pending. A `done` whose check would re-seal a restored
+    directory is not pending either: that is maintenance, done at the next start. With the data directory not
+    mounted, `--check` stays `1` after a `migrate` until a server has moved the files.
+  - `admin tenancy status` counts the blobs by a dry run, as lenient as the check, and names no file.
 - **The way back** (my call). `wirebench-server admin tenancy revert` undoes slice 4. It runs as the owner role.
   - **It is refused:** when there is more than one tenant; when any migration newer than `0021` has run; and when it
     cannot take the server-running lock exclusively. "On a stopped server" is checked, not trusted:

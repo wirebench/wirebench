@@ -22,6 +22,7 @@
  * attached. So the `Origin` check here is what holds such a page out, and no route may rely on the
  * guard for a `GET` with side effects.
  */
+import { isWirebenchError, WirebenchError } from '@wirebench/engine';
 import type { FastifyInstance } from 'fastify';
 import type { WebSocket } from 'ws';
 import { auditIp, recordAudit, type AuditInput, type ServerContext, type ServerModule } from '../context.js';
@@ -38,6 +39,7 @@ import { loadHostRuntime, loadHostSocketLoop, type HostSecretEvent } from './hos
 import { injectSend } from './inject-send.js';
 import { HostInstances, type HostSession, type HostSocketHandle, type HostUser } from './instances.js';
 import { liveBridge } from './live-bridge.js';
+import { pendingWrites, type PendingWrites } from '../pending-writes.js';
 import { outsideTenantUnit } from '../tenancy/tenant-db.js';
 import { runHostSocket, type HostSocket } from './socket.js';
 
@@ -52,6 +54,8 @@ export interface HostModuleOptions {
   readonly onInstances?: (instances: HostInstances) => void;
   /** Another browser build than the copied one (`dist/browser/`), for tests: a fixture folder. */
   readonly browserRoot?: string;
+  /** Hands the module's in-flight secret audit writes out, for tests that must see every row a call led to. */
+  readonly onSecretWrites?: (writes: PendingWrites) => void;
 }
 
 const ROUTE = '/host';
@@ -140,7 +144,24 @@ export function hostModule(options: HostModuleOptions = {}): ServerModule {
       ) {
         throw new Error('the host module needs the host bundle, the live module and WIREBENCH_SERVER_SECRETS_KEY');
       }
-      const secretsKey = config.secretsKey;
+      /** Set once the migration's steps are seen `done`; nothing moves them back while this process serves. */
+      let stepDone = false;
+      // Spec §19.10: host sockets are served only at `done`, once every slice 2 blob is re-wrapped. Before then a
+      // host would read a jar it cannot open and set it aside, so it is not built at all, and no data key is made.
+      const awaitStepDone = async (): Promise<void> => {
+        if (stepDone) return;
+        stepDone = await ctx.tenancy.stepDone();
+        if (!stepDone) {
+          throw new WirebenchError(
+            'tenancy-keys-pending',
+            "the server's upgrade has not finished its keys step, so no browser host opens yet",
+          );
+        }
+      };
+      // Kept, so shutdown waits for them before the pool closes, and a test can wait for the rows a call led to:
+      // the host answers `secrets.set` before its `secret.written` row commits.
+      const secretWrites = pendingWrites();
+      options.onSecretWrites?.(secretWrites);
       const log = (message: string, error: unknown): void => {
         ctx.log.warn({ err: error }, message);
       };
@@ -150,7 +171,7 @@ export function hostModule(options: HostModuleOptions = {}): ServerModule {
         idleMs: config.hostIdleMinutes * 60_000,
         setTimer,
         log,
-        create: (user, session) => {
+        create: async (user, session) => {
           const credential = (): string | undefined => session()?.token;
           // A token the server refused is over even if no announcement said so (idle or lazy expiry).
           const refused = (tokenId: string): void => {
@@ -158,10 +179,14 @@ export function hostModule(options: HostModuleOptions = {}): ServerModule {
               instances.sessionEnded({ tokenId, tenantId: user.tenant.tenantId });
             });
           };
+          await awaitStepDone();
+          // The tenant's data key, made now if it has none yet (spec §19.7): every user key derives from it.
+          const dataKey = await ctx.tenancy.dataKey(user.tenant);
           return createServerHost({
             userId: user.id,
+            scope: user.tenant,
             dataDir: config.dataDir,
-            secretsKey,
+            dataKey,
             egress: ctx.egress,
             appVersion: config.version,
             server: {
@@ -181,12 +206,14 @@ export function hostModule(options: HostModuleOptions = {}): ServerModule {
             },
             // In the user's tenant: the audit row is that tenant's.
             onSecret: (event) => {
-              ctx.tenancy
-                .db(user.tenant)
-                .transaction((tx) => recordAudit(ctx.hooks, tx, secretAudit(user, session(), event)))
-                .catch((error: unknown) => {
-                  log('a secret audit event could not be recorded', error);
-                });
+              secretWrites.track(
+                ctx.tenancy
+                  .db(user.tenant)
+                  .transaction((tx) => recordAudit(ctx.hooks, tx, secretAudit(user, session(), event)))
+                  .catch((error: unknown) => {
+                    log('a secret audit event could not be recorded', error);
+                  }),
+              );
             },
           });
         },
@@ -259,7 +286,29 @@ export function hostModule(options: HostModuleOptions = {}): ServerModule {
             log("a host socket's session age could not be read", error);
           });
         // The hello waits for that read too, so a session revoked since identity's check is never served.
-        const host = Promise.all([opened, checked]).then(([ready]) => ready);
+        // A data key that does not open under the configured root (the key was changed) is the operator's to fix,
+        // not a server fault: the socket closes `4503`, which the tab shows as such, and the log names the code.
+        // The error is a fixed string; no key, wrap or root reaches the log or the close (ADR-0004).
+        const host = Promise.all([opened, checked]).then(
+          ([ready]) => ready,
+          (error: unknown) => {
+            if (!isWirebenchError(error)) throw error;
+            // Not `code`: the logger redacts that name at the top level and one level down (pairing codes).
+            const details = { errorCode: error.code, tenantId: request.tenant.tenantId };
+            if (error.code === 'tenancy-keys-pending') {
+              ctx.log.warn(details, 'a browser host waits: the upgrade has not finished its keys step');
+              running.socket?.end(HOST_CLOSE.tryAgainLater, 'upgrade not finished');
+              return undefined;
+            }
+            if (error.code !== 'tenancy-data-key-refused') throw error;
+            ctx.log.error(
+              details,
+              'a browser host could not open: the stored data key does not open under WIREBENCH_SERVER_SECRETS_KEY. Restore the key it was made under',
+            );
+            running.socket?.end(HOST_CLOSE.unavailable, 'server key refused');
+            return undefined;
+          },
+        );
         running.socket = runHostSocket(runSocket, socket, {
           host,
           callerId: nextCallerId++,
@@ -278,6 +327,8 @@ export function hostModule(options: HostModuleOptions = {}): ServerModule {
       });
       app.addHook('onClose', async () => {
         await instances.closeAll();
+        // The pool closes after the app, so every secret audit row is written first.
+        await secretWrites.settled();
       });
     },
 

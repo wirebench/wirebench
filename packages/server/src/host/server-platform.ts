@@ -12,6 +12,8 @@ import { hkdfSync } from 'node:crypto';
 import { join } from 'node:path';
 import type { EgressPolicy } from '@wirebench/engine';
 import { open, seal } from '../hooks/secret-box.js';
+import { tenantPaths } from '../tenancy/paths.js';
+import type { TenantScope } from '../tenancy/scope.js';
 
 /** HKDF's salt for the per-user secrets key; changing it orphans every user's `secrets.json`. */
 const SECRETS_SALT = 'wirebench-host-secrets';
@@ -20,20 +22,22 @@ const SECRETS_SALT = 'wirebench-host-secrets';
 export interface ServerPlatformInput {
   /** The signed-in user the host is for; one path segment (a ULID). */
   readonly userId: string;
+  /** The user's tenant: both directories are under its root (spec §19.6). */
+  readonly scope: TenantScope;
   /** The server's data directory (`WIREBENCH_SERVER_DATA_DIR`, absolute). */
   readonly dataDir: string;
-  /** `WIREBENCH_SERVER_SECRETS_KEY`: the root the per-user key is derived from. */
-  readonly secretsKey: Buffer;
+  /** The tenant's data key (spec §19.7, `ctx.tenancy.dataKey`): what the per-user key is derived from. */
+  readonly dataKey: Buffer;
   readonly egress: EgressPolicy;
   /** The server's own version, shown where the desktop shows the app's. */
   readonly appVersion: string;
 }
 
-/** The directories a user's host is given. Slice 4 prefixes both with `tenants/<tenantId>/`. */
+/** The directories a user's host is given, under its tenant (spec §19.6). */
 export interface HostDirectories {
-  /** `<dataDir>/checkouts/<userId>`: the host's `userData` and root; its workspaces live beneath it. */
+  /** `<dataDir>/tenants/<tenantId>/checkouts/<userId>`: the host's `userData` and root; its workspaces beneath it. */
   readonly checkout: string;
-  /** `<dataDir>/tmp/<userId>`: the user's own scratch directory, shared with nobody. */
+  /** `<dataDir>/tenants/<tenantId>/tmp/hosts/<userId>`: the user's own scratch directory, shared with nobody. */
   readonly temp: string;
 }
 
@@ -58,28 +62,32 @@ export interface ServerPlatform {
 const USER_ID = /^[A-Za-z0-9_-]{1,64}$/;
 
 /**
- * Where `userId`'s host lives under `dataDir`.
+ * Where `userId`'s host in `scope`'s tenant lives under `dataDir`. Led by the tenant (Task 16 review M1): one user
+ * id in two tenants is two checkouts and two scratch directories, so evicting one host never touches the other's.
  *
  * @throws Error when `userId` is not a single safe path segment; a user id is a ULID, so this never
  *   fires for a real one, and a `..` must never reach a path.
+ * @throws WirebenchError `tenancy-tenant-path-refused` from `tenantRoot`.
  */
-export function hostDirectories(dataDir: string, userId: string): HostDirectories {
+export function hostDirectories(dataDir: string, scope: TenantScope, userId: string): HostDirectories {
   if (!USER_ID.test(userId)) throw new Error('host: the user id is not a path segment');
-  return { checkout: join(dataDir, 'checkouts', userId), temp: join(dataDir, 'tmp', userId) };
+  const tenant = tenantPaths(dataDir, scope);
+  return { checkout: join(tenant.checkouts, userId), temp: join(tenant.hosts, userId) };
 }
 
 /**
- * The per-user secrets key: HKDF-SHA256 over the server's key, salted for this use and bound to the user
- * id, so one user's `secrets.json` does not open under another's key (spec §17.4).
+ * The per-user secrets key: HKDF-SHA256 over the tenant's data key, salted for this use and bound to the user
+ * id, so one user's `secrets.json` does not open under another's key, nor under another tenant's (spec §17.4,
+ * §19.7, ADR-0036). Slice 2 derived it from the server root in place of the data key, the same way.
  */
-export function userSecretsKey(secretsKey: Buffer, userId: string): Buffer {
-  return Buffer.from(hkdfSync('sha256', secretsKey, SECRETS_SALT, userId, 32));
+export function userSecretsKey(dataKey: Buffer, userId: string): Buffer {
+  return Buffer.from(hkdfSync('sha256', dataKey, SECRETS_SALT, userId, 32));
 }
 
 /** Builds `input.userId`'s platform. Creates nothing on disk; the host makes `userData` as it needs it. */
 export function createServerPlatform(input: ServerPlatformInput): ServerPlatform {
-  const directories = hostDirectories(input.dataDir, input.userId);
-  const key = userSecretsKey(input.secretsKey, input.userId);
+  const directories = hostDirectories(input.dataDir, input.scope, input.userId);
+  const key = userSecretsKey(input.dataKey, input.userId);
   return {
     paths: {
       userData: () => directories.checkout,

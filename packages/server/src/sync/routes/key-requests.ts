@@ -61,10 +61,12 @@ export const keyRequestRoutes =
         const path = keyRequestPath(body.keyId);
         const subject = `Request team secrets access for ${user.displayName.replace(CONTROL_CHARACTERS, ' ')}`;
         const result = await repos.withLock(request.tenant, workspaceId, async () => {
-          if (!(await repos.exists(workspaceId))) throw workspaceNotFound();
-          const head = await env.store.head(workspaceId);
-          if (head !== null && (await env.store.hasFile(workspaceId, head, path))) throw teamSecretsKeyExists();
+          if (!(await repos.exists(request.tenant, workspaceId))) throw workspaceNotFound();
+          const head = await env.store.head(request.tenant, workspaceId);
+          if (head !== null && (await env.store.hasFile(request.tenant, workspaceId, head, path)))
+            throw teamSecretsKeyExists();
           return env.store.appendCommits(
+            request.tenant,
             workspaceId,
             head,
             [{ subject, at: new Date().toISOString(), changes: [{ path, encoding: 'utf8', content: body.content }] }],

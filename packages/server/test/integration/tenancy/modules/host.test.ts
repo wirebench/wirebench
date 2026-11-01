@@ -6,6 +6,7 @@
  */
 import { randomBytes } from 'node:crypto';
 import { readdir } from 'node:fs/promises';
+import { join } from 'node:path';
 import { afterAll, beforeAll, expect, it, vi } from 'vitest';
 import { HOST_CLOSE } from '../../../../src/host/errors.js';
 import { hostModule } from '../../../../src/host/module.js';
@@ -18,8 +19,10 @@ import { teamsModule } from '../../../../src/teams/module.js';
 import * as teamsRepo from '../../../../src/teams/repo.js';
 import { browserBuildFixture, type BrowserBuildFixture } from '../../../helpers/browser-build.js';
 import { describeDb } from '../../../helpers/database.js';
+import { seedSlice2, storedCookie } from '../../../helpers/host.js';
 import type { SignedInUser } from '../../../helpers/identity.js';
 import { workspaceSnapshot } from '../../../helpers/schedule-runs.js';
+import { markStepsDone } from '../../../helpers/tenancy.js';
 import { manualTimers } from '../../../helpers/timers.js';
 import { openSocket, twoTenants, type Tenant, type TestSocket, type TwoTenants } from './two-tenants.js';
 
@@ -48,6 +51,7 @@ describeDb('the server host in two tenants (tenancy Task 18)', () => {
         hostModule({ now: () => clock.now, setTimer: hostTimers.setTimer, browserRoot: build.root }),
       ],
     });
+    await markStepsDone(t.h.db.owner);
     for (const tenant of [t.a, t.b]) {
       // Server admins: admin of any workspace row a read finds, so only the policy keeps B's from A's (Task 18 review I1).
       users[tenant.slug] = await tenant.user({ email: 'alice@example.com', kind: 'browser', serverAdmin: true });
@@ -67,7 +71,7 @@ describeDb('the server host in two tenants (tenancy Task 18)', () => {
       createdBy: null,
       at: t.h.clock.now,
     });
-    await t.h.repos.withLock(t.a.scope, onlyA, () => t.h.repos.create(onlyA));
+    await t.h.repos.withLock(t.a.scope, onlyA, () => t.h.repos.create(t.a.scope, onlyA));
     // A shared workspace's first commit, its workspace.yaml naming the server workspace's id.
     const files = (await workspaceSnapshot([])).map((file) =>
       file.path === 'workspace.yaml'
@@ -136,7 +140,7 @@ describeDb('the server host in two tenants (tenancy Task 18)', () => {
       ok: false,
       error: { code: 'unknown-project' },
     });
-    const dirs = hostDirectories(t.h.dataDir, user(t.b).user.id);
+    const dirs = hostDirectories(t.h.dataDir, t.b.scope, user(t.b).user.id);
     const checkedOut = await readdir(dirs.checkout, { recursive: true }).catch(() => [] as string[]);
     expect(checkedOut.join('\n')).not.toContain(onlyA);
     // A's own host joins it.
@@ -144,5 +148,36 @@ describeDb('the server host in two tenants (tenancy Task 18)', () => {
     await inA.next('hello');
     const own = await call(inA, 'workspace.joinFromServer', { url: t.a.origin, workspaceId: onlyA });
     expect(own.ok, JSON.stringify(own)).toBe(true);
+  });
+
+  it("a non-default tenant's host does not open a blob sealed under the root's user key (Task 23 review M2)", async () => {
+    // A fresh user of A, so no host of theirs has a jar loaded yet.
+    const carol = await t.a.user({ email: 'carol@example.com', kind: 'browser' });
+    const teamId = (
+      await t.a.tdb.query<{ teamId: string }>('select team_id as "teamId" from workspaces where id = $1', [onlyA])
+    ).rows[0]!.teamId;
+    await teamsRepo.insertMember(t.a.tdb, { teamId, userId: carol.user.id, role: 'member', at: t.h.clock.now });
+    await teamsRepo.upsertGrant(t.a.tdb, {
+      workspaceId: onlyA,
+      userId: carol.user.id,
+      role: 'editor',
+      at: t.h.clock.now,
+    });
+    const checkout = hostDirectories(t.h.dataDir, t.a.scope, carol.user.id).checkout;
+    await seedSlice2(checkout, t.h.ctx.config.secretsKey!, carol.user.id, {
+      workspaceId: onlyA,
+      label: 'wirebench-secret:project-billing:API_KEY',
+      secret: 'root-sealed-0123456789',
+      cookie: [storedCookie('session', 'root-sealed-cookie', 'cookies.example.test')],
+    });
+    const inA = await host(t.a, carol);
+    await inA.next('hello');
+    const joined = await call(inA, 'workspace.joinFromServer', { url: t.a.origin, workspaceId: onlyA });
+    expect(joined.ok, JSON.stringify(joined)).toBe(true);
+    // The jar does not open under A's user key, and nothing falls back to the root: it is set aside.
+    await vi.waitFor(async () => {
+      expect(await readdir(join(checkout, 'cookie-jars'))).toContain(`${onlyA}.json.corrupt`);
+    });
+    expect(await call(inA, 'cookies.list')).toMatchObject({ ok: true, value: { cookies: [] } });
   });
 });

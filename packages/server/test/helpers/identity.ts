@@ -129,7 +129,7 @@ export async function identityHarness(
   // R13: ctx.git (and the commit store's ctx.git.withPlumbing()) gets the same hermetic client as the
   // repository store, so no developer gitconfig or hook reaches a server test. `options.git` still
   // overrides only the store, for tests that force RepoStore.create to fail.
-  const { tenancy, log: statements } = loggedTenancy(db);
+  const { tenancy, log: statements } = loggedTenancy(db, config.secretsKey);
   const ctx = await testContext({ dataDir, db, config, repos, git: testGit(join(dataDir, NO_HOOKS_DIR)), tenancy });
   const directory = directoryOf(ctx.tenancy);
   await directory.load();

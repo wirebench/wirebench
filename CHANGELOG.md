@@ -65,6 +65,12 @@ All notable changes to this project are documented here. The format follows
   a direct connection; the app URL may go through a pooler. `wirebench-server admin tenancy role` does the
   same outside a start, and `--print-sql` prints the statements for an owner that may not create roles. The
   contributors' `packages/server/compose.yaml` now uses `wirebench_app`.
+- **Server: `admin tenancy check` and `admin tenancy status` (#798).** Run `wirebench-server admin tenancy
+  check` from the new image before upgrading: it changes nothing, and reports the PostgreSQL version, whether
+  the app role is under row-level security, how to back up, what the data directory's move will do and whether
+  a rename can do it, each table's size, and the expected downtime. `admin tenancy status` says where the
+  upgrade stands: the step, whether the data key opens under `WIREBENCH_SERVER_SECRETS_KEY`, and the re-seal
+  counts.
 
 ### Changed
 - **Default's editor colours match the rest of the window (#803).** Monaco's comment, hint and
@@ -91,6 +97,15 @@ All notable changes to this project are documented here. The format follows
 - **Server: a database restart no longer leaves the server running blind (#798).** The server holds a
   lock for its whole life. When the database goes away it takes the lock back as soon as the database
   returns, for up to about two minutes, and then exits with code 3 for its supervisor to restart.
+- **Server: the data directory moves into a per-tenant layout (#798).** The first start, or `wirebench-server
+  migrate`, moves `repos/` and `checkouts/` under `tenants/<id>/`, keeps deleted workspaces and clears the
+  rest of `tmp/`; a move cut short resumes. It refuses, changing nothing, a directory found in two places, a
+  linked or cross-filesystem source, a state file naming the old path, an empty data directory beside a
+  database with data, and an older copy of the directory. With `WIREBENCH_SERVER_SECRETS_KEY` set it then
+  re-seals each browser-client user's secrets and cookies under a new per-tenant key, durably, and each later
+  start re-seals any still under the old key: keep the same `WIREBENCH_SERVER_SECRETS_KEY`, and back up and
+  restore the database and the data directory together. Browser tabs wait, saying the server is finishing an
+  upgrade, until this is done, and `migrate --check` counts the move as pending.
 - **The open editor tab stands out.** It carries an accent bar along its bottom edge, and the editor
   tab strip is taller, so the tab you are on is easy to pick out at a glance.
 - **Project and API pages use tabs.** The project page (General, Settings, Properties) and every API

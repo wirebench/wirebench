@@ -10,7 +10,7 @@ import type { SyncFile } from '@wirebench/engine';
 import { RunStopped } from './outcome.js';
 
 export interface MaterialiseInput {
-  /** Absolute: `<dataDir>/tmp/schedules`. */
+  /** Absolute: the tenant's `tmp/schedules` (spec §19.6). */
   readonly root: string;
   readonly runId: string;
   readonly files: readonly SyncFile[];

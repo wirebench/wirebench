@@ -41,7 +41,9 @@ that seals a server host's files derives from the tenant's data key, never from 
   server without the browser client, and nothing is sealed until then. The key is created with the tenant, or the
   first time the root exists, by a compare-and-set on the null column, so two processes never make two keys.
 - **The re-wrap.** The tenancy migration re-seals every blob slice 2 wrote under the old derivation, once, before any
-  host opens. Each blob is checked by trying the new key first, so the step is idempotent and resumable.
+  host opens. Each blob is checked by trying the new key first, so the step is idempotent and resumable. Its writes
+  are durable before the step records `done`, and at `done` it runs again at each start, re-sealing a directory
+  restored from before the upgrade.
 - **Server-wide keys stay server-wide.** The hooks key, the schedules key and the pairing-code HMAC key keep their
   scope. Their values are rows under row-level security, and deletion removes the rows.
 - **No `tenant_secrets` table.** The host's own store stays the one resolver of a sealed name. The table waits for a

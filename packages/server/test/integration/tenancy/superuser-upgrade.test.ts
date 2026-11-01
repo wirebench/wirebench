@@ -5,11 +5,13 @@
  */
 import { directoryOf } from '../../../src/tenancy/tenancy.js';
 import { EventEmitter } from 'node:events';
+import { readdir } from 'node:fs/promises';
+import { join } from 'node:path';
 import { Writable } from 'node:stream';
 import { afterAll, beforeAll, expect, it, vi } from 'vitest';
 import { BUILTIN_MODULES } from '../../../src/modules.js';
 import { startServer, type RunningServer } from '../../../src/serve.js';
-import { loadFixture0019 } from '../../fixtures/tenancy/load.js';
+import { loadFixture0019, type Fixture0019 } from '../../fixtures/tenancy/load.js';
 import { describeDb, TEST_DATABASE_URL, testDatabase } from '../../helpers/database.js';
 import { mkTempDir, removeTempDir } from '../../helpers/git.js';
 import { freePort } from '../../helpers/net.js';
@@ -18,12 +20,13 @@ describeDb('a 0019 installation on one superuser URL (spec §19.4, owner ruling 
   let db: Awaited<ReturnType<typeof testDatabase>>;
   let dataDir: string;
   let server: RunningServer;
+  let fixture: Fixture0019;
   const lines: string[] = [];
 
   beforeAll(async () => {
     db = await testDatabase({ migrated: false });
     dataDir = await mkTempDir('wbs-superuser-0019-');
-    await loadFixture0019(db.owner, dataDir);
+    fixture = await loadFixture0019(db.owner, dataDir);
     const superuser = new URL(TEST_DATABASE_URL!);
     superuser.searchParams.set('options', `-c search_path=${db.schema}`);
     const env = {
@@ -82,5 +85,36 @@ describeDb('a 0019 installation on one superuser URL (spec §19.4, owner ruling 
     });
     expect(res.status).toBe(201);
     expect(((await res.json()) as { user: { email: string } }).user.email).toBe('Admin@example.com');
+  });
+
+  it("moved the fixture's data directory under the default tenant, and every workspace syncs after (spec §19.10)", async () => {
+    const t = directoryOf(server.ctx.tenancy).defaultScope().tenantId;
+    expect((await readdir(dataDir)).sort()).toEqual(['no-hooks', 'tenants']);
+    const tmp = await readdir(join(dataDir, 'tenants', t, 'tmp'));
+    expect(tmp.filter((name) => name.startsWith(`removed-${fixture.workspaces.retired}-`))).toHaveLength(1);
+    expect(tmp).not.toContain('scratch-0019.txt');
+    const base = `http://127.0.0.1:${String(server.port)}/api/v1`;
+    const signIn = await fetch(`${base}/auth/local/sign-in`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: 'admin@example.com', password: 'fixture-password-0019', device: { name: 'sync' } }),
+    });
+    const { token } = (await signIn.json()) as { token: string };
+    const auth = { authorization: `Bearer ${token}` };
+    for (const id of [fixture.workspaces.staging, fixture.workspaces.billing]) {
+      const head = await fetch(`${base}/workspaces/${id}/sync/head`, { headers: auth });
+      expect(head.status, id).toBe(200);
+      const at = ((await head.json()) as { head: string | null }).head;
+      expect(at, id).not.toBeNull();
+      const snapshot = await fetch(`${base}/workspaces/${id}/sync/snapshot`, { headers: auth });
+      expect(snapshot.status, id).toBe(200);
+      const body = (await snapshot.json()) as { head: string; files: unknown[] };
+      expect(body.head, id).toBe(at);
+      expect(body.files.length, id).toBeGreaterThan(0);
+    }
+    // The deleted workspace stays deleted.
+    expect((await fetch(`${base}/workspaces/${fixture.workspaces.retired}/sync/head`, { headers: auth })).status).toBe(
+      404,
+    );
   });
 });

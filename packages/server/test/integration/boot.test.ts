@@ -1,4 +1,6 @@
 import { EventEmitter } from 'node:events';
+import { chmod, mkdir, readdir } from 'node:fs/promises';
+import { join } from 'node:path';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { permissiveLicense, type ServerModule } from '../../src/context.js';
 import { main } from '../../src/main.js';
@@ -60,6 +62,8 @@ describeDb('startServer', () => {
       expect((await db.query('select version from schema_migrations')).rowCount).toBe(1);
       const me = await server.db.query<{ me: string }>('select current_user::text as me');
       expect(me.rows[0]!.me).toBe('wirebench_app');
+      // Spec §19.6: tenants/ and no-hooks/ only; repos/, checkouts/ and tmp/ live under each tenant.
+      expect((await readdir(dataDir)).sort()).toEqual(['no-hooks', 'tenants']);
     } finally {
       await server.close();
     }
@@ -187,6 +191,25 @@ describeDb('startServer', () => {
     await inFlight;
     expect(exit).not.toHaveBeenCalled();
   });
+
+  it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)(
+    'exits 2 when tenants/ is not writable',
+    async () => {
+      await mkdir(join(dataDir, 'tenants'), { recursive: true });
+      await chmod(join(dataDir, 'tenants'), 0o555);
+      try {
+        const error = await startServer(env(), io(), {
+          signals: new EventEmitter(),
+          exit: vi.fn(),
+          allowNoTenants: true,
+        }).catch((caught: unknown) => caught);
+        expect(error).toMatchObject({ exitCode: 2 });
+        expect((error as StartupError).message).toContain('is not writable');
+      } finally {
+        await chmod(join(dataDir, 'tenants'), 0o755);
+      }
+    },
+  );
 
   it('refuses to start when the port is taken, naming the address, and releases the pool', async () => {
     const first = await startServer(env(), io(), { signals: new EventEmitter(), exit: vi.fn(), allowNoTenants: true });

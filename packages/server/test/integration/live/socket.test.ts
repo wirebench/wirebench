@@ -199,7 +199,7 @@ async function seedAdmin(server: RunningServer): Promise<{ readonly token: strin
     createdBy: null,
     at,
   });
-  await repos.withLock(scopeOf(server), workspaceId, () => repos.create(workspaceId));
+  await repos.withLock(scopeOf(server), workspaceId, () => repos.create(scopeOf(server), workspaceId));
   return { token, workspaceId };
 }
 

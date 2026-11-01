@@ -78,7 +78,8 @@ development put it behind a TLS-terminating proxy that forwards WebSocket upgrad
 [Live updates](#live-updates)) and set `WIREBENCH_SERVER_PUBLIC_URL` to the `https://` origin users will
 reach. Run **one** replica: the per-workspace lock (ADR-0009) and the live-updates hub (ADR-0013) are
 in-process. `wirebench-server migrate` applies schema migrations ahead of a restart;
-`wirebench-server migrate --check` exits 1 while any are pending; `wirebench-server config check`
+`wirebench-server migrate --check` exits 1 while any are pending, or while the data directory's move (below)
+is not done; `wirebench-server config check`
 lists each variable as set, defaulted or missing without printing values. `/healthz` reports
 pass/fail per check (database, data directory, git) and nothing else.
 
@@ -98,13 +99,13 @@ too: the migrations run over the migration URL. With two roles, both must be `po
 their users, and the app URL must name the password the role is created with.
 
 **The migration URL must be a direct connection; the app URL may go through a pooler.** The server holds a
-session-level lock for its whole life (a revert checks it), and holds it on the migration URL, which a
+session-level lock for its whole life (the `admin tenancy revert` of a later version checks it), and holds it on the migration URL, which a
 transaction pooler would break. With one URL, that URL holds it, so it must be direct too.
 
 **A database restart does not stop the server**, as long as the database is back within about two minutes:
 the lock is taken again, with a growing delay, while the database refuses connections. After that the server
 exits with code 3, and a supervisor such as compose's `restart:` starts it again. It exits at once only when
-`admin tenancy revert` holds the lock.
+that revert holds the lock.
 
 To switch an installation outside compose, run `wirebench-server admin tenancy role` with both URLs set, then
 restart. When the owner may not create roles, `admin tenancy role --print-sql` prints the statements instead:
@@ -124,6 +125,40 @@ security. `pg_dump` as the app role, or as an owner that is no superuser, refuse
 `--enable-row-security`, it dumps them empty). Back up as a superuser or as a role of its own with `BYPASSRLS`.
 On the default compose installation the owner, `wirebench`, is a superuser, so existing backup scripts keep
 working.
+
+**Upgrading to this version.** It moves the data directory's `repos/` and `checkouts/` into a new
+subdirectory, keeps the deleted workspaces' repositories from `tmp/` and deletes the rest of `tmp/`, which is
+scratch. Before the upgrade, run `wirebench-server admin tenancy check` from the new image against the old
+database: it changes nothing, and reports the PostgreSQL version, whether the app role is under row-level
+security, how to back up, what the move will do and whether a rename can do it (`repos/` and `checkouts/` must be
+on the data directory's own filesystem), each table's size, and how long the migration should take. Then stop
+every server process, back up the database (see **Backups**) and the data directory, and start the new version:
+the first start, or `wirebench-server migrate`, migrates and moves. A move cut short resumes at the next start.
+Start-up refuses, changing nothing, when a directory is in both its old and its new place (it names both), when
+one is on another filesystem than the data directory, when a user's state file names the old `checkouts/` path (it
+names the file), and when the data directory is empty but the database has workspaces, which means
+`WIREBENCH_SERVER_DATA_DIR` does not name the server's own (a `migrate` run without the volume mounted then
+migrates the schema and leaves the move to the server). It also refuses a `repos/` or `checkouts/` that is a
+symbolic link (the new layout does not follow links: replace it with the directory, or mount the volume at its new
+place). When the move was recorded against another directory and this one still has `repos/`, `checkouts/` or `tmp/` at
+its root, a start (or `migrate`) moves them as long as their new places are empty and every workspace's repository
+is there, and says so on stderr; `migrate --check` counts it as pending. It refuses, naming what to merge, when a
+new place already holds data, and refuses a directory that lacks a workspace's repository, such as an older copy
+mounted after the upgrade. With `WIREBENCH_SERVER_SECRETS_KEY` set, the upgrade then re-seals the secrets and cookies
+each browser-client user stored, once, under a new key the database keeps sealed under it; keep the same
+`WIREBENCH_SERVER_SECRETS_KEY` across the upgrade. A value that opens under neither key is left as it was and
+counted. No browser tab opens until this is done, and a start or `migrate` prints the counts. After the upgrade
+each start (and `migrate`) re-seals any of those values still under the old key, such as a user's directory restored
+from a backup made before the upgrade, and says how many. Restoring the database alone from a backup made before the
+upgrade loses every re-sealed value: restore the database and the data directory together, from the same backup
+(a command that undoes the upgrade, `wirebench-server admin tenancy revert`, comes in a later version). A
+`migrate` run while another server is running leaves that re-seal to the server's next start, and says so.
+`migrate --check` exits 1 until the data directory has moved: in a pipeline whose `--check` job has no data
+directory mounted (a Kubernetes job, `docker run` without the volume), it stays 1 after a successful `migrate`
+until the server has started once, so run `--check` where the data directory is mounted, or after the first
+start. Without the key it
+waits, and says so: nothing was ever sealed without one. `wirebench-server admin tenancy status` says where the
+upgrade stands, and counts those values.
 
 The image carries the browser client's build. A server run from a checkout with
 `WIREBENCH_SERVER_BROWSER_CLIENT` on needs it too, or it refuses to start: run
@@ -329,10 +364,14 @@ server-side send path until an operator asks for them.
   is not created from the browser yet (#786): create it once from the desktop app, and the browser opens
   it.
 - **Secrets.** A value a user stores in the tab is sealed with AES-256-GCM under a key derived for that user
-  from `WIREBENCH_SERVER_SECRETS_KEY`, and kept in the user's directory. It is never shown again, not even
-  to its owner, and never leaves the server in a socket frame. Every write and every use in a send is
-  audited by name (`secret.written`, `secret.resolved` with the target host), never by value. A new key
-  cannot open what the old one sealed.
+  from a random data key, which the database keeps sealed under `WIREBENCH_SERVER_SECRETS_KEY`, and kept in
+  the user's directory. It is never shown again, not even to its owner, and never leaves the server in a
+  socket frame. Every write and every use in a send is audited by name (`secret.written`, `secret.resolved`
+  with the target host), never by value. A new key cannot open what the old one sealed, so back the key up
+  apart from the database: a database backup without it opens nothing. Never change the key on a running
+  installation: under another key every browser tab is refused (it says the server cannot open its saved data)
+  until the old key is restored, and `wirebench-server admin tenancy status` says whether the stored data key
+  opens under the configured one.
 - **Egress.** Every connection a tab's host opens — sends, redirects, the proxy hop, OAuth token calls, URL
   imports, definition fetches — is checked at connect time, the same rule as scheduled runs: loopback,
   link-local, unspecified, cloud-metadata, multicast and broadcast addresses are always refused with
@@ -341,7 +380,7 @@ server-side send path until an operator asks for them.
   instead (or fails with `send-needs-agent`); the rule stays the server's own backstop.
 - **Memory and disk.** A user's host starts with their first tab and stops
   `WIREBENCH_SERVER_HOST_IDLE_MINUTES` (default 30) after their last tab closes; the working copies and
-  state under `<data dir>/checkouts/<user id>/` stay. One user holds at most 8 tab sockets (the ninth closes
+  state in the user's own checkout in the data directory stay. One user holds at most 8 tab sockets (the ninth closes
   `4429`), and a socket frame is at most 32 MiB.
 - **Reverse proxy.** Forward the whole origin, not only `/api/v1/`: the page at `/`, `/assets/`,
   `/sign-in`, `/sign-out`, and the WebSocket upgrade for `/api/v1/host` with `Upgrade` and `Connection`,

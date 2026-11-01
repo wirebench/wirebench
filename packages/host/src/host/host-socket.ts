@@ -31,6 +31,8 @@ export const HOST_CLOSE = {
    */
   tooBig: 1009,
   serverError: 1011,
+  /** The embedder is not ready to build hosts yet (an upgrade step is still due); the peer may retry (RFC 6455). */
+  tryAgainLater: 1013,
   badFrame: 4400,
   /** No signed-in browser session at the upgrade, or it ended since; or the peer failed its first frame. */
   unauthenticated: 4401,
@@ -38,6 +40,11 @@ export const HOST_CLOSE = {
   forbidden: 4403,
   /** The user already has {@link HOST_LIMITS.maxSocketsPerUser} host sockets open (HTTP's 429). */
   tooManySockets: 4429,
+  /**
+   * The embedder cannot build this user's host for a reason only its operator can fix (HTTP's 503): the server's
+   * secrets key no longer opens the stored data key. Reconnecting does not help until the key is restored.
+   */
+  unavailable: 4503,
 } as const;
 
 export const HOST_LIMITS = {

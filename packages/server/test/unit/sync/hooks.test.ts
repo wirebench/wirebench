@@ -7,8 +7,11 @@ import { afterEach, beforeEach, expect, it } from 'vitest';
 import type { SyncPushCommit } from '@wirebench/engine';
 import { NO_HOOKS_DIR, RepoStore } from '../../../src/repos/repo-store.js';
 import { CommitStore } from '../../../src/sync/commit-store.js';
+import { scopeOf } from '../../../src/tenancy/scope.js';
 import { describeGit, gitLocation, mkTempDir, removeTempDir, testGit } from '../../helpers/git.js';
 
+/** The tenant the repository is in. */
+const S = scopeOf({ id: '00000000-0000-4000-8000-000000000001', slug: 'default' });
 const ID = '01J8ZC5Q0V7R3T9XK2M4N6P8QA';
 const HOOKS = ['reference-transaction', 'post-update'] as const;
 const execFileAsync = promisify(execFile);
@@ -30,17 +33,15 @@ describeGit('repository hooks never run (§6, R11)', () => {
     await RepoStore.prepare(dataDir);
     const git = testGit(join(dataDir, NO_HOOKS_DIR));
     const repos = new RepoStore({ git, dataDir });
-    await repos.create(ID);
-    const store = new CommitStore({
-      git: git.withPlumbing(),
-      repos,
-      tmpDir: join(dataDir, 'tmp'),
-      limitBytes: 1024 * 1024,
-    });
+    await repos.create(S, ID);
+    const store = new CommitStore({ git: git.withPlumbing(), repos, limitBytes: 1024 * 1024 });
     const author = { name: 'Ed', email: 'ed@example.com' };
-    const first = await store.appendCommits(ID, null, [edit('one')], author);
+    const first = await store.appendCommits(S, ID, null, [edit('one')], author);
 
-    const dir = repos.path(ID);
+    // Under its tenant (spec §19.6), with core.hooksPath still naming the data directory's own no-hooks/.
+    const dir = repos.path(S, ID);
+    expect(dir).toBe(join(dataDir, 'tenants', S.tenantId, 'repos', `${ID}.git`));
+    expect((await git.run(dir, ['config', 'core.hooksPath'])).stdout.trim()).toBe(join(dataDir, NO_HOOKS_DIR));
     await git.run(dir, ['config', '--unset', 'core.hooksPath']);
     const marker = join(dataDir, 'hook-ran');
     await mkdir(join(dir, 'hooks'), { recursive: true });
@@ -58,8 +59,8 @@ describeGit('repository hooks never run (§6, R11)', () => {
     expect(await readFile(marker, 'utf8')).toContain('reference-transaction');
     await rm(marker);
 
-    const second = await store.appendCommits(ID, first.head, [edit('two')], author);
-    expect(await store.head(ID)).toBe(second.head);
+    const second = await store.appendCommits(S, ID, first.head, [edit('two')], author);
+    expect(await store.head(S, ID)).toBe(second.head);
     expect(existsSync(marker)).toBe(false);
   });
 });

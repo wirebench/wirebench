@@ -12,6 +12,7 @@ import {
   type TenantDb,
   type TenantQuerier,
 } from '../../src/tenancy/tenant-db.js';
+import { environmentKeyRoot } from '../../src/tenancy/keys.js';
 import { createTenancy, type Tenancy } from '../../src/tenancy/tenancy.js';
 
 export interface StatementLog {
@@ -40,9 +41,15 @@ export function asTenantQuerier(querier: Querier): TenantQuerier {
 }
 
 /** A tenancy over `db` that records every statement. */
-export function loggedTenancy(db: Database): { readonly tenancy: Tenancy; readonly log: StatementLog } {
+export function loggedTenancy(db: Database, root?: Buffer): { readonly tenancy: Tenancy; readonly log: StatementLog } {
   const log = statementLog();
-  return { tenancy: createTenancy(db, { onStatement: log.onStatement }), log };
+  return {
+    tenancy: createTenancy(db, {
+      onStatement: log.onStatement,
+      ...(root !== undefined ? { keyRoot: environmentKeyRoot(root) } : {}),
+    }),
+    log,
+  };
 }
 
 /**
@@ -61,4 +68,12 @@ export function expectAllScoped(log: StatementLog, tenantId: string): void {
     }
   }
   expect(statements, 'statements in the log').toBeGreaterThan(0);
+}
+
+/**
+ * Marks the self-hosted migration's steps `done` (spec §19.10), as a start-up that ran them leaves them: a harness
+ * built over `testDatabase` never runs the file step, and the host module serves sockets only at `done`.
+ */
+export async function markStepsDone(owner: Querier): Promise<void> {
+  await owner.query("update server_identity set tenancy_step = 'done'");
 }

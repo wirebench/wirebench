@@ -124,14 +124,14 @@ export const workspaceRoutes =
               details: { name, defaultRole: body.defaultRole ?? 'viewer' },
             });
             // §3.7: built before commit, so a failure here rolls the row back.
-            await repos.withLock(request.tenant, id, () => repos.create(id));
+            await repos.withLock(request.tenant, id, () => repos.create(request.tenant, id));
             progress.built = true;
           });
         } catch (error) {
           if (progress.built) {
             // The commit failed after the repository existed: move it away so the id is usable again.
             await repos
-              .withLock(request.tenant, id, () => repos.remove(id))
+              .withLock(request.tenant, id, () => repos.remove(request.tenant, id))
               .catch((cause: unknown) => {
                 request.log.warn(
                   { err: cause, workspaceId: id },
@@ -285,8 +285,8 @@ export const workspaceRoutes =
           // The row is gone and its grants with it: every subscriber's role is now none (§3.1). Said
           // here, before the repository move, so a move that fails (a 500) still tells the sockets.
           announce(env.ctx.hooks.accessChanged, { ...tenantOf(request), workspaceId }, request.log);
-          // §3.7: the row is the source of truth; the repository moves under tmp/, never deleted.
-          await repos.remove(workspaceId).catch((error: unknown) => {
+          // §3.7: the row is the source of truth; the repository moves under the tenant's tmp/, never deleted.
+          await repos.remove(request.tenant, workspaceId).catch((error: unknown) => {
             if (!isMissing(error)) throw error;
             request.log.warn({ workspaceId }, 'deleted a workspace whose repository was already gone');
           });

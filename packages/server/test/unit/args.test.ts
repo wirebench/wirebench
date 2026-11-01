@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseServerArgs, UsageError } from '../../src/args.js';
+import { HELP_TEXT, parseServerArgs, UsageError } from '../../src/args.js';
 
 describe('parseServerArgs', () => {
   it('defaults to serve', () => {
@@ -164,6 +164,21 @@ describe('admin tenancy role (hosted spec §19.4)', () => {
     expect(() => parseServerArgs(['admin', 'tenancy'])).toThrow(/usage: wirebench-server admin tenancy role/);
     expect(() => parseServerArgs(['admin', 'tenancy', 'revert'])).toThrow(/usage: wirebench-server admin tenancy role/);
     expect(() => parseServerArgs(['migrate', '--print-sql'])).toThrow(/--print-sql applies to admin tenancy role only/);
+  });
+});
+
+describe('admin tenancy check and status (hosted spec §19.10, §19.11)', () => {
+  it('parses both, with nothing after them', () => {
+    expect(parseServerArgs(['admin', 'tenancy', 'check'])).toEqual({ command: 'admin-tenancy-check' });
+    expect(parseServerArgs(['admin', 'tenancy', 'status'])).toEqual({ command: 'admin-tenancy-status' });
+    expect(() => parseServerArgs(['admin', 'tenancy', 'check', 'extra'])).toThrow(
+      /usage: wirebench-server admin tenancy/,
+    );
+    expect(() => parseServerArgs(['admin', 'tenancy', 'status', '--tenant', 'acme'])).toThrow(/--tenant/);
+  });
+  it('lists both in the help', () => {
+    expect(HELP_TEXT).toContain('wirebench-server admin tenancy check');
+    expect(HELP_TEXT).toContain('wirebench-server admin tenancy status');
   });
 });
 

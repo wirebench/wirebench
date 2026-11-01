@@ -16,6 +16,7 @@ import {
   REFUSED_GROUPS,
   SERVED_GROUPS,
 } from '../../../src/host/allowlist.js';
+import { scopeOf } from '../../../src/tenancy/scope.js';
 import { loadHostRuntime } from '../../../src/host/host-runtime.js';
 
 const PINNED = new URL('../../../../../apps/desktop/test/fixtures/ipc-names.json', import.meta.url);
@@ -122,8 +123,9 @@ describe('the server host allowlist (§3.10)', () => {
     try {
       const host = await createServerHost!({
         userId: '01JB3Z9K7Q4ZJ6X1V8W2M5N0PA',
+        scope: scopeOf({ id: '00000000-0000-4000-8000-000000000001', slug: 'default' }),
         dataDir,
-        secretsKey: Buffer.alloc(32, 1),
+        dataKey: Buffer.alloc(32, 1),
         egress: { denyPrivate: true },
         appVersion: '0.0.0-test',
       });

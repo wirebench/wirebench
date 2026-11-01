@@ -78,14 +78,14 @@ export const commitRoutes =
         if (user === undefined) throw unauthenticated();
         const author = { name: user.displayName, email: user.email };
         const result = await repos.withLock(request.tenant, workspaceId, async () => {
-          if (!(await repos.exists(workspaceId))) throw workspaceNotFound();
+          if (!(await repos.exists(request.tenant, workspaceId))) throw workspaceNotFound();
           if (role !== 'admin') {
             const parent = body.parent;
             const exists = (path: string): Promise<boolean> =>
-              parent === null ? Promise.resolve(false) : env.store.hasFile(workspaceId, parent, path);
+              parent === null ? Promise.resolve(false) : env.store.hasFile(request.tenant, workspaceId, parent, path);
             if (await changesKeyRequest(exists, body)) throw teamSecretsAdminOnly();
           }
-          return env.store.appendCommits(workspaceId, body.parent, body.commits, author);
+          return env.store.appendCommits(request.tenant, workspaceId, body.parent, body.commits, author);
         });
         // Recorded after the ref moved (audit-log plan ruling 4): the commits are on main, so a failure here is logged, not answered.
         try {
@@ -98,7 +98,7 @@ export const commitRoutes =
           const existed = new Set<string>();
           if (body.parent !== null) {
             for (const [lower, path] of valuePaths) {
-              if (await env.store.hasFile(workspaceId, body.parent, path)) existed.add(lower);
+              if (await env.store.hasFile(request.tenant, workspaceId, body.parent, path)) existed.add(lower);
             }
           }
           // The repository reads above run outside the unit; the push and its secret events are written in one.

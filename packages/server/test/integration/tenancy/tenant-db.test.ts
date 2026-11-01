@@ -102,6 +102,8 @@ describeDb('the tenant database and directory (hosted spec §19.4, §19.8)', () 
       late = Promise.resolve()
         .then(() => new Promise((done) => setTimeout(done, 20)))
         .then(() => tx.query("insert into teams (id, name) values ('T-late', 'Late')"));
+      // Handled at once: under load the rejection can land before the assertion below attaches (Task 23 re-review N1).
+      late.catch(() => undefined);
     });
     await expect(late).rejects.toMatchObject({ code: 'tenancy-scope-ended' });
     expect((await one.query("select 1 from teams where id = 'T-late'")).rowCount).toBe(0);

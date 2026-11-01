@@ -6,6 +6,7 @@
 import type { FastifyBaseLogger } from 'fastify';
 import { recordAudit, type AuditActorInput, type LicenseChangedEvent, type ServerHooks } from '../context.js';
 import { findUserById } from '../identity/repo.js';
+import type { PendingWriteSet } from '../pending-writes.js';
 import type { Tenancy } from '../tenancy/tenancy.js';
 
 /** The actor and the event are read and written in one unit of the tenant the license changed in. */
@@ -13,9 +14,11 @@ export function licenseListener(env: {
   readonly tenancy: Pick<Tenancy, 'db'>;
   readonly hooks: ServerHooks;
   readonly log: FastifyBaseLogger;
+  /** Where the write is kept until it settles: the module's shutdown waits for it. */
+  readonly writes?: Pick<PendingWriteSet, 'track'>;
 }): (event: LicenseChangedEvent) => void {
   return (event) => {
-    env.tenancy
+    const write = env.tenancy
       .db(event.tenant)
       .transaction(async (tx) => {
         const user = event.actorUserId === null ? undefined : await findUserById(tx, event.actorUserId);
@@ -29,5 +32,6 @@ export function licenseListener(env: {
         });
       })
       .catch((error: unknown) => env.log.warn({ err: error }, 'audit: license change not recorded'));
+    env.writes?.track(write);
   };
 }

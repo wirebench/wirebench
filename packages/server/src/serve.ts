@@ -22,12 +22,22 @@ import { loadMigrations, migrate, MIGRATIONS_DIR, pendingMigrations, type Migrat
 import { createDatabase } from './db/pool.js';
 import { checkAppRole, checkPostgresVersion } from './tenancy/checks.js';
 import { TENANCY_MIGRATIONS_DIR } from './tenancy/migrations.js';
-import { RunningLock, type RunningLockOptions } from './tenancy/running-lock.js';
+import { RunningLock, serverRunning, type RunningLockOptions } from './tenancy/running-lock.js';
 import { operatorPublicUrl } from './tenancy/urls.js';
+import { environmentKeyRoot } from './tenancy/keys.js';
 import { createTenancy, directoryOf } from './tenancy/tenancy.js';
 import { ensureAppRole, roleMode } from './tenancy/roles.js';
 import { ExitCode, packageVersion, type ServerIo } from './io.js';
 import { NO_HOOKS_DIR, RepoStore } from './repos/repo-store.js';
+import {
+  checkNothingLeftBehind,
+  dueStep,
+  KEYS_WAIT,
+  rearmLine,
+  rewrapNote,
+  runTenancySteps,
+} from './tenancy/file-step.js';
+import { TENANTS_DIR } from './tenancy/paths.js';
 import { buildServer } from './server.js';
 
 /** The exit code of an interrupted shutdown: a second signal while the first is still draining. */
@@ -140,6 +150,15 @@ async function migrateAndGrant(owner: Database, appUrl: string, migrations: read
   return applied;
 }
 
+/**
+ * How the tenancy step's failure that is not a refusal reads (an `EACCES` on one user's file, say): the errno code
+ * only, since Node's message names a path under `tenants/<id>/checkouts/<user>` (Task 22 review m2, Task 24 m4).
+ */
+function stepFailure(dataDir: string, error: unknown): string {
+  const code = (error as NodeJS.ErrnoException | null)?.code ?? 'an unexpected error';
+  return `data directory ${dataDir} could not be moved or re-wrapped (${code}); the step resumes at the next start`;
+}
+
 /** How a failed migration reads on stderr: a WirebenchError (e.g. `server-schema-too-new`) keeps its code. */
 function migrationFailure(error: unknown): string {
   if (error instanceof WirebenchError) return `${error.code}: ${error.message}`;
@@ -191,6 +210,22 @@ export async function allMigrations(
   return combined;
 }
 
+/** Names, never content: the state files the move's scan skipped for their size. */
+const skippedNote =
+  (io: ServerIo) =>
+  (names: readonly string[]): void => {
+    io.stderr.write(
+      `data directory: ${String(names.length)} state files over 8 MiB were not scanned for the old checkouts path: ` +
+        `${names.slice(0, 20).join(', ')}${names.length > 20 ? ', …' : ''}\n`,
+    );
+  };
+
+const exists = (path: string): Promise<boolean> =>
+  access(path).then(
+    () => true,
+    () => false,
+  );
+
 export async function runMigrate(
   env: NodeJS.ProcessEnv,
   io: ServerIo,
@@ -226,6 +261,15 @@ export async function runMigrate(
       return ExitCode.Config;
     }
     const migrations = await allMigrations(modules);
+    // Before anything is migrated: a data directory left behind by a move made elsewhere changes nothing here.
+    let left: readonly string[];
+    try {
+      left = await checkNothingLeftBehind(db, config.dataDir);
+    } catch (error) {
+      if (!(error instanceof WirebenchError)) throw error;
+      io.stderr.write(`${error.code}: ${error.message}\n`);
+      return check ? ExitCode.Pending : ExitCode.Config;
+    }
     if (check) {
       const pending = await pendingMigrations(db, migrations);
       io.stdout.write(
@@ -233,7 +277,17 @@ export async function runMigrate(
           ? 'migrations: up to date\n'
           : `migrations: ${pending.length} pending (${pending.map((m) => m.version).join(', ')})\n`,
       );
-      return pending.length === 0 ? ExitCode.Ok : ExitCode.Pending;
+      // Spec §19.10: the data directory's move is part of the upgrade, so a step short of `done` is pending too.
+      const due = await dueStep(db, config.secretsKey);
+      if (due !== undefined) io.stdout.write(`data directory: the move to the new layout is pending (step ${due})\n`);
+      // A move recorded as made, with this directory's files still at the root: the next run re-arms and moves them,
+      // whether or not the root is set (review m3), so it is pending even where `keys` without the root is not.
+      if (left.length > 0) {
+        io.stdout.write(
+          `data directory: the move to the new layout is pending (recorded as made, but ${left.join(' and ')} still at the root)\n`,
+        );
+      }
+      return pending.length === 0 && due === undefined && left.length === 0 ? ExitCode.Ok : ExitCode.Pending;
     }
     const applied =
       mode === 'two-roles'
@@ -242,6 +296,53 @@ export async function runMigrate(
     io.stdout.write(
       applied.length === 0 ? 'migrations: nothing to apply\n' : `migrations: applied ${applied.join(', ')}\n`,
     );
+    // The file step runs from here too (spec §19.10), so an upgrade can be finished before the server starts. A
+    // `migrate` run where the data directory is not mounted (a job that only applies the schema) leaves the move
+    // to the server's next start, as before this step existed.
+    if (!(await exists(config.dataDir))) {
+      io.stdout.write(`data directory: ${config.dataDir} not found here; the server moves it at its next start\n`);
+      return ExitCode.Ok;
+    }
+    try {
+      // A server running beside this `migrate` (the routine way to migrate ahead of a restart) has hosts that may be
+      // writing the users' files: the re-wrap check at `done` is the server's then, at its next start (review m3).
+      const running = await serverRunning(db);
+      const step = await runTenancySteps(db, config.dataDir, {
+        onSkipped: skippedNote(io),
+        onRearmed: (rearmed) => io.stderr.write(`${rearmLine(rearmed)}\n`),
+        ...(config.secretsKey !== undefined ? { root: config.secretsKey } : {}),
+        ...(running ? { check: false } : {}),
+        onRewrap: (counts, run) => {
+          const note = rewrapNote(counts, run);
+          if (note !== undefined) io.stdout.write(`${note.message}\n`);
+        },
+      });
+      if (step === 'done' && running && config.secretsKey !== undefined) {
+        io.stdout.write('re-wrap check: skipped while a server runs; the server re-seals at its next start\n');
+      }
+      if (step === 'keys') {
+        io.stdout.write('data directory: in the new layout\n');
+        io.stderr.write(`tenancy step keys: ${KEYS_WAIT}\n`);
+      } else if (step !== undefined)
+        io.stdout.write(`data directory: ${step === 'done' ? 'in the new layout' : `step ${step}`}\n`);
+    } catch (error) {
+      if (!(error instanceof WirebenchError)) {
+        // The errno code only, as at start-up: Node's message names a path under tenants/<id>/checkouts/<user>
+        // (Task 24 review m4). Not a failed migration: the schema is migrated, and the step resumes next time.
+        io.stderr.write(`${stepFailure(config.dataDir, error)}\n`);
+        return ExitCode.Config;
+      }
+      io.stderr.write(`${error.code}: ${error.message}\n`);
+      // The image's own empty /data, with the volume not mounted here: the schema is migrated, and the server moves
+      // its real data directory at its next start (C1 of the Task 22 review).
+      if (error.code === 'tenancy-data-dir-empty') {
+        io.stdout.write(
+          `data directory: ${config.dataDir} is empty, so not the server's; the server moves its own at its next start\n`,
+        );
+        return ExitCode.Ok;
+      }
+      return ExitCode.Config;
+    }
     return ExitCode.Ok;
   } catch (error) {
     io.stderr.write(`${error instanceof StartupError ? error.message : migrationFailure(error)}\n`);
@@ -282,8 +383,12 @@ export async function startServer(
   // connection: a session-level advisory lock means nothing behind a transaction pooler, which the app URL may
   // be (owner ruling, 2026-10-30). With one URL it is that URL, as before.
   let runningLock: RunningLock | undefined;
+  // The migration URL's pool, kept open past the migrations for the file step: a direct connection, where the app
+  // URL may be a pooler that would cut the step's long unit short (Task 22 fix-round review m1).
+  let owner: Database | undefined;
   const fail = async (error: StartupError): Promise<never> => {
     await runningLock?.release();
+    await owner?.close();
     await db.close();
     throw error;
   };
@@ -293,39 +398,90 @@ export async function startServer(
     if (migrationUrl === config.databaseUrl) {
       await checkPostgresVersion(db);
       runningLock = await RunningLock.acquire(migrationUrl, { ...lockOptions, label: 'the database connection' });
+      await checkNothingLeftBehind(db, config.dataDir);
       await migrate(db, migrations);
     } else {
-      const owner = createDatabase(migrationUrl);
-      try {
-        await checkPostgresVersion(owner);
-        runningLock = await RunningLock.acquire(migrationUrl, { ...lockOptions, label: 'the migration connection' });
-        if (mode === 'two-roles') await migrateAndGrant(owner, config.databaseUrl, migrations);
-        else await migrate(owner, migrations);
-      } finally {
-        await owner.close();
-      }
+      owner = createDatabase(migrationUrl);
+      await checkPostgresVersion(owner);
+      runningLock = await RunningLock.acquire(migrationUrl, { ...lockOptions, label: 'the migration connection' });
+      // Before anything is migrated: the refusal then leaves the database as it was too.
+      await checkNothingLeftBehind(owner, config.dataDir);
+      if (mode === 'two-roles') await migrateAndGrant(owner, config.databaseUrl, migrations);
+      else await migrate(owner, migrations);
       if (mode === 'two-roles') await checkAppSignIn(db, config.databaseUrl);
     }
   } catch (error) {
     if (error instanceof StartupError) return fail(error);
     if (
       error instanceof WirebenchError &&
-      (error.code === 'server-postgres-too-old' || error.code === 'tenancy-reverting')
+      (error.code === 'server-postgres-too-old' ||
+        error.code === 'tenancy-reverting' ||
+        error.code === 'tenancy-files-left-behind' ||
+        error.code === 'tenancy-workspaces-missing')
     ) {
       return fail(new StartupError(ExitCode.Config, `${error.code}: ${error.message}`));
     }
     return fail(new StartupError(ExitCode.Migration, migrationFailure(error)));
   }
+  /** What the keys step said, logged once the app's logger exists: counts only, never a key, a file or a value. */
+  const stepNotes: { readonly level: 'info' | 'warn'; readonly message: string; readonly details: object }[] = [];
+  // Spec §19.10's order: the migrations, then the file step, then `prepare` and the writability check, so
+  // `prepare` can never make an empty tenants/ tree beside a half-moved data directory.
+  try {
+    const step = await runTenancySteps(owner ?? db, config.dataDir, {
+      onSkipped: skippedNote(io),
+      // A notable event (review m1): the database said done, and this directory is moved anyway.
+      onRearmed: (rearmed) => {
+        io.stderr.write(`${rearmLine(rearmed)}\n`);
+        stepNotes.push({ level: 'warn', message: rearmLine(rearmed), details: { left: [...rearmed] } });
+      },
+      ...(config.secretsKey !== undefined ? { root: config.secretsKey } : {}),
+      onRewrap: (counts, run) => {
+        // The check at `done` speaks only when it found something; a steady count is `info` (review m2).
+        const note = rewrapNote(counts, run);
+        if (note !== undefined) stepNotes.push({ ...note, details: { ...counts, run } });
+      },
+    });
+    // Also where an operator starting the server by hand sees it at once, before the log is up (no key material).
+    if (step === 'keys') {
+      io.stderr.write(`tenancy step keys: ${KEYS_WAIT}\n`);
+      // `info`: not pending (`dueStep`), and said at every start of a server that never uses the browser client.
+      stepNotes.push({ level: 'info', message: `tenancy step keys: ${KEYS_WAIT}`, details: {} });
+    }
+  } catch (error) {
+    if (error instanceof WirebenchError) {
+      return fail(new StartupError(ExitCode.Config, `${error.code}: ${error.message}`));
+    }
+    // The errno code only: Node's message names a path under tenants/<id> (Task 22 review m2).
+    return fail(new StartupError(ExitCode.Config, stepFailure(config.dataDir, error)));
+  }
+  // The step's connection is done with. The reference is cleared first, so `fail` never closes it a second time,
+  // and a failure to close is reported as itself, not as a move that failed (fix round 2 review m4).
+  const stepOwner = owner;
+  owner = undefined;
+  try {
+    await stepOwner?.close();
+  } catch (error) {
+    return fail(
+      new StartupError(
+        ExitCode.Migration,
+        `the migration connection did not close after the tenancy step: ${error instanceof Error ? error.message : String(error)}`,
+      ),
+    );
+  }
   try {
     await RepoStore.prepare(config.dataDir);
-    for (const sub of ['repos', 'tmp']) {
-      await access(join(config.dataDir, sub), constants.W_OK);
-    }
+    // Spec §19.6: every repository, checkout and scratch file is under tenants/ now.
+    await access(join(config.dataDir, TENANTS_DIR), constants.W_OK);
   } catch {
     return fail(new StartupError(ExitCode.Config, `data directory ${config.dataDir} is not writable`));
   }
   const warnings: { readonly message: string; readonly details: Record<string, unknown> }[] = [];
-  const tenancy = createTenancy(db);
+  // The root wraps each tenant's data key (spec §19.7); without it no key is made, and nothing is sealed.
+  const tenancy = createTenancy(
+    db,
+    config.secretsKey !== undefined ? { keyRoot: environmentKeyRoot(config.secretsKey) } : {},
+  );
   try {
     await checkAppRole(db, config.mode, (message, details) => warnings.push({ message, details }));
     // A module list that stops short of 0019 leaves 0020 out (`allMigrations`), and with it every tenant.
@@ -377,6 +533,7 @@ export async function startServer(
     app.log.warn({ err: error }, 'a database connection failed');
   };
   for (const warning of warnings) app.log.warn(warning.details, warning.message);
+  for (const note of stepNotes) app.log[note.level](note.details, note.message);
   // Module registration can take seconds (OIDC discovery): a lock lost meanwhile means no listening at all.
   if (lockLost.early !== undefined) {
     await app.close();

@@ -255,9 +255,6 @@ export class HostInstances {
     this.instances.delete(key);
     instance.idle?.cancel();
     instance.idle = undefined;
-    // The directories are still the user id's: one user id in two tenants would share this scratch directory, and
-    // this eviction would remove the other tenant's. Task 21 moves them, with `createServerHost`, under the tenant.
-    const { temp } = hostDirectories(this.deps.dataDir, instance.user.id);
     const previous = this.evicting.get(key) ?? Promise.resolve();
     const done = previous
       .then(async () => {
@@ -267,9 +264,18 @@ export class HostInstances {
         } catch (error) {
           this.deps.log('a host could not be disposed', error);
         }
-        await rm(temp, { recursive: true, force: true }).catch((error: unknown) => {
-          this.deps.log("a host's scratch directory could not be removed", error);
-        });
+        // The tenant's scratch directory for this user (spec §19.6): the same user id in another tenant has its own.
+        // Built in here, so a refused tenant root is logged like a failed removal, never thrown from a timer.
+        await Promise.resolve()
+          .then(() =>
+            rm(hostDirectories(this.deps.dataDir, instance.user.tenant, instance.user.id).temp, {
+              recursive: true,
+              force: true,
+            }),
+          )
+          .catch((error: unknown) => {
+            this.deps.log("a host's scratch directory could not be removed", error);
+          });
       })
       .finally(() => {
         if (this.evicting.get(key) === done) this.evicting.delete(key);

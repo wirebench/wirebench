@@ -26,7 +26,6 @@ import { ciTokensModule } from '../../../src/ci-tokens/module.js';
 import { hooksModule } from '../../../src/hooks/module.js';
 import { seal as sealHookSecret } from '../../../src/hooks/secret-box.js';
 import * as hooksRepo from '../../../src/hooks/repo.js';
-import { hostDirectories } from '../../../src/host/server-platform.js';
 import { hostModule } from '../../../src/host/module.js';
 import * as identityRepo from '../../../src/identity/repo.js';
 import { mintToken, newId } from '../../../src/identity/tokens.js';
@@ -554,7 +553,8 @@ it.runIf(OUT !== undefined)(
       expect((await call(h, alice, 'POST', `/teams/${teamId}/workspaces`, { name: 'After the seal' })).status).toBe(201);
 
       // ---- scratch the file step deletes: a staging directory and a stray file.
-      const { checkout } = hostDirectories(h.dataDir, alice.user.id);
+      // The 0019 layout, spelled out: this file is typechecked in today's tree, where hostDirectories is tenant-led.
+      const checkout = join(h.dataDir, 'checkouts', alice.user.id);
       await writeFile(join(h.dataDir, 'tmp', 'scratch-0019.txt'), 'scratch\n');
 
       // Every table holds rows, or the fixture is not worth checking in.

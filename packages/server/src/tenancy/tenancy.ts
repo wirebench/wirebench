@@ -11,9 +11,16 @@ import { WirebenchError } from '@wirebench/engine';
 import type { FastifyBaseLogger } from 'fastify';
 import type { Database } from '../db/querier.js';
 import { TenantDirectory } from './directory.js';
+import { readTenancyStep } from './file-step.js';
 import { forEachTenant, type JobOutcome, type JobPass } from './jobs.js';
+import { TenantKeys, type KeyRoot } from './keys.js';
 import type { TenantScope } from './scope.js';
 import { tenantDbFactory, type TenancyDbOptions, type TenantDbFactory, type TenantQuerier } from './tenant-db.js';
+
+export interface TenancyOptions extends TenancyDbOptions {
+  /** The server root (`WIREBENCH_SERVER_SECRETS_KEY`, `environmentKeyRoot`); without it no tenant has a data key. */
+  readonly keyRoot?: KeyRoot;
+}
 
 export interface Tenancy {
   readonly db: TenantDbFactory;
@@ -25,18 +32,40 @@ export interface Tenancy {
   ): Promise<JobPass>;
   /** `/healthz`: whether the database answers `select 1`, which reads no table and needs no tenant. */
   reachable(): Promise<void>;
+  /**
+   * `scope`'s data key (spec §19.7), made now if its row has none: what a server host's user keys derive from.
+   *
+   * @throws WirebenchError `tenancy-no-root` without the root; `tenancy-data-key-refused` when the stored key
+   *   does not open for this tenant under it.
+   */
+  dataKey(scope: TenantScope): Promise<Buffer>;
+  /**
+   * Whether the self-hosted migration's steps are `done` (spec §19.10): host sockets are served only then. `true` on
+   * a schema before `0020`, which has no step to wait for.
+   */
+  stepDone(): Promise<boolean>;
 }
 
 const directories = new WeakMap<Tenancy, TenantDirectory>();
 
-export function createTenancy(db: Database, options: TenancyDbOptions = {}): Tenancy {
+export function createTenancy(db: Database, options: TenancyOptions = {}): Tenancy {
   const factory = tenantDbFactory(db, options);
-  const directory = new TenantDirectory(db);
+  const keys = new TenantKeys(db, options.keyRoot);
+  const directory = new TenantDirectory(db, keys);
+  // A tenant written in this process: whatever key the cache holds for it may be stale (spec §19.7).
+  directory.onChange(() => {
+    keys.invalidate();
+  });
   const tenancy: Tenancy = {
     db: factory,
     forEachTenant: (job, fn, log) => forEachTenant({ directory, db: factory, log }, job, fn),
     reachable: async () => {
       await db.query('select 1');
+    },
+    dataKey: (scope) => keys.dataKey(scope.tenantId),
+    stepDone: async () => {
+      const state = await readTenancyStep(db);
+      return state === undefined || state.step === 'done';
     },
   };
   directories.set(tenancy, directory);

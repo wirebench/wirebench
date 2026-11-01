@@ -19,6 +19,7 @@ import { AuditForwarder } from './forward/forwarder.js';
 import { sinkFromConfig } from './forward/sink.js';
 import { auditHook } from './hook.js';
 import { licenseListener } from './license-listener.js';
+import { pendingWrites, type PendingWrites } from '../pending-writes.js';
 import { deleteAuditEventsBefore, deleteSealedBefore, deleteUnsealedBefore, readAnchor } from './repo.js';
 import { auditRoutes } from './routes.js';
 
@@ -30,6 +31,8 @@ export const AUDIT_SWEEP_JOB = 'audit-retention';
 export interface AuditLogOptions {
   readonly now?: () => Date;
   readonly setTimer?: SetTimer;
+  /** Hands out the license-change audit writes still in flight, for tests that must see every row a request led to. */
+  readonly onLicenseWrites?: (writes: PendingWrites) => void;
 }
 
 export function auditLogModule(options: AuditLogOptions = {}): ServerModule {
@@ -42,7 +45,12 @@ export function auditLogModule(options: AuditLogOptions = {}): ServerModule {
       // Built first: a CA file that cannot be read refuses the start (ConfigError) before anything is wired.
       const sink = await sinkFromConfig(ctx.config);
       ctx.hooks.audit.push(auditHook(now, { forward: sink !== undefined }));
-      ctx.hooks.licenseChanged.push(licenseListener({ tenancy: ctx.tenancy, hooks: ctx.hooks, log: ctx.log }));
+      // Written after the license route answers: kept, so shutdown waits for them and a test can.
+      const licenseWrites = pendingWrites();
+      options.onLicenseWrites?.(licenseWrites);
+      ctx.hooks.licenseChanged.push(
+        licenseListener({ tenancy: ctx.tenancy, hooks: ctx.hooks, log: ctx.log, writes: licenseWrites }),
+      );
       ctx.meta.addCapability('audit-log');
       // The workspace `recordDesktopActivity` setting (#211); a server without it ignores the field, so the desktop hides the switch.
       ctx.meta.addCapability('desktop-activity');
@@ -91,6 +99,7 @@ export function auditLogModule(options: AuditLogOptions = {}): ServerModule {
       // before the sweeper stops, a sweep or a forward batch under way finishes (or rolls back, leaving its
       // events queued), and only then is the sink closed.
       app.addHook('onClose', async () => {
+        await licenseWrites.settled();
         await sealer?.stop();
         await sweeper.stop();
         await forwarder?.stop();
