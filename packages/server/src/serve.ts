@@ -289,7 +289,12 @@ export async function runMigrate(
       io.stderr.write(`${error.code}: ${error.message}\n`);
       // The image's own empty /data, with the volume not mounted here: the schema is migrated, and the server moves
       // its real data directory at its next start (C1 of the Task 22 review).
-      if (error.code === 'tenancy-data-dir-empty') return ExitCode.Ok;
+      if (error.code === 'tenancy-data-dir-empty') {
+        io.stdout.write(
+          `data directory: ${config.dataDir} is empty, so not the server's; the server moves its own at its next start\n`,
+        );
+        return ExitCode.Ok;
+      }
       return ExitCode.Config;
     }
     return ExitCode.Ok;
@@ -332,8 +337,12 @@ export async function startServer(
   // connection: a session-level advisory lock means nothing behind a transaction pooler, which the app URL may
   // be (owner ruling, 2026-10-30). With one URL it is that URL, as before.
   let runningLock: RunningLock | undefined;
+  // The migration URL's pool, kept open past the migrations for the file step: a direct connection, where the app
+  // URL may be a pooler that would cut the step's long unit short (Task 22 fix-round review m1).
+  let owner: Database | undefined;
   const fail = async (error: StartupError): Promise<never> => {
     await runningLock?.release();
+    await owner?.close();
     await db.close();
     throw error;
   };
@@ -346,17 +355,13 @@ export async function startServer(
       await checkNothingLeftBehind(db, config.dataDir);
       await migrate(db, migrations);
     } else {
-      const owner = createDatabase(migrationUrl);
-      try {
-        await checkPostgresVersion(owner);
-        runningLock = await RunningLock.acquire(migrationUrl, { ...lockOptions, label: 'the migration connection' });
-        // Before anything is migrated: the refusal then leaves the database as it was too.
-        await checkNothingLeftBehind(owner, config.dataDir);
-        if (mode === 'two-roles') await migrateAndGrant(owner, config.databaseUrl, migrations);
-        else await migrate(owner, migrations);
-      } finally {
-        await owner.close();
-      }
+      owner = createDatabase(migrationUrl);
+      await checkPostgresVersion(owner);
+      runningLock = await RunningLock.acquire(migrationUrl, { ...lockOptions, label: 'the migration connection' });
+      // Before anything is migrated: the refusal then leaves the database as it was too.
+      await checkNothingLeftBehind(owner, config.dataDir);
+      if (mode === 'two-roles') await migrateAndGrant(owner, config.databaseUrl, migrations);
+      else await migrate(owner, migrations);
       if (mode === 'two-roles') await checkAppSignIn(db, config.databaseUrl);
     }
   } catch (error) {
@@ -374,7 +379,9 @@ export async function startServer(
   // Spec §19.10's order: the migrations, then the file step, then `prepare` and the writability check, so
   // `prepare` can never make an empty tenants/ tree beside a half-moved data directory.
   try {
-    await runTenancySteps(db, config.dataDir, { onSkipped: skippedNote(io) });
+    await runTenancySteps(owner ?? db, config.dataDir, { onSkipped: skippedNote(io) });
+    await owner?.close();
+    owner = undefined;
   } catch (error) {
     if (error instanceof WirebenchError) {
       return fail(new StartupError(ExitCode.Config, `${error.code}: ${error.message}`));

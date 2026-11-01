@@ -19,7 +19,7 @@
  * starting at once never move the same directory, and a crash leaves `tenancy_step` where it was, for the next
  * start-up to finish.
  */
-import { lstat, mkdir, readdir, readFile, realpath, rm } from 'node:fs/promises';
+import { lstat, mkdir, readdir, readFile, realpath, rm, rmdir } from 'node:fs/promises';
 import { join, relative, resolve, sep } from 'node:path';
 import { WirebenchError } from '@wirebench/engine';
 import type { Database, Querier } from '../db/querier.js';
@@ -68,10 +68,12 @@ export const FILE_STEP_CLASS = 0x57424653; // "WBFS"
 /** A test seam: called after each part of the step has happened, so a test can stop the step there. */
 export type StepCheckpoint = (part: string) => void;
 
-/** The filesystem calls the pre-flight and the moves make, injectable so a test can fake another device. */
+/** The filesystem calls the pre-flight and the moves make, injectable so a test can fake another device or a link. */
 export interface StepFs {
   /** The device a path is on (`lstat`'s `dev`), or `undefined` when nothing is there. */
   readonly device: (path: string) => Promise<number | undefined>;
+  /** Whether the entry at a path is itself a symbolic link (`lstat`, never followed). */
+  readonly isLink: (path: string) => Promise<boolean>;
   readonly rename: (from: string, to: string) => Promise<void>;
 }
 
@@ -83,6 +85,14 @@ const realFs: StepFs = {
       return (await lstat(path)).dev;
     } catch (error) {
       if (isMissing(error)) return undefined;
+      throw error;
+    }
+  },
+  isLink: async (path) => {
+    try {
+      return (await lstat(path)).isSymbolicLink();
+    } catch (error) {
+      if (isMissing(error)) return false;
       throw error;
     }
   },
@@ -155,12 +165,29 @@ export async function planMove(dataDir: string, defaultTenantId: string, fs: Ste
   }
   if (conflicts.length > 0) throw conflict(conflicts);
 
+  // A link would move as a link, and the new layout refuses links (`tenantPaths`), so every request would then be
+  // refused with the step already done: /data/repos -> /mnt/big/repos is a common way to put repositories on a
+  // bigger disk (Task 22 fix-round review I1).
+  const links: string[] = [];
+  for (const [from] of renames) if (await fs.isLink(from)) links.push(`${relative(base, from)}/`);
+  for (const name of kept) if (await fs.isLink(join(oldTmp, name))) links.push(`tmp/${name}`);
+  if (links.length > 0) {
+    throw new WirebenchError(
+      'tenancy-move-link',
+      `${listed(links)} in ${base} ${links.length === 1 ? 'is a symbolic link' : 'are symbolic links'}, and the new ` +
+        `layout does not follow links: replace each with the directory itself, or mount the volume at its new place ` +
+        `under ${join(base, TENANTS_DIR, defaultTenantId)}, and start again. Nothing was moved`,
+    );
+  }
+
   // A rename never crosses a filesystem: a source on another device (a mount point, say) would fail with EXDEV after
-  // the others had moved. The destinations are under tenants/ (or, before it exists, the data directory itself).
-  const home = (await fs.device(join(base, TENANTS_DIR))) ?? (await fs.device(base));
+  // the others had moved. Each destination's device is the nearest of its parents that exists: the tenant's root (or
+  // its tmp/), tenants/, or the data directory itself.
+  const home = (await fs.device(root)) ?? (await fs.device(join(base, TENANTS_DIR))) ?? (await fs.device(base));
+  const tmpHome = (await fs.device(join(root, 'tmp'))) ?? home;
   const elsewhere: string[] = [];
   for (const [from] of renames) if ((await fs.device(from)) !== home) elsewhere.push(relative(base, from));
-  for (const name of kept) if ((await fs.device(join(oldTmp, name))) !== home) elsewhere.push(`tmp/${name}`);
+  for (const name of kept) if ((await fs.device(join(oldTmp, name))) !== tmpHome) elsewhere.push(`tmp/${name}`);
   if (elsewhere.length > 0) {
     throw new WirebenchError(
       'tenancy-move-cross-device',
@@ -209,7 +236,8 @@ export async function moveFiles(
     await fs.rename(join(oldTmp, name), join(root, 'tmp', name));
     checkpoint(`kept ${name}`);
   }
-  await rm(oldTmp, { recursive: true, force: true });
+  // Retried, as the renames are: Windows refuses a delete while a transient handle is open (review m4).
+  await rm(oldTmp, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
   checkpoint('removed tmp');
   return plan;
 }
@@ -294,28 +322,58 @@ async function databaseHasData(tx: Querier, defaultTenantId: string): Promise<bo
   return rows.rows[0]?.has === true;
 }
 
+/** What a move recorded as made left at the data directory's root, and whether the step can simply run again. */
+interface LeftBehind {
+  readonly left: readonly string[];
+  /** Every destination is absent or an empty directory, so re-arming the step and moving is safe. */
+  readonly rearmable: boolean;
+  /** The empty destination directories re-arming removes first, so the pre-flight sees no conflict. */
+  readonly emptyDestinations: readonly string[];
+}
+
+async function leftBehind(dataDir: string, defaultTenantId: string): Promise<LeftBehind> {
+  const base = resolve(dataDir);
+  const root = tenantRootById(base, defaultTenantId);
+  const left: string[] = [];
+  const emptyDestinations: string[] = [];
+  let rearmable = true;
+  for (const name of MOVED_DIRS) {
+    if ((await realFs.device(join(base, name))) === undefined) continue;
+    left.push(`${name}/`);
+    const to = join(root, name);
+    if ((await realFs.device(to)) === undefined) continue;
+    const empty = !(await realFs.isLink(to)) && (await readdir(to).catch(() => ['?'])).length === 0;
+    if (empty) emptyDestinations.push(to);
+    else rearmable = false;
+  }
+  return { left, rearmable, emptyDestinations };
+}
+
+const leftBehindError = (dataDir: string, defaultTenantId: string, left: readonly string[]): WirebenchError => {
+  const root = join(TENANTS_DIR, defaultTenantId);
+  return new WirebenchError(
+    'tenancy-files-left-behind',
+    `${resolve(dataDir)} still holds ${left.join(' and ')} from before this version, but the database records the ` +
+      'data directory as moved, and the new places already hold data: the move ran against another directory, ' +
+      'such as a migrate run without this volume mounted, and the server has been used since. Nothing was ' +
+      `changed. Stop the server and merge ${left.join(' and ')} into ${root}/ by hand, the kept tmp/removed-… ` +
+      `repositories into ${root}/tmp/, then start again`,
+  );
+};
+
 /**
  * Refuses a data directory that still holds `repos/` or `checkouts/` at its root while the database records the move
- * as made: the move then ran against another directory (a `migrate` on an image whose own `/data` was not the
- * volume, say), and serving would hide every repository. Only reads; run it before the migrations.
+ * as made and the new places already hold data, which only a person can merge. When the new places are absent or
+ * empty, it lets the start go on: the step then re-arms itself and moves, with every check of its pre-flight
+ * (`runTenancySteps`). Only reads; run it before the migrations.
  *
  * @throws WirebenchError `tenancy-files-left-behind`
  */
 export async function checkNothingLeftBehind(db: Querier, dataDir: string): Promise<void> {
   const state = await readTenancyStep(db);
   if (state === undefined || (state.step !== 'keys' && state.step !== 'done')) return;
-  const base = resolve(dataDir);
-  const left: string[] = [];
-  for (const name of MOVED_DIRS) if ((await realFs.device(join(base, name))) !== undefined) left.push(`${name}/`);
-  if (left.length === 0) return;
-  const root = join(TENANTS_DIR, state.defaultTenantId);
-  throw new WirebenchError(
-    'tenancy-files-left-behind',
-    `${base} still holds ${left.join(' and ')} from before this version, but the database records the data ` +
-      'directory as moved: the move ran against another directory, such as a migrate run without this volume ' +
-      `mounted. Nothing was changed. Stop the server, move ${left.join(' and ')} into ${root}/ in the data ` +
-      'directory (remove any empty directories of the same name there first), and start again',
-  );
+  const found = await leftBehind(dataDir, state.defaultTenantId);
+  if (found.left.length > 0 && !found.rearmable) throw leftBehindError(dataDir, state.defaultTenantId, found.left);
 }
 
 /** The data directory holds nothing of the server's while the database has data: it is not the server's own. */
@@ -351,6 +409,9 @@ export async function runTenancySteps(
 ): Promise<TenancyStep | undefined> {
   return db.transaction(async (tx) => {
     await tx.query("set local idle_in_transaction_session_timeout = '0'");
+    // PostgreSQL 17's whole-transaction timeout, unknown before it (review m1).
+    const version = await tx.query<{ num: number }>("select current_setting('server_version_num')::int as num");
+    if ((version.rows[0]?.num ?? 0) >= 170000) await tx.query("set local transaction_timeout = '0'");
     await tx.query('select pg_advisory_xact_lock($1, hashtext(current_schema()))', [FILE_STEP_CLASS]);
     const state = await readTenancyStep(tx);
     if (state === undefined) return undefined;
@@ -362,6 +423,19 @@ export async function runTenancySteps(
       await tx.query('update server_identity set tenancy_step = $1 where tenancy_step = $2', [to, from]);
       step = to;
     };
+    // A move recorded against another directory, with this one's sources still at the root (review C1 and m2 of
+    // the fix round): when the new places are absent or empty, the step re-arms and moves, through its pre-flight.
+    // Safe: nothing has been written at the new places, `keys` is idempotent, and a refusal below rolls the reset
+    // back with the unit, so the next start finds the same state and re-arms again.
+    if (step === 'keys' || step === 'done') {
+      const found = await leftBehind(dataDir, state.defaultTenantId);
+      if (found.left.length > 0) {
+        if (!found.rearmable) throw leftBehindError(dataDir, state.defaultTenantId, found.left);
+        for (const dir of found.emptyDestinations) await rmdir(dir);
+        await tx.query("update server_identity set tenancy_step = 'files' where tenancy_step = $1", [step]);
+        step = 'files';
+      }
+    }
     if (step === 'files') {
       const fs = options.fs ?? realFs;
       const plan = await planMove(dataDir, state.defaultTenantId, fs);

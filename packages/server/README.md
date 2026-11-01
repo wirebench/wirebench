@@ -138,8 +138,10 @@ Start-up refuses, changing nothing, when a directory is in both its old and its 
 one is on another filesystem than the data directory, when a user's state file names the old `checkouts/` path (it
 names the file), and when the data directory is empty but the database has workspaces, which means
 `WIREBENCH_SERVER_DATA_DIR` does not name the server's own (a `migrate` run without the volume mounted then
-migrates the schema and leaves the move to the server). It also refuses a data directory that still has `repos/` or
-`checkouts/` at its root after the move was recorded elsewhere. `wirebench-server admin tenancy status` says where the
+migrates the schema and leaves the move to the server). It also refuses a `repos/` or `checkouts/` that is a
+symbolic link (the new layout does not follow links: replace it with the directory, or mount the volume at its new
+place). When the move was recorded against another directory and this one still has `repos/` or `checkouts/` at its
+root, a start moves them as long as their new places are empty, and otherwise refuses, naming what to merge. `wirebench-server admin tenancy status` says where the
 upgrade stands.
 
 The image carries the browser client's build. A server run from a checkout with

@@ -84,6 +84,7 @@ describeDb('admin tenancy check and status', () => {
     expect(out).toMatch(/checkouts\/: 1 users, to be moved/);
     expect(out).toMatch(/tmp\/: 1 deleted workspaces kept, 1 scratch entries deleted/);
     expect(out).toContain('same filesystem: yes');
+    expect(out).toContain('links: none');
     expect(out).toContain('unknown paths: none');
     expect(out).toMatch(/^ {2}audit_events: \d+ rows, [\d.]+ MiB, [\d.]+ MiB, \d+$/m);
     for (const table of SCOPED_0019) expect(out, table).toContain(`  ${table}: `);

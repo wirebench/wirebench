@@ -352,9 +352,28 @@ describeDb('the file step on the frozen 0019 fixture', () => {
     }
   });
 
-  it('a start or migrate at done with repos/ or checkouts/ still at the root refuses, naming them, and changes nothing', async () => {
-    // A move made against another directory: the step is done, the real one untouched.
+  it('at done with repos/ and checkouts/ still at the root and their new places empty, the step re-arms and moves (fix-round review m2)', async () => {
+    // A move recorded against another directory, which left only empty new places behind.
     await db.owner.query("update server_identity set tenancy_step = 'done'");
+    const t = (await readTenancyStep(db.owner))!.defaultTenantId;
+    await mkdir(join(dataDir, 'tenants', t, 'repos'), { recursive: true });
+    const server = await start(dataDir);
+    try {
+      expect((await readTenancyStep(db.owner))?.step).toBe('done');
+      expect((await readdir(dataDir)).sort()).toEqual(['no-hooks', 'tenants']);
+      expect((await readdir(join(dataDir, 'tenants', t, 'repos'))).length).toBeGreaterThan(0);
+      const tmp = await readdir(join(dataDir, 'tenants', t, 'tmp'));
+      expect(tmp.some((name) => name.startsWith(`removed-${fixture.workspaces.retired}-`))).toBe(true);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it('at done with repos/ still at the root and data at its new place, start and migrate refuse and change nothing', async () => {
+    await db.owner.query("update server_identity set tenancy_step = 'done'");
+    const t = (await readTenancyStep(db.owner))!.defaultTenantId;
+    // The server has been used since: a repository exists at the new place.
+    await mkdir(join(dataDir, 'tenants', t, 'repos', 'made-since.git'), { recursive: true });
     const ledger = async () => (await db.owner.query('select version from schema_migrations order by 1')).rows;
     const before = { files: await tree(dataDir), ledger: await ledger() };
     const error = await start(dataDir).catch((caught: unknown) => caught);
@@ -362,11 +381,31 @@ describeDb('the file step on the frozen 0019 fixture', () => {
     expect(error).toMatchObject({ exitCode: 2 });
     expect((error as Error).message).toContain('tenancy-files-left-behind');
     expect((error as Error).message).toContain('repos/ and checkouts/');
+    expect((error as Error).message).toContain('tmp/removed-');
     const migrate = await runIn(dataDir, ['migrate']);
     expect(migrate.code).toBe(2);
     expect(migrate.err).toContain('tenancy-files-left-behind');
     const check = await runIn(dataDir, ['migrate', '--check']);
     expect(check.code).toBe(1);
     expect({ files: await tree(dataDir), ledger: await ledger() }).toEqual(before);
+    expect((await readTenancyStep(db.owner))?.step).toBe('done');
+  });
+
+  it('refuses a linked repos/ in the step, before anything moves, and stays at files (fix-round review I1)', async () => {
+    const big = await mkTempDir('wbs-file-step-big-');
+    try {
+      const { rename, symlink } = await import('node:fs/promises');
+      await rename(join(dataDir, 'repos'), join(big, 'repos'));
+      await symlink(join(big, 'repos'), join(dataDir, 'repos'), 'dir');
+      const before = await tree(dataDir);
+      await expect(runTenancySteps(db.owner, dataDir)).rejects.toMatchObject({ code: 'tenancy-move-link' });
+      expect(await tree(dataDir)).toEqual(before);
+      expect((await readTenancyStep(db.owner))?.step).toBe('files');
+      // admin tenancy check says so beforehand.
+      const report = await runIn(dataDir, ['admin', 'tenancy', 'check']);
+      expect(report.out).toContain('links: repos/ is a symbolic link');
+    } finally {
+      await removeTempDir(big);
+    }
   });
 });

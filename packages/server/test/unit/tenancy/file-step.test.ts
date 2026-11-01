@@ -3,7 +3,7 @@
  * server's unit tests run on, Windows included: the moves, the conflict and cross-device refusals before anything
  * moves, the prefix scan over the state files only, in every spelling a writer uses, and the size cap.
  */
-import { lstat, mkdir, readdir, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, readdir, rename, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { moveFiles, planMove } from '../../../src/tenancy/file-step.js';
@@ -55,6 +55,7 @@ describe('the file step without a database', () => {
     const fs = {
       // checkouts/ is a mount point: another device than the data directory's.
       device: async (path: string) => (path === join(dataDir, 'checkouts') ? -1 : real(path)),
+      isLink: () => Promise.resolve(false),
       rename: renameWithRetry,
     };
     const error = await moveFiles(dataDir, T, { fs }).catch((caught: unknown) => caught);
@@ -62,6 +63,37 @@ describe('the file step without a database', () => {
     expect((error as Error).message).toContain('checkouts');
     expect((error as Error).message).not.toContain('repos');
     expect(await tree(dataDir)).toEqual(before);
+  });
+
+  it('compares against the tenant root when it exists: a root on its own mount refuses too (fix-round review m3)', async () => {
+    await mkdir(join(dataDir, 'tenants', T), { recursive: true });
+    const before = await tree(dataDir);
+    const real = async (path: string) => (await lstat(path).catch(() => undefined))?.dev;
+    const fs = {
+      device: async (path: string) => (path === join(dataDir, 'tenants', T) ? -1 : real(path)),
+      isLink: () => Promise.resolve(false),
+      rename: renameWithRetry,
+    };
+    const error = await moveFiles(dataDir, T, { fs }).catch((caught: unknown) => caught);
+    expect(error).toMatchObject({ code: 'tenancy-move-cross-device' });
+    expect(await tree(dataDir)).toEqual(before);
+  });
+
+  it('refuses a source that is a symbolic link before anything moves, naming it (fix-round review I1)', async () => {
+    const big = await mkTempDir('wbs-file-step-big-');
+    try {
+      await rename(join(dataDir, 'repos'), join(big, 'repos'));
+      await symlink(join(big, 'repos'), join(dataDir, 'repos'), 'dir');
+      const before = await tree(dataDir);
+      const error = await moveFiles(dataDir, T).catch((caught: unknown) => caught);
+      expect(error).toMatchObject({ code: 'tenancy-move-link' });
+      expect((error as Error).message).toContain('repos/');
+      expect((error as Error).message).toContain('is a symbolic link');
+      expect(await tree(dataDir)).toEqual(before);
+      expect((await lstat(join(dataDir, 'repos'))).isSymbolicLink()).toBe(true);
+    } finally {
+      await removeTempDir(big);
+    }
   });
 
   it('refuses both locations present before anything moves', async () => {

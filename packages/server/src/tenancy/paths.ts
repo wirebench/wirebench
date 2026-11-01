@@ -104,7 +104,8 @@ function assertRealDirectory(path: string, expected: string): void {
  * The checks of {@link tenantRoot}. They hold against the server's own inputs (an id, a path it builds), not against
  * someone who can write to the data directory: a root swapped for a link between this check and the use of the
  * path (git, rename, a host's whole life) is not caught. Fd-relative opens with `O_NOFOLLOW` on every component
- * would be, but `git -C` takes a path (Task 21 review M3).
+ * would be, but `git -C` takes a path (Task 21 review M3). `tenantPaths`' cache of verified sub-directories widens
+ * that window to the process's life, under the same attacker, who can already write the tenant's files.
  */
 function checkedRoot(dataDir: string, tenantId: string): string {
   if (!CANONICAL_UUID.test(tenantId)) throw refused('the tenant id is not a canonical UUID');

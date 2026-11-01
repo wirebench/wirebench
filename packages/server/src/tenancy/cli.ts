@@ -133,10 +133,13 @@ async function dataDirReport(dataDir: string): Promise<string[]> {
   const names = await readdir(dataDir);
   // The move is a rename, never a copy: each source must be on the filesystem tenants/ will be made on.
   const elsewhere: string[] = [];
+  // The move refuses a link (tenancy-move-link): the new layout does not follow them.
+  const links: string[] = [];
   for (const name of MOVED_DIRS) {
     if (!names.includes(name)) continue;
     const info = await lstat(join(dataDir, name));
-    if (info.dev !== root.dev) elsewhere.push(`${name}/`);
+    if (info.isSymbolicLink()) links.push(`${name}/`);
+    else if (info.dev !== root.dev) elsewhere.push(`${name}/`);
     const count = (await readdir(join(dataDir, name))).length;
     lines.push(`  ${name}/: ${String(count)} ${name === 'repos' ? 'repositories' : 'users'}, to be moved`);
   }
@@ -151,6 +154,11 @@ async function dataDirReport(dataDir: string): Promise<string[]> {
     elsewhere.length === 0
       ? '  same filesystem: yes'
       : `  same filesystem: no, ${elsewhere.join(' and ')} on another filesystem; the move is a rename, so put them on the data directory's filesystem first`,
+  );
+  lines.push(
+    links.length === 0
+      ? '  links: none'
+      : `  links: ${links.join(' and ')} ${links.length === 1 ? 'is a symbolic link' : 'are symbolic links'}, which the move refuses; replace each with the directory itself, or mount the volume at its new place`,
   );
   const unknown = names.filter((name) => !KNOWN_ROOT_ENTRIES.includes(name));
   lines.push(`  unknown paths: ${unknown.length === 0 ? 'none' : unknown.join(', ')}`);
