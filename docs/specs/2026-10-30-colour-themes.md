@@ -15,8 +15,9 @@ Date: 2026-10-30 · Status: approved · Branch: not started.
 - Third source palette: five colours sampled from a pigeon photo — feather white `#F1F1F4`, neck
   mint `#6FC0A2`, mauve `#8F6996`, periwinkle grey `#AFB6CE`, charcoal `#2B2425`. Previewed the same
   day as one more direction — Plume.
-- Fourth direction (2026-11-01): a warm clay-and-cream palette — clay `#D97757`, deep clay `#C15F3C`,
-  cream `#F0EEE6`, paper `#FAF9F5`, warm charcoal `#262624`, ink `#1F1E1D` — previewed as Kiln.
+- Fourth direction (2026-11-01): a clay-and-cream palette — clay `#D97757`, deep clay `#C15F3C`,
+  cream `#F0EEE6`, paper `#FAF9F5` — previewed as Kiln; its dark mode was then reworked to neutral
+  greys (`#181818` canvas, `#252525` panels, `#444648` selection) on the owner's ask.
 - Owner rulings (2026-10-30, one popup):
   1. **Default stays the default** for new installs; the three themes are opt-in.
   2. **The palette is stored in the preferences document**, beside the mode.
@@ -300,42 +301,44 @@ raised surface and its `--wb-border-strong` below 3:1 on both modes' surfaces, s
 grey from the periwinkle family that clears them (5.36:1 and 3.58:1 on dark raised, 3.12:1 for
 the light border on base).
 
-### 3.6b Kiln — cream paper, warm charcoal, clay accent
+### 3.6b Kiln — cream paper in light, neutral grey in dark, clay accent
 
-A warm, soft take on Default: the same clay family for the accent, but on cream paper in light and a
-lighter warm charcoal in dark rather than Default's near-black. The selection tint is a pale clay in
-light and a brown in dark. It uses no chrome colour of its own: the chrome tokens stay aliases, so
-the title bar and activity bar sit on the sunken cream (light) or ink (dark).
+A soft take on Default with the same clay accent family. Light sits on cream paper with a pale-clay
+selection. Dark is neutral, with no warm tint: a near-black `#181818` canvas, grey panels and inputs
+stepping up to `#303030`, a grey selection (`#444648`, used for both `--wb-bg-selected` and the
+selected explorer row's `--wb-accent-muted`) and a blue focus ring, so clay appears only where the
+accent is — primary buttons, the active tab, links, JSON keys. It uses no chrome colour of its own:
+the chrome tokens stay aliases of the sunken surface.
 
 | Token                 | Dark      | Light     |
 | --------------------- | --------- | --------- |
-| `--wb-bg-sunken`      | `#1F1E1D` | `#F0EEE6` |
-| `--wb-bg-base`        | `#262624` | `#FAF9F5` |
-| `--wb-bg-raised`      | `#2D2D2A` | `#FFFFFF` |
-| `--wb-bg-overlay`     | `#32322F` | `#FFFFFF` |
-| `--wb-bg-hover`       | `#353532` | `#F2F0E8` |
-| `--wb-bg-active`      | `#3B3A36` | `#E8E5DA` |
-| `--wb-bg-selected`    | `#4A3A30` | `#ECE2D4` |
-| `--wb-fg-default`     | `#F0EEE6` | `#141413` |
-| `--wb-fg-muted`       | `#C9C6BC` | `#3D3D3A` |
-| `--wb-fg-subtle`      | `#AEABA1` | `#5A5954` |
-| `--wb-border-default` | `#3B3A36` | `#E3DFD3` |
+| `--wb-bg-sunken`      | `#1B1B1B` | `#F0EEE6` |
+| `--wb-bg-base`        | `#181818` | `#FAF9F5` |
+| `--wb-bg-raised`      | `#252525` | `#FFFFFF` |
+| `--wb-bg-overlay`     | `#303030` | `#FFFFFF` |
+| `--wb-bg-hover`       | `#2A2A2A` | `#F2F0E8` |
+| `--wb-bg-active`      | `#333333` | `#E8E5DA` |
+| `--wb-bg-selected`    | `#444648` | `#ECE2D4` |
+| `--wb-fg-default`     | `#F1F1F1` | `#141413` |
+| `--wb-fg-muted`       | `#C8C8C8` | `#3D3D3A` |
+| `--wb-fg-subtle`      | `#A8A8A8` | `#5A5954` |
+| `--wb-border-default` | `#2C2C2C` | `#E3DFD3` |
 | `--wb-accent-default` | `#E08A68` | `#A64B29` |
 | `--wb-accent-hover`   | `#E9A083` | `#8F3F22` |
-| `--wb-accent-surface` | `#3A2C25` | `#F8ECE5` |
-| `--wb-accent-muted`   | `#78452F` | `#E6BFAE` |
-| `--wb-fg-on-accent`   | `#1F1E1D` | `#FFFFFF` |
+| `--wb-accent-surface` | `#2A2624` | `#F8ECE5` |
+| `--wb-accent-muted`   | `#444648` | `#E6BFAE` |
+| `--wb-fg-on-accent`   | `#181818` | `#FFFFFF` |
 | `--wb-status-success` | `#7FC79A` | `#2B7550` |
-| `--wb-fg-faint`       | `#A19E94` | `#6B6A64` |
-| `--wb-border-strong`  | `#7A776E` | `#8C8A80` |
+| `--wb-fg-faint`       | `#969696` | `#6B6A64` |
+| `--wb-border-strong`  | `#707070` | `#8C8A80` |
 | `--wb-status-danger`  | `#EF7D72` | `#B23B33` |
+| `--wb-border-focus`   | `#6AA1E6` | `var(--wb-accent-default)` |
 
-The gate moved four values from the preview: the light accent deepens from `#C15F3C` to `#A64B29`
-so curl flags clear 4.5:1 on the sunken cream; the dark accent lightens to `#E08A68` for link text
-on raised; the dark `--wb-accent-muted` darkens to `#78452F` so method text on a selected row
-clears 4.5:1; and dark `--wb-status-danger` lightens to `#EF7D72` because Default's red fell to
-4.15:1 on Kiln's lighter raised surface. Light danger restates Default's `#B23B33` so the dark
-value does not leak.
+The gate moved three values from the preview: the light accent deepens from `#C15F3C` to `#A64B29`
+so curl flags clear 4.5:1 on the sunken cream; the dark accent lightens to `#E08A68` for link text on
+raised; and dark `--wb-status-danger` lightens to `#EF7D72` because Default's red falls below 4.5:1
+on the `#252525` raised surface. Light restates Default's danger and focus values so the dark ones do
+not leak.
 
 ### 3.7 Tokens a palette does not list
 
