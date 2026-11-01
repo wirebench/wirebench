@@ -117,7 +117,7 @@ describeDb('the file step (spec §19.10)', () => {
   });
 
   it('resumes after a kill at every part of the step', async () => {
-    const parts = ['renamed repos', 'renamed checkouts', `kept removed-${WS}-1`, 'removed tmp', 'scanned'];
+    const parts = ['renamed repos', 'renamed checkouts', `kept removed-${WS}-1`, 'removed tmp'];
     for (const part of parts) {
       const dir = await mkTempDir('wbs-file-step-kill-');
       const fresh = await testDatabase();
@@ -153,25 +153,30 @@ describeDb('the file step (spec §19.10)', () => {
     expect((await readTenancyStep(db.owner))?.step).toBe('files');
   });
 
-  it('refuses a state file that names the old checkouts prefix, naming the file, and stays at files', async () => {
+  it('refuses a state file that names the old checkouts prefix before anything moves, naming the file', async () => {
     await oldLayout(dataDir);
-    const linked = join(dataDir, 'checkouts', USER, 'workspaces', WS, 'share.yaml');
-    await writeFile(linked, `kind: linked\npath: ${join(dataDir, 'checkouts', USER, 'elsewhere')}\n`);
-    // A workspace's own files may hold any text: they are the user's, and not read.
+    // A linked project's path is in the workspace manifest.
+    await writeFile(
+      join(dataDir, 'checkouts', USER, 'workspaces', WS, 'tree', 'workspace.yaml'),
+      `projects:\n  - source: linked\n    path: ${join(dataDir, 'checkouts', USER, 'elsewhere')}\n`,
+    );
+    // A workspace's other files and the history hold any text: they are the user's, and not read.
     await writeFile(
       join(dataDir, 'checkouts', USER, 'workspaces', WS, 'tree', 'notes.txt'),
       join(dataDir, 'checkouts'),
     );
+    await mkdir(join(dataDir, 'checkouts', USER, 'history'), { recursive: true });
+    await writeFile(join(dataDir, 'checkouts', USER, 'history', 'p.jsonl'), join(dataDir, 'checkouts'));
+    const before = await tree(dataDir);
     const error = await runTenancySteps(db.owner, dataDir).catch((caught: unknown) => caught);
     expect(error).toMatchObject({ code: 'tenancy-prefix-found' });
-    expect((error as Error).message).toContain(`${USER}/workspaces/${WS}/share.yaml`);
+    expect((error as Error).message).toContain(`${USER}/workspaces/${WS}/tree/workspace.yaml`);
     expect((error as Error).message).not.toContain('notes.txt');
+    expect((error as Error).message).not.toContain('history');
+    expect(await tree(dataDir)).toEqual(before);
     expect((await readTenancyStep(db.owner))?.step).toBe('files');
-    // Fixed by hand, the next run finishes.
-    await writeFile(
-      join(dataDir, 'tenants', await tenantId(), 'checkouts', USER, 'workspaces', WS, 'share.yaml'),
-      'kind: server\n',
-    );
+    // Fixed by hand where it is, the next run finishes.
+    await writeFile(join(dataDir, 'checkouts', USER, 'workspaces', WS, 'tree', 'workspace.yaml'), 'projects: []\n');
     expect(await runTenancySteps(db.owner, dataDir)).toBe('done');
   });
 
@@ -285,5 +290,83 @@ describeDb('the file step on the frozen 0019 fixture', () => {
       code: 'tenancy-prefix-found',
       message: expect.stringContaining(`${fixture.checkout.slice('checkouts/'.length)}/workspace-state.json`) as string,
     });
+  });
+
+  const envFor = (dir: string) => ({
+    WIREBENCH_SERVER_MIGRATION_DATABASE_URL: db.ownerUrl,
+    WIREBENCH_SERVER_DATABASE_URL: db.url,
+    WIREBENCH_SERVER_PUBLIC_URL: 'https://wirebench.test',
+    WIREBENCH_SERVER_DATA_DIR: dir,
+  });
+  const runIn = async (dir: string, args: string[]) => {
+    const stdout = { write: vi.fn() };
+    const stderr = { write: vi.fn() };
+    const code = await main(args, { stdout, stderr, env: envFor(dir) });
+    return {
+      code,
+      out: stdout.write.mock.calls.map((c) => String(c[0])).join(''),
+      err: stderr.write.mock.calls.map((c) => String(c[0])).join(''),
+    };
+  };
+  const start = async (dir: string) => {
+    const env = {
+      ...envFor(dir),
+      WIREBENCH_SERVER_HOST: '127.0.0.1',
+      WIREBENCH_SERVER_PORT: String(await freePort()),
+      WIREBENCH_SERVER_LOG_LEVEL: 'fatal',
+    };
+    return startServer(
+      env,
+      { stdout: { write: vi.fn() }, stderr: { write: vi.fn() }, env },
+      {
+        signals: new EventEmitter(),
+        exit: vi.fn(),
+        modules: BUILTIN_MODULES,
+      },
+    );
+  };
+
+  it("migrate on the image's own empty /data leaves the step due; the server then moves its real volume (review C1)", async () => {
+    // docker run … migrate without the volume: /data exists, and is empty.
+    const imageData = await mkTempDir('wbs-image-data-');
+    try {
+      const migrated = await runIn(imageData, ['migrate']);
+      expect(migrated.code).toBe(0);
+      expect(migrated.err).toContain('tenancy-data-dir-empty');
+      expect(migrated.err).toContain('WIREBENCH_SERVER_DATA_DIR');
+      expect((await readTenancyStep(db.owner))?.step).toBe('files');
+      expect(await readdir(imageData)).toEqual([]);
+      // A server started there refuses too, rather than serve an empty tree.
+      await expect(start(imageData)).rejects.toThrow(/tenancy-data-dir-empty/);
+      expect(await readdir(imageData)).toEqual([]);
+    } finally {
+      await removeTempDir(imageData);
+    }
+    // The real volume.
+    const server = await start(dataDir);
+    try {
+      expect((await readTenancyStep(db.owner))?.step).toBe('done');
+      expect((await readdir(dataDir)).sort()).toEqual(['no-hooks', 'tenants']);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it('a start or migrate at done with repos/ or checkouts/ still at the root refuses, naming them, and changes nothing', async () => {
+    // A move made against another directory: the step is done, the real one untouched.
+    await db.owner.query("update server_identity set tenancy_step = 'done'");
+    const ledger = async () => (await db.owner.query('select version from schema_migrations order by 1')).rows;
+    const before = { files: await tree(dataDir), ledger: await ledger() };
+    const error = await start(dataDir).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(StartupError);
+    expect(error).toMatchObject({ exitCode: 2 });
+    expect((error as Error).message).toContain('tenancy-files-left-behind');
+    expect((error as Error).message).toContain('repos/ and checkouts/');
+    const migrate = await runIn(dataDir, ['migrate']);
+    expect(migrate.code).toBe(2);
+    expect(migrate.err).toContain('tenancy-files-left-behind');
+    const check = await runIn(dataDir, ['migrate', '--check']);
+    expect(check.code).toBe(1);
+    expect({ files: await tree(dataDir), ledger: await ledger() }).toEqual(before);
   });
 });

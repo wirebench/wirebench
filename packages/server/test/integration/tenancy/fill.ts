@@ -196,9 +196,14 @@ export async function isolationWorld(options: { readonly policiesDisabled?: bool
     scheduler: () => scheduler!,
     outbox: () => outbox!,
     quiet: async () => {
-      await shareAudits?.settled();
-      await licenseAudits?.settled();
-      await scheduler?.idle();
+      // Until all three are idle in one pass: one may start a write in another (Task 22 review m8).
+      for (;;) {
+        await shareAudits?.settled();
+        await licenseAudits?.settled();
+        await scheduler?.idle();
+        const busy = (shareAudits?.pending ?? 0) + (licenseAudits?.pending ?? 0) + (scheduler?.running ?? 0);
+        if (busy === 0) return;
+      }
     },
     close: async () => {
       // Injected sockets stay in the WebSocket server's client set: the live module's grace timer is manual here.

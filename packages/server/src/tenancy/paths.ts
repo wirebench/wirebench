@@ -119,6 +119,9 @@ function checkedRoot(dataDir: string, tenantId: string): string {
   return root;
 }
 
+/** Roots whose sub-directories all exist and were found real, by absolute path. */
+const verified = new Set<string>();
+
 /** Every directory of `scope`'s tenant, from {@link tenantRoot}. */
 export function tenantPaths(dataDir: string, scope: TenantScope): TenantPaths {
   const root = tenantRoot(dataDir, scope);
@@ -133,12 +136,18 @@ export function tenantPaths(dataDir: string, scope: TenantScope): TenantPaths {
   };
   // The directories beneath the root too (Task 21 review M2): a tenants/A/repos linked to tenants/B/repos would
   // hand A's paths into B. The root is real by now, so each must resolve to itself under it.
-  if (statOf(root) === undefined) return paths;
+  if (verified.has(root) || statOf(root) === undefined) return paths;
   const realRoot = realOf(root);
+  let all = true;
   for (const [name, path] of Object.entries(paths)) {
     if (name === 'root') continue;
+    if (statOf(path) === undefined) all = false;
     assertRealDirectory(path, join(realRoot, relative(root, path)));
   }
+  // Once every directory beneath a root exists and checked out, it is not checked again for the process's life: the
+  // server never makes one a link, and these are synchronous calls on the request path (Task 22 review m6). The root
+  // and tenants/ themselves are still checked on every call.
+  if (all) verified.add(root);
   return paths;
 }
 

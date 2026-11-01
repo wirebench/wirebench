@@ -5,6 +5,8 @@
 export interface PendingWrites {
   /** Resolves once every write started so far, and any started while waiting, has committed or failed. */
   settled(): Promise<void>;
+  /** How many writes are in flight now. */
+  readonly pending: number;
 }
 
 export interface PendingWriteSet extends PendingWrites {
@@ -21,6 +23,9 @@ export function pendingWrites(): PendingWriteSet {
     },
     async settled() {
       while (writes.size > 0) await Promise.all([...writes]);
+    },
+    get pending() {
+      return writes.size;
     },
   };
 }

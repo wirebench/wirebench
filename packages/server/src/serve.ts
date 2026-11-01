@@ -29,7 +29,7 @@ import { createTenancy, directoryOf } from './tenancy/tenancy.js';
 import { ensureAppRole, roleMode } from './tenancy/roles.js';
 import { ExitCode, packageVersion, type ServerIo } from './io.js';
 import { NO_HOOKS_DIR, RepoStore } from './repos/repo-store.js';
-import { readTenancyStep, runTenancySteps } from './tenancy/file-step.js';
+import { checkNothingLeftBehind, readTenancyStep, runTenancySteps } from './tenancy/file-step.js';
 import { TENANTS_DIR } from './tenancy/paths.js';
 import { buildServer } from './server.js';
 
@@ -194,6 +194,16 @@ export async function allMigrations(
   return combined;
 }
 
+/** Names, never content: the state files the move's scan skipped for their size. */
+const skippedNote =
+  (io: ServerIo) =>
+  (names: readonly string[]): void => {
+    io.stderr.write(
+      `data directory: ${String(names.length)} state files over 8 MiB were not scanned for the old checkouts path: ` +
+        `${names.slice(0, 20).join(', ')}${names.length > 20 ? ', …' : ''}\n`,
+    );
+  };
+
 const exists = (path: string): Promise<boolean> =>
   access(path).then(
     () => true,
@@ -235,6 +245,14 @@ export async function runMigrate(
       return ExitCode.Config;
     }
     const migrations = await allMigrations(modules);
+    // Before anything is migrated: a data directory left behind by a move made elsewhere changes nothing here.
+    try {
+      await checkNothingLeftBehind(db, config.dataDir);
+    } catch (error) {
+      if (!(error instanceof WirebenchError)) throw error;
+      io.stderr.write(`${error.code}: ${error.message}\n`);
+      return check ? ExitCode.Pending : ExitCode.Config;
+    }
     if (check) {
       const pending = await pendingMigrations(db, migrations);
       io.stdout.write(
@@ -263,12 +281,15 @@ export async function runMigrate(
       return ExitCode.Ok;
     }
     try {
-      const step = await runTenancySteps(db, config.dataDir);
+      const step = await runTenancySteps(db, config.dataDir, { onSkipped: skippedNote(io) });
       if (step !== undefined)
         io.stdout.write(`data directory: ${step === 'done' ? 'in the new layout' : `step ${step}`}\n`);
     } catch (error) {
       if (!(error instanceof WirebenchError)) throw error;
       io.stderr.write(`${error.code}: ${error.message}\n`);
+      // The image's own empty /data, with the volume not mounted here: the schema is migrated, and the server moves
+      // its real data directory at its next start (C1 of the Task 22 review).
+      if (error.code === 'tenancy-data-dir-empty') return ExitCode.Ok;
       return ExitCode.Config;
     }
     return ExitCode.Ok;
@@ -322,12 +343,15 @@ export async function startServer(
     if (migrationUrl === config.databaseUrl) {
       await checkPostgresVersion(db);
       runningLock = await RunningLock.acquire(migrationUrl, { ...lockOptions, label: 'the database connection' });
+      await checkNothingLeftBehind(db, config.dataDir);
       await migrate(db, migrations);
     } else {
       const owner = createDatabase(migrationUrl);
       try {
         await checkPostgresVersion(owner);
         runningLock = await RunningLock.acquire(migrationUrl, { ...lockOptions, label: 'the migration connection' });
+        // Before anything is migrated: the refusal then leaves the database as it was too.
+        await checkNothingLeftBehind(owner, config.dataDir);
         if (mode === 'two-roles') await migrateAndGrant(owner, config.databaseUrl, migrations);
         else await migrate(owner, migrations);
       } finally {
@@ -339,7 +363,9 @@ export async function startServer(
     if (error instanceof StartupError) return fail(error);
     if (
       error instanceof WirebenchError &&
-      (error.code === 'server-postgres-too-old' || error.code === 'tenancy-reverting')
+      (error.code === 'server-postgres-too-old' ||
+        error.code === 'tenancy-reverting' ||
+        error.code === 'tenancy-files-left-behind')
     ) {
       return fail(new StartupError(ExitCode.Config, `${error.code}: ${error.message}`));
     }
@@ -348,13 +374,14 @@ export async function startServer(
   // Spec §19.10's order: the migrations, then the file step, then `prepare` and the writability check, so
   // `prepare` can never make an empty tenants/ tree beside a half-moved data directory.
   try {
-    await runTenancySteps(db, config.dataDir);
+    await runTenancySteps(db, config.dataDir, { onSkipped: skippedNote(io) });
   } catch (error) {
     if (error instanceof WirebenchError) {
       return fail(new StartupError(ExitCode.Config, `${error.code}: ${error.message}`));
     }
-    const reason = error instanceof Error ? error.message : String(error);
-    return fail(new StartupError(ExitCode.Config, `data directory ${config.dataDir} could not be moved: ${reason}`));
+    // The errno code only: Node's message names a path under tenants/<id> (Task 22 review m2).
+    const code = (error as NodeJS.ErrnoException | null)?.code ?? 'an unexpected error';
+    return fail(new StartupError(ExitCode.Config, `data directory ${config.dataDir} could not be moved (${code})`));
   }
   try {
     await RepoStore.prepare(config.dataDir);

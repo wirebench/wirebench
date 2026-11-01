@@ -134,8 +134,12 @@ security, how to back up, what the move will do and whether a rename can do it (
 on the data directory's own filesystem), each table's size, and how long the migration should take. Then stop
 every server process, back up the database (see **Backups**) and the data directory, and start the new version:
 the first start, or `wirebench-server migrate`, migrates and moves. A move cut short resumes at the next start.
-Start-up refuses when a directory is in both its old and its new place (it names both), or when a user's state
-file names the old `checkouts/` path (it names the file). `wirebench-server admin tenancy status` says where the
+Start-up refuses, changing nothing, when a directory is in both its old and its new place (it names both), when
+one is on another filesystem than the data directory, when a user's state file names the old `checkouts/` path (it
+names the file), and when the data directory is empty but the database has workspaces, which means
+`WIREBENCH_SERVER_DATA_DIR` does not name the server's own (a `migrate` run without the volume mounted then
+migrates the schema and leaves the move to the server). It also refuses a data directory that still has `repos/` or
+`checkouts/` at its root after the move was recorded elsewhere. `wirebench-server admin tenancy status` says where the
 upgrade stands.
 
 The image carries the browser client's build. A server run from a checkout with

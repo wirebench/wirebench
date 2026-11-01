@@ -200,12 +200,13 @@ export async function runTenancyCheck(io: ServerIo): Promise<number> {
     );
     return versionOk ? ExitCode.Ok : ExitCode.Config;
   } catch (error) {
+    // The database could not be read: exit 3, as every command that fails on the database does; 2 is configuration.
     if (error instanceof WirebenchError) {
       io.stderr.write(`${error.code}: ${error.message}\n`);
-      return 1;
+      return ExitCode.Migration;
     }
     io.stderr.write(`admin tenancy check failed: ${(error as Error).message}\n`);
-    return 1;
+    return ExitCode.Migration;
   } finally {
     await db.close();
   }
@@ -250,7 +251,7 @@ export async function runTenancyStatus(io: ServerIo): Promise<number> {
     return ExitCode.Ok;
   } catch (error) {
     io.stderr.write(`admin tenancy status failed: ${(error as Error).message}\n`);
-    return 1;
+    return ExitCode.Migration;
   } finally {
     await db.close();
   }
