@@ -4,15 +4,19 @@
  * status says where the upgrade stands; and the estimate's passes are the ones `0020` makes.
  */
 import { randomBytes } from 'node:crypto';
-import { readdir } from 'node:fs/promises';
+import { mkdir, readdir, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { migrate } from '../../../src/db/migrate.js';
+import { seal } from '../../../src/hooks/secret-box.js';
+import { userSecretsKey } from '../../../src/host/server-platform.js';
 import { main } from '../../../src/main.js';
 import { BUILTIN_MODULES } from '../../../src/modules.js';
 import { allMigrations } from '../../../src/serve.js';
 import { BACKUP_ADVICE, DATA_KEY_TEXT } from '../../../src/tenancy/cli.js';
 import { environmentKeyRoot, newDataKey } from '../../../src/tenancy/keys.js';
 import { MIGRATION_PASSES } from '../../../src/tenancy/estimate.js';
+import { runTenancySteps } from '../../../src/tenancy/file-step.js';
 import { loadFixture0019 } from '../../fixtures/tenancy/load.js';
 import { SCOPED_TABLES } from '../../helpers/catalog.js';
 import { describeDb, testDatabase } from '../../helpers/database.js';
@@ -136,6 +140,37 @@ describeDb('admin tenancy check and status', () => {
         expect(status.out).not.toContain(secret.toString('base64'));
       }
     }
+  });
+
+  it('status counts the re-wrap from a dry run: still under the old key before the step, under the data key after', async () => {
+    await migrate(db.owner, await allMigrations(BUILTIN_MODULES));
+    const id = (await db.owner.query<{ id: string }>('select default_tenant_id::text as id from server_identity'))
+      .rows[0]!.id;
+    const root = randomBytes(32);
+    const user = '01JB3Z9K7Q4ZJ6X1V8W2M5N0PA';
+    await mkdir(join(dataDir, 'tenants', id, 'checkouts', user), { recursive: true });
+    const sealed = seal(userSecretsKey(root, user), 'old secret').toString('base64');
+    await writeFile(
+      join(dataDir, 'tenants', id, 'checkouts', user, 'secrets.json'),
+      JSON.stringify({ version: 2, entries: { sec_x: { value: sealed, encrypted: true, createdAt: 'x' } } }),
+    );
+    await db.owner.query("update server_identity set tenancy_step = 'keys'");
+    const withRoot = { WIREBENCH_SERVER_SECRETS_KEY: root.toString('base64') };
+    expect((await run(['admin', 'tenancy', 'status'])).out).toContain(
+      're-wrap: waits for WIREBENCH_SERVER_SECRETS_KEY\n',
+    );
+    // No key yet: status makes none, and reads nothing it would have to.
+    expect((await run(['admin', 'tenancy', 'status'], withRoot)).out).toContain('re-wrap: not run\n');
+    expect((await db.owner.query('select data_key from tenants where id = $1', [id])).rows).toEqual([
+      { data_key: null },
+    ]);
+    expect(await runTenancySteps(db.owner, dataDir, { root })).toBe('done');
+    const after = await run(['admin', 'tenancy', 'status'], withRoot);
+    expect(after.out).toContain(
+      're-wrap: 1 blobs under the data key, 0 still under the old key, 0 open under neither (left as they were)\n',
+    );
+    expect(after.out).not.toContain('old secret');
+    expect(after.out).not.toContain(user);
   });
 
   it("the estimate's passes are the ones 0020 makes over each scoped table: one plus each index it builds and each key", async () => {

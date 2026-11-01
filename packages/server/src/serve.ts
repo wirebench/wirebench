@@ -29,7 +29,7 @@ import { createTenancy, directoryOf } from './tenancy/tenancy.js';
 import { ensureAppRole, roleMode } from './tenancy/roles.js';
 import { ExitCode, packageVersion, type ServerIo } from './io.js';
 import { NO_HOOKS_DIR, RepoStore } from './repos/repo-store.js';
-import { checkNothingLeftBehind, readTenancyStep, runTenancySteps } from './tenancy/file-step.js';
+import { checkNothingLeftBehind, dueStep, KEYS_WAIT, rewrapLine, runTenancySteps } from './tenancy/file-step.js';
 import { TENANTS_DIR } from './tenancy/paths.js';
 import { buildServer } from './server.js';
 
@@ -261,10 +261,9 @@ export async function runMigrate(
           : `migrations: ${pending.length} pending (${pending.map((m) => m.version).join(', ')})\n`,
       );
       // Spec §19.10: the data directory's move is part of the upgrade, so a step short of `done` is pending too.
-      const state = await readTenancyStep(db);
-      const stepPending = state !== undefined && state.step !== 'done';
-      if (stepPending) io.stdout.write(`data directory: the move to the new layout is pending (step ${state.step})\n`);
-      return pending.length === 0 && !stepPending ? ExitCode.Ok : ExitCode.Pending;
+      const due = await dueStep(db, config.secretsKey);
+      if (due !== undefined) io.stdout.write(`data directory: the move to the new layout is pending (step ${due})\n`);
+      return pending.length === 0 && due === undefined ? ExitCode.Ok : ExitCode.Pending;
     }
     const applied =
       mode === 'two-roles'
@@ -281,8 +280,15 @@ export async function runMigrate(
       return ExitCode.Ok;
     }
     try {
-      const step = await runTenancySteps(db, config.dataDir, { onSkipped: skippedNote(io) });
-      if (step !== undefined)
+      const step = await runTenancySteps(db, config.dataDir, {
+        onSkipped: skippedNote(io),
+        ...(config.secretsKey !== undefined ? { root: config.secretsKey } : {}),
+        onRewrap: (counts) => io.stdout.write(`${rewrapLine(counts)}\n`),
+      });
+      if (step === 'keys') {
+        io.stdout.write('data directory: in the new layout\n');
+        io.stderr.write(`tenancy step keys: ${KEYS_WAIT}\n`);
+      } else if (step !== undefined)
         io.stdout.write(`data directory: ${step === 'done' ? 'in the new layout' : `step ${step}`}\n`);
     } catch (error) {
       if (!(error instanceof WirebenchError)) throw error;
@@ -376,10 +382,27 @@ export async function startServer(
     }
     return fail(new StartupError(ExitCode.Migration, migrationFailure(error)));
   }
+  /** What the keys step said, logged once the app's logger exists: counts only, never a key, a file or a value. */
+  const stepNotes: { readonly level: 'info' | 'warn'; readonly message: string; readonly details: object }[] = [];
   // Spec §19.10's order: the migrations, then the file step, then `prepare` and the writability check, so
   // `prepare` can never make an empty tenants/ tree beside a half-moved data directory.
   try {
-    await runTenancySteps(owner ?? db, config.dataDir, { onSkipped: skippedNote(io) });
+    const step = await runTenancySteps(owner ?? db, config.dataDir, {
+      onSkipped: skippedNote(io),
+      ...(config.secretsKey !== undefined ? { root: config.secretsKey } : {}),
+      onRewrap: (counts) => {
+        stepNotes.push({
+          level: counts.unopened > 0 ? 'warn' : 'info',
+          message: rewrapLine(counts),
+          details: { ...counts },
+        });
+      },
+    });
+    // Also where an operator starting the server by hand sees it at once, before the log is up (no key material).
+    if (step === 'keys') {
+      io.stderr.write(`tenancy step keys: ${KEYS_WAIT}\n`);
+      stepNotes.push({ level: 'warn', message: `tenancy step keys: ${KEYS_WAIT}`, details: {} });
+    }
     await owner?.close();
     owner = undefined;
   } catch (error) {
@@ -454,6 +477,7 @@ export async function startServer(
     app.log.warn({ err: error }, 'a database connection failed');
   };
   for (const warning of warnings) app.log.warn(warning.details, warning.message);
+  for (const note of stepNotes) app.log[note.level](note.details, note.message);
   // Module registration can take seconds (OIDC discovery): a lock lost meanwhile means no listening at all.
   if (lockLost.early !== undefined) {
     await app.close();

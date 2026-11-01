@@ -18,18 +18,12 @@ const TENANT_DIR = join(DATA_DIR, 'tenants', TENANT.tenantId);
 const ALICE = '01JB3Z9K7Q4ZJ6X1V8W2M5N0PA';
 const BOB = '01JB3Z9K7Q4ZJ6X1V8W2M5N0PB';
 
-function platformFor(
-  userId: string,
-  dataKey = KEY,
-  scope = TENANT,
-  legacyRoot?: Buffer,
-): ReturnType<typeof createServerPlatform> {
+function platformFor(userId: string, dataKey = KEY, scope = TENANT): ReturnType<typeof createServerPlatform> {
   return createServerPlatform({
     userId,
     scope,
     dataDir: DATA_DIR,
     dataKey,
-    ...(legacyRoot !== undefined ? { legacyRoot } : {}),
     egress: { denyPrivate: true },
     appVersion: '2.1.1-test',
   });
@@ -108,25 +102,11 @@ describe('server platform secrets (§17.4)', () => {
     expect(() => platformFor(ALICE, Buffer.alloc(32, 9), OTHER).secrets.decrypt(sealed)).toThrow();
   });
 
-  // Until the re-wrap (plan Task 24), the default tenant's hosts still open what slice 2 sealed under the root.
-  describe("slice 2's blobs, before the re-wrap", () => {
-    const ROOT = Buffer.alloc(32, 3);
-    const old = (userId: string, plain: string): Buffer => seal(userSecretsKey(ROOT, userId), plain);
-
-    it('open with the legacy root, and only for the same user', () => {
-      expect(platformFor(ALICE, KEY, TENANT, ROOT).secrets.decrypt(old(ALICE, 'from slice 2'))).toBe('from slice 2');
-      expect(() => platformFor(BOB, KEY, TENANT, ROOT).secrets.decrypt(old(ALICE, 'from slice 2'))).toThrow();
-    });
-
-    it('do not open without it', () => {
-      expect(() => platformFor(ALICE).secrets.decrypt(old(ALICE, 'from slice 2'))).toThrow();
-    });
-
-    it('new seals are under the data key alone', () => {
-      const sealed = platformFor(ALICE, KEY, TENANT, ROOT).secrets.encrypt('new value');
-      expect(open(userSecretsKey(KEY, ALICE), sealed)).toBe('new value');
-      expect(() => open(userSecretsKey(ROOT, ALICE), sealed)).toThrow();
-    });
+  it("opens nothing under slice 2's root-derived key: the re-wrap moves those blobs before any host opens", () => {
+    const root = Buffer.alloc(32, 3);
+    expect(() => platformFor(ALICE).secrets.decrypt(seal(userSecretsKey(root, ALICE), 'from slice 2'))).toThrow();
+    // What it seals opens under the data key's user key alone.
+    expect(open(userSecretsKey(KEY, ALICE), platformFor(ALICE).secrets.encrypt('new'))).toBe('new');
   });
 });
 

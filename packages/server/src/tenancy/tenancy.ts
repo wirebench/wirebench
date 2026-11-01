@@ -11,6 +11,7 @@ import { WirebenchError } from '@wirebench/engine';
 import type { FastifyBaseLogger } from 'fastify';
 import type { Database } from '../db/querier.js';
 import { TenantDirectory } from './directory.js';
+import { readTenancyStep } from './file-step.js';
 import { forEachTenant, type JobOutcome, type JobPass } from './jobs.js';
 import { TenantKeys, type KeyRoot } from './keys.js';
 import type { TenantScope } from './scope.js';
@@ -38,6 +39,11 @@ export interface Tenancy {
    *   does not open for this tenant under it.
    */
   dataKey(scope: TenantScope): Promise<Buffer>;
+  /**
+   * Whether the self-hosted migration's steps are `done` (spec §19.10): host sockets are served only then. `true` on
+   * a schema before `0020`, which has no step to wait for.
+   */
+  stepDone(): Promise<boolean>;
 }
 
 const directories = new WeakMap<Tenancy, TenantDirectory>();
@@ -57,6 +63,10 @@ export function createTenancy(db: Database, options: TenancyOptions = {}): Tenan
       await db.query('select 1');
     },
     dataKey: (scope) => keys.dataKey(scope.tenantId),
+    stepDone: async () => {
+      const state = await readTenancyStep(db);
+      return state === undefined || state.step === 'done';
+    },
   };
   directories.set(tenancy, directory);
   return tenancy;

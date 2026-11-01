@@ -18,8 +18,10 @@ import type { Querier } from '../db/querier.js';
 import { ExitCode, packageVersion, type ServerIo } from '../io.js';
 import { appRoleReport, bypassReasons, MIN_POSTGRES_VERSION_NUM } from './checks.js';
 import { CONSERVATIVE_RATE, estimateSeconds, MEASURED_RATE, passesOf, type TableSize } from './estimate.js';
-import { KNOWN_ROOT_ENTRIES, MOVED_DIRS, OLD_TMP_DIR, readTenancyStep } from './file-step.js';
-import { dataKeyState, environmentKeyRoot, type DataKeyState } from './keys.js';
+import { KNOWN_ROOT_ENTRIES, MOVED_DIRS, OLD_TMP_DIR, readTenancyStep, type TenancyStepState } from './file-step.js';
+import { dataKeyState, environmentKeyRoot, TenantKeys, type DataKeyState } from './keys.js';
+import { tenantRootById } from './paths.js';
+import { rewrap } from './rewrap.js';
 import { appRolePlan, ensureAppRole, roleMode } from './roles.js';
 
 type TenancyRoleCommand = Extract<ServerCommand, { command: 'admin-tenancy-role' }>;
@@ -246,6 +248,28 @@ export const DATA_KEY_TEXT: Readonly<Record<DataKeyState, string>> = {
     'made, but it does not open under WIREBENCH_SERVER_SECRETS_KEY: the key was changed. Restore the key it was made under; until then no browser host opens',
 };
 
+/**
+ * The `re-wrap:` line: counts from a dry run over the default tenant's checkouts, read only, once the key opens.
+ * Counts alone: never a file name, a key or a value.
+ */
+async function rewrapStatus(
+  db: Querier,
+  config: ServerConfig,
+  state: TenancyStepState | undefined,
+  key: DataKeyState,
+): Promise<string> {
+  if (state === undefined || state.step === 'files') return 'not run';
+  if (config.secretsKey === undefined) return 'waits for WIREBENCH_SERVER_SECRETS_KEY';
+  if (key !== 'opens') return 'not run';
+  const dataKey = await new TenantKeys(db, environmentKeyRoot(config.secretsKey)).dataKey(state.defaultTenantId);
+  const checkouts = join(tenantRootById(config.dataDir, state.defaultTenantId), 'checkouts');
+  const counts = await rewrap(checkouts, { root: config.secretsKey, dataKey }, 'forward', { dryRun: true });
+  return (
+    `${counts.already} blobs under the data key, ${counts.resealed} still under the old key, ` +
+    `${counts.unopened} open under neither (left as they were)`
+  );
+}
+
 /** `admin tenancy status` (spec §19.11): where the upgrade stands. Never prints a slug. */
 export async function runTenancyStatus(io: ServerIo): Promise<number> {
   const loaded = configOf(io);
@@ -263,8 +287,7 @@ export async function runTenancyStatus(io: ServerIo): Promise<number> {
     const root = loaded.secretsKey !== undefined ? environmentKeyRoot(loaded.secretsKey) : undefined;
     const key: DataKeyState = state === undefined ? 'none' : await dataKeyState(db, state.defaultTenantId, root);
     io.stdout.write(`data key: ${DATA_KEY_TEXT[key]}\n`);
-    // Plan Task 24: the re-wrap.
-    io.stdout.write('re-wrap: not run\n');
+    io.stdout.write(`re-wrap: ${await rewrapStatus(db, loaded, state, key)}\n`);
     io.stdout.write(`backups: ${BACKUP_ADVICE}\n`);
     return ExitCode.Ok;
   } catch (error) {

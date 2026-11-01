@@ -141,8 +141,12 @@ names the file), and when the data directory is empty but the database has works
 migrates the schema and leaves the move to the server). It also refuses a `repos/` or `checkouts/` that is a
 symbolic link (the new layout does not follow links: replace it with the directory, or mount the volume at its new
 place). When the move was recorded against another directory and this one still has `repos/` or `checkouts/` at its
-root, a start moves them as long as their new places are empty, and otherwise refuses, naming what to merge. `wirebench-server admin tenancy status` says where the
-upgrade stands.
+root, a start moves them as long as their new places are empty, and otherwise refuses, naming what to merge. With `WIREBENCH_SERVER_SECRETS_KEY` set, the upgrade then re-seals the secrets and cookies
+each browser-client user stored, once, under a new key the database keeps sealed under it; keep the same
+`WIREBENCH_SERVER_SECRETS_KEY` across the upgrade. A value that opens under neither key is left as it was and
+counted. No browser tab opens until this is done, and a start or `migrate` prints the counts. Without the key it
+waits, and says so: nothing was ever sealed without one. `wirebench-server admin tenancy status` says where the
+upgrade stands, and counts those values.
 
 The image carries the browser client's build. A server run from a checkout with
 `WIREBENCH_SERVER_BROWSER_CLIENT` on needs it too, or it refuses to start: run

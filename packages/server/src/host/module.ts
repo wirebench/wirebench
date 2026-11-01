@@ -22,7 +22,7 @@
  * attached. So the `Origin` check here is what holds such a page out, and no route may rely on the
  * guard for a `GET` with side effects.
  */
-import { isWirebenchError } from '@wirebench/engine';
+import { isWirebenchError, WirebenchError } from '@wirebench/engine';
 import type { FastifyInstance } from 'fastify';
 import type { WebSocket } from 'ws';
 import { auditIp, recordAudit, type AuditInput, type ServerContext, type ServerModule } from '../context.js';
@@ -40,7 +40,6 @@ import { injectSend } from './inject-send.js';
 import { HostInstances, type HostSession, type HostSocketHandle, type HostUser } from './instances.js';
 import { liveBridge } from './live-bridge.js';
 import { pendingWrites, type PendingWrites } from '../pending-writes.js';
-import { isDefaultTenant } from '../tenancy/tenancy.js';
 import { outsideTenantUnit } from '../tenancy/tenant-db.js';
 import { runHostSocket, type HostSocket } from './socket.js';
 
@@ -145,7 +144,20 @@ export function hostModule(options: HostModuleOptions = {}): ServerModule {
       ) {
         throw new Error('the host module needs the host bundle, the live module and WIREBENCH_SERVER_SECRETS_KEY');
       }
-      const root = config.secretsKey;
+      /** Set once the migration's steps are seen `done`; nothing moves them back while this process serves. */
+      let stepDone = false;
+      // Spec §19.10: host sockets are served only at `done`, once every slice 2 blob is re-wrapped. Before then a
+      // host would read a jar it cannot open and set it aside, so it is not built at all, and no data key is made.
+      const awaitStepDone = async (): Promise<void> => {
+        if (stepDone) return;
+        stepDone = await ctx.tenancy.stepDone();
+        if (!stepDone) {
+          throw new WirebenchError(
+            'tenancy-keys-pending',
+            "the server's upgrade has not finished its keys step, so no browser host opens yet",
+          );
+        }
+      };
       // Kept, so shutdown waits for them before the pool closes, and a test can wait for the rows a call led to:
       // the host answers `secrets.set` before its `secret.written` row commits.
       const secretWrites = pendingWrites();
@@ -167,6 +179,7 @@ export function hostModule(options: HostModuleOptions = {}): ServerModule {
               instances.sessionEnded({ tokenId, tenantId: user.tenant.tenantId });
             });
           };
+          await awaitStepDone();
           // The tenant's data key, made now if it has none yet (spec §19.7): every user key derives from it.
           const dataKey = await ctx.tenancy.dataKey(user.tenant);
           return createServerHost({
@@ -174,10 +187,6 @@ export function hostModule(options: HostModuleOptions = {}): ServerModule {
             scope: user.tenant,
             dataDir: config.dataDir,
             dataKey,
-            // Until the re-wrap (plan Task 24), what slice 2 sealed under the root still opens in the one tenant
-            // that has such blobs: a self-hosted installation's own. A hosted server starts fresh (§14), so no
-            // hosted platform is handed the root, its default tenant's included (Task 23 review M2).
-            ...(config.mode !== 'hosted' && isDefaultTenant(ctx.tenancy, user.tenant) ? { legacyRoot: root } : {}),
             egress: ctx.egress,
             appVersion: config.version,
             server: {
@@ -283,10 +292,17 @@ export function hostModule(options: HostModuleOptions = {}): ServerModule {
         const host = Promise.all([opened, checked]).then(
           ([ready]) => ready,
           (error: unknown) => {
-            if (!isWirebenchError(error) || error.code !== 'tenancy-data-key-refused') throw error;
+            if (!isWirebenchError(error)) throw error;
+            // Not `code`: the logger redacts that name at the top level and one level down (pairing codes).
+            const details = { errorCode: error.code, tenantId: request.tenant.tenantId };
+            if (error.code === 'tenancy-keys-pending') {
+              ctx.log.warn(details, 'a browser host waits: the upgrade has not finished its keys step');
+              running.socket?.end(HOST_CLOSE.tryAgainLater, 'upgrade not finished');
+              return undefined;
+            }
+            if (error.code !== 'tenancy-data-key-refused') throw error;
             ctx.log.error(
-              // Not `code`: the logger redacts that name everywhere (pairing codes).
-              { errorCode: error.code },
+              details,
               'a browser host could not open: the stored data key does not open under WIREBENCH_SERVER_SECRETS_KEY. Restore the key it was made under',
             );
             running.socket?.end(HOST_CLOSE.unavailable, 'server key refused');

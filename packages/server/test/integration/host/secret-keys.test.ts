@@ -18,6 +18,8 @@ import { open } from '../../../src/hooks/secret-box.js';
 import { HOST_CLOSE } from '../../../src/host/errors.js';
 import { hostDirectories, userSecretsKey } from '../../../src/host/server-platform.js';
 import type { PendingWrites } from '../../../src/pending-writes.js';
+import { runTenancySteps } from '../../../src/tenancy/file-step.js';
+import type { RewrapCounts } from '../../../src/tenancy/rewrap.js';
 import { environmentKeyRoot, newDataKey } from '../../../src/tenancy/keys.js';
 import { directoryOf } from '../../../src/tenancy/tenancy.js';
 import { describeDb } from '../../helpers/database.js';
@@ -172,6 +174,8 @@ describeDb('a server host’s secrets', () => {
       expect(logged.join('')).toContain('tenancy-data-key-refused');
     });
     const text = logged.join('');
+    // The tenant is named, so an operator of many tenants knows whose key is refused (re-review m2).
+    expect(text).toContain(scope.tenantId);
     for (const secret of [h.ctx.config.secretsKey!, otherRoot, otherKey, before, foreign]) {
       expect(text).not.toContain(secret.toString('base64'));
       expect(text).not.toContain(secret.toString('hex'));
@@ -209,7 +213,7 @@ describeDb('a server host’s secrets', () => {
   }
 
   it.skipIf(lan === undefined)(
-    "the default tenant's host opens a slice 2 secret and cookie jar sealed under the root (until Task 24)",
+    "after the keys step, the default tenant's host opens slice 2's secret and cookie jar, re-wrapped (plan Task 24)",
     async () => {
       const seen: string[] = [];
       const target: Server = createServer((request, response) => {
@@ -229,6 +233,16 @@ describeDb('a server host’s secrets', () => {
           secret: 'slice2-secret-0123456789',
           cookie: [storedCookie('session', 'slice2-cookie', lan!)],
         });
+        // An upgrade at `keys`: the step re-wraps both blobs, then the host opens them under the data key alone.
+        await h.db.owner.query("update server_identity set tenancy_step = 'keys'");
+        const counts: RewrapCounts[] = [];
+        expect(
+          await runTenancySteps(h.db.owner, h.dataDir, {
+            root: h.ctx.config.secretsKey!,
+            onRewrap: (made) => counts.push(made),
+          }),
+        ).toBe('done');
+        expect(counts).toEqual([{ resealed: 2, already: 0, unopened: 0, files: 2 }]);
         const client = await openHost(h, alice);
         await client.waitFor((frame) => frame.type === 'hello');
         expect(await client.call('workspace.joinFromServer', { url: PUBLIC_URL, workspaceId })).toMatchObject({
@@ -243,7 +257,7 @@ describeDb('a server host’s secrets', () => {
         });
         const sent = await client.call('request.sendRest', { sendId: 's1', requestId: 'req-health' });
         expect(sent).toMatchObject({ ok: true, value: { http: { status: 200 } } });
-        // The secret opened under the root's user key; the jar's opening is the list above.
+        // The secret opened, re-wrapped; the jar's opening is the list above.
         expect(seen).toEqual(['slice2-secret-0123456789']);
         expect(existsSync(join(checkout, 'cookie-jars', `${workspaceId}.json.corrupt`))).toBe(false);
       } finally {
@@ -251,4 +265,28 @@ describeDb('a server host’s secrets', () => {
       }
     },
   );
+
+  it('no host socket is served before the steps are done: it closes 1013, builds no host and makes no key', async () => {
+    const alice = await browserUser(h, 'alice@example.com');
+    await h.db.owner.query("update server_identity set tenancy_step = 'keys'");
+    const keyBefore = await h.db.owner.query<{ k: Buffer | null }>('select data_key as k from tenants where id = $1', [
+      h.tdb.scope.tenantId,
+    ]);
+    const client = await openHost(h, alice);
+    expect(await client.closed).toEqual({ code: HOST_CLOSE.tryAgainLater });
+    expect(client.frames).toEqual([]);
+    expect(h.instances().size).toBe(0);
+    await vi.waitFor(() => {
+      expect(logged.join('')).toContain('tenancy-keys-pending');
+    });
+    expect(existsSync(hostDirectories(h.dataDir, h.tdb.scope, alice.user.id).checkout)).toBe(false);
+    const keyAfter = await h.db.owner.query<{ k: Buffer | null }>('select data_key as k from tenants where id = $1', [
+      h.tdb.scope.tenantId,
+    ]);
+    expect(keyAfter.rows).toEqual(keyBefore.rows);
+    // At done, the next socket is served.
+    await h.db.owner.query("update server_identity set tenancy_step = 'done'");
+    const again = await openHost(h, alice);
+    await again.waitFor((frame) => frame.type === 'hello');
+  });
 });

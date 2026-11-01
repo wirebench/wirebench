@@ -31,6 +31,8 @@ export const HOST_CLOSE = {
    */
   tooBig: 1009,
   serverError: 1011,
+  /** The embedder is not ready to build hosts yet (an upgrade step is still due); the peer may retry (RFC 6455). */
+  tryAgainLater: 1013,
   badFrame: 4400,
   /** No signed-in browser session at the upgrade, or it ended since; or the peer failed its first frame. */
   unauthenticated: 4401,

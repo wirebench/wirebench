@@ -20,6 +20,7 @@ import { syncModule } from '../../src/sync/module.js';
 import { teamsModule } from '../../src/teams/module.js';
 import { browserBuildFixture, type BrowserBuildFixture } from './browser-build.js';
 import { recordingAudit } from './context.js';
+import { markStepsDone } from './tenancy.js';
 import { identityHarness, signedInUser, type IdentityHarness, type SignedInUser } from './identity.js';
 import { manualTimers, type ManualTimers } from './timers.js';
 
@@ -84,6 +85,7 @@ export async function hostHarness(
     await build.remove();
     throw error;
   });
+  await markStepsDone(h.db.owner);
   const audit = recordingAudit(h.hooks);
   await h.app.listen({ host: '127.0.0.1', port: 0 });
   const address = h.app.server.address();

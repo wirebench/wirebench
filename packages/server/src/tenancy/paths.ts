@@ -19,12 +19,9 @@ import { lstatSync, realpathSync, type Stats } from 'node:fs';
 import { readdir } from 'node:fs/promises';
 import { join, relative, resolve } from 'node:path';
 import { WirebenchError } from '@wirebench/engine';
-import type { TenantScope } from './scope.js';
+import { CANONICAL_UUID, type TenantScope } from './scope.js';
 
 export const TENANTS_DIR = 'tenants';
-
-/** What `gen_random_uuid()` prints, and nothing else: no upper case, braces or missing dashes. */
-const CANONICAL_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 /** A tenant's directories; every one absolute. */
 export interface TenantPaths {

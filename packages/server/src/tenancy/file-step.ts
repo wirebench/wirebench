@@ -5,8 +5,12 @@
  * - **`files`**: rename `repos/` and `checkouts/` into the default tenant's root; move the `tmp/removed-…`
  *   repositories (deleted workspaces, kept on purpose) into its `tmp/` and delete the rest of the old `tmp/`,
  *   scratch that is rebuilt as needed; then `keys`.
- * - **`keys`**: the data key and the re-wrap (§19.7) are plan Task 24's. Until then the step has nothing to do
- *   and goes straight on to `done`.
+ * - **`keys`** (§19.7, plan Task 24): with the root (`WIREBENCH_SERVER_SECRETS_KEY`), make the default tenant's
+ *   data key, re-wrap every blob of its users' checkouts under it (`rewrap.ts`), then `done`. Without the root the
+ *   step stays `keys`: nothing was sealed without one, and the host module, the only reader, cannot be on. A `done`
+ *   with no data key while the root is set is `keys` again, so a root configured after the upgrade gets its key and
+ *   its re-wrap. The step can also come back to `keys` after a re-arm to `files`, so the re-wrap is idempotent: a
+ *   blob already under the data key is left, and counted as such.
  *
  * Every refusal comes from the pre-flight, before anything moves, so a refused step leaves the data directory as it
  * was: both locations of a directory present (`tenancy-move-conflict`), a source on another filesystem than the
@@ -23,7 +27,9 @@ import { lstat, mkdir, readdir, readFile, realpath, rm, rmdir } from 'node:fs/pr
 import { join, relative, resolve, sep } from 'node:path';
 import { WirebenchError } from '@wirebench/engine';
 import type { Database, Querier } from '../db/querier.js';
+import { environmentKeyRoot, TenantKeys } from './keys.js';
 import { TENANTS_DIR, tenantRootById } from './paths.js';
+import { rewrap, type RewrapCounts } from './rewrap.js';
 import { renameWithRetry } from './rename.js';
 import { SET_TENANT } from './tenant-db.js';
 
@@ -377,6 +383,37 @@ export async function checkNothingLeftBehind(db: Querier, dataDir: string): Prom
 }
 
 /** The data directory holds nothing of the server's while the database has data: it is not the server's own. */
+/**
+ * The step still due, or `undefined` when nothing is (`migrate --check`, spec §19.10). `keys` without a root is not
+ * due: it waits for one, and blocks nothing a server without the browser client runs. `done` without a data key is
+ * `keys` once a root is set.
+ */
+export async function dueStep(db: Querier, root: Buffer | undefined): Promise<TenancyStep | undefined> {
+  const state = await readTenancyStep(db);
+  if (state === undefined) return undefined;
+  if (state.step === 'keys' && root === undefined) return undefined;
+  if (state.step === 'done') {
+    if (root === undefined) return undefined;
+    const key = await db.query<{ has: boolean }>('select data_key is not null as has from tenants where id = $1', [
+      state.defaultTenantId,
+    ]);
+    return key.rows[0]?.has === true ? undefined : 'keys';
+  }
+  return state.step;
+}
+
+/** What start-up and `migrate` say of the keys step's outcome: counts only. */
+export function rewrapLine(counts: RewrapCounts): string {
+  return (
+    `re-wrap: ${counts.resealed} re-sealed under the data key, ${counts.already} already under it, ` +
+    `${counts.unopened} opened under neither key and were left as they were`
+  );
+}
+
+/** Why the step stopped at `keys`. */
+export const KEYS_WAIT =
+  'the data key and the one-time re-wrap wait for WIREBENCH_SERVER_SECRETS_KEY; nothing is sealed without it, and no browser host opens until it is set';
+
 export const dataDirEmpty = (dataDir: string): WirebenchError =>
   new WirebenchError(
     'tenancy-data-dir-empty',
@@ -386,6 +423,13 @@ export const dataDirEmpty = (dataDir: string): WirebenchError =>
   );
 
 export interface RunStepsOptions {
+  /**
+   * `WIREBENCH_SERVER_SECRETS_KEY`: what wraps the default tenant's data key and sealed slice 2's blobs. Without it
+   * the step stops at `keys`.
+   */
+  readonly root?: Buffer;
+  /** Told of the re-wrap's counts, once it has run; counts only, never a file or a value. */
+  readonly onRewrap?: (counts: RewrapCounts) => void;
   readonly checkpoint?: StepCheckpoint;
   readonly fs?: StepFs;
   /** Told of the state files the scan skipped for their size; names only, never their content. */
@@ -400,7 +444,12 @@ export interface RunStepsOptions {
  * value in step with the files (the commit). `idle_in_transaction_session_timeout` is lifted for it, so a long scan
  * or `rm` is not cut short by the server; a cut-short unit would roll back, and the next start resumes.
  *
- * @throws WirebenchError `tenancy-data-dir-empty` (the step stays `files`) and every refusal of {@link planMove}.
+ * The data key is made over `db`, outside the step's unit, by `TenantKeys`'s compare-and-set: it is committed before
+ * any blob is sealed under it, so a step rolled back after some files were re-wrapped never loses the key they need.
+ *
+ * @throws WirebenchError `tenancy-data-dir-empty` (the step stays `files`), every refusal of {@link planMove}, and
+ *   `TenantKeys.dataKey`'s: `tenancy-data-key-refused` when the stored key does not open under `root`,
+ *   `tenancy-tenant-id-invalid` for a default tenant id that is not canonical (the step stays `keys`).
  */
 export async function runTenancySteps(
   db: Database,
@@ -448,8 +497,23 @@ export async function runTenancySteps(
       });
       await advance('files', 'keys');
     }
-    if (step === 'keys') {
-      // Plan Task 24: the default tenant's data key and the re-wrap go here, before `done`.
+    const root = options.root;
+    // A `done` reached without the key (the root set only after the upgrade): the keys are still due.
+    if (step === 'done' && root !== undefined) {
+      const key = await tx.query<{ has: boolean }>('select data_key is not null as has from tenants where id = $1', [
+        state.defaultTenantId,
+      ]);
+      if (key.rows[0]?.has !== true) await advance('done', 'keys');
+    }
+    if (step === 'keys' && root !== undefined) {
+      const keys = new TenantKeys(db, environmentKeyRoot(root));
+      const dataKey = await keys.dataKey(state.defaultTenantId);
+      options.checkpoint?.('made the data key');
+      const checkouts = join(tenantRootById(dataDir, state.defaultTenantId), 'checkouts');
+      const counts = await rewrap(checkouts, { root, dataKey }, 'forward', {
+        ...(options.checkpoint ? { checkpoint: () => options.checkpoint?.('re-wrapped a file') } : {}),
+      });
+      options.onRewrap?.(counts);
       await advance('keys', 'done');
     }
     return step;

@@ -18,6 +18,7 @@ import { hkdfSync, randomBytes } from 'node:crypto';
 import { WirebenchError } from '@wirebench/engine';
 import type { Querier } from '../db/querier.js';
 import { open, seal } from '../hooks/secret-box.js';
+import { CANONICAL_UUID } from './scope.js';
 
 /** HKDF's salt for the wrapping key; changing it orphans every tenant's data key. */
 const WRAP_SALT = 'wirebench-tenant-data-key';
@@ -35,9 +36,6 @@ export interface KeyRoot {
 export function newDataKey(): Buffer {
   return randomBytes(KEY_BYTES);
 }
-
-/** A tenant id as Postgres prints a `uuid` and `randomUUID()` makes one: the only form the HKDF `info` may take. */
-const CANONICAL_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 /**
  * Refuses any other form of a tenant id (Task 23 review M1). `$1::uuid` would still find the row for an

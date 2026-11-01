@@ -7,6 +7,7 @@
  * `fresh` makes a new row of a tenant's for a route template that uses one up (a delete, an accept, a rotate), so
  * the positive control and the probe never share it.
  */
+import { markStepsDone } from '../../helpers/tenancy.js';
 import { createHash, generateKeyPairSync, randomBytes, sign } from 'node:crypto';
 import type { RouteOptions } from 'fastify';
 import { expect } from 'vitest';
@@ -184,6 +185,8 @@ export async function isolationWorld(options: { readonly policiesDisabled?: bool
       return list;
     },
   });
+  // The host probes need the migration's steps done, as a start-up leaves them (spec §19.10).
+  await markStepsDone(t.h.db.owner);
   const a = await fill(t, t.a);
   const b = await fill(t, t.b);
   return {

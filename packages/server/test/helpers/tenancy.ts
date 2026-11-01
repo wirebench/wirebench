@@ -69,3 +69,11 @@ export function expectAllScoped(log: StatementLog, tenantId: string): void {
   }
   expect(statements, 'statements in the log').toBeGreaterThan(0);
 }
+
+/**
+ * Marks the self-hosted migration's steps `done` (spec §19.10), as a start-up that ran them leaves them: a harness
+ * built over `testDatabase` never runs the file step, and the host module serves sockets only at `done`.
+ */
+export async function markStepsDone(owner: Querier): Promise<void> {
+  await owner.query("update server_identity set tenancy_step = 'done'");
+}

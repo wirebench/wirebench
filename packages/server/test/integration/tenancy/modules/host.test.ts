@@ -22,6 +22,7 @@ import { describeDb } from '../../../helpers/database.js';
 import { seedSlice2, storedCookie } from '../../../helpers/host.js';
 import type { SignedInUser } from '../../../helpers/identity.js';
 import { workspaceSnapshot } from '../../../helpers/schedule-runs.js';
+import { markStepsDone } from '../../../helpers/tenancy.js';
 import { manualTimers } from '../../../helpers/timers.js';
 import { openSocket, twoTenants, type Tenant, type TestSocket, type TwoTenants } from './two-tenants.js';
 
@@ -50,6 +51,7 @@ describeDb('the server host in two tenants (tenancy Task 18)', () => {
         hostModule({ now: () => clock.now, setTimer: hostTimers.setTimer, browserRoot: build.root }),
       ],
     });
+    await markStepsDone(t.h.db.owner);
     for (const tenant of [t.a, t.b]) {
       // Server admins: admin of any workspace row a read finds, so only the policy keeps B's from A's (Task 18 review I1).
       users[tenant.slug] = await tenant.user({ email: 'alice@example.com', kind: 'browser', serverAdmin: true });

@@ -18,6 +18,8 @@ import { mkTempDir, removeTempDir } from '../../helpers/git.js';
 import { freePort } from '../../helpers/net.js';
 
 const USER = '01JB3Z9K7Q4ZJ6X1V8W2M5N0PA';
+/** `WIREBENCH_SERVER_SECRETS_KEY`: with it the step goes on through `keys` to `done` (Task 24). */
+const withRoot = { root: Buffer.alloc(32, 0x52) };
 const WS = '01J8ZC5Q0V7R3T9XK2M4N6P8QA';
 
 /** Every path under `dir`, `/`-separated and sorted. */
@@ -77,22 +79,22 @@ describeDb('the file step (spec §19.10)', () => {
   it('moves repos/ and checkouts/ under the default tenant, keeps removed-…, deletes the scratch, then is done', async () => {
     await oldLayout(dataDir);
     expect((await readTenancyStep(db.owner))?.step).toBe('files');
-    expect(await runTenancySteps(db.owner, dataDir)).toBe('done');
+    expect(await runTenancySteps(db.owner, dataDir, withRoot)).toBe('done');
     expect(await tree(dataDir)).toEqual(movedLayout(await tenantId()));
     expect((await readTenancyStep(db.owner))?.step).toBe('done');
     // Done is done: a second run moves nothing and reads nothing it would refuse.
-    expect(await runTenancySteps(db.owner, dataDir)).toBe('done');
+    expect(await runTenancySteps(db.owner, dataDir, withRoot)).toBe('done');
   });
 
   it('runs on a fresh data directory, with nothing to move', async () => {
-    expect(await runTenancySteps(db.owner, dataDir)).toBe('done');
+    expect(await runTenancySteps(db.owner, dataDir, withRoot)).toBe('done');
     expect(await tree(dataDir)).toEqual(['tenants', `tenants/${await tenantId()}`]);
   });
 
   it('handles an old tmp/ alone, with no repos/ or checkouts/ beside it', async () => {
     await mkdir(join(dataDir, 'tmp', `removed-${WS}-1`), { recursive: true });
     await mkdir(join(dataDir, 'tmp', USER), { recursive: true });
-    expect(await runTenancySteps(db.owner, dataDir)).toBe('done');
+    expect(await runTenancySteps(db.owner, dataDir, withRoot)).toBe('done');
     const t = await tenantId();
     expect(await tree(dataDir)).toEqual(
       ['tenants', `tenants/${t}`, `tenants/${t}/tmp`, `tenants/${t}/tmp/removed-${WS}-1`].sort(),
@@ -124,6 +126,7 @@ describeDb('the file step (spec §19.10)', () => {
       try {
         await oldLayout(dir);
         const killed = runTenancySteps(fresh.owner, dir, {
+          ...withRoot,
           checkpoint: (at) => {
             if (at === part) throw new Error(`killed after ${at}`);
           },
@@ -131,7 +134,7 @@ describeDb('the file step (spec §19.10)', () => {
         await expect(killed, part).rejects.toThrow(`killed after ${part}`);
         // The step's row is rolled back with its unit: the next start finishes the job.
         expect((await readTenancyStep(fresh.owner))?.step, part).toBe('files');
-        expect(await runTenancySteps(fresh.owner, dir), part).toBe('done');
+        expect(await runTenancySteps(fresh.owner, dir, withRoot), part).toBe('done');
         expect(await tree(dir), part).toEqual(movedLayout((await readTenancyStep(fresh.owner))!.defaultTenantId));
       } finally {
         await fresh.close();
@@ -145,7 +148,7 @@ describeDb('the file step (spec §19.10)', () => {
     const t = await tenantId();
     await mkdir(join(dataDir, 'tenants', t, 'repos'), { recursive: true });
     const before = await tree(dataDir);
-    const error = await runTenancySteps(db.owner, dataDir).catch((caught: unknown) => caught);
+    const error = await runTenancySteps(db.owner, dataDir, withRoot).catch((caught: unknown) => caught);
     expect(error).toMatchObject({ code: 'tenancy-move-conflict' });
     expect((error as Error).message).toContain(join(dataDir, 'repos'));
     expect((error as Error).message).toContain(join(dataDir, 'tenants', t, 'repos'));
@@ -168,7 +171,7 @@ describeDb('the file step (spec §19.10)', () => {
     await mkdir(join(dataDir, 'checkouts', USER, 'history'), { recursive: true });
     await writeFile(join(dataDir, 'checkouts', USER, 'history', 'p.jsonl'), join(dataDir, 'checkouts'));
     const before = await tree(dataDir);
-    const error = await runTenancySteps(db.owner, dataDir).catch((caught: unknown) => caught);
+    const error = await runTenancySteps(db.owner, dataDir, withRoot).catch((caught: unknown) => caught);
     expect(error).toMatchObject({ code: 'tenancy-prefix-found' });
     expect((error as Error).message).toContain(`${USER}/workspaces/${WS}/tree/workspace.yaml`);
     expect((error as Error).message).not.toContain('notes.txt');
@@ -177,12 +180,12 @@ describeDb('the file step (spec §19.10)', () => {
     expect((await readTenancyStep(db.owner))?.step).toBe('files');
     // Fixed by hand where it is, the next run finishes.
     await writeFile(join(dataDir, 'checkouts', USER, 'workspaces', WS, 'tree', 'workspace.yaml'), 'projects: []\n');
-    expect(await runTenancySteps(db.owner, dataDir)).toBe('done');
+    expect(await runTenancySteps(db.owner, dataDir, withRoot)).toBe('done');
   });
 
   it('refuses a forward run while a revert has not finished', async () => {
     await db.owner.query("update server_identity set tenancy_step = 'reverting-files'");
-    await expect(runTenancySteps(db.owner, dataDir)).rejects.toMatchObject({ code: 'tenancy-reverting' });
+    await expect(runTenancySteps(db.owner, dataDir, withRoot)).rejects.toMatchObject({ code: 'tenancy-reverting' });
   });
 
   it('migrate --check exits 1 while the step is not done; migrate runs it, then --check exits 0', async () => {
@@ -261,9 +264,11 @@ describeDb('the file step on the frozen 0019 fixture', () => {
     await db.close();
     await removeTempDir(dataDir);
   });
+  /** The root the fixture's host sealed under. */
+  const fixtureRoot = () => Buffer.from(fixture.keys.secretsKey, 'base64');
 
   it("moves the fixture's directories, keeps the removed workspace, drops the scratch, and its real checkout passes the scan", async () => {
-    expect(await runTenancySteps(db.owner, dataDir)).toBe('done');
+    expect(await runTenancySteps(db.owner, dataDir, { root: fixtureRoot() })).toBe('done');
     const t = (await readTenancyStep(db.owner))!.defaultTenantId;
     const root = join(dataDir, 'tenants', t);
     expect((await readdir(dataDir)).sort()).toEqual(['no-hooks', 'tenants']);
@@ -297,6 +302,7 @@ describeDb('the file step on the frozen 0019 fixture', () => {
     WIREBENCH_SERVER_DATABASE_URL: db.url,
     WIREBENCH_SERVER_PUBLIC_URL: 'https://wirebench.test',
     WIREBENCH_SERVER_DATA_DIR: dir,
+    WIREBENCH_SERVER_SECRETS_KEY: fixture.keys.secretsKey,
   });
   const runIn = async (dir: string, args: string[]) => {
     const stdout = { write: vi.fn() };
@@ -398,7 +404,9 @@ describeDb('the file step on the frozen 0019 fixture', () => {
       await rename(join(dataDir, 'repos'), join(big, 'repos'));
       await symlink(join(big, 'repos'), join(dataDir, 'repos'), 'dir');
       const before = await tree(dataDir);
-      await expect(runTenancySteps(db.owner, dataDir)).rejects.toMatchObject({ code: 'tenancy-move-link' });
+      await expect(runTenancySteps(db.owner, dataDir, { root: fixtureRoot() })).rejects.toMatchObject({
+        code: 'tenancy-move-link',
+      });
       expect(await tree(dataDir)).toEqual(before);
       expect((await readTenancyStep(db.owner))?.step).toBe('files');
       // admin tenancy check says so beforehand.

@@ -886,7 +886,9 @@ Plan: `docs/plans/2026-10-27-browser-client.md`.
   `/sign-in`, and so does a `401` or `403` from `GET /api/v1/me`, which the bootstrap asks after an
   upgrade fails (a disabled user's upgrade is refused with HTTP `403`, which a socket cannot read). Calls
   pending at a drop resolve to `{ ok: false, error: { code: 'host-disconnected' } }`. `env` also carries
-  the sign-out action (17.2).
+  the sign-out action (17.2). A `4503` close (the server's key does not open the tenant's data key, §19.7) says the
+  server cannot open the user's saved data, and keeps retrying with backoff, without a session check. A `1013` close
+  (the upgrade's keys step is not done, §19.10) is a dropped socket like any other.
 - The server serves the build from `dist/browser/` with `@fastify/static`, hashed assets cached as
   immutable, and the CSP `default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:
   blob:; connect-src 'self' ws://127.0.0.1:47615 … ws://127.0.0.1:47634; object-src 'none'; base-uri 'none';
@@ -1489,6 +1491,9 @@ tenant through its own column, not only through `users`. The same email in two t
     root (§17.1). The key is created the first time the root exists.
   - A lazy creation is a compare-and-set: `update tenants set data_key = $1 where id = $2 and data_key is null
     returning id`. A process that loses re-reads the row and uses the winner's key.
+- **A root that no longer opens the key.** A stored data key that does not open under the configured root (the
+  key was changed) refuses every host of that tenant with `4503` until the old root is restored. The server logs the
+  code and the tenant id, never a key; `admin tenancy status` reports whether the key opens.
 - **The one-time re-wrap.** Every blob the server platform sealed before slice 4 is under the old per-user key,
   `HKDF(root, …, userId)`. The key step re-seals each one under the new user key. The step must finish before any
   host opens, because a blob the cookie store cannot open is set aside as `.corrupt` (`cookie-store.ts`): a
@@ -1714,7 +1719,11 @@ Two forward steps, each resumable; a way back, also resumable; and a stated cost
     - Then `tenancy_step = 'done'`.
     - Without the root, the step stays `keys` and blocks only the host module, which cannot be on without the root
       anyway.
-  - The server listens from `keys`; host sockets are accepted only at `done`.
+  - The server listens from `keys`; host sockets are accepted only at `done`. Before it a host socket closes `1013`
+    (try again later) before any frame, and no host is built and no data key is made. `migrate --check` counts
+    `keys` as pending only when the root is set, and a `done` with no data key is `keys` again once it is.
+    Start-up and `migrate` print the re-wrap's counts, and, at `keys` without the root, why the step waits (on
+    stderr). `admin tenancy status` counts the blobs by a dry run.
 - **The way back** (my call). `wirebench-server admin tenancy revert` undoes slice 4. It runs as the owner role.
   - **It is refused:** when there is more than one tenant; when any migration newer than `0021` has run; and when it
     cannot take the server-running lock exclusively. "On a stopped server" is checked, not trusted:
