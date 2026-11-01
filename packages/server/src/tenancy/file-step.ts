@@ -330,14 +330,27 @@ async function databaseHasData(tx: Querier, defaultTenantId: string): Promise<bo
 
 /** What a move recorded as made left at the data directory's root, and whether the step can simply run again. */
 interface LeftBehind {
+  /** `repos/`, `checkouts/` and `tmp/`, those still at the root. */
   readonly left: readonly string[];
   /** Every destination is absent or an empty directory, so re-arming the step and moving is safe. */
   readonly rearmable: boolean;
   /** The empty destination directories re-arming removes first, so the pre-flight sees no conflict. */
   readonly emptyDestinations: readonly string[];
+  /** The default tenant's workspaces whose `<id>.git` is neither at the root's `repos/` nor at the new place. */
+  readonly missing: readonly string[];
 }
 
-async function leftBehind(dataDir: string, defaultTenantId: string): Promise<LeftBehind> {
+/**
+ * What a move recorded as made (`keys` or `done`) left at the root. A root `tmp/` counts: the new layout never writes
+ * there (every scratch path is `tenants/<id>/tmp`), so one means a move cut short after both directories had moved,
+ * with the kept `removed-…` repositories still in it (Task 22 fix round 2 review I1). Its entries have no
+ * destination to judge here: the pre-flight refuses a `removed-…` that is in both places.
+ *
+ * Re-arming also needs every workspace of the database to have its repository here, at the old place or the new
+ * (review m2): a pre-upgrade copy of the data directory mounted after the move lacks the workspaces made since, and
+ * is refused rather than moved and served.
+ */
+async function leftBehind(tx: Querier, dataDir: string, defaultTenantId: string): Promise<LeftBehind> {
   const base = resolve(dataDir);
   const root = tenantRootById(base, defaultTenantId);
   const left: string[] = [];
@@ -352,37 +365,75 @@ async function leftBehind(dataDir: string, defaultTenantId: string): Promise<Lef
     if (empty) emptyDestinations.push(to);
     else rearmable = false;
   }
-  return { left, rearmable, emptyDestinations };
+  if ((await realFs.device(join(base, OLD_TMP_DIR))) !== undefined) left.push(`${OLD_TMP_DIR}/`);
+  const missing: string[] = [];
+  if (left.length > 0 && rearmable) {
+    await tx.query(SET_TENANT, [defaultTenantId]);
+    const rows = await tx.query<{ id: string }>('select id from workspaces where tenant_id = $1 order by id', [
+      defaultTenantId,
+    ]);
+    for (const { id } of rows.rows) {
+      const repo = `${id}.git`;
+      const here =
+        (await realFs.device(join(base, 'repos', repo))) !== undefined ||
+        (await realFs.device(join(root, 'repos', repo))) !== undefined;
+      if (!here) missing.push(repo);
+    }
+  }
+  return { left, rearmable, emptyDestinations, missing };
 }
+
+/** `left` as a phrase: "repos/ and checkouts/", with the verb that goes with it. */
+const leftPhrase = (left: readonly string[]): string => `${left.join(' and ')} ${left.length === 1 ? 'is' : 'are'}`;
 
 const leftBehindError = (dataDir: string, defaultTenantId: string, left: readonly string[]): WirebenchError => {
   const root = join(TENANTS_DIR, defaultTenantId);
+  const dirs = left.filter((name) => name !== `${OLD_TMP_DIR}/`);
   return new WirebenchError(
     'tenancy-files-left-behind',
     `${resolve(dataDir)} still holds ${left.join(' and ')} from before this version, but the database records the ` +
       'data directory as moved, and the new places already hold data: the move ran against another directory, ' +
       'such as a migrate run without this volume mounted, and the server has been used since. Nothing was ' +
-      `changed. Stop the server and merge ${left.join(' and ')} into ${root}/ by hand, the kept tmp/removed-… ` +
+      `changed. Stop the server and merge ${dirs.join(' and ')} into ${root}/ by hand, the kept tmp/removed-… ` +
       `repositories into ${root}/tmp/, then start again`,
   );
 };
 
+const workspacesMissingError = (dataDir: string, left: readonly string[], missing: readonly string[]): WirebenchError =>
+  new WirebenchError(
+    'tenancy-workspaces-missing',
+    `${resolve(dataDir)} still holds ${left.join(' and ')} from before this version, and the database records the ` +
+      `data directory as moved, but it has no repository for ${String(missing.length)} of the database's ` +
+      `workspaces, at the old place or the new: ${listed(missing)}. This is not the directory the server has been ` +
+      "using (an older copy of it, say). Nothing was changed: mount the server's current data directory and start " +
+      'again',
+  );
+
+/** What start-up and `migrate` say when the step re-arms itself: the directories only, never a tenant or a value. */
+export const rearmLine = (left: readonly string[]): string =>
+  `data directory: the move to the new layout is recorded as made, but ${leftPhrase(left)} still at the root ` +
+  '(a move made against another directory, or one cut short); moving them now';
+
 /**
- * Refuses a data directory that still holds `repos/` or `checkouts/` at its root while the database records the move
- * as made and the new places already hold data, which only a person can merge. When the new places are absent or
- * empty, it lets the start go on: the step then re-arms itself and moves, with every check of its pre-flight
- * (`runTenancySteps`). Only reads; run it before the migrations.
+ * Refuses a data directory that still holds `repos/`, `checkouts/` or `tmp/` at its root while the database records
+ * the move as made, when only a person can sort it out: the new places already hold data
+ * (`tenancy-files-left-behind`), or a workspace of the database has no repository here
+ * (`tenancy-workspaces-missing`). Otherwise it lets the start go on, and returns what is left: the step then re-arms
+ * itself and moves, with every check of its pre-flight (`runTenancySteps`), and `migrate --check` counts that as
+ * pending. Only reads; run it before the migrations.
  *
- * @throws WirebenchError `tenancy-files-left-behind`
+ * @throws WirebenchError `tenancy-files-left-behind`, `tenancy-workspaces-missing`
  */
-export async function checkNothingLeftBehind(db: Querier, dataDir: string): Promise<void> {
+export async function checkNothingLeftBehind(db: Database, dataDir: string): Promise<readonly string[]> {
   const state = await readTenancyStep(db);
-  if (state === undefined || (state.step !== 'keys' && state.step !== 'done')) return;
-  const found = await leftBehind(dataDir, state.defaultTenantId);
-  if (found.left.length > 0 && !found.rearmable) throw leftBehindError(dataDir, state.defaultTenantId, found.left);
+  if (state === undefined || (state.step !== 'keys' && state.step !== 'done')) return [];
+  const found = await db.transaction((tx) => leftBehind(tx, dataDir, state.defaultTenantId));
+  if (found.left.length === 0) return [];
+  if (!found.rearmable) throw leftBehindError(dataDir, state.defaultTenantId, found.left);
+  if (found.missing.length > 0) throw workspacesMissingError(dataDir, found.left, found.missing);
+  return found.left;
 }
 
-/** The data directory holds nothing of the server's while the database has data: it is not the server's own. */
 /**
  * The step still due, or `undefined` when nothing is (`migrate --check`, spec §19.10). `keys` without a root is not
  * due: it waits for one, and blocks nothing a server without the browser client runs. `done` without a data key is
@@ -414,6 +465,7 @@ export function rewrapLine(counts: RewrapCounts): string {
 export const KEYS_WAIT =
   'the data key and the one-time re-wrap wait for WIREBENCH_SERVER_SECRETS_KEY; nothing is sealed without it, and no browser host opens until it is set';
 
+/** The data directory holds nothing of the server's while the database has data: it is not the server's own. */
 export const dataDirEmpty = (dataDir: string): WirebenchError =>
   new WirebenchError(
     'tenancy-data-dir-empty',
@@ -434,6 +486,11 @@ export interface RunStepsOptions {
   readonly fs?: StepFs;
   /** Told of the state files the scan skipped for their size; names only, never their content. */
   readonly onSkipped?: (names: readonly string[]) => void;
+  /**
+   * Told when a move recorded as made re-arms itself, with what is still at the root (`repos/`, `checkouts/`,
+   * `tmp/`): directory names only. Called inside the unit, before the move; a refusal after it rolls the re-arm back.
+   */
+  readonly onRearmed?: (left: readonly string[]) => void;
 }
 
 /**
@@ -473,13 +530,17 @@ export async function runTenancySteps(
       step = to;
     };
     // A move recorded against another directory, with this one's sources still at the root (review C1 and m2 of
-    // the fix round): when the new places are absent or empty, the step re-arms and moves, through its pre-flight.
-    // Safe: nothing has been written at the new places, `keys` is idempotent, and a refusal below rolls the reset
-    // back with the unit, so the next start finds the same state and re-arms again.
+    // the fix round), or a re-armed move cut short after both directories had moved, with the root tmp/ left
+    // (round 2 review I1): when the new places are absent or empty and every workspace's repository is here, the
+    // step re-arms and moves, through its pre-flight. Safe: nothing has been written at the new places, `keys` is
+    // idempotent, and a refusal or a kill below rolls the reset back with the unit, so the next start finds what is
+    // still at the root and re-arms again.
     if (step === 'keys' || step === 'done') {
-      const found = await leftBehind(dataDir, state.defaultTenantId);
+      const found = await leftBehind(tx, dataDir, state.defaultTenantId);
       if (found.left.length > 0) {
         if (!found.rearmable) throw leftBehindError(dataDir, state.defaultTenantId, found.left);
+        if (found.missing.length > 0) throw workspacesMissingError(dataDir, found.left, found.missing);
+        options.onRearmed?.(found.left);
         for (const dir of found.emptyDestinations) await rmdir(dir);
         await tx.query("update server_identity set tenancy_step = 'files' where tenancy_step = $1", [step]);
         step = 'files';

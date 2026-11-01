@@ -29,7 +29,14 @@ import { createTenancy, directoryOf } from './tenancy/tenancy.js';
 import { ensureAppRole, roleMode } from './tenancy/roles.js';
 import { ExitCode, packageVersion, type ServerIo } from './io.js';
 import { NO_HOOKS_DIR, RepoStore } from './repos/repo-store.js';
-import { checkNothingLeftBehind, dueStep, KEYS_WAIT, rewrapLine, runTenancySteps } from './tenancy/file-step.js';
+import {
+  checkNothingLeftBehind,
+  dueStep,
+  KEYS_WAIT,
+  rearmLine,
+  rewrapLine,
+  runTenancySteps,
+} from './tenancy/file-step.js';
 import { TENANTS_DIR } from './tenancy/paths.js';
 import { buildServer } from './server.js';
 
@@ -246,8 +253,9 @@ export async function runMigrate(
     }
     const migrations = await allMigrations(modules);
     // Before anything is migrated: a data directory left behind by a move made elsewhere changes nothing here.
+    let left: readonly string[];
     try {
-      await checkNothingLeftBehind(db, config.dataDir);
+      left = await checkNothingLeftBehind(db, config.dataDir);
     } catch (error) {
       if (!(error instanceof WirebenchError)) throw error;
       io.stderr.write(`${error.code}: ${error.message}\n`);
@@ -263,7 +271,14 @@ export async function runMigrate(
       // Spec §19.10: the data directory's move is part of the upgrade, so a step short of `done` is pending too.
       const due = await dueStep(db, config.secretsKey);
       if (due !== undefined) io.stdout.write(`data directory: the move to the new layout is pending (step ${due})\n`);
-      return pending.length === 0 && due === undefined ? ExitCode.Ok : ExitCode.Pending;
+      // A move recorded as made, with this directory's files still at the root: the next run re-arms and moves them,
+      // whether or not the root is set (review m3), so it is pending even where `keys` without the root is not.
+      if (left.length > 0) {
+        io.stdout.write(
+          `data directory: the move to the new layout is pending (recorded as made, but ${left.join(' and ')} still at the root)\n`,
+        );
+      }
+      return pending.length === 0 && due === undefined && left.length === 0 ? ExitCode.Ok : ExitCode.Pending;
     }
     const applied =
       mode === 'two-roles'
@@ -282,6 +297,7 @@ export async function runMigrate(
     try {
       const step = await runTenancySteps(db, config.dataDir, {
         onSkipped: skippedNote(io),
+        onRearmed: (rearmed) => io.stderr.write(`${rearmLine(rearmed)}\n`),
         ...(config.secretsKey !== undefined ? { root: config.secretsKey } : {}),
         onRewrap: (counts) => io.stdout.write(`${rewrapLine(counts)}\n`),
       });
@@ -376,7 +392,8 @@ export async function startServer(
       error instanceof WirebenchError &&
       (error.code === 'server-postgres-too-old' ||
         error.code === 'tenancy-reverting' ||
-        error.code === 'tenancy-files-left-behind')
+        error.code === 'tenancy-files-left-behind' ||
+        error.code === 'tenancy-workspaces-missing')
     ) {
       return fail(new StartupError(ExitCode.Config, `${error.code}: ${error.message}`));
     }
@@ -389,6 +406,11 @@ export async function startServer(
   try {
     const step = await runTenancySteps(owner ?? db, config.dataDir, {
       onSkipped: skippedNote(io),
+      // A notable event (review m1): the database said done, and this directory is moved anyway.
+      onRearmed: (rearmed) => {
+        io.stderr.write(`${rearmLine(rearmed)}\n`);
+        stepNotes.push({ level: 'warn', message: rearmLine(rearmed), details: { left: [...rearmed] } });
+      },
       ...(config.secretsKey !== undefined ? { root: config.secretsKey } : {}),
       onRewrap: (counts) => {
         stepNotes.push({
@@ -403,8 +425,6 @@ export async function startServer(
       io.stderr.write(`tenancy step keys: ${KEYS_WAIT}\n`);
       stepNotes.push({ level: 'warn', message: `tenancy step keys: ${KEYS_WAIT}`, details: {} });
     }
-    await owner?.close();
-    owner = undefined;
   } catch (error) {
     if (error instanceof WirebenchError) {
       return fail(new StartupError(ExitCode.Config, `${error.code}: ${error.message}`));
@@ -412,6 +432,20 @@ export async function startServer(
     // The errno code only: Node's message names a path under tenants/<id> (Task 22 review m2).
     const code = (error as NodeJS.ErrnoException | null)?.code ?? 'an unexpected error';
     return fail(new StartupError(ExitCode.Config, `data directory ${config.dataDir} could not be moved (${code})`));
+  }
+  // The step's connection is done with. The reference is cleared first, so `fail` never closes it a second time,
+  // and a failure to close is reported as itself, not as a move that failed (fix round 2 review m4).
+  const stepOwner = owner;
+  owner = undefined;
+  try {
+    await stepOwner?.close();
+  } catch (error) {
+    return fail(
+      new StartupError(
+        ExitCode.Migration,
+        `the migration connection did not close after the tenancy step: ${error instanceof Error ? error.message : String(error)}`,
+      ),
+    );
   }
   try {
     await RepoStore.prepare(config.dataDir);

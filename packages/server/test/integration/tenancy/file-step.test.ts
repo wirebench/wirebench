@@ -7,6 +7,7 @@ import { EventEmitter } from 'node:events';
 import { existsSync } from 'node:fs';
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { Writable } from 'node:stream';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { main } from '../../../src/main.js';
 import { BUILTIN_MODULES } from '../../../src/modules.js';
@@ -136,6 +137,42 @@ describeDb('the file step (spec §19.10)', () => {
         expect((await readTenancyStep(fresh.owner))?.step, part).toBe('files');
         expect(await runTenancySteps(fresh.owner, dir, withRoot), part).toBe('done');
         expect(await tree(dir), part).toEqual(movedLayout((await readTenancyStep(fresh.owner))!.defaultTenantId));
+      } finally {
+        await fresh.close();
+        await removeTempDir(dir);
+      }
+    }
+  });
+
+  it('resumes a re-armed move, from done, after a kill at every part, keeping removed-… (round 2 review I1)', async () => {
+    const parts = ['renamed repos', 'renamed checkouts', `kept removed-${WS}-1`, 'removed tmp'];
+    for (const part of parts) {
+      const dir = await mkTempDir('wbs-file-step-rearm-kill-');
+      const fresh = await testDatabase();
+      try {
+        await oldLayout(dir);
+        // A move recorded against another directory: this one is still in the old layout.
+        await fresh.owner.query("update server_identity set tenancy_step = 'done'");
+        const rearmed: (readonly string[])[] = [];
+        const killed = runTenancySteps(fresh.owner, dir, {
+          ...withRoot,
+          onRearmed: (left) => rearmed.push(left),
+          checkpoint: (at) => {
+            if (at === part) throw new Error(`killed after ${at}`);
+          },
+        });
+        await expect(killed, part).rejects.toThrow(`killed after ${part}`);
+        expect(rearmed, part).toEqual([['repos/', 'checkouts/', 'tmp/']]);
+        // The re-arm rolls back with the unit: the step is done again, with part of the tree moved.
+        expect((await readTenancyStep(fresh.owner))?.step, part).toBe('done');
+        const again: (readonly string[])[] = [];
+        expect(
+          await runTenancySteps(fresh.owner, dir, { ...withRoot, onRearmed: (left) => again.push(left) }),
+          part,
+        ).toBe('done');
+        expect(await tree(dir), part).toEqual(movedLayout((await readTenancyStep(fresh.owner))!.defaultTenantId));
+        // Whatever the kill left at the root re-arms the next run; a kill after the last part leaves nothing.
+        expect(again.length, part).toBe(part === 'removed tmp' ? 0 : 1);
       } finally {
         await fresh.close();
         await removeTempDir(dir);
@@ -363,16 +400,103 @@ describeDb('the file step on the frozen 0019 fixture', () => {
     await db.owner.query("update server_identity set tenancy_step = 'done'");
     const t = (await readTenancyStep(db.owner))!.defaultTenantId;
     await mkdir(join(dataDir, 'tenants', t, 'repos'), { recursive: true });
-    const server = await start(dataDir);
+    // migrate --check counts the re-arm as pending (round 2 review m3), also where keys without the root is not.
+    const check = await runIn(dataDir, ['migrate', '--check']);
+    expect(check.code).toBe(1);
+    expect(check.out).toContain(
+      'data directory: the move to the new layout is pending (recorded as made, but repos/ and checkouts/ and tmp/ still at the root)',
+    );
+    await db.owner.query("update server_identity set tenancy_step = 'keys'");
+    const noRoot: Record<string, string> = { ...envFor(dataDir) };
+    delete noRoot.WIREBENCH_SERVER_SECRETS_KEY;
+    const checkNoRoot = await main(['migrate', '--check'], {
+      stdout: { write: vi.fn() },
+      stderr: { write: vi.fn() },
+      env: noRoot,
+    });
+    expect(checkNoRoot).toBe(1);
+    await db.owner.query("update server_identity set tenancy_step = 'done'");
+    // The start says so, on stderr and in its log (round 2 review m1), with no tenant or key in it.
+    const stderr = { write: vi.fn() };
+    const logged: string[] = [];
+    const env = {
+      ...envFor(dataDir),
+      WIREBENCH_SERVER_HOST: '127.0.0.1',
+      WIREBENCH_SERVER_PORT: String(await freePort()),
+      WIREBENCH_SERVER_LOG_LEVEL: 'warn',
+    };
+    const server = await startServer(
+      env,
+      { stdout: { write: vi.fn() }, stderr, env },
+      {
+        signals: new EventEmitter(),
+        exit: vi.fn(),
+        modules: BUILTIN_MODULES,
+        logStream: new Writable({
+          write(chunk: Buffer, _encoding, done) {
+            logged.push(chunk.toString());
+            done();
+          },
+        }),
+      },
+    );
     try {
       expect((await readTenancyStep(db.owner))?.step).toBe('done');
       expect((await readdir(dataDir)).sort()).toEqual(['no-hooks', 'tenants']);
       expect((await readdir(join(dataDir, 'tenants', t, 'repos'))).length).toBeGreaterThan(0);
       const tmp = await readdir(join(dataDir, 'tenants', t, 'tmp'));
       expect(tmp.some((name) => name.startsWith(`removed-${fixture.workspaces.retired}-`))).toBe(true);
+      const err = stderr.write.mock.calls.map((c) => String(c[0])).join('');
+      const line =
+        'data directory: the move to the new layout is recorded as made, but repos/ and checkouts/ and tmp/ are ' +
+        'still at the root (a move made against another directory, or one cut short); moving them now';
+      expect(err).toContain(line);
+      expect(logged.join('')).toContain(line);
+      for (const text of [err, logged.join('')]) {
+        expect(text).not.toContain(t);
+        expect(text).not.toContain(fixture.keys.secretsKey);
+      }
     } finally {
       await server.close();
     }
+    expect(await runIn(dataDir, ['migrate', '--check'])).toMatchObject({ code: 0 });
+  });
+
+  it('migrate re-arms a move recorded as made and says so on stderr (round 2 review m1)', async () => {
+    await db.owner.query("update server_identity set tenancy_step = 'done'");
+    const migrated = await runIn(dataDir, ['migrate']);
+    expect(migrated.code).toBe(0);
+    expect(migrated.err).toContain(
+      'data directory: the move to the new layout is recorded as made, but repos/ and checkouts/ and tmp/ are still at the root',
+    );
+    expect(migrated.out).toContain('data directory: in the new layout');
+    expect((await readdir(dataDir)).sort()).toEqual(['no-hooks', 'tenants']);
+    expect((await readTenancyStep(db.owner))?.step).toBe('done');
+  });
+
+  it('at done, a data directory without the repository of a workspace made since is refused, not moved (round 2 review m2)', async () => {
+    // A pre-upgrade backup, mounted after the real directory reached done: it predates one of the workspaces.
+    await db.owner.query("update server_identity set tenancy_step = 'done'");
+    const { rm } = await import('node:fs/promises');
+    const afterSeal = '01M6515P844XKB9C2NTQDM7PYP';
+    await rm(join(dataDir, 'repos', `${afterSeal}.git`), { recursive: true });
+    const ledger = async () => (await db.owner.query('select version from schema_migrations order by 1')).rows;
+    const before = { files: await tree(dataDir), ledger: await ledger() };
+    const error = await start(dataDir).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(StartupError);
+    expect(error).toMatchObject({ exitCode: 2 });
+    expect((error as Error).message).toContain('tenancy-workspaces-missing');
+    expect((error as Error).message).toContain(`${afterSeal}.git`);
+    const migrate = await runIn(dataDir, ['migrate']);
+    expect(migrate.code).toBe(2);
+    expect(migrate.err).toContain('tenancy-workspaces-missing');
+    expect((await runIn(dataDir, ['migrate', '--check'])).code).toBe(1);
+    // The step itself refuses too, before anything moves.
+    await expect(runTenancySteps(db.owner, dataDir, { root: fixtureRoot() })).rejects.toMatchObject({
+      code: 'tenancy-workspaces-missing',
+    });
+    expect({ files: await tree(dataDir), ledger: await ledger() }).toEqual(before);
+    expect((await readTenancyStep(db.owner))?.step).toBe('done');
   });
 
   it('at done with repos/ still at the root and data at its new place, start and migrate refuse and change nothing', async () => {
