@@ -34,9 +34,10 @@ describe('check:tenant-scope', () => {
     ]);
   });
 
+  // Scans every server source file; under coverage instrumentation on CI that takes over 5 s.
   it('passes the real tree', async () => {
     expect(await checkTenantScope(join(import.meta.dirname, '..'))).toEqual([]);
-  });
+  }, 30_000);
 
   it('catches every spelling of defaultScope, and skips comments', () => {
     const route = 'packages/server/src/teams/routes/teams.ts';

@@ -15,6 +15,9 @@ Date: 2026-10-30 · Status: approved · Branch: not started.
 - Third source palette: five colours sampled from a pigeon photo — feather white `#F1F1F4`, neck
   mint `#6FC0A2`, mauve `#8F6996`, periwinkle grey `#AFB6CE`, charcoal `#2B2425`. Previewed the same
   day as one more direction — Plume.
+- Fourth direction (2026-11-01): a clay-and-cream palette — clay `#D97757`, deep clay `#C15F3C`,
+  cream `#F0EEE6`, paper `#FAF9F5` — previewed as Kiln; its dark mode was then reworked to neutral
+  greys (`#181818` canvas, `#252525` panels, `#444648` selection) on the owner's ask.
 - Owner rulings (2026-10-30, one popup):
   1. **Default stays the default** for new installs; the three themes are opt-in.
   2. **The palette is stored in the preferences document**, beside the mode.
@@ -28,17 +31,18 @@ Date: 2026-10-30 · Status: approved · Branch: not started.
      invalid-regex border, password-length hint, script-convert diff lines) is a **separate
      follow-up**, not this change.
   8. **Plume added 2026-10-30 after the pigeon preview** (§3.6a), placed last in the picker.
+  9. **Kiln added 2026-11-01 after its preview** (§3.6b), placed after Plume.
 
 ## 1. Objective
 
 Wirebench has one look: a warm near-black ramp with a single terracotta accent, in dark or light.
-People who sit in the app all day want to pick a look they like. This change adds **seven colour
+People who sit in the app all day want to pick a look they like. This change adds **eight colour
 themes** next to today's, each with a light and a dark mode, chosen in Settings or the command
 palette and applied at once without a restart.
 
 Success means:
 
-- A user can pick Default, Field kit, Sandstone, Dusk, Seed, Pith, Rind or Plume, and separately Dark,
+- A user can pick Default, Field kit, Sandstone, Dusk, Seed, Pith, Rind, Plume or Kiln, and separately Dark,
   Light or System.
 - The whole window follows: chrome, editors (Monaco), terminals, method badges, status colours.
 - The first frame after launch already has the chosen theme (no flash of Default).
@@ -52,14 +56,14 @@ They stay separate so `system` keeps following the OS for every palette.
 | Setting      | Values                                                                  | Default   |
 | ------------ | ----------------------------------------------------------------------- | --------- |
 | `ui.theme`   | `dark`, `light`, `system` (unchanged)                                   | `dark`    |
-| `ui.palette` | `default`, `field-kit`, `sandstone`, `dusk`, `seed`, `pith`, `rind`, `plume` | `default` |
+| `ui.palette` | `default`, `field-kit`, `sandstone`, `dusk`, `seed`, `pith`, `rind`, `plume`, `kiln` | `default` |
 
 The order of `ui.palette`'s values is the order the picker shows them.
 
 The DOM carries both: `<html data-theme="dark" data-palette="sandstone">`. `default` sets no
 `data-palette` attribute, so today's CSS keeps working untouched.
 
-## 3. The seven palettes
+## 3. The eight palettes
 
 Each palette gives every colour token in `tokens.css` a value in both modes. Spacing, radius, type,
 geometry and layers are not palette tokens and never change. The values below are the starting
@@ -297,6 +301,45 @@ raised surface and its `--wb-border-strong` below 3:1 on both modes' surfaces, s
 grey from the periwinkle family that clears them (5.36:1 and 3.58:1 on dark raised, 3.12:1 for
 the light border on base).
 
+### 3.6b Kiln — cream paper in light, neutral grey in dark, clay accent
+
+A soft take on Default with the same clay accent family. Light sits on cream paper with a pale-clay
+selection. Dark is neutral, with no warm tint: a near-black `#181818` canvas, grey panels and inputs
+stepping up to `#303030`, a grey selection (`#444648`, used for both `--wb-bg-selected` and the
+selected explorer row's `--wb-accent-muted`) and a blue focus ring, so clay appears only where the
+accent is — primary buttons, the active tab, links, JSON keys. It uses no chrome colour of its own:
+the chrome tokens stay aliases of the sunken surface.
+
+| Token                 | Dark      | Light     |
+| --------------------- | --------- | --------- |
+| `--wb-bg-sunken`      | `#1B1B1B` | `#F0EEE6` |
+| `--wb-bg-base`        | `#181818` | `#FAF9F5` |
+| `--wb-bg-raised`      | `#252525` | `#FFFFFF` |
+| `--wb-bg-overlay`     | `#303030` | `#FFFFFF` |
+| `--wb-bg-hover`       | `#2A2A2A` | `#F2F0E8` |
+| `--wb-bg-active`      | `#333333` | `#E8E5DA` |
+| `--wb-bg-selected`    | `#444648` | `#ECE2D4` |
+| `--wb-fg-default`     | `#F1F1F1` | `#141413` |
+| `--wb-fg-muted`       | `#C8C8C8` | `#3D3D3A` |
+| `--wb-fg-subtle`      | `#A8A8A8` | `#5A5954` |
+| `--wb-border-default` | `#2C2C2C` | `#E3DFD3` |
+| `--wb-accent-default` | `#E08A68` | `#A64B29` |
+| `--wb-accent-hover`   | `#E9A083` | `#8F3F22` |
+| `--wb-accent-surface` | `#2A2624` | `#F8ECE5` |
+| `--wb-accent-muted`   | `#444648` | `#E6BFAE` |
+| `--wb-fg-on-accent`   | `#181818` | `#FFFFFF` |
+| `--wb-status-success` | `#7FC79A` | `#2B7550` |
+| `--wb-fg-faint`       | `#969696` | `#6B6A64` |
+| `--wb-border-strong`  | `#707070` | `#8C8A80` |
+| `--wb-status-danger`  | `#EF7D72` | `#B23B33` |
+| `--wb-border-focus`   | `#6AA1E6` | `var(--wb-accent-default)` |
+
+The gate moved three values from the preview: the light accent deepens from `#C15F3C` to `#A64B29`
+so curl flags clear 4.5:1 on the sunken cream; the dark accent lightens to `#E08A68` for link text on
+raised; and dark `--wb-status-danger` lightens to `#EF7D72` because Default's red falls below 4.5:1
+on the `#252525` raised surface. Light restates Default's danger and focus values so the dark ones do
+not leak.
+
 ### 3.7 Tokens a palette does not list
 
 A token not in a palette's table keeps the value it has for that mode in Default. That covers the
@@ -335,6 +378,9 @@ so the two stay apart. The icon-or-word rule above matters most in these three.
 
 Plume's accent is mauve and the palette holds no red, so nothing sits near danger: it keeps
 Default's `--wb-status-danger` and `--wb-status-warning` in both modes.
+
+Kiln's accent is the same clay as Default's and it keeps Default's danger hue (only lightened in
+dark for contrast, §3.6b), so it relies on the same icon-or-word rule Default does.
 
 ## 4. CSS structure
 

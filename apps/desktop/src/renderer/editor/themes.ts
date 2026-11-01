@@ -278,6 +278,36 @@ export const EDITOR_COLOURS: Readonly<Record<Palette, Readonly<Record<EditorMode
       warning: '#8b6010',
     },
   },
+  kiln: {
+    dark: {
+      bgBase: '#181818',
+      bgRaised: '#252525',
+      bgSelected: '#444648',
+      fgDefault: '#f1f1f1',
+      fgMuted: '#c8c8c8',
+      fgSubtle: '#a8a8a8',
+      fgFaint: '#969696',
+      borderDefault: '#2c2c2c',
+      accent: '#e08a68',
+      info: '#7fa6dd',
+      success: '#7fc79a',
+      warning: '#d9a441',
+    },
+    light: {
+      bgBase: '#faf9f5',
+      bgRaised: '#ffffff',
+      bgSelected: '#ece2d4',
+      fgDefault: '#141413',
+      fgMuted: '#3d3d3a',
+      fgSubtle: '#5a5954',
+      fgFaint: '#6b6a64',
+      borderDefault: '#e3dfd3',
+      accent: '#a64b29',
+      info: '#3d6ba8',
+      success: '#2b7550',
+      warning: '#8b6010',
+    },
+  },
 };
 
 /** The registered name for one colour theme in one mode. */
@@ -338,7 +368,7 @@ function buildTheme(base: 'vs' | 'vs-dark', palette: EditorColours): Monaco.edit
   };
 }
 
-/** The sixteen theme definitions, keyed by the name they are registered under. */
+/** The eighteen theme definitions, keyed by the name they are registered under. */
 export const THEME_DEFINITIONS: Readonly<Record<string, Monaco.editor.IStandaloneThemeData>> = Object.fromEntries(
   PALETTES.flatMap((palette) => [
     [MONACO_THEMES[palette].dark, buildTheme('vs-dark', EDITOR_COLOURS[palette].dark)],

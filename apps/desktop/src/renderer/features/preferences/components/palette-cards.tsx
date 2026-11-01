@@ -4,7 +4,7 @@ import { PALETTE_LABEL, type ResolvedTheme } from '../../../lib/theme.js';
 
 /**
  * The tokens each card's five swatches show: the frame, the window, a raised surface, the text and
- * the accent — enough to tell the eight apart at a glance.
+ * the accent — enough to tell the nine apart at a glance.
  */
 const SWATCH_TOKENS = ['--wb-bg-chrome', '--wb-bg-base', '--wb-bg-raised', '--wb-fg-default', '--wb-accent-default'];
 
@@ -19,7 +19,7 @@ export interface PaletteCardsProps {
 }
 
 /**
- * Settings → Appearance's colour theme picker: a radio group of eight cards in a wrapping grid,
+ * Settings → Appearance's colour theme picker: a radio group of nine cards in a wrapping grid,
  * each with its name and five swatches. The arrow keys move the selection, as in any radio group.
  *
  * The swatches are painted by `var(--wb-…)` inside a wrapper carrying the card's `data-palette`
