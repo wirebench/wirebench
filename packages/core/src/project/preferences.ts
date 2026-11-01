@@ -181,7 +181,18 @@ export interface LayoutPreference {
  * The colour themes, beside the mode. Restated from `@wirebench/wire/palettes` (the engine cannot
  * depend on the wire package); `preferences-defaults.test.ts` keeps the two lists equal.
  */
-export const PALETTES = ['default', 'field-kit', 'sandstone', 'dusk', 'seed', 'pith', 'rind', 'plume', 'kiln', 'trail'] as const;
+export const PALETTES = [
+  'default',
+  'field-kit',
+  'sandstone',
+  'dusk',
+  'seed',
+  'pith',
+  'rind',
+  'plume',
+  'kiln',
+  'trail',
+] as const;
 
 /** One of {@link PALETTES}. */
 export type Palette = (typeof PALETTES)[number];
