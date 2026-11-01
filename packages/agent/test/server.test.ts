@@ -7,7 +7,7 @@
 import { writeFileSync } from 'node:fs';
 import { createServer as createNetServer, type Server as NetServer } from 'node:net';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { HOST_CLOSE } from '@wirebench/host';
 import { pair, unpair, type AgentFetch } from '../src/pair.js';
 import { openPairingStore, PAIRINGS_FILE, type PairingStore } from '../src/pairings.js';
@@ -67,6 +67,7 @@ async function setUp(extra: Partial<StartAgentOptions> = {}, sshOptIn = false): 
   const store = await openPairingStore(platform);
   const port = await freePort();
   const { pairingId } = await pair({ code: server.code, serverUrl: server.url, sshOptIn, store, fetch, port });
+  const before = server.seen.length;
   const agent = await startAgent({
     host: fakeHost(registryChannelNames()),
     platform,
@@ -76,6 +77,13 @@ async function setUp(extra: Partial<StartAgentOptions> = {}, sshOptIn = false): 
     ...extra,
   });
   onCleanUp(() => agent.close());
+  // The agent tells the server its port in the background at every start. Until the server has had that
+  // report, a test that changes the server's pairings (deletes one, sets `signedAnswer`) also changes the
+  // report's answer: a deleted pairing answered `agent-pairing-unknown` is removed here, and its tab then
+  // closes 4403 instead of the 4401 the test means to see.
+  await vi.waitFor(() => {
+    expect(server.seen.slice(before).some((seen) => seen.method === 'PATCH')).toBe(true);
+  });
   return { server, store, pairingId, port: agent.port, agent };
 }
 
@@ -351,6 +359,24 @@ describe('startAgent', () => {
     socket.send({ type: 'auth', pairingId: setup.pairingId, nonce });
     expect((await socket.closed).code).toBe(HOST_CLOSE.unauthenticated);
     expect(setup.store.list()).toEqual([]);
+  });
+
+  it('refuses the tab 4403 once the report at start finds its pairing gone from the server', async () => {
+    // The other order of the race `setUp` waits out: the server dropped the pairing before the agent
+    // started, so the start's port report removes it and its origin is not a paired origin any more.
+    const server = await startFakeServer();
+    const platform = fakePlatform();
+    const store = await openPairingStore(platform);
+    const port = await freePort();
+    const { pairingId } = await pair({ code: server.code, serverUrl: server.url, sshOptIn: false, store, fetch, port });
+    server.pairings.delete(pairingId);
+    const agent = await startAgent({ host: fakeHost(), platform, store, fetch, ports: [port] });
+    onCleanUp(() => agent.close());
+    await vi.waitFor(() => {
+      expect(store.list()).toEqual([]);
+    });
+    const socket = openSocket(agent.port, { origin: server.origin });
+    expect((await socket.closed).code).toBe(HOST_CLOSE.forbidden);
   });
 
   it('keeps a pairing whose redeem fails for any other reason', async () => {
