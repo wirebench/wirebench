@@ -30,6 +30,7 @@ import { ssoModule } from '../../../src/sso/module.js';
 import * as ssoRepo from '../../../src/sso/repo.js';
 import { syncModule } from '../../../src/sync/module.js';
 import { teamsModule } from '../../../src/teams/module.js';
+import type { PendingWrites } from '../../../src/pending-writes.js';
 import { terminalSharesModule } from '../../../src/terminal-shares/module.js';
 import { isDefaultTenant } from '../../../src/tenancy/tenancy.js';
 import { browserBuildFixture, type BrowserBuildFixture } from '../../helpers/browser-build.js';
@@ -98,6 +99,11 @@ export interface World {
   readonly timers: ManualTimers;
   scheduler(): Scheduler;
   outbox(): AlertOutbox;
+  /**
+   * Waits for the writes a request led to but did not wait for: the terminal shares' and the license changes' audit
+   * rows, and the scheduler pass a Run now kicked. A snapshot of A's rows taken before this can miss a row A's own request is still writing.
+   */
+  quiet(): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -114,6 +120,8 @@ export async function isolationWorld(options: { readonly policiesDisabled?: bool
   const timers = manualTimers();
   let scheduler: Scheduler | undefined;
   let outbox: AlertOutbox | undefined;
+  let shareAudits: PendingWrites | undefined;
+  let licenseAudits: PendingWrites | undefined;
   const deliver: DeliverAlert = () => Promise.resolve();
   const modules: string[] = [];
   const build: BrowserBuildFixture = await browserBuildFixture();
@@ -153,10 +161,22 @@ export async function isolationWorld(options: { readonly policiesDisabled?: bool
             outbox = made;
           },
         }),
-        auditLogModule({ now, setTimer: timers.setTimer }),
+        auditLogModule({
+          now,
+          setTimer: timers.setTimer,
+          onLicenseWrites: (made) => {
+            licenseAudits = made;
+          },
+        }),
         ssoModule({ now, sweepIntervalMs: 0 }),
         sessionLogsModule({ now, setTimer: timers.setTimer }),
-        terminalSharesModule({ now, setTimer: timers.setTimer }),
+        terminalSharesModule({
+          now,
+          setTimer: timers.setTimer,
+          onAuditWrites: (made) => {
+            shareAudits = made;
+          },
+        }),
         hostModule({ now, setTimer: timers.setTimer, browserRoot: build.root }),
         agentModule({ now, sweepIntervalMs: 0 }),
       ];
@@ -175,6 +195,11 @@ export async function isolationWorld(options: { readonly policiesDisabled?: bool
     timers,
     scheduler: () => scheduler!,
     outbox: () => outbox!,
+    quiet: async () => {
+      await shareAudits?.settled();
+      await licenseAudits?.settled();
+      await scheduler?.idle();
+    },
     close: async () => {
       // Injected sockets stay in the WebSocket server's client set: the live module's grace timer is manual here.
       let closed = false;

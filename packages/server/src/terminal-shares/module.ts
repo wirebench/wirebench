@@ -20,6 +20,7 @@ import {
 } from '@wirebench/engine';
 import type { FastifyInstance, FastifyRequest, preHandlerAsyncHookHandler } from 'fastify';
 import { auditIp, auditSource, recordAudit, type ServerContext, type ServerModule } from '../context.js';
+import { pendingWrites, type PendingWrites } from '../pending-writes.js';
 import { identitySettings } from '../identity/env.js';
 import { callerForToken } from '../identity/guard.js';
 import { findUserById } from '../identity/repo.js';
@@ -38,6 +39,8 @@ export interface TerminalSharesOptions {
   readonly setTimer?: ShareRegistryDeps['setTimer'];
   /** Fixed share ids in tests. */
   readonly newShareId?: () => string;
+  /** Hands the module's in-flight audit writes out, for tests that must see every row a request led to. */
+  readonly onAuditWrites?: (writes: PendingWrites) => void;
 }
 
 const SOCKET_ROUTE = '/terminal-shares/socket';
@@ -75,25 +78,31 @@ export function terminalSharesModule(options: TerminalSharesOptions = {}): Serve
       const { hooks } = ctx;
       const canView = async (userId: string, workspaceId: string, tenant: TenantScope): Promise<boolean> =>
         (await effectiveRole(ctx.tenancy.db(tenant), userId, workspaceId)).role !== 'none';
+      // Kept, so shutdown waits for them before the pool closes, and a test can wait for the rows a request led to:
+      // the route answers before its `terminal_share.started` row commits.
+      const auditWrites = pendingWrites();
+      options.onAuditWrites?.(auditWrites);
       const registry = new ShareRegistry({
         canView,
-        // Never awaited, so outside any unit the caller has open; written in the share's own tenant.
+        // Never awaited by the caller, so outside any unit it has open; written in the share's own tenant.
         audit: (event) => {
           outsideTenantUnit(() => {
-            void ctx.tenancy
-              .db(event.tenant)
-              .transaction((tx) =>
-                recordAudit(hooks, tx, {
-                  ...event.source,
-                  action: event.action,
-                  target: { kind: 'terminal-share', id: event.shareId },
-                  workspaceId: event.workspaceId,
-                  details: event.details,
+            auditWrites.track(
+              ctx.tenancy
+                .db(event.tenant)
+                .transaction((tx) =>
+                  recordAudit(hooks, tx, {
+                    ...event.source,
+                    action: event.action,
+                    target: { kind: 'terminal-share', id: event.shareId },
+                    workspaceId: event.workspaceId,
+                    details: event.details,
+                  }),
+                )
+                .catch((error: unknown) => {
+                  ctx.log.warn({ err: error }, 'terminal share audit failed');
                 }),
-              )
-              .catch((error: unknown) => {
-                ctx.log.warn({ err: error }, 'terminal share audit failed');
-              });
+            );
           });
         },
         newShareId: options.newShareId ?? newShareId,
@@ -195,9 +204,11 @@ export function terminalSharesModule(options: TerminalSharesOptions = {}): Serve
       ctx.hooks.sessionEnded.push((event) => {
         registry.sessionEnded(event);
       });
-      app.addHook('onClose', () => {
+      app.addHook('onClose', async () => {
         heartbeat?.cancel();
         registry.closeAll();
+        // closeAll audits each share's end; the pool closes after the app, so every row is written first.
+        await auditWrites.settled();
       });
       ctx.meta.addCapability(TERMINAL_SHARE_CAPABILITY);
       return Promise.resolve();

@@ -158,8 +158,12 @@ async function routeSweep(w: World): Promise<RouteSweep> {
       // The probe: B's admin on B's host, with A's ids.
       const request = await route.request(ctx(w.b));
       const write = !key.startsWith('GET ');
+      // A's control (and the template, which may make a fresh row of A's) can leave writes in flight that land
+      // during B's probe and would be blamed on B: wait for them, and for B's, before each snapshot.
+      if (write) await w.quiet();
       const before = write ? await snapshotOfA(superuser, w) : '';
       const res = await w.b.tenant.inject(request);
+      if (write) await w.quiet();
       const after = write ? await snapshotOfA(superuser, w) : '';
       await route.after?.(ctx(w.b));
       const sent = `${request.url as string} ${JSON.stringify(request.payload ?? '')}`;
