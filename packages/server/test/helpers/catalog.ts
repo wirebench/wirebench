@@ -239,7 +239,9 @@ export const FIRST_LINTED_MIGRATION = 22;
  *   `no force` / `force` of that table before the write is a `no force`, and a `force` of it follows (Task 17 fix
  *   re-review N2, Task 18 and Task 19 review M4).
  * - Emptying a scoped table with TRUNCATE is refused outright: it ignores row-level security and removes every
- *   tenant's rows, on any role.
+ *   tenant's rows, on any role. Every item of its list counts (`only`, `*` and a schema allowed), and so does a
+ *   TRUNCATE of `tenants` or any with CASCADE, which every scoped table's key to `tenants` would carry to all of them
+ *   (Task 19 fix re-review B).
  * Returns the versions that break it.
  */
 export function unscopedDataMigrations(
@@ -248,7 +250,23 @@ export function unscopedDataMigrations(
   const tables = SCOPED_TABLES.join('|');
   const table = `(?:only\\s+)?(?:"?\\w+"?\\.)?"?(${tables})"?(?![\\w"])`;
   const writes = new RegExp(`\\b(?:insert\\s+into|update|delete\\s+from|merge\\s+into)\\s+${table}`, 'gi');
-  const emptied = new RegExp(`\\btruncate\\s+(?:table\\s+)?(?:[\\w".]+\\s*,\\s*)*${table}`, 'i');
+  /** One item of a TRUNCATE list (`only x`, `x *`, `schema.x`), naming a scoped table. */
+  const scopedItem = new RegExp(`^\\s*(?:only\\s+)?(?:"?\\w+"?\\.)?"?(?:${tables})"?\\s*\\*?\\s*$`, 'i');
+  /** `tenants`, which every scoped table references: CASCADE from it empties them all. */
+  const tenantsItem = /^\s*(?:only\s+)?(?:"?\w+"?\.)?"?tenants"?\s*\*?\s*$/i;
+  /** Whether a TRUNCATE in `sql` empties scoped rows: it names a scoped table or `tenants`, or cascades. */
+  const emptiesScoped = (sql: string): boolean => {
+    for (const statement of sql.matchAll(/\btruncate\b([^;]*)/gi)) {
+      const body = statement[1]!;
+      if (/\bcascade\b/i.test(body)) return true;
+      const list = body
+        .replace(/^\s*table\b/i, '')
+        .replace(/\b(?:restart|continue)\s+identity\b|\brestrict\b/gi, '')
+        .split(',');
+      if (list.some((item) => scopedItem.test(item) || tenantsItem.test(item))) return true;
+    }
+    return false;
+  };
   /** A write inside parentheses: a data-modifying CTE (`with x as (update …)`) or a write in a sub-select. */
   const nestedWrite = /\(\s*(?:insert|update|delete|merge)\b/i;
   const uncommented = (sql: string) => sql.replace(/--[^\n]*|\/\*[\s\S]*?\*\//g, ' ');
@@ -256,7 +274,7 @@ export function unscopedDataMigrations(
     .filter((migration) => migration.version >= FIRST_LINTED_MIGRATION)
     .filter((migration) => {
       const sql = uncommented(migration.sql);
-      if (emptied.test(sql)) return true;
+      if (emptiesScoped(sql)) return true;
       if (!new RegExp(writes.source, 'i').test(sql)) return false;
       // Every call runs one statement, with one write, that filters on the setting.
       const calls = forEachTenantArguments(sql);

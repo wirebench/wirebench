@@ -361,74 +361,103 @@ describeDb('the cross-tenant isolation suite (spec §19.13)', () => {
       return socket;
     };
 
-    it(`${SOCKET_ROUTES.live} — live: B cannot subscribe to A's workspace, and A's announcements never reach B's sockets`, async () => {
-      const inB = await opened(w.b.tenant, LIVE_PATH);
-      inB.send({ type: 'auth', token: w.b.admin.token });
-      await inB.next('ready');
-      inB.send({ type: 'subscribe', workspaceId: w.a.workspaceId });
-      expect(await inB.next('refused')).toMatchObject({
-        workspaceId: w.a.workspaceId,
-        code: 'teams-workspace-not-found',
-      });
-      inB.send({ type: 'subscribe', workspaceId: w.b.workspaceId });
-      await inB.next('presence');
-      const inA = await opened(w.a.tenant, LIVE_PATH);
-      inA.send({ type: 'auth', token: w.a.admin.token });
-      await inA.next('ready');
-      inA.send({ type: 'subscribe', workspaceId: w.a.workspaceId });
-      await inA.next('presence');
-      const log = w.t.h.app.log;
-      const a = { tenantId: w.a.tenant.scope.tenantId, workspaceId: w.a.workspaceId };
-      announce(w.t.h.hooks.headMoved, { ...a, head: 'a'.repeat(40), tokenId: newId() }, log);
-      announce(w.t.h.hooks.captureReceived, { ...a, hookId: w.a.hookId, captureId: w.a.captureId }, log);
-      announce(w.t.h.hooks.hooksChanged, a, log);
-      announce(
-        w.t.h.hooks.scheduleRunFinished,
-        { ...a, scheduleId: w.a.scheduleId, runId: w.a.runId, status: 'passed' },
-        log,
-      );
-      await inA.next('head');
-      await inA.next('schedule-run');
-      // B's own head, then: B saw none of A's before it.
-      announce(
-        w.t.h.hooks.headMoved,
-        { tenantId: w.b.tenant.scope.tenantId, workspaceId: w.b.workspaceId, head: 'b'.repeat(40), tokenId: newId() },
-        log,
-      );
-      await inB.next('head');
-      expect(inB.messages.filter((m) => ['head', 'capture', 'hooks', 'schedule-run'].includes(m.type ?? ''))).toEqual([
-        { type: 'head', workspaceId: w.b.workspaceId, head: 'b'.repeat(40) },
-      ]);
-      // A's token is no one on B's host.
-      const stranger = await opened(w.b.tenant, LIVE_PATH);
-      stranger.send({ type: 'auth', token: w.a.admin.token });
-      expect(await stranger.closed).toBe(LIVE_CLOSE.unauthenticated);
-    });
+    /**
+     * One case per socket route, keyed by `SOCKET_ROUTES`: a socket route added there without a case here is a type
+     * error (Task 19 fix re-review A).
+     */
+    const SOCKET_CASES: Record<
+      keyof typeof SOCKET_ROUTES,
+      { readonly title: string; readonly run: () => Promise<void> }
+    > = {
+      live: {
+        title: "live: B cannot subscribe to A's workspace, and A's announcements never reach B's sockets",
+        run: async () => {
+          const inB = await opened(w.b.tenant, LIVE_PATH);
+          inB.send({ type: 'auth', token: w.b.admin.token });
+          await inB.next('ready');
+          inB.send({ type: 'subscribe', workspaceId: w.a.workspaceId });
+          expect(await inB.next('refused')).toMatchObject({
+            workspaceId: w.a.workspaceId,
+            code: 'teams-workspace-not-found',
+          });
+          inB.send({ type: 'subscribe', workspaceId: w.b.workspaceId });
+          await inB.next('presence');
+          const inA = await opened(w.a.tenant, LIVE_PATH);
+          inA.send({ type: 'auth', token: w.a.admin.token });
+          await inA.next('ready');
+          inA.send({ type: 'subscribe', workspaceId: w.a.workspaceId });
+          await inA.next('presence');
+          const log = w.t.h.app.log;
+          const a = { tenantId: w.a.tenant.scope.tenantId, workspaceId: w.a.workspaceId };
+          announce(w.t.h.hooks.headMoved, { ...a, head: 'a'.repeat(40), tokenId: newId() }, log);
+          announce(w.t.h.hooks.captureReceived, { ...a, hookId: w.a.hookId, captureId: w.a.captureId }, log);
+          announce(w.t.h.hooks.hooksChanged, a, log);
+          announce(
+            w.t.h.hooks.scheduleRunFinished,
+            { ...a, scheduleId: w.a.scheduleId, runId: w.a.runId, status: 'passed' },
+            log,
+          );
+          await inA.next('head');
+          await inA.next('schedule-run');
+          // B's own head, then: B saw none of A's before it.
+          announce(
+            w.t.h.hooks.headMoved,
+            {
+              tenantId: w.b.tenant.scope.tenantId,
+              workspaceId: w.b.workspaceId,
+              head: 'b'.repeat(40),
+              tokenId: newId(),
+            },
+            log,
+          );
+          await inB.next('head');
+          expect(
+            inB.messages.filter((m) => ['head', 'capture', 'hooks', 'schedule-run'].includes(m.type ?? '')),
+          ).toEqual([{ type: 'head', workspaceId: w.b.workspaceId, head: 'b'.repeat(40) }]);
+          // A's token is no one on B's host.
+          const stranger = await opened(w.b.tenant, LIVE_PATH);
+          stranger.send({ type: 'auth', token: w.a.admin.token });
+          expect(await stranger.closed).toBe(LIVE_CLOSE.unauthenticated);
+        },
+      },
 
-    it(`${SOCKET_ROUTES.host} — host: B's host cannot open A's workspace`, async () => {
-      const host = await opened(w.b.tenant, '/api/v1/host', cookie(w.b.tenant, w.b.browser));
-      await host.next('hello');
-      host.send({
-        id: 1,
-        channel: 'workspace.joinFromServer',
-        request: { url: w.b.tenant.origin, workspaceId: w.a.workspaceId },
-      });
-      expect(await host.waitFor((frame) => frame.id === 1)).toMatchObject({
-        ok: false,
-        error: { code: 'teams-workspace-not-found' },
-      });
-    });
+      host: {
+        title: "host: B's host cannot open A's workspace",
+        run: async () => {
+          const host = await opened(w.b.tenant, '/api/v1/host', cookie(w.b.tenant, w.b.browser));
+          await host.next('hello');
+          host.send({
+            id: 1,
+            channel: 'workspace.joinFromServer',
+            request: { url: w.b.tenant.origin, workspaceId: w.a.workspaceId },
+          });
+          expect(await host.waitFor((frame) => frame.id === 1)).toMatchObject({
+            ok: false,
+            error: { code: 'teams-workspace-not-found' },
+          });
+        },
+      },
 
-    it(`${SOCKET_ROUTES.terminalShares} — terminal shares: B cannot join A's share, by A's workspace or its own`, async () => {
-      for (const [workspaceId, close] of [
-        [w.b.workspaceId, TERMINAL_SHARE_CLOSE.notFound],
-        [w.a.workspaceId, TERMINAL_SHARE_CLOSE.forbidden],
-      ] as const) {
-        const viewer = await opened(w.b.tenant, TERMINAL_SHARE_PATH);
-        viewer.send({ type: 'auth', token: w.b.admin.token, workspaceId, shareId: w.a.shareId });
-        expect(await viewer.closed, workspaceId).toBe(close);
-      }
-    });
+      terminalShares: {
+        title: "terminal shares: B cannot join A's share, by A's workspace or its own",
+        run: async () => {
+          for (const [workspaceId, close] of [
+            [w.b.workspaceId, TERMINAL_SHARE_CLOSE.notFound],
+            [w.a.workspaceId, TERMINAL_SHARE_CLOSE.forbidden],
+          ] as const) {
+            const viewer = await opened(w.b.tenant, TERMINAL_SHARE_PATH);
+            viewer.send({ type: 'auth', token: w.b.admin.token, workspaceId, shareId: w.a.shareId });
+            expect(await viewer.closed, workspaceId).toBe(close);
+          }
+        },
+      },
+    };
+    for (const [name, socketCase] of Object.entries(SOCKET_CASES) as [
+      keyof typeof SOCKET_ROUTES,
+      (typeof SOCKET_CASES)[keyof typeof SOCKET_ROUTES],
+    ][]) {
+      it(`${SOCKET_ROUTES[name]} — ${socketCase.title}`, socketCase.run);
+    }
   });
 
   describe('every job', () => {

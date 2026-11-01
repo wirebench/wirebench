@@ -943,6 +943,13 @@ describeDb('migration 0021 on the frozen 0019 fixture: forced isolation (hosted 
       ),
     ).toEqual([99]);
     expect(planted(empty('import_staging'))).toEqual([]);
+    // Every item of the list counts, decorated or not, and CASCADE or `tenants` reaches every scoped table.
+    expect(planted(empty('only import_staging, captures'))).toEqual([99]);
+    expect(planted(empty('import_staging *, captures'))).toEqual([99]);
+    expect(planted(empty('tenants cascade'))).toEqual([99]);
+    expect(planted(empty('tenants'))).toEqual([99]);
+    expect(planted(empty('import_staging cascade'))).toEqual([99]);
+    expect(planted(empty('import_staging restart identity'))).toEqual([]);
     // Only one half of the bracket is no bracket.
     expect(planted("alter table users no force row level security;\nupdate users set display_name = 'x';")).toEqual([
       99,
