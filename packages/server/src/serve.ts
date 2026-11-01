@@ -22,7 +22,7 @@ import { loadMigrations, migrate, MIGRATIONS_DIR, pendingMigrations, type Migrat
 import { createDatabase } from './db/pool.js';
 import { checkAppRole, checkPostgresVersion } from './tenancy/checks.js';
 import { TENANCY_MIGRATIONS_DIR } from './tenancy/migrations.js';
-import { RunningLock, type RunningLockOptions } from './tenancy/running-lock.js';
+import { RunningLock, serverRunning, type RunningLockOptions } from './tenancy/running-lock.js';
 import { operatorPublicUrl } from './tenancy/urls.js';
 import { environmentKeyRoot } from './tenancy/keys.js';
 import { createTenancy, directoryOf } from './tenancy/tenancy.js';
@@ -34,8 +34,7 @@ import {
   dueStep,
   KEYS_WAIT,
   rearmLine,
-  rewrapLine,
-  rewrapWorthSaying,
+  rewrapNote,
   runTenancySteps,
 } from './tenancy/file-step.js';
 import { TENANTS_DIR } from './tenancy/paths.js';
@@ -305,14 +304,22 @@ export async function runMigrate(
       return ExitCode.Ok;
     }
     try {
+      // A server running beside this `migrate` (the routine way to migrate ahead of a restart) has hosts that may be
+      // writing the users' files: the re-wrap check at `done` is the server's then, at its next start (review m3).
+      const running = await serverRunning(db);
       const step = await runTenancySteps(db, config.dataDir, {
         onSkipped: skippedNote(io),
         onRearmed: (rearmed) => io.stderr.write(`${rearmLine(rearmed)}\n`),
         ...(config.secretsKey !== undefined ? { root: config.secretsKey } : {}),
+        ...(running ? { check: false } : {}),
         onRewrap: (counts, run) => {
-          if (run === 'step' || rewrapWorthSaying(counts)) io.stdout.write(`${rewrapLine(counts, run)}\n`);
+          const note = rewrapNote(counts, run);
+          if (note !== undefined) io.stdout.write(`${note.message}\n`);
         },
       });
+      if (step === 'done' && running && config.secretsKey !== undefined) {
+        io.stdout.write('re-wrap check: skipped while a server runs; the server re-seals at its next start\n');
+      }
       if (step === 'keys') {
         io.stdout.write('data directory: in the new layout\n');
         io.stderr.write(`tenancy step keys: ${KEYS_WAIT}\n`);
@@ -430,13 +437,9 @@ export async function startServer(
       },
       ...(config.secretsKey !== undefined ? { root: config.secretsKey } : {}),
       onRewrap: (counts, run) => {
-        // The check at `done` speaks only when it found something: a blob restored from before the upgrade, say.
-        if (run === 'check' && !rewrapWorthSaying(counts)) return;
-        stepNotes.push({
-          level: counts.unopened > 0 || counts.skipped > 0 || run === 'check' ? 'warn' : 'info',
-          message: rewrapLine(counts, run),
-          details: { ...counts, run },
-        });
+        // The check at `done` speaks only when it found something; a steady count is `info` (review m2).
+        const note = rewrapNote(counts, run);
+        if (note !== undefined) stepNotes.push({ ...note, details: { ...counts, run } });
       },
     });
     // Also where an operator starting the server by hand sees it at once, before the log is up (no key material).

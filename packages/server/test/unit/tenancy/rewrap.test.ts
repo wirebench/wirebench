@@ -11,6 +11,7 @@ import { open, seal } from '../../../src/hooks/secret-box.js';
 import { userSecretsKey } from '../../../src/host/server-platform.js';
 import { rewrap, writeFileDurably, type DurableFs } from '../../../src/tenancy/rewrap.js';
 import { mkTempDir, removeTempDir } from '../../helpers/git.js';
+import { canSymlink } from '../../helpers/symlink.js';
 
 const ROOT = Buffer.alloc(32, 0x31);
 const DATA_KEY = Buffer.alloc(32, 0x32);
@@ -82,7 +83,7 @@ describe('rewrap', () => {
   it('re-seals the old blobs under the new key, leaves the new and the plaintext ones, and counts each kind', async () => {
     const { garbageEntry, garbageJar } = await seed();
     const counts = await rewrap(checkouts, KEYS, 'forward');
-    expect(counts).toEqual({ resealed: 4, already: 2, unopened: 2, skipped: 0, files: 3 });
+    expect(counts).toEqual({ resealed: 4, already: 2, unopened: 2, skipped: 0, unreadable: 0, codes: [], files: 3 });
     const alice = await readSecrets(ALICE);
     expect(open(newKey(ALICE), Buffer.from(alice.entries['sec_a']!.value, 'base64'))).toBe('alpha');
     expect(alice.entries['sec_a']!.label).toBe('A');
@@ -115,6 +116,8 @@ describe('rewrap', () => {
       already: 6,
       unopened: 2,
       skipped: 0,
+      unreadable: 0,
+      codes: [],
       files: 0,
     });
     expect(await readFile(at(ALICE, 'secrets.json'), 'utf8')).toBe(before);
@@ -146,6 +149,8 @@ describe('rewrap', () => {
       already: 2,
       unopened: 2,
       skipped: 0,
+      unreadable: 0,
+      codes: [],
       files: 0,
     });
     expect(await readFile(at(ALICE, 'secrets.json'), 'utf8')).toBe(before);
@@ -159,6 +164,8 @@ describe('rewrap', () => {
       already: 0,
       unopened: 2,
       skipped: 0,
+      unreadable: 0,
+      codes: [],
       files: 4,
     });
     const alice = await readSecrets(ALICE);
@@ -167,40 +174,47 @@ describe('rewrap', () => {
     expect(await rewrap(checkouts, KEYS, 'back')).toMatchObject({ resealed: 0, already: 6 });
   });
 
-  it('follows no link but counts each one skipped, reads no directory that is not a user id, and is fine with no checkouts at all', async () => {
-    const elsewhere = await mkTempDir('wbs-rewrap-elsewhere-');
-    try {
-      const outside = join(elsewhere, 'secrets.json');
-      const sealed = b64(seal(oldKey(ALICE), 'outside'));
-      const text = JSON.stringify({
-        version: 2,
-        entries: { sec_o: { value: sealed, encrypted: true, createdAt: 'x' } },
-      });
-      await writeFile(outside, text);
-      await mkdir(at(ALICE), { recursive: true });
-      await symlink(outside, at(ALICE, 'secrets.json'));
-      await symlink(elsewhere, at(BOB));
-      await mkdir(at('not a user', 'cookie-jars'), { recursive: true });
-      // The host follows such links, and would set aside what it finds: so each one is counted (review m1).
-      expect(await rewrap(checkouts, KEYS, 'forward')).toEqual({
+  it.skipIf(!canSymlink)(
+    'follows no link but counts each one skipped, reads no directory that is not a user id, and is fine with no checkouts at all',
+    async () => {
+      const elsewhere = await mkTempDir('wbs-rewrap-elsewhere-');
+      try {
+        const outside = join(elsewhere, 'secrets.json');
+        const sealed = b64(seal(oldKey(ALICE), 'outside'));
+        const text = JSON.stringify({
+          version: 2,
+          entries: { sec_o: { value: sealed, encrypted: true, createdAt: 'x' } },
+        });
+        await writeFile(outside, text);
+        await mkdir(at(ALICE), { recursive: true });
+        await symlink(outside, at(ALICE, 'secrets.json'));
+        await symlink(elsewhere, at(BOB));
+        await mkdir(at('not a user', 'cookie-jars'), { recursive: true });
+        // The host follows such links, and would set aside what it finds: so each one is counted (review m1).
+        expect(await rewrap(checkouts, KEYS, 'forward')).toEqual({
+          resealed: 0,
+          already: 0,
+          unopened: 0,
+          skipped: 2,
+          unreadable: 0,
+          codes: [],
+          files: 0,
+        });
+        expect(await readFile(outside, 'utf8')).toBe(text);
+      } finally {
+        await removeTempDir(elsewhere);
+      }
+      expect(await rewrap(join(checkouts, 'absent'), KEYS, 'forward')).toEqual({
         resealed: 0,
         already: 0,
         unopened: 0,
-        skipped: 2,
+        skipped: 0,
+        unreadable: 0,
+        codes: [],
         files: 0,
       });
-      expect(await readFile(outside, 'utf8')).toBe(text);
-    } finally {
-      await removeTempDir(elsewhere);
-    }
-    expect(await rewrap(join(checkouts, 'absent'), KEYS, 'forward')).toEqual({
-      resealed: 0,
-      already: 0,
-      unopened: 0,
-      skipped: 0,
-      files: 0,
-    });
-  });
+    },
+  );
 
   it('leaves a file it cannot parse as it is, and counts it unopened', async () => {
     await mkdir(at(ALICE, 'cookie-jars'), { recursive: true });
@@ -211,6 +225,8 @@ describe('rewrap', () => {
       already: 0,
       unopened: 2,
       skipped: 0,
+      unreadable: 0,
+      codes: [],
       files: 0,
     });
     expect(await readFile(at(ALICE, 'secrets.json'), 'utf8')).toBe('{ not json');
@@ -235,6 +251,8 @@ describe('rewrap', () => {
       already: 0,
       unopened: 2,
       skipped: 0,
+      unreadable: 0,
+      codes: [],
       files: 1,
     });
     const file = JSON.parse(await readFile(at(ALICE, 'secrets.json'), 'utf8')) as {
@@ -260,6 +278,8 @@ describe('rewrap', () => {
       already: 0,
       unopened: 0,
       skipped: 0,
+      unreadable: 0,
+      codes: [],
       files: 1,
     });
     // The host migrates version 1 on load; the re-wrap keeps the shape it reads, and changes only the value.
@@ -292,6 +312,57 @@ describe('rewrap', () => {
       expect((await readdir(at(ALICE, 'cookie-jars'))).some((name) => name.includes('.tmp-'))).toBe(false);
     },
   );
+});
+
+describe('rewrap, lenient (Part D review P1)', () => {
+  let checkouts: string;
+  beforeEach(async () => {
+    checkouts = await mkTempDir('wbs-rewrap-lenient-');
+  });
+  afterEach(async () => {
+    await chmod(join(checkouts, ALICE, 'secrets.json'), 0o600).catch(() => undefined);
+    await removeTempDir(checkouts);
+  });
+
+  it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)(
+    'counts a file it cannot read by its code, and re-wraps the rest; a strict run throws',
+    async () => {
+      for (const user of [ALICE, BOB]) {
+        await mkdir(join(checkouts, user, 'cookie-jars'), { recursive: true });
+        await writeFile(
+          join(checkouts, user, 'cookie-jars', 'ws.json'),
+          JSON.stringify({ version: 1, data: b64(seal(oldKey(user), '[]')) }),
+        );
+      }
+      await writeFile(join(checkouts, ALICE, 'secrets.json'), '{}');
+      await chmod(join(checkouts, ALICE, 'secrets.json'), 0o000);
+      await expect(rewrap(checkouts, KEYS, 'forward')).rejects.toMatchObject({ code: 'EACCES' });
+      expect(await rewrap(checkouts, KEYS, 'forward', { lenient: true })).toEqual({
+        resealed: 2,
+        already: 0,
+        unopened: 0,
+        skipped: 0,
+        unreadable: 1,
+        codes: ['EACCES'],
+        files: 2,
+      });
+    },
+  );
+
+  it('a test checkpoint, which carries no code, is thrown even when lenient', async () => {
+    await mkdir(join(checkouts, ALICE, 'cookie-jars'), { recursive: true });
+    await writeFile(
+      join(checkouts, ALICE, 'cookie-jars', 'ws.json'),
+      JSON.stringify({ version: 1, data: b64(seal(oldKey(ALICE), '[]')) }),
+    );
+    const run = rewrap(checkouts, KEYS, 'forward', {
+      lenient: true,
+      checkpoint: () => {
+        throw new Error('killed');
+      },
+    });
+    await expect(run).rejects.toThrow('killed');
+  });
 });
 
 describe('writeFileDurably (review I1)', () => {

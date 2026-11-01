@@ -6,9 +6,10 @@
 import { lstat, mkdir, readdir, rename, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { moveFiles, planMove } from '../../../src/tenancy/file-step.js';
+import { moveFiles, planMove, rewrapNote } from '../../../src/tenancy/file-step.js';
 import { renameWithRetry } from '../../../src/tenancy/rename.js';
 import { mkTempDir, removeTempDir } from '../../helpers/git.js';
+import { canSymlink } from '../../helpers/symlink.js';
 
 const T = '00000000-0000-4000-8000-0000000000aa';
 const USER = '01JB3Z9K7Q4ZJ6X1V8W2M5N0PA';
@@ -79,22 +80,25 @@ describe('the file step without a database', () => {
     expect(await tree(dataDir)).toEqual(before);
   });
 
-  it('refuses a source that is a symbolic link before anything moves, naming it (fix-round review I1)', async () => {
-    const big = await mkTempDir('wbs-file-step-big-');
-    try {
-      await rename(join(dataDir, 'repos'), join(big, 'repos'));
-      await symlink(join(big, 'repos'), join(dataDir, 'repos'), 'dir');
-      const before = await tree(dataDir);
-      const error = await moveFiles(dataDir, T).catch((caught: unknown) => caught);
-      expect(error).toMatchObject({ code: 'tenancy-move-link' });
-      expect((error as Error).message).toContain('repos/');
-      expect((error as Error).message).toContain('is a symbolic link');
-      expect(await tree(dataDir)).toEqual(before);
-      expect((await lstat(join(dataDir, 'repos'))).isSymbolicLink()).toBe(true);
-    } finally {
-      await removeTempDir(big);
-    }
-  });
+  it.skipIf(!canSymlink)(
+    'refuses a source that is a symbolic link before anything moves, naming it (fix-round review I1)',
+    async () => {
+      const big = await mkTempDir('wbs-file-step-big-');
+      try {
+        await rename(join(dataDir, 'repos'), join(big, 'repos'));
+        await symlink(join(big, 'repos'), join(dataDir, 'repos'), 'dir');
+        const before = await tree(dataDir);
+        const error = await moveFiles(dataDir, T).catch((caught: unknown) => caught);
+        expect(error).toMatchObject({ code: 'tenancy-move-link' });
+        expect((error as Error).message).toContain('repos/');
+        expect((error as Error).message).toContain('is a symbolic link');
+        expect(await tree(dataDir)).toEqual(before);
+        expect((await lstat(join(dataDir, 'repos'))).isSymbolicLink()).toBe(true);
+      } finally {
+        await removeTempDir(big);
+      }
+    },
+  );
 
   it('refuses both locations present before anything moves', async () => {
     await mkdir(join(dataDir, 'tenants', T, 'checkouts'), { recursive: true });
@@ -153,5 +157,42 @@ describe('renameWithRetry', () => {
     expect(calls).toBe(3);
     const fatal = () => Promise.reject(Object.assign(new Error('gone'), { code: 'ENOENT' }));
     await expect(renameWithRetry('a', 'b', { rename: fatal, delay: () => Promise.resolve() })).rejects.toThrow('gone');
+  });
+});
+
+describe('rewrapNote (Part D review m2)', () => {
+  const counts = (over: Partial<Record<'resealed' | 'already' | 'unopened' | 'skipped' | 'unreadable', number>>) => ({
+    resealed: 0,
+    already: 0,
+    unopened: 0,
+    skipped: 0,
+    unreadable: 0,
+    files: 0,
+    codes: over.unreadable ? ['EACCES'] : [],
+    ...over,
+  });
+
+  it('the keys step always speaks: info when nothing was left, warn when something was', () => {
+    expect(rewrapNote(counts({ resealed: 3 }), 'step')).toMatchObject({ level: 'info' });
+    expect(rewrapNote(counts({ resealed: 3, unopened: 1 }), 'step')).toMatchObject({ level: 'warn' });
+  });
+
+  it('the check at done says nothing with nothing to do, and a steady count at info, never as a restore', () => {
+    expect(rewrapNote(counts({ already: 5 }), 'check')).toBeUndefined();
+    const steady = rewrapNote(counts({ already: 5, unopened: 1, skipped: 1 }), 'check');
+    expect(steady).toMatchObject({ level: 'info' });
+    expect(steady!.message).not.toContain('restored');
+    expect(steady!.message).not.toContain('old key');
+  });
+
+  it('the check warns when it re-sealed something, or could not read a file, by its code alone', () => {
+    const restored = rewrapNote(counts({ resealed: 2 }), 'check');
+    expect(restored).toMatchObject({ level: 'warn' });
+    expect(restored!.message).toContain('2 found still under the old key');
+    const unreadable = rewrapNote(counts({ unreadable: 1 }), 'check');
+    expect(unreadable).toMatchObject({ level: 'warn' });
+    expect(unreadable!.message).toContain('nothing re-sealed');
+    expect(unreadable!.message).toContain('1 could not be read or written (EACCES)');
+    expect(unreadable!.message).not.toContain('old key');
   });
 });

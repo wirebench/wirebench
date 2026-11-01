@@ -242,7 +242,9 @@ describeDb('a server host’s secrets', () => {
             onRewrap: (made) => counts.push(made),
           }),
         ).toBe('done');
-        expect(counts).toEqual([{ resealed: 2, already: 0, unopened: 0, skipped: 0, files: 2 }]);
+        expect(counts).toEqual([
+          { resealed: 2, already: 0, unopened: 0, skipped: 0, unreadable: 0, codes: [], files: 2 },
+        ]);
         const client = await openHost(h, alice);
         await client.waitFor((frame) => frame.type === 'hello');
         expect(await client.call('workspace.joinFromServer', { url: PUBLIC_URL, workspaceId })).toMatchObject({
@@ -285,7 +287,9 @@ describeDb('a server host’s secrets', () => {
     expect(
       await runTenancySteps(h.db.owner, h.dataDir, { root, onRewrap: (counts, run) => seen.push([counts, run]) }),
     ).toBe('done');
-    expect(seen).toEqual([[{ resealed: 2, already: 0, unopened: 0, skipped: 0, files: 2 }, 'check']]);
+    expect(seen).toEqual([
+      [{ resealed: 2, already: 0, unopened: 0, skipped: 0, unreadable: 0, codes: [], files: 2 }, 'check'],
+    ]);
     const client = await openHost(h, alice);
     await client.waitFor((frame) => frame.type === 'hello');
     expect(await client.call('workspace.joinFromServer', { url: PUBLIC_URL, workspaceId })).toMatchObject({

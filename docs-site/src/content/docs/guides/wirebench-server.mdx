@@ -298,7 +298,9 @@ The next release also moves the data directory's repositories and checkouts into
 first start or in `migrate`. Before you upgrade, run `admin tenancy check` from the new image: it changes
 nothing, and reports what the upgrade will do and how long it should take. Stop the server, back up the
 database and the data directory, then start the new version. `admin tenancy status` says where the upgrade
-stands, and `migrate --check` exits 1 until the move is done.
+stands, and `migrate --check` exits 1 until the move is done: run it where the data directory is mounted, or
+after the first start. Keep the same `WIREBENCH_SERVER_SECRETS_KEY` across the upgrade, and restore the database
+and the data directory together if you need to go back.
 
 On shutdown, the server finishes the repository work already queued before it closes the database, and
 closes every live socket. The app reconnects when the server is back.

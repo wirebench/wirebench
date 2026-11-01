@@ -460,25 +460,50 @@ export async function dueStep(db: Querier, root: Buffer | undefined): Promise<Te
 /** "1 blob", "2 blobs". */
 export const blobs = (n: number): string => `${String(n)} ${n === 1 ? 'blob' : 'blobs'}`;
 
-/**
- * What start-up and `migrate` say of a re-wrap's outcome: counts only, never a file, a user or a value. `step` is the
- * keys step's; `check` is the run at `done`, said only when it found something (see {@link rewrapWorthSaying}).
- */
-export function rewrapLine(counts: RewrapCounts, run: RewrapRun = 'step'): string {
-  const head =
-    run === 'step'
-      ? `re-wrap: ${String(counts.resealed)} re-sealed under the data key`
-      : `re-wrap check: ${String(counts.resealed)} found still under the old key (a directory restored from before the upgrade?) and re-sealed under the data key`;
-  return (
-    `${head}, ${String(counts.already)} already under it, ` +
-    `${String(counts.unopened)} opened under neither key or did not parse, and were left as they were, ` +
-    `${String(counts.skipped)} links or other entries skipped (not followed)`
-  );
+/** What start-up logs, and `migrate` prints, of a re-wrap. */
+export interface RewrapNote {
+  readonly level: 'info' | 'warn';
+  readonly message: string;
 }
 
-/** Whether a check at `done` found anything to say: one with nothing to do says nothing. */
-export const rewrapWorthSaying = (counts: RewrapCounts): boolean =>
-  counts.resealed + counts.unopened + counts.skipped > 0;
+/**
+ * What start-up and `migrate` say of a re-wrap's outcome, or `undefined` when there is nothing to say: counts and
+ * errno codes only, never a file, a user or a value.
+ *
+ * - `step`, the keys step's: always said, at `warn` when anything was left as it was.
+ * - `check`, the run at `done`: said only when it found something (Part D review m2). It warns when it re-sealed a
+ *   blob, which was still under the old key (a directory restored from before the upgrade, say), or could not read
+ *   or write a file. Blobs that open under neither key, and links, are counted at every start the same: said at
+ *   `info`, so a steady count does not warn forever.
+ */
+export function rewrapNote(counts: RewrapCounts, run: RewrapRun = 'step'): RewrapNote | undefined {
+  const leftAsTheyWere =
+    `${String(counts.unopened)} opened under neither key or did not parse, and were left as they were, ` +
+    `${String(counts.skipped)} links or other entries skipped (not followed)`;
+  const unreadable =
+    counts.unreadable > 0
+      ? `, ${String(counts.unreadable)} could not be read or written (${counts.codes.join(', ')}) and are tried ` +
+        'again at the next start'
+      : '';
+  if (run === 'step') {
+    return {
+      level: counts.unopened + counts.skipped > 0 ? 'warn' : 'info',
+      message:
+        `re-wrap: ${String(counts.resealed)} re-sealed under the data key, ${String(counts.already)} already under ` +
+        `it, ${leftAsTheyWere}${unreadable}`,
+    };
+  }
+  if (counts.resealed + counts.unopened + counts.skipped + counts.unreadable === 0) return undefined;
+  if (counts.resealed + counts.unreadable === 0) {
+    return { level: 'info', message: `re-wrap check: ${leftAsTheyWere} (see admin tenancy status)` };
+  }
+  const head =
+    counts.resealed > 0
+      ? `re-wrap check: ${String(counts.resealed)} found still under the old key and re-sealed under the data key ` +
+        '(a directory restored from a backup made before the upgrade, say)'
+      : 're-wrap check: nothing re-sealed';
+  return { level: 'warn', message: `${head}, ${leftAsTheyWere}${unreadable}` };
+}
 
 /** Why the step stopped at `keys`. */
 export const KEYS_WAIT =
@@ -513,6 +538,11 @@ export interface RunStepsOptions {
    * `tmp/`): directory names only. Called inside the unit, before the move; a refusal after it rolls the re-arm back.
    */
   readonly onRearmed?: (left: readonly string[]) => void;
+  /**
+   * `false` skips the re-wrap check at `done`: `migrate` while a server runs, whose hosts may be writing the same
+   * files (Part D review m3). The keys step is never skipped.
+   */
+  readonly check?: boolean;
 }
 
 /**
@@ -562,6 +592,11 @@ export async function runTenancySteps(
       if (found.left.length > 0) {
         if (!found.rearmable) throw leftBehindError(dataDir, state.defaultTenantId, found.left);
         if (found.missing.length > 0) throw workspacesMissingError(dataDir, found.left, found.missing);
+        // A move and a re-wrap need a key that opens (Part D review m1): with a stored key the root refuses, the
+        // keys step after the move would refuse anyway, having moved the files; refuse before anything moves, so
+        // every start says the same, and the files move once the key is restored.
+        if (options.root !== undefined)
+          await storedDataKey(tx, state.defaultTenantId, environmentKeyRoot(options.root));
         options.onRearmed?.(found.left);
         for (const dir of found.emptyDestinations) await rmdir(dir);
         await tx.query("update server_identity set tenancy_step = 'files' where tenancy_step = $1", [step]);
@@ -611,11 +646,15 @@ export async function runTenancySteps(
       // Only now: every file the re-wrap wrote is durable (`writeFileDurably`), and after `done` the old key opens
       // nothing any more (review I1).
       await advance('keys', 'done');
-    } else if (step === 'done' && root !== undefined && check !== undefined) {
+    } else if (step === 'done' && root !== undefined && check !== undefined && options.check !== false) {
       // Idempotent: a blob already under the data key is left, so with nothing to do nothing is written. No host
-      // runs yet in this process; before slice 5's multi-process self-hosted server, this races another process's
-      // hosts, which the upgrade notes' "stop every server first" rules out for now.
+      // runs yet in this process. `migrate` passes `check: false` while another server holds the running lock, whose
+      // hosts may be writing these files (Part D review m3); a second server starting beside a running one (slice
+      // 5's multi-process self-hosted server) still races its hosts, and must skip the check the same way then.
+      // Lenient (Part D review P1): a file it cannot read or write is counted, by its errno code, and tried again at
+      // the next start; the server starts. The keys step above stays strict.
       const counts = await rewrap(checkouts, { root, dataKey: check }, 'forward', {
+        lenient: true,
         ...(options.checkpoint ? { checkpoint: () => options.checkpoint?.('re-wrapped a file') } : {}),
       });
       options.onRewrap?.(counts, 'check');

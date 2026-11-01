@@ -33,7 +33,7 @@ export interface TenantPaths {
   readonly hosts: string;
 }
 
-// Names no tenant: a self-hosted operator never sees an id or a slug (spec §19.1).
+// Names no tenant id in a request's refusal.
 const refused = (why: string): WirebenchError =>
   new WirebenchError('tenancy-tenant-path-refused', `a tenant directory was refused: ${why}`);
 

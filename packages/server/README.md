@@ -99,13 +99,13 @@ too: the migrations run over the migration URL. With two roles, both must be `po
 their users, and the app URL must name the password the role is created with.
 
 **The migration URL must be a direct connection; the app URL may go through a pooler.** The server holds a
-session-level lock for its whole life (a revert checks it), and holds it on the migration URL, which a
+session-level lock for its whole life (the `admin tenancy revert` of a later version checks it), and holds it on the migration URL, which a
 transaction pooler would break. With one URL, that URL holds it, so it must be direct too.
 
 **A database restart does not stop the server**, as long as the database is back within about two minutes:
 the lock is taken again, with a growing delay, while the database refuses connections. After that the server
 exits with code 3, and a supervisor such as compose's `restart:` starts it again. It exits at once only when
-`admin tenancy revert` holds the lock.
+that revert holds the lock.
 
 To switch an installation outside compose, run `wirebench-server admin tenancy role` with both URLs set, then
 restart. When the owner may not create roles, `admin tenancy role --print-sql` prints the statements instead:
@@ -150,8 +150,13 @@ each browser-client user stored, once, under a new key the database keeps sealed
 counted. No browser tab opens until this is done, and a start or `migrate` prints the counts. After the upgrade
 each start (and `migrate`) re-seals any of those values still under the old key, such as a user's directory restored
 from a backup made before the upgrade, and says how many. Restoring the database alone from a backup made before the
-upgrade loses every re-sealed value: to go back, use `wirebench-server admin tenancy revert`, or restore the
-database and the data directory together, from the same backup. Without the key it
+upgrade loses every re-sealed value: restore the database and the data directory together, from the same backup
+(a command that undoes the upgrade, `wirebench-server admin tenancy revert`, comes in a later version). A
+`migrate` run while another server is running leaves that re-seal to the server's next start, and says so.
+`migrate --check` exits 1 until the data directory has moved: in a pipeline whose `--check` job has no data
+directory mounted (a Kubernetes job, `docker run` without the volume), it stays 1 after a successful `migrate`
+until the server has started once, so run `--check` where the data directory is mounted, or after the first
+start. Without the key it
 waits, and says so: nothing was ever sealed without one. `wirebench-server admin tenancy status` says where the
 upgrade stands, and counts those values.
 

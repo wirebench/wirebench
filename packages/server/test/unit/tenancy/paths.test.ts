@@ -9,6 +9,7 @@ import { hostDirectories } from '../../../src/host/server-platform.js';
 import { tenantPaths, tenantRoot, tenantTmpDirs, TENANTS_DIR } from '../../../src/tenancy/paths.js';
 import { scopeOf } from '../../../src/tenancy/scope.js';
 import { mkTempDir, removeTempDir } from '../../helpers/git.js';
+import { canSymlink } from '../../helpers/symlink.js';
 
 const A = scopeOf({ id: '00000000-0000-4000-8000-00000000000a', slug: 'acme' });
 const B = scopeOf({ id: '00000000-0000-4000-8000-00000000000b', slug: 'beta' });
@@ -70,7 +71,7 @@ describe('tenant paths', () => {
     }
   });
 
-  it('refuses a tenant root that is a symlink, even one pointing at another tenant', () => {
+  it.skipIf(!canSymlink)('refuses a tenant root that is a symlink, even one pointing at another tenant', () => {
     mkdirSync(join(dataDir, 'tenants', B.tenantId), { recursive: true });
     symlinkSync(join(dataDir, 'tenants', B.tenantId), join(dataDir, 'tenants', A.tenantId), 'dir');
     expect(() => tenantRoot(dataDir, A)).toThrow(expect.objectContaining({ code: 'tenancy-tenant-path-refused' }));
@@ -78,35 +79,44 @@ describe('tenant paths', () => {
     expect(tenantRoot(dataDir, B)).toBe(join(dataDir, 'tenants', B.tenantId));
   });
 
-  it('refuses a tenant root that resolves outside <dataDir>/tenants: tenants/ itself a link elsewhere', () => {
-    const outside = join(dataDir, 'elsewhere');
-    mkdirSync(join(outside, A.tenantId), { recursive: true });
-    symlinkSync(outside, join(dataDir, 'tenants'), 'dir');
-    // The root is a real directory, but it is not under the data directory's own tenants/.
-    expect(() => tenantRoot(dataDir, A)).toThrow(expect.objectContaining({ code: 'tenancy-tenant-path-refused' }));
-  });
+  it.skipIf(!canSymlink)(
+    'refuses a tenant root that resolves outside <dataDir>/tenants: tenants/ itself a link elsewhere',
+    () => {
+      const outside = join(dataDir, 'elsewhere');
+      mkdirSync(join(outside, A.tenantId), { recursive: true });
+      symlinkSync(outside, join(dataDir, 'tenants'), 'dir');
+      // The root is a real directory, but it is not under the data directory's own tenants/.
+      expect(() => tenantRoot(dataDir, A)).toThrow(expect.objectContaining({ code: 'tenancy-tenant-path-refused' }));
+    },
+  );
 
-  it('refuses a missing root behind a tenants/ that links elsewhere, and the store writes nothing there (Task 21 review I1)', async () => {
-    const outside = join(dataDir, 'elsewhere');
-    mkdirSync(outside, { recursive: true });
-    symlinkSync(outside, join(dataDir, 'tenants'), 'dir');
-    expect(() => tenantRoot(dataDir, A)).toThrow(expect.objectContaining({ code: 'tenancy-tenant-path-refused' }));
-    const { NO_HOOKS_DIR, RepoStore } = await import('../../../src/repos/repo-store.js');
-    const { testGit } = await import('../../helpers/git.js');
-    const store = new RepoStore({ git: testGit(join(dataDir, NO_HOOKS_DIR)), dataDir });
-    await expect(store.create(A, '01J8ZC5Q0V7R3T9XK2M4N6P8QA')).rejects.toMatchObject({
-      code: 'tenancy-tenant-path-refused',
-    });
-    expect(readdirSync(outside)).toEqual([]);
-  });
+  it.skipIf(!canSymlink)(
+    'refuses a missing root behind a tenants/ that links elsewhere, and the store writes nothing there (Task 21 review I1)',
+    async () => {
+      const outside = join(dataDir, 'elsewhere');
+      mkdirSync(outside, { recursive: true });
+      symlinkSync(outside, join(dataDir, 'tenants'), 'dir');
+      expect(() => tenantRoot(dataDir, A)).toThrow(expect.objectContaining({ code: 'tenancy-tenant-path-refused' }));
+      const { NO_HOOKS_DIR, RepoStore } = await import('../../../src/repos/repo-store.js');
+      const { testGit } = await import('../../helpers/git.js');
+      const store = new RepoStore({ git: testGit(join(dataDir, NO_HOOKS_DIR)), dataDir });
+      await expect(store.create(A, '01J8ZC5Q0V7R3T9XK2M4N6P8QA')).rejects.toMatchObject({
+        code: 'tenancy-tenant-path-refused',
+      });
+      expect(readdirSync(outside)).toEqual([]);
+    },
+  );
 
-  it('refuses a directory beneath the root that links into another tenant (Task 21 review M2)', () => {
-    mkdirSync(join(dataDir, 'tenants', B.tenantId, 'repos'), { recursive: true });
-    mkdirSync(join(dataDir, 'tenants', A.tenantId, 'tmp'), { recursive: true });
-    symlinkSync(join(dataDir, 'tenants', B.tenantId, 'repos'), join(dataDir, 'tenants', A.tenantId, 'repos'), 'dir');
-    expect(() => tenantPaths(dataDir, A)).toThrow(expect.objectContaining({ code: 'tenancy-tenant-path-refused' }));
-    expect(tenantPaths(dataDir, B).repos).toBe(join(dataDir, 'tenants', B.tenantId, 'repos'));
-  });
+  it.skipIf(!canSymlink)(
+    'refuses a directory beneath the root that links into another tenant (Task 21 review M2)',
+    () => {
+      mkdirSync(join(dataDir, 'tenants', B.tenantId, 'repos'), { recursive: true });
+      mkdirSync(join(dataDir, 'tenants', A.tenantId, 'tmp'), { recursive: true });
+      symlinkSync(join(dataDir, 'tenants', B.tenantId, 'repos'), join(dataDir, 'tenants', A.tenantId, 'repos'), 'dir');
+      expect(() => tenantPaths(dataDir, A)).toThrow(expect.objectContaining({ code: 'tenancy-tenant-path-refused' }));
+      expect(tenantPaths(dataDir, B).repos).toBe(join(dataDir, 'tenants', B.tenantId, 'repos'));
+    },
+  );
 
   it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)(
     'refuses a root it cannot read with a message that names no path (Task 21 review M1)',
@@ -141,19 +151,22 @@ describe('tenant paths', () => {
     expect(() => tenantRoot(dataDir, A)).toThrow(expect.objectContaining({ code: 'tenancy-tenant-path-refused' }));
   });
 
-  it('accepts a data directory reached through a symlink (macOS /var → /private/var)', () => {
+  it.skipIf(!canSymlink)('accepts a data directory reached through a symlink (macOS /var → /private/var)', () => {
     mkdirSync(join(dataDir, 'real', 'tenants', A.tenantId), { recursive: true });
     symlinkSync(join(dataDir, 'real'), join(dataDir, 'linked'), 'dir');
     expect(tenantRoot(join(dataDir, 'linked'), A)).toBe(join(dataDir, 'linked', 'tenants', A.tenantId));
   });
 
-  it("lists every tenant's tmp/ for the start-up sweeps, skipping what is no tenant id and refusing a symlinked root", async () => {
-    expect(await tenantTmpDirs(dataDir)).toEqual([]);
-    mkdirSync(join(dataDir, 'tenants', A.tenantId), { recursive: true });
-    mkdirSync(join(dataDir, 'tenants', 'not-a-tenant'), { recursive: true });
-    expect(await tenantTmpDirs(dataDir)).toEqual([tenantPaths(dataDir, A).tmp]);
-    mkdirSync(join(dataDir, 'elsewhere'), { recursive: true });
-    symlinkSync(join(dataDir, 'elsewhere'), join(dataDir, 'tenants', B.tenantId), 'dir');
-    await expect(tenantTmpDirs(dataDir)).rejects.toMatchObject({ code: 'tenancy-tenant-path-refused' });
-  });
+  it.skipIf(!canSymlink)(
+    "lists every tenant's tmp/ for the start-up sweeps, skipping what is no tenant id and refusing a symlinked root",
+    async () => {
+      expect(await tenantTmpDirs(dataDir)).toEqual([]);
+      mkdirSync(join(dataDir, 'tenants', A.tenantId), { recursive: true });
+      mkdirSync(join(dataDir, 'tenants', 'not-a-tenant'), { recursive: true });
+      expect(await tenantTmpDirs(dataDir)).toEqual([tenantPaths(dataDir, A).tmp]);
+      mkdirSync(join(dataDir, 'elsewhere'), { recursive: true });
+      symlinkSync(join(dataDir, 'elsewhere'), join(dataDir, 'tenants', B.tenantId), 'dir');
+      await expect(tenantTmpDirs(dataDir)).rejects.toMatchObject({ code: 'tenancy-tenant-path-refused' });
+    },
+  );
 });

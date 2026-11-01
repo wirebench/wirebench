@@ -6,6 +6,7 @@ import type { GitCli } from '@wirebench/engine';
 import { isWorkspaceId, NO_HOOKS_DIR, RepoStore } from '../../src/repos/repo-store.js';
 import { describeGit, mkTempDir, removeTempDir, testGit } from '../helpers/git.js';
 import { scopeOf } from '../../src/tenancy/scope.js';
+import { canSymlink } from '../helpers/symlink.js';
 
 /** Any tenant: most of these cases are about one workspace id, not tenants. */
 const LOCK_SCOPE = scopeOf({ id: '00000000-0000-4000-8000-000000000001', slug: 'default' });
@@ -56,7 +57,7 @@ describeGit('RepoStore', () => {
     );
   });
 
-  it('refuses a tenant whose root is a symlink, and a non-UUID tenant id', async () => {
+  it.skipIf(!canSymlink)('refuses a tenant whose root is a symlink, and a non-UUID tenant id', async () => {
     const { mkdirSync, symlinkSync } = await import('node:fs');
     mkdirSync(join(dataDir, 'tenants', OTHER_SCOPE.tenantId), { recursive: true });
     symlinkSync(join(dataDir, 'tenants', OTHER_SCOPE.tenantId), join(dataDir, 'tenants', LOCK_SCOPE.tenantId), 'dir');

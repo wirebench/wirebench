@@ -6,8 +6,9 @@
  */
 import { EventEmitter } from 'node:events';
 import { existsSync } from 'node:fs';
-import { chmod, cp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { chmod, cp, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { Writable } from 'node:stream';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { migrate } from '../../../src/db/migrate.js';
 import { open, seal } from '../../../src/hooks/secret-box.js';
@@ -16,7 +17,8 @@ import { main } from '../../../src/main.js';
 import { BUILTIN_MODULES } from '../../../src/modules.js';
 import { allMigrations, StartupError, startServer } from '../../../src/serve.js';
 import { KEYS_WAIT, readTenancyStep, runTenancySteps } from '../../../src/tenancy/file-step.js';
-import { environmentKeyRoot, TenantKeys } from '../../../src/tenancy/keys.js';
+import { environmentKeyRoot, newDataKey, TenantKeys } from '../../../src/tenancy/keys.js';
+import { RunningLock } from '../../../src/tenancy/running-lock.js';
 import type { RewrapCounts, RewrapRun } from '../../../src/tenancy/rewrap.js';
 import { loadFixture0019, type Fixture0019 } from '../../fixtures/tenancy/load.js';
 import { describeDb, testDatabase } from '../../helpers/database.js';
@@ -97,6 +99,8 @@ describeDb('the keys step on the frozen 0019 fixture (spec §19.10)', () => {
         already: 0,
         unopened: 0,
         skipped: 0,
+        unreadable: 0,
+        codes: [],
         files: 1 + before.jars.length,
       },
     ]);
@@ -106,7 +110,9 @@ describeDb('the keys step on the frozen 0019 fixture (spec §19.10)', () => {
     await db.owner.query("update server_identity set tenancy_step = 'keys'");
     const again: RewrapCounts[] = [];
     expect(await runTenancySteps(db.owner, dataDir, { root, onRewrap: (made) => again.push(made) })).toBe('done');
-    expect(again).toEqual([{ resealed: 0, already: counts[0]!.resealed, unopened: 0, skipped: 0, files: 0 }]);
+    expect(again).toEqual([
+      { resealed: 0, already: counts[0]!.resealed, unopened: 0, skipped: 0, unreadable: 0, codes: [], files: 0 },
+    ]);
     expect(await storedKey()).toEqual(wrapped);
     expect(await plaintexts(userKey)).toEqual(before);
   });
@@ -213,7 +219,9 @@ describeDb('the keys step on the frozen 0019 fixture (spec §19.10)', () => {
       const secretsBefore = await readFile(join(checkout(), 'secrets.json'), 'utf8');
       expect(await runTenancySteps(db.owner, dataDir, { root, onRewrap: record })).toBe('done');
       const total = before.secrets.length + before.jars.length;
-      expect(seen).toEqual([[{ resealed: 0, already: total, unopened: 0, skipped: 0, files: 0 }, 'check']]);
+      expect(seen).toEqual([
+        [{ resealed: 0, already: total, unopened: 0, skipped: 0, unreadable: 0, codes: [], files: 0 }, 'check'],
+      ]);
       expect(await readFile(join(checkout(), 'secrets.json'), 'utf8')).toBe(secretsBefore);
       // The operator restores Alice's directory from the backup: every blob is under the old key again.
       const moved = checkout();
@@ -222,7 +230,18 @@ describeDb('the keys step on the frozen 0019 fixture (spec §19.10)', () => {
       seen.length = 0;
       expect(await runTenancySteps(db.owner, dataDir, { root, onRewrap: record })).toBe('done');
       expect(seen).toEqual([
-        [{ resealed: total, already: 0, unopened: 0, skipped: 0, files: 1 + before.jars.length }, 'check'],
+        [
+          {
+            resealed: total,
+            already: 0,
+            unopened: 0,
+            skipped: 0,
+            unreadable: 0,
+            codes: [],
+            files: 1 + before.jars.length,
+          },
+          'check',
+        ],
       ]);
       expect(await plaintexts(userSecretsKey(await dataKey(), alice()))).toEqual(before);
     } finally {
@@ -287,4 +306,133 @@ describeDb('the keys step on the frozen 0019 fixture (spec §19.10)', () => {
       expect(await runTenancySteps(db.owner, dataDir, { root })).toBe('done');
     },
   );
+  /** `main` with the fixture's database, this data directory and the root. */
+  const cli = async (args: string[]) => {
+    const stdout = { write: vi.fn() };
+    const stderr = { write: vi.fn() };
+    const env = {
+      WIREBENCH_SERVER_MIGRATION_DATABASE_URL: db.ownerUrl,
+      WIREBENCH_SERVER_DATABASE_URL: db.url,
+      WIREBENCH_SERVER_PUBLIC_URL: 'https://wirebench.test',
+      WIREBENCH_SERVER_DATA_DIR: dataDir,
+      WIREBENCH_SERVER_SECRETS_KEY: fixture.keys.secretsKey,
+    };
+    const code = await main(args, { stdout, stderr, env });
+    const text = (mock: typeof stdout) => mock.write.mock.calls.map((c) => String(c[0])).join('');
+    return { code, out: text(stdout), err: text(stderr), env };
+  };
+
+  /** Alice's checkout as slice 2 left it, copied aside before the step: a backup made before the upgrade. */
+  async function restoreAfterDone(): Promise<{ restore(): Promise<void>; close(): Promise<void> }> {
+    const backup = await mkTempDir('wbs-keys-step-backup-');
+    await cp(checkout(), join(backup, 'alice'), { recursive: true });
+    expect(await runTenancySteps(db.owner, dataDir, { root })).toBe('done');
+    const moved = checkout();
+    return {
+      restore: async () => {
+        await rm(moved, { recursive: true });
+        await cp(join(backup, 'alice'), moved, { recursive: true });
+      },
+      close: () => removeTempDir(backup),
+    };
+  }
+
+  it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)(
+    'the check at done counts a file it cannot read by its code alone, and start-up, migrate and status go on (Part D review P1)',
+    async () => {
+      const backup = await restoreAfterDone();
+      const jar = join(checkout(), 'cookie-jars', `${fixture.workspaces.staging}.json`);
+      try {
+        await backup.restore();
+        await chmod(jar, 0o000);
+        const migrated = await cli(['migrate']);
+        expect(migrated.code).toBe(0);
+        expect(migrated.out).toMatch(/re-wrap check: \d+ found still under the old key/);
+        expect(migrated.out).toContain('1 could not be read or written (EACCES) and are tried again at the next start');
+        const status = await cli(['admin', 'tenancy', 'status']);
+        expect(status.code).toBe(0);
+        expect(status.out).toContain('1 could not be read (EACCES)');
+        // Start-up goes on, and logs the same counts at warn.
+        const logged: string[] = [];
+        const env = {
+          ...migrated.env,
+          WIREBENCH_SERVER_HOST: '127.0.0.1',
+          WIREBENCH_SERVER_PORT: String(await freePort()),
+          WIREBENCH_SERVER_LOG_LEVEL: 'warn',
+        };
+        const server = await startServer(
+          env,
+          { stdout: { write: vi.fn() }, stderr: { write: vi.fn() }, env },
+          {
+            signals: new EventEmitter(),
+            exit: vi.fn(),
+            modules: BUILTIN_MODULES,
+            logStream: new Writable({
+              write(chunk: Buffer, _encoding, done) {
+                logged.push(chunk.toString());
+                done();
+              },
+            }),
+          },
+        );
+        await server.close();
+        expect(logged.join('')).toContain('could not be read or written (EACCES)');
+        for (const text of [migrated.out, migrated.err, status.out, status.err, logged.join('')]) {
+          expect(text).not.toContain('checkouts');
+          expect(text).not.toContain(alice());
+          expect(text).not.toContain(fixture.keys.secretsKey);
+        }
+        expect((await readTenancyStep(db.owner))?.step).toBe('done');
+      } finally {
+        await chmod(jar, 0o600);
+        await backup.close();
+      }
+      // Readable again, the next run re-seals it.
+      const seen: RewrapCounts[] = [];
+      await runTenancySteps(db.owner, dataDir, { root, onRewrap: (counts) => seen.push(counts) });
+      expect(seen[0]).toMatchObject({ resealed: 1, unreadable: 0 });
+    },
+  );
+
+  it('migrate skips the check at done while a server holds the running lock, and says so (Part D review m3)', async () => {
+    const backup = await restoreAfterDone();
+    try {
+      await backup.restore();
+      const secrets = await readFile(join(checkout(), 'secrets.json'), 'utf8');
+      const lock = await RunningLock.acquire(db.ownerUrl, { onLost: vi.fn() });
+      try {
+        const migrated = await cli(['migrate']);
+        expect(migrated.code).toBe(0);
+        expect(migrated.out).toContain(
+          're-wrap check: skipped while a server runs; the server re-seals at its next start\n',
+        );
+        expect(await readFile(join(checkout(), 'secrets.json'), 'utf8')).toBe(secrets);
+      } finally {
+        await lock.release();
+      }
+      const migrated = await cli(['migrate']);
+      expect(migrated.out).toMatch(/re-wrap check: \d+ found still under the old key/);
+      expect(await plaintexts(userSecretsKey(await dataKey(), alice()))).not.toEqual(
+        await plaintexts(userSecretsKey(root, alice())),
+      );
+    } finally {
+      await backup.close();
+    }
+  });
+
+  it('a stored key the root refuses stops a re-armed move before anything moves, at every start alike (Part D review m1)', async () => {
+    expect(await runTenancySteps(db.owner, dataDir, { root })).toBe('done');
+    // The root changed: the row now holds a key wrapped under another one. And a tmp/ is back at the root.
+    const foreign = await environmentKeyRoot(Buffer.alloc(32, 0x7e)).wrap(tenantId, newDataKey());
+    await db.owner.query('update tenants set data_key = $1 where id = $2', [foreign, tenantId]);
+    await mkdir(join(dataDir, 'tmp'));
+    const before = (await readdir(dataDir)).sort();
+    for (let start = 0; start < 2; start++) {
+      await expect(runTenancySteps(db.owner, dataDir, { root })).rejects.toMatchObject({
+        code: 'tenancy-data-key-refused',
+      });
+      expect((await readdir(dataDir)).sort()).toEqual(before);
+      expect((await readTenancyStep(db.owner))?.step).toBe('done');
+    }
+  });
 });

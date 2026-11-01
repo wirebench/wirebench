@@ -41,10 +41,14 @@ describeDb('the audit log in a tenant (tenancy Task 14)', () => {
   /** The anchor the module's first pass writes (a genesis, even with nothing to seal). */
   const anchorOf = async (h: IdentityHarness) => {
     let anchor: Awaited<ReturnType<typeof readAnchor>>;
-    await vi.waitFor(async () => {
-      anchor = await readAnchor(h.tdb);
-      expect(anchor).toBeDefined();
-    });
+    // The first sealer pass can take seconds under a full integration run (Part D review m8).
+    await vi.waitFor(
+      async () => {
+        anchor = await readAnchor(h.tdb);
+        expect(anchor).toBeDefined();
+      },
+      { timeout: 10_000 },
+    );
     return anchor!;
   };
 
@@ -91,9 +95,12 @@ describeDb('the audit log in a tenant (tenancy Task 14)', () => {
       },
       h.app.log,
     );
-    await vi.waitFor(() => {
-      expect(h.statements.entries.some((entry) => entry.text.startsWith('insert into audit_events'))).toBe(true);
-    });
+    await vi.waitFor(
+      () => {
+        expect(h.statements.entries.some((entry) => entry.text.startsWith('insert into audit_events'))).toBe(true);
+      },
+      { timeout: 10_000 },
+    );
     const insert = h.statements.entries.find((entry) => entry.text.startsWith('insert into audit_events'))!;
     expect(insert.tenantId).toBe(second.scope.tenantId);
     const unit = h.statements.entries.filter((entry) => entry.unit === insert.unit);

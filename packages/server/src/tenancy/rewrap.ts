@@ -47,6 +47,13 @@ export interface RewrapCounts {
   readonly unopened: number;
   /** Links and other entries that are not a regular file or directory where one was expected: not followed. */
   readonly skipped: number;
+  /**
+   * Files, or directories, a lenient run could not read or write (an `EACCES` on one user's file, say): left as they
+   * were, and tried again at the next run. Always 0 in a strict run, which throws instead.
+   */
+  readonly unreadable: number;
+  /** The errno codes of those failures, each once, sorted: never a path. */
+  readonly codes: readonly string[];
   /** Files written. */
   readonly files: number;
 }
@@ -58,6 +65,12 @@ export interface RewrapOptions {
   readonly checkpoint?: (file: string) => void;
   /** A test seam: the file system calls of {@link writeFileDurably}. */
   readonly fs?: DurableFs;
+  /**
+   * Count a file system failure on one user's directory or file, and go on to the next, rather than throw: the check
+   * at `done` and `admin tenancy status` (Part D review P1). The keys step is strict: it must not record `done` past a
+   * file it could not re-seal.
+   */
+  readonly lenient?: boolean;
 }
 
 /** The file system calls {@link writeFileDurably} makes; a seam for its tests. */
@@ -148,6 +161,7 @@ interface Tally {
   already: number;
   unopened: number;
   skipped: number;
+  unreadable: number;
   files: number;
 }
 
@@ -202,7 +216,8 @@ function secretEntries(document: unknown): { entries: Record<string, unknown>; v
 /**
  * Re-wraps every user's blobs under `checkouts` (a tenant's `checkouts/` directory).
  *
- * @throws the file system's errors other than a missing file; a run that throws resumes on the next call.
+ * @throws the file system's errors other than a missing file, unless `lenient`; a run that throws resumes on the next
+ *   call.
  */
 export async function rewrap(
   checkouts: string,
@@ -210,10 +225,29 @@ export async function rewrap(
   direction: RewrapDirection,
   options: RewrapOptions = {},
 ): Promise<RewrapCounts> {
-  const tally: Tally = { resealed: 0, already: 0, unopened: 0, skipped: 0, files: 0 };
-  if ((await kindOf(checkouts)) !== 'dir') return { ...tally };
+  const tally: Tally = { resealed: 0, already: 0, unopened: 0, skipped: 0, unreadable: 0, files: 0 };
+  const codes = new Set<string>();
+  const result = (): RewrapCounts => ({ ...tally, codes: [...codes].sort() });
   const count = (outcome: Outcome | 'skipped'): void => {
     tally[outcome]++;
+  };
+  /**
+   * Runs one part (a user's directory, a file): strict, it throws; lenient, a file system failure (an error with a
+   * code) undoes the part's counts, is counted as unreadable by its code alone, and the run goes on. Anything else,
+   * such as a test's checkpoint, is thrown either way.
+   */
+  const part = async (fn: () => Promise<void>): Promise<void> => {
+    if (options.lenient !== true) return fn();
+    const before = { ...tally };
+    try {
+      await fn();
+    } catch (error) {
+      const code = codeOf(error);
+      if (code === '') throw error;
+      Object.assign(tally, before);
+      tally.unreadable++;
+      codes.add(code);
+    }
   };
   /** Whether `path` is the `want` it should be; anything else there (a link, say) is counted as skipped. */
   const is = async (path: string, want: 'file' | 'dir'): Promise<boolean> => {
@@ -228,71 +262,85 @@ export async function rewrap(
     options.checkpoint?.(path);
   };
 
-  for (const user of (await readdir(checkouts)).sort()) {
-    if (!USER_ID.test(user)) continue;
-    const home = join(checkouts, user);
-    if (!(await is(home, 'dir'))) continue;
-    const oldKey = userSecretsKey(keys.root, user);
-    const newKey = userSecretsKey(keys.dataKey, user);
-    const [from, to] = direction === 'forward' ? [oldKey, newKey] : [newKey, oldKey];
-
-    const secretsPath = join(home, SECRETS_FILE);
-    if (await is(secretsPath, 'file')) {
-      const text = await readFile(secretsPath, 'utf8');
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(text);
-      } catch {
-        parsed = undefined;
-      }
-      const found = secretEntries(parsed);
-      if (found === undefined) {
-        count('unopened');
-      } else {
-        let changed = false;
-        for (const entry of Object.values(found.entries)) {
-          // A malformed entry is left as it is, and counted: it may have held a sealed value.
-          if (!isRecord(entry)) {
-            count('unopened');
-            continue;
-          }
-          const encrypted = found.v1Encrypted ?? entry['encrypted'];
-          if (encrypted !== true) continue;
-          if (typeof entry['value'] !== 'string') {
-            count('unopened');
-            continue;
-          }
-          const result = reseal(entry['value'], from, to);
-          count(result.outcome);
-          if (result.value !== undefined) {
-            entry['value'] = result.value;
-            changed = true;
-          }
-        }
-        if (changed) await write(secretsPath, JSON.stringify(parsed, null, 2));
-      }
+  const secrets = async (secretsPath: string, from: Buffer, to: Buffer): Promise<void> => {
+    if (!(await is(secretsPath, 'file'))) return;
+    const text = await readFile(secretsPath, 'utf8');
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      parsed = undefined;
     }
-
-    const jars = join(home, COOKIES_DIR);
-    if (!(await is(jars, 'dir'))) continue;
-    for (const name of (await readdir(jars)).sort()) {
-      if (!JAR_FILE.test(name)) continue;
-      const path = join(jars, name);
-      if (!(await is(path, 'file'))) continue;
-      let file: unknown;
-      try {
-        file = JSON.parse(await readFile(path, 'utf8'));
-      } catch {
-        file = undefined;
-      }
-      if (!isRecord(file) || file['version'] !== 1 || typeof file['data'] !== 'string') {
+    const found = secretEntries(parsed);
+    if (found === undefined) {
+      count('unopened');
+      return;
+    }
+    let changed = false;
+    for (const entry of Object.values(found.entries)) {
+      // A malformed entry is left as it is, and counted: it may have held a sealed value.
+      if (!isRecord(entry)) {
         count('unopened');
         continue;
       }
-      const result = reseal(file['data'], from, to);
-      count(result.outcome);
-      if (result.value !== undefined) await write(path, JSON.stringify({ ...file, data: result.value }));
+      const encrypted = found.v1Encrypted ?? entry['encrypted'];
+      if (encrypted !== true) continue;
+      if (typeof entry['value'] !== 'string') {
+        count('unopened');
+        continue;
+      }
+      const outcome = reseal(entry['value'], from, to);
+      count(outcome.outcome);
+      if (outcome.value !== undefined) {
+        entry['value'] = outcome.value;
+        changed = true;
+      }
     }
+    if (changed) await write(secretsPath, JSON.stringify(parsed, null, 2));
+  };
+
+  const jar = async (path: string, from: Buffer, to: Buffer): Promise<void> => {
+    if (!(await is(path, 'file'))) return;
+    let file: unknown;
+    try {
+      file = JSON.parse(await readFile(path, 'utf8'));
+    } catch (error) {
+      // A read that failed is the file system's; text that does not parse is the file's.
+      if (codeOf(error) !== '') throw error;
+      file = undefined;
+    }
+    if (!isRecord(file) || file['version'] !== 1 || typeof file['data'] !== 'string') {
+      count('unopened');
+      return;
+    }
+    const outcome = reseal(file['data'], from, to);
+    count(outcome.outcome);
+    if (outcome.value !== undefined) await write(path, JSON.stringify({ ...file, data: outcome.value }));
+  };
+
+  let users: string[] = [];
+  await part(async () => {
+    if ((await kindOf(checkouts)) === 'dir') users = (await readdir(checkouts)).sort();
+  });
+  for (const user of users) {
+    if (!USER_ID.test(user)) continue;
+    const home = join(checkouts, user);
+    const oldKey = userSecretsKey(keys.root, user);
+    const newKey = userSecretsKey(keys.dataKey, user);
+    const [from, to] = direction === 'forward' ? [oldKey, newKey] : [newKey, oldKey];
+    // Each part on its own, so a failure undoes only its own counts, never a file already written.
+    let isHome = false;
+    await part(async () => {
+      isHome = await is(home, 'dir');
+    });
+    if (!isHome) continue;
+    await part(() => secrets(join(home, SECRETS_FILE), from, to));
+    let jars: string[] = [];
+    await part(async () => {
+      const dir = join(home, COOKIES_DIR);
+      if (await is(dir, 'dir')) jars = (await readdir(dir)).sort().filter((name) => JAR_FILE.test(name));
+    });
+    for (const name of jars) await part(() => jar(join(home, COOKIES_DIR, name), from, to));
   }
-  return { ...tally };
+  return result();
 }

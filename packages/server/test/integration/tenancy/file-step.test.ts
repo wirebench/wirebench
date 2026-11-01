@@ -17,6 +17,7 @@ import { loadFixture0019, type Fixture0019 } from '../../fixtures/tenancy/load.j
 import { describeDb, testDatabase } from '../../helpers/database.js';
 import { mkTempDir, removeTempDir } from '../../helpers/git.js';
 import { freePort } from '../../helpers/net.js';
+import { canSymlink } from '../../helpers/symlink.js';
 
 const USER = '01JB3Z9K7Q4ZJ6X1V8W2M5N0PA';
 /** `WIREBENCH_SERVER_SECRETS_KEY`: with it the step goes on through `keys` to `done` (Task 24). */
@@ -521,23 +522,26 @@ describeDb('the file step on the frozen 0019 fixture', () => {
     expect((await readTenancyStep(db.owner))?.step).toBe('done');
   });
 
-  it('refuses a linked repos/ in the step, before anything moves, and stays at files (fix-round review I1)', async () => {
-    const big = await mkTempDir('wbs-file-step-big-');
-    try {
-      const { rename, symlink } = await import('node:fs/promises');
-      await rename(join(dataDir, 'repos'), join(big, 'repos'));
-      await symlink(join(big, 'repos'), join(dataDir, 'repos'), 'dir');
-      const before = await tree(dataDir);
-      await expect(runTenancySteps(db.owner, dataDir, { root: fixtureRoot() })).rejects.toMatchObject({
-        code: 'tenancy-move-link',
-      });
-      expect(await tree(dataDir)).toEqual(before);
-      expect((await readTenancyStep(db.owner))?.step).toBe('files');
-      // admin tenancy check says so beforehand.
-      const report = await runIn(dataDir, ['admin', 'tenancy', 'check']);
-      expect(report.out).toContain('links: repos/ is a symbolic link');
-    } finally {
-      await removeTempDir(big);
-    }
-  });
+  it.skipIf(!canSymlink)(
+    'refuses a linked repos/ in the step, before anything moves, and stays at files (fix-round review I1)',
+    async () => {
+      const big = await mkTempDir('wbs-file-step-big-');
+      try {
+        const { rename, symlink } = await import('node:fs/promises');
+        await rename(join(dataDir, 'repos'), join(big, 'repos'));
+        await symlink(join(big, 'repos'), join(dataDir, 'repos'), 'dir');
+        const before = await tree(dataDir);
+        await expect(runTenancySteps(db.owner, dataDir, { root: fixtureRoot() })).rejects.toMatchObject({
+          code: 'tenancy-move-link',
+        });
+        expect(await tree(dataDir)).toEqual(before);
+        expect((await readTenancyStep(db.owner))?.step).toBe('files');
+        // admin tenancy check says so beforehand.
+        const report = await runIn(dataDir, ['admin', 'tenancy', 'check']);
+        expect(report.out).toContain('links: repos/ is a symbolic link');
+      } finally {
+        await removeTempDir(big);
+      }
+    },
+  );
 });

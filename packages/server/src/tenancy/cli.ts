@@ -272,7 +272,11 @@ async function rewrapStatus(
   const dataKey = await storedDataKey(db, state.defaultTenantId, environmentKeyRoot(config.secretsKey));
   if (dataKey === undefined) return 'not run';
   const checkouts = join(tenantRootById(config.dataDir, state.defaultTenantId), 'checkouts');
-  const counts = await rewrap(checkouts, { root: config.secretsKey, dataKey }, 'forward', { dryRun: true });
+  // Lenient, as the check at `done` is: a file it cannot read is counted by its code, never named (Part D review P1).
+  const counts = await rewrap(checkouts, { root: config.secretsKey, dataKey }, 'forward', {
+    dryRun: true,
+    lenient: true,
+  });
   const old =
     counts.resealed > 0 && state.step === 'done'
       ? ' (the next start, or `wirebench-server migrate`, re-seals them)'
@@ -280,7 +284,8 @@ async function rewrapStatus(
   return (
     `${blobs(counts.already)} under the data key, ${String(counts.resealed)} still under the old key${old}, ` +
     `${String(counts.unopened)} open under neither (left as they were), ` +
-    `${String(counts.skipped)} links or other entries skipped`
+    `${String(counts.skipped)} links or other entries skipped` +
+    (counts.unreadable > 0 ? `, ${String(counts.unreadable)} could not be read (${counts.codes.join(', ')})` : '')
   );
 }
 
@@ -305,7 +310,13 @@ export async function runTenancyStatus(io: ServerIo): Promise<number> {
     io.stdout.write(`backups: ${BACKUP_ADVICE}\n`);
     return ExitCode.Ok;
   } catch (error) {
-    io.stderr.write(`admin tenancy status failed: ${(error as Error).message}\n`);
+    // A coded refusal keeps its message; any other error says its code alone, since Node's message can name a path
+    // under tenants/<id>/checkouts/<user> (Part D review m4).
+    const why =
+      error instanceof WirebenchError
+        ? `${error.code}: ${error.message}`
+        : ((error as NodeJS.ErrnoException | null)?.code ?? 'an unexpected error');
+    io.stderr.write(`admin tenancy status failed: ${why}\n`);
     return ExitCode.Migration;
   } finally {
     await db.close();
