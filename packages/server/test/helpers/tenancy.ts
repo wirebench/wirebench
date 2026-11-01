@@ -12,6 +12,7 @@ import {
   type TenantDb,
   type TenantQuerier,
 } from '../../src/tenancy/tenant-db.js';
+import { environmentKeyRoot } from '../../src/tenancy/keys.js';
 import { createTenancy, type Tenancy } from '../../src/tenancy/tenancy.js';
 
 export interface StatementLog {
@@ -40,9 +41,15 @@ export function asTenantQuerier(querier: Querier): TenantQuerier {
 }
 
 /** A tenancy over `db` that records every statement. */
-export function loggedTenancy(db: Database): { readonly tenancy: Tenancy; readonly log: StatementLog } {
+export function loggedTenancy(db: Database, root?: Buffer): { readonly tenancy: Tenancy; readonly log: StatementLog } {
   const log = statementLog();
-  return { tenancy: createTenancy(db, { onStatement: log.onStatement }), log };
+  return {
+    tenancy: createTenancy(db, {
+      onStatement: log.onStatement,
+      ...(root !== undefined ? { keyRoot: environmentKeyRoot(root) } : {}),
+    }),
+    log,
+  };
 }
 
 /**

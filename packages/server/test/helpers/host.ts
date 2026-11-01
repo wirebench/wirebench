@@ -11,6 +11,7 @@ import { HostInstances } from '../../src/host/instances.js';
 import { hostModule } from '../../src/host/module.js';
 import { sessionCookieName } from '../../src/identity/cookies.js';
 import { liveModule } from '../../src/live/module.js';
+import type { PendingWrites } from '../../src/pending-writes.js';
 import { syncModule } from '../../src/sync/module.js';
 import { teamsModule } from '../../src/teams/module.js';
 import { browserBuildFixture, type BrowserBuildFixture } from './browser-build.js';
@@ -41,6 +42,8 @@ export async function hostHarness(
     readonly env?: Record<string, string>;
     /** Another browser build folder than the harness's fixture: a missing one, say. */
     readonly browserRoot?: string;
+    /** Handed the host module's in-flight secret audit writes. */
+    readonly onSecretWrites?: (writes: PendingWrites) => void;
   } = {},
 ): Promise<HostHarness> {
   const timers = manualTimers();
@@ -66,6 +69,7 @@ export async function hostHarness(
           instances = made;
         },
         browserRoot: options.browserRoot ?? build.root,
+        ...(options.onSecretWrites !== undefined ? { onSecretWrites: options.onSecretWrites } : {}),
       }),
     ],
   });

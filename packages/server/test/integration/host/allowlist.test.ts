@@ -125,7 +125,7 @@ describe('the server host allowlist (§3.10)', () => {
         userId: '01JB3Z9K7Q4ZJ6X1V8W2M5N0PA',
         scope: scopeOf({ id: '00000000-0000-4000-8000-000000000001', slug: 'default' }),
         dataDir,
-        secretsKey: Buffer.alloc(32, 1),
+        dataKey: Buffer.alloc(32, 1),
         egress: { denyPrivate: true },
         appVersion: '0.0.0-test',
       });

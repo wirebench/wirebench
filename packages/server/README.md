@@ -342,10 +342,11 @@ server-side send path until an operator asks for them.
   is not created from the browser yet (#786): create it once from the desktop app, and the browser opens
   it.
 - **Secrets.** A value a user stores in the tab is sealed with AES-256-GCM under a key derived for that user
-  from `WIREBENCH_SERVER_SECRETS_KEY`, and kept in the user's directory. It is never shown again, not even
-  to its owner, and never leaves the server in a socket frame. Every write and every use in a send is
-  audited by name (`secret.written`, `secret.resolved` with the target host), never by value. A new key
-  cannot open what the old one sealed.
+  from a random data key, which the database keeps sealed under `WIREBENCH_SERVER_SECRETS_KEY`, and kept in
+  the user's directory. It is never shown again, not even to its owner, and never leaves the server in a
+  socket frame. Every write and every use in a send is audited by name (`secret.written`, `secret.resolved`
+  with the target host), never by value. A new key cannot open what the old one sealed, so back the key up
+  apart from the database: a database backup without it opens nothing.
 - **Egress.** Every connection a tab's host opens — sends, redirects, the proxy hop, OAuth token calls, URL
   imports, definition fetches — is checked at connect time, the same rule as scheduled runs: loopback,
   link-local, unspecified, cloud-metadata, multicast and broadcast addresses are always refused with

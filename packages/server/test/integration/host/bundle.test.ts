@@ -48,7 +48,7 @@ const host = await createServerHost({
   userId,
   scope: { tenantId: '00000000-0000-4000-8000-000000000001', slug: 'default' },
   dataDir,
-  secretsKey: Buffer.alloc(32, 7),
+  dataKey: Buffer.alloc(32, 7),
   egress: { denyPrivate: true },
   appVersion: '9.9.9-bundle-test',
 });

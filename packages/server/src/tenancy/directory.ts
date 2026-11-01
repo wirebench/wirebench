@@ -6,8 +6,10 @@
  * `src/tenancy/` only the admin command line's self-hosted default may call it (`check:tenant-scope`): a route
  * or module that reached for it would pass every one-tenant test.
  */
+import { randomUUID } from 'node:crypto';
 import { WirebenchError } from '@wirebench/engine';
 import type { Querier } from '../db/querier.js';
+import type { TenantKeys } from './keys.js';
 import { scopeOf, type TenantScope } from './scope.js';
 
 /**
@@ -44,8 +46,10 @@ export class TenantDirectory {
   readonly #listeners: (() => void)[] = [];
   readonly #db: Querier;
 
-  constructor(db: Querier) {
+  /** `keys`: the process's data keys, which `TenantAdmin.create` makes a new tenant's key with. */
+  constructor(db: Querier, keys?: TenantKeys) {
     this.#db = db;
+    if (keys !== undefined) directoryKeys.set(this, keys);
   }
 
   /**
@@ -137,6 +141,9 @@ export class TenantDirectory {
   }
 }
 
+/** Each directory's data keys, kept off the class so nothing outside this file reaches them through it. */
+const directoryKeys = new WeakMap<TenantDirectory, TenantKeys>();
+
 /**
  * Writes to the tenants (Task 5 review M8): kept off `ctx.tenancy`, so no module can create a tenant. Only
  * tests make one in slice 4; slice 7's control plane is its real user.
@@ -150,11 +157,17 @@ export class TenantAdmin {
     this.#directory = directory;
   }
 
+  /**
+   * Creates a tenant, with its data key when the server has a root (spec §19.7). Without one the key stays null,
+   * and the tenant gets it the first time the root exists.
+   */
   async create(input: NewTenant): Promise<TenantRow & { readonly scope: TenantScope }> {
+    const id = randomUUID();
+    const dataKey = (await directoryKeys.get(this.#directory)?.wrapNew(id)) ?? null;
     const rows = await this.#db.query<TenantRow & Record<string, unknown>>(
-      `insert into tenants (id, slug, name, edition, region) values (gen_random_uuid(), $1, $2, $3, $4)
+      `insert into tenants (id, slug, name, edition, region, data_key) values ($1::uuid, $2, $3, $4, $5, $6)
        returning ${COLUMNS}`,
-      [input.slug, input.name, input.edition ?? 'community', input.region ?? 'eu'],
+      [id, input.slug, input.name, input.edition ?? 'community', input.region ?? 'eu', dataKey],
     );
     const row = rows.rows[0]!;
     this.#directory.changed();

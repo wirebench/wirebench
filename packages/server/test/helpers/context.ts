@@ -12,6 +12,7 @@ import type { Database } from '../../src/db/querier.js';
 import type { TenantQuerier } from '../../src/tenancy/tenant-db.js';
 import type { RepoStore } from '../../src/repos/repo-store.js';
 import type { TenantScope } from '../../src/tenancy/scope.js';
+import { environmentKeyRoot } from '../../src/tenancy/keys.js';
 import { createTenancy, directoryOf } from '../../src/tenancy/tenancy.js';
 
 /** A database whose every query succeeds with no rows; `failing` flips `select 1` to a rejection. */
@@ -53,8 +54,9 @@ export async function testContext(
   // Neither is a ServerContext field: `dataDir` picks the data directory, `db` the tenancy's database.
   const { dataDir: droppedDataDir, db: raw, ...rest } = overrides;
   void droppedDataDir;
-  const context: ServerContext = {
-    config: loadConfig(
+  const config =
+    rest.config ??
+    loadConfig(
       {
         WIREBENCH_SERVER_DATABASE_URL: 'postgres://test',
         WIREBENCH_SERVER_PUBLIC_URL: 'https://wirebench.test',
@@ -62,7 +64,9 @@ export async function testContext(
         WIREBENCH_SERVER_LOG_LEVEL: 'fatal',
       },
       '0.0.0-test',
-    ),
+    );
+  const context: ServerContext = {
+    config,
     // `RepoStore` is a class with private fields now (Task 6); this fake only ever needs `path` and the
     // start-up sweep's `tmpDirs` from tests that don't exercise the real store, so it is cast through
     // `unknown` rather than built as a real `RepoStore` instance.
@@ -77,7 +81,12 @@ export async function testContext(
     hooks: serverHooks(),
     license: permissiveLicense(),
     ...rest,
-    tenancy: rest.tenancy ?? createTenancy(raw ?? fakeTenantsDatabase()),
+    tenancy:
+      rest.tenancy ??
+      createTenancy(
+        raw ?? fakeTenantsDatabase(),
+        config.secretsKey !== undefined ? { keyRoot: environmentKeyRoot(config.secretsKey) } : {},
+      ),
   };
   // With no real database, the directory is loaded here, so `request.tenant` names the fake default tenant;
   // over a real one, the caller loads it once the schema is migrated.

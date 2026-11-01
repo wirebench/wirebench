@@ -26,8 +26,14 @@ export interface ServerPlatformInput {
   readonly scope: TenantScope;
   /** The server's data directory (`WIREBENCH_SERVER_DATA_DIR`, absolute). */
   readonly dataDir: string;
-  /** `WIREBENCH_SERVER_SECRETS_KEY`: the root the per-user key is derived from. */
-  readonly secretsKey: Buffer;
+  /** The tenant's data key (spec §19.7, `ctx.tenancy.dataKey`): what the per-user key is derived from. */
+  readonly dataKey: Buffer;
+  /**
+   * The server root, for the default tenant's hosts only, until the one-time re-wrap (plan Task 24): a blob that
+   * does not open under the user's key is tried under slice 2's key, `userSecretsKey(root, userId)`. Nothing is
+   * sealed under it. Without it a slice 2 cookie jar would be set aside as `.corrupt` on its first read.
+   */
+  readonly legacyRoot?: Buffer;
   readonly egress: EgressPolicy;
   /** The server's own version, shown where the desktop shows the app's. */
   readonly appVersion: string;
@@ -76,17 +82,27 @@ export function hostDirectories(dataDir: string, scope: TenantScope, userId: str
 }
 
 /**
- * The per-user secrets key: HKDF-SHA256 over the server's key, salted for this use and bound to the user
- * id, so one user's `secrets.json` does not open under another's key (spec §17.4).
+ * The per-user secrets key: HKDF-SHA256 over the tenant's data key, salted for this use and bound to the user
+ * id, so one user's `secrets.json` does not open under another's key, nor under another tenant's (spec §17.4,
+ * §19.7, ADR-0036). Slice 2 derived it from the server root in place of the data key, the same way.
  */
-export function userSecretsKey(secretsKey: Buffer, userId: string): Buffer {
-  return Buffer.from(hkdfSync('sha256', secretsKey, SECRETS_SALT, userId, 32));
+export function userSecretsKey(dataKey: Buffer, userId: string): Buffer {
+  return Buffer.from(hkdfSync('sha256', dataKey, SECRETS_SALT, userId, 32));
 }
 
 /** Builds `input.userId`'s platform. Creates nothing on disk; the host makes `userData` as it needs it. */
 export function createServerPlatform(input: ServerPlatformInput): ServerPlatform {
   const directories = hostDirectories(input.dataDir, input.scope, input.userId);
-  const key = userSecretsKey(input.secretsKey, input.userId);
+  const key = userSecretsKey(input.dataKey, input.userId);
+  const legacy = input.legacyRoot === undefined ? undefined : userSecretsKey(input.legacyRoot, input.userId);
+  const decrypt = (sealed: Buffer): string => {
+    try {
+      return open(key, sealed);
+    } catch (error) {
+      if (legacy === undefined) throw error;
+      return open(legacy, sealed);
+    }
+  };
   return {
     paths: {
       userData: () => directories.checkout,
@@ -97,7 +113,7 @@ export function createServerPlatform(input: ServerPlatformInput): ServerPlatform
     secrets: {
       available: () => true,
       encrypt: (plain) => seal(key, plain),
-      decrypt: (sealed) => open(key, sealed),
+      decrypt,
     },
     app: {
       version: () => input.appVersion,

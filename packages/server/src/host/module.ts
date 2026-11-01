@@ -38,6 +38,8 @@ import { loadHostRuntime, loadHostSocketLoop, type HostSecretEvent } from './hos
 import { injectSend } from './inject-send.js';
 import { HostInstances, type HostSession, type HostSocketHandle, type HostUser } from './instances.js';
 import { liveBridge } from './live-bridge.js';
+import { pendingWrites, type PendingWrites } from '../pending-writes.js';
+import { isDefaultTenant } from '../tenancy/tenancy.js';
 import { outsideTenantUnit } from '../tenancy/tenant-db.js';
 import { runHostSocket, type HostSocket } from './socket.js';
 
@@ -52,6 +54,8 @@ export interface HostModuleOptions {
   readonly onInstances?: (instances: HostInstances) => void;
   /** Another browser build than the copied one (`dist/browser/`), for tests: a fixture folder. */
   readonly browserRoot?: string;
+  /** Hands the module's in-flight secret audit writes out, for tests that must see every row a call led to. */
+  readonly onSecretWrites?: (writes: PendingWrites) => void;
 }
 
 const ROUTE = '/host';
@@ -140,7 +144,11 @@ export function hostModule(options: HostModuleOptions = {}): ServerModule {
       ) {
         throw new Error('the host module needs the host bundle, the live module and WIREBENCH_SERVER_SECRETS_KEY');
       }
-      const secretsKey = config.secretsKey;
+      const root = config.secretsKey;
+      // Kept, so shutdown waits for them before the pool closes, and a test can wait for the rows a call led to:
+      // the host answers `secrets.set` before its `secret.written` row commits.
+      const secretWrites = pendingWrites();
+      options.onSecretWrites?.(secretWrites);
       const log = (message: string, error: unknown): void => {
         ctx.log.warn({ err: error }, message);
       };
@@ -150,7 +158,7 @@ export function hostModule(options: HostModuleOptions = {}): ServerModule {
         idleMs: config.hostIdleMinutes * 60_000,
         setTimer,
         log,
-        create: (user, session) => {
+        create: async (user, session) => {
           const credential = (): string | undefined => session()?.token;
           // A token the server refused is over even if no announcement said so (idle or lazy expiry).
           const refused = (tokenId: string): void => {
@@ -158,11 +166,16 @@ export function hostModule(options: HostModuleOptions = {}): ServerModule {
               instances.sessionEnded({ tokenId, tenantId: user.tenant.tenantId });
             });
           };
+          // The tenant's data key, made now if it has none yet (spec §19.7): every user key derives from it.
+          const dataKey = await ctx.tenancy.dataKey(user.tenant);
           return createServerHost({
             userId: user.id,
             scope: user.tenant,
             dataDir: config.dataDir,
-            secretsKey,
+            dataKey,
+            // Until the re-wrap (plan Task 24), what slice 2 sealed under the root still opens in the one tenant
+            // that has such blobs: the self-hosted installation's own.
+            ...(isDefaultTenant(ctx.tenancy, user.tenant) ? { legacyRoot: root } : {}),
             egress: ctx.egress,
             appVersion: config.version,
             server: {
@@ -182,12 +195,14 @@ export function hostModule(options: HostModuleOptions = {}): ServerModule {
             },
             // In the user's tenant: the audit row is that tenant's.
             onSecret: (event) => {
-              ctx.tenancy
-                .db(user.tenant)
-                .transaction((tx) => recordAudit(ctx.hooks, tx, secretAudit(user, session(), event)))
-                .catch((error: unknown) => {
-                  log('a secret audit event could not be recorded', error);
-                });
+              secretWrites.track(
+                ctx.tenancy
+                  .db(user.tenant)
+                  .transaction((tx) => recordAudit(ctx.hooks, tx, secretAudit(user, session(), event)))
+                  .catch((error: unknown) => {
+                    log('a secret audit event could not be recorded', error);
+                  }),
+              );
             },
           });
         },
@@ -279,6 +294,8 @@ export function hostModule(options: HostModuleOptions = {}): ServerModule {
       });
       app.addHook('onClose', async () => {
         await instances.closeAll();
+        // The pool closes after the app, so every secret audit row is written first.
+        await secretWrites.settled();
       });
     },
 

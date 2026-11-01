@@ -636,12 +636,14 @@ describeDb('the cross-tenant isolation suite (spec §19.13)', () => {
   });
 
   describe('the keys', () => {
-    it("a blob sealed for a user of A opens under neither B's user's key nor another user of A's", () => {
-      const root = w.t.h.ctx.config.secretsKey!;
-      const sealed = seal(userSecretsKey(root, w.a.browser.user.id), 'acme host secret');
-      expect(open(userSecretsKey(root, w.a.browser.user.id), sealed)).toBe('acme host secret');
-      expect(() => open(userSecretsKey(root, w.b.browser.user.id), sealed)).toThrow();
-      expect(() => open(userSecretsKey(root, w.a.admin.user.id), sealed)).toThrow();
+    it("a blob sealed for a user of A opens under neither B's data key nor another user of A's", async () => {
+      const keyA = await w.t.h.ctx.tenancy.dataKey(w.a.tenant.scope);
+      const keyB = await w.t.h.ctx.tenancy.dataKey(w.b.tenant.scope);
+      const sealed = seal(userSecretsKey(keyA, w.a.browser.user.id), 'acme host secret');
+      expect(open(userSecretsKey(keyA, w.a.browser.user.id), sealed)).toBe('acme host secret');
+      expect(() => open(userSecretsKey(keyB, w.a.browser.user.id), sealed)).toThrow();
+      expect(() => open(userSecretsKey(keyB, w.b.browser.user.id), sealed)).toThrow();
+      expect(() => open(userSecretsKey(keyA, w.a.admin.user.id), sealed)).toThrow();
     });
   });
 });

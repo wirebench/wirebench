@@ -19,6 +19,7 @@ import { ExitCode, packageVersion, type ServerIo } from '../io.js';
 import { appRoleReport, bypassReasons, MIN_POSTGRES_VERSION_NUM } from './checks.js';
 import { CONSERVATIVE_RATE, estimateSeconds, MEASURED_RATE, passesOf, type TableSize } from './estimate.js';
 import { KNOWN_ROOT_ENTRIES, MOVED_DIRS, OLD_TMP_DIR, readTenancyStep } from './file-step.js';
+import { hasDataKey } from './keys.js';
 import { appRolePlan, ensureAppRole, roleMode } from './roles.js';
 
 type TenancyRoleCommand = Extract<ServerCommand, { command: 'admin-tenancy-role' }>;
@@ -240,8 +241,10 @@ export async function runTenancyStatus(io: ServerIo): Promise<number> {
       io.stdout.write(`step: ${state.step}\n`);
       io.stdout.write(`default tenant: ${state.defaultTenantId}\n`);
     }
-    // Plan Tasks 23 and 24: the data key and the re-wrap.
-    io.stdout.write('data key: none\n');
+    // Whether it exists, never the key or its wrap.
+    const made = state !== undefined && (await hasDataKey(db, state.defaultTenantId));
+    io.stdout.write(`data key: ${made ? 'made' : 'none'}\n`);
+    // Plan Task 24: the re-wrap.
     io.stdout.write('re-wrap: not run\n');
     io.stdout.write(`backups: ${BACKUP_ADVICE}\n`);
     return ExitCode.Ok;

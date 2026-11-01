@@ -112,6 +112,13 @@ describeDb('admin tenancy check and status', () => {
       `backups: ${BACKUP_ADVICE}`,
       '',
     ]);
+    // A wrapped key in the row: status says it exists, and prints nothing of it.
+    const wrapped = Buffer.alloc(45, 0xab);
+    await db.owner.query('update tenants set data_key = $1 where id = $2', [wrapped, id]);
+    const made = await run(['admin', 'tenancy', 'status']);
+    expect(made.out).toContain('data key: made\n');
+    expect(made.out).not.toContain(wrapped.toString('hex'));
+    expect(made.out).not.toContain(wrapped.toString('base64'));
   });
 
   it("the estimate's passes are the ones 0020 makes over each scoped table: one plus each index it builds and each key", async () => {

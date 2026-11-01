@@ -24,6 +24,7 @@ import { checkAppRole, checkPostgresVersion } from './tenancy/checks.js';
 import { TENANCY_MIGRATIONS_DIR } from './tenancy/migrations.js';
 import { RunningLock, type RunningLockOptions } from './tenancy/running-lock.js';
 import { operatorPublicUrl } from './tenancy/urls.js';
+import { environmentKeyRoot } from './tenancy/keys.js';
 import { createTenancy, directoryOf } from './tenancy/tenancy.js';
 import { ensureAppRole, roleMode } from './tenancy/roles.js';
 import { ExitCode, packageVersion, type ServerIo } from './io.js';
@@ -363,7 +364,11 @@ export async function startServer(
     return fail(new StartupError(ExitCode.Config, `data directory ${config.dataDir} is not writable`));
   }
   const warnings: { readonly message: string; readonly details: Record<string, unknown> }[] = [];
-  const tenancy = createTenancy(db);
+  // The root wraps each tenant's data key (spec §19.7); without it no key is made, and nothing is sealed.
+  const tenancy = createTenancy(
+    db,
+    config.secretsKey !== undefined ? { keyRoot: environmentKeyRoot(config.secretsKey) } : {},
+  );
   try {
     await checkAppRole(db, config.mode, (message, details) => warnings.push({ message, details }));
     // A module list that stops short of 0019 leaves 0020 out (`allMigrations`), and with it every tenant.
