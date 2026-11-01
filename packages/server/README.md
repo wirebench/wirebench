@@ -350,7 +350,10 @@ server-side send path until an operator asks for them.
   the user's directory. It is never shown again, not even to its owner, and never leaves the server in a
   socket frame. Every write and every use in a send is audited by name (`secret.written`, `secret.resolved`
   with the target host), never by value. A new key cannot open what the old one sealed, so back the key up
-  apart from the database: a database backup without it opens nothing.
+  apart from the database: a database backup without it opens nothing. Never change the key on a running
+  installation: under another key every browser tab is refused (it says the server cannot open its saved data)
+  until the old key is restored, and `wirebench-server admin tenancy status` says whether the stored data key
+  opens under the configured one.
 - **Egress.** Every connection a tab's host opens — sends, redirects, the proxy hop, OAuth token calls, URL
   imports, definition fetches — is checked at connect time, the same rule as scheduled runs: loopback,
   link-local, unspecified, cloud-metadata, multicast and broadcast addresses are always refused with

@@ -12,7 +12,8 @@
  *   it asks `/api/v1/me`, and a 401 or 403 there sends the tab to `/sign-in` too.
  * - The reconnect bar, a plain element shown while the socket is down, hidden by the next hello. Before
  *   the first hello it says the workspace cannot be reached (the page is otherwise blank); after it, that
- *   the connection was lost. A hello whose capabilities differ from the first reloads the page: the renderer hid
+ *   the connection was lost; after a `4503` close, that the server cannot open the user's saved data with its
+ *   current key. A hello whose capabilities differ from the first reloads the page: the renderer hid
  *   what the first set lacked, and only a fresh load redoes that.
  *
  * It also opens the tab's second socket, to the user's paired local agent (`agent-connection.ts`, spec
@@ -24,7 +25,7 @@ import { createAgentConnection, type FetchAnswer } from './agent-connection.js';
 import { createSocketTransport, hostSocketUrl, type Hello, type SocketLike } from './socket-transport.js';
 
 /** The close codes the bootstrap reads (the server's `HOST_CLOSE`). */
-export const CLOSE_CODE = { unauthenticated: 4401, tooManySockets: 4429 } as const;
+export const CLOSE_CODE = { unauthenticated: 4401, tooManySockets: 4429, unavailable: 4503 } as const;
 
 export const SIGN_IN_PATH = '/sign-in';
 /** The root sign-out (spec §17.2): a form post, so the browser sends the page's Origin, which it checks. */
@@ -48,6 +49,7 @@ export const RECONNECT_TEXT = {
   reconnecting: 'The connection to the server was lost. Reconnecting…',
   unreachable: 'Can’t reach your workspace; retrying…',
   tooManyTabs: 'Too many Wirebench tabs are open; close one to continue.',
+  unavailable: 'The server can’t open your saved data with its current key. Ask your administrator; retrying…',
 } as const;
 
 export interface BootstrapDeps {
@@ -201,6 +203,11 @@ export async function startBrowserClient(deps: BootstrapDeps): Promise<void> {
       }
       if (code === CLOSE_CODE.tooManySockets) {
         bar.show(RECONNECT_TEXT.tooManyTabs);
+        return;
+      }
+      // The server's secrets key no longer opens the stored data key: the operator's to fix, not the session's.
+      if (code === CLOSE_CODE.unavailable) {
+        bar.show(RECONNECT_TEXT.unavailable);
         return;
       }
       // Before the first hello the page is blank but for this bar, whatever the close (a server error,

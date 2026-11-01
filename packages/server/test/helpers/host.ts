@@ -5,10 +5,14 @@
  * Node's WebSocket, given the `Cookie` and `Origin` a browser tab would send.
  */
 import { randomBytes } from 'node:crypto';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { connect, type Socket } from 'node:net';
+import { join } from 'node:path';
 import type { AuditInput } from '../../src/context.js';
+import { seal } from '../../src/hooks/secret-box.js';
 import { HostInstances } from '../../src/host/instances.js';
 import { hostModule } from '../../src/host/module.js';
+import { userSecretsKey } from '../../src/host/server-platform.js';
 import { sessionCookieName } from '../../src/identity/cookies.js';
 import { liveModule } from '../../src/live/module.js';
 import type { PendingWrites } from '../../src/pending-writes.js';
@@ -44,6 +48,8 @@ export async function hostHarness(
     readonly browserRoot?: string;
     /** Handed the host module's in-flight secret audit writes. */
     readonly onSecretWrites?: (writes: PendingWrites) => void;
+    /** Where the server logs, at the level `env` sets. */
+    readonly logStream?: NodeJS.WritableStream;
   } = {},
 ): Promise<HostHarness> {
   const timers = manualTimers();
@@ -52,6 +58,7 @@ export async function hostHarness(
   // The module reads the browser build at start-up; a fixture stands in for the Vite build.
   const build = await browserBuildFixture();
   const started = identityHarness({
+    ...(options.logStream !== undefined ? { logStream: options.logStream } : {}),
     env: {
       WIREBENCH_SERVER_BROWSER_CLIENT: 'true',
       WIREBENCH_SERVER_SECRETS_KEY: randomBytes(32).toString('base64'),
@@ -348,4 +355,52 @@ export async function openRawHost(h: Pick<HostHarness, 'port'>, user: SignedInUs
       socket.destroy();
     },
   };
+}
+
+/** A cookie as the jar keeps it, expiring in a year. */
+export function storedCookie(name: string, value: string, domain: string) {
+  const now = Date.now();
+  return {
+    name,
+    value,
+    domain,
+    hostOnly: true,
+    path: '/',
+    secure: false,
+    httpOnly: false,
+    createdAt: now,
+    expiresAt: now + 365 * 24 * 3600 * 1000,
+  };
+}
+
+/**
+ * Writes a slice 2 `secrets.json` entry and cookie jar into `checkout`, both sealed under
+ * `userSecretsKey(root, userId)`: what a server host wrote before slice 4.
+ */
+export async function seedSlice2(
+  checkout: string,
+  root: Buffer,
+  userId: string,
+  input: { readonly workspaceId: string; readonly label: string; readonly secret: string; readonly cookie: object[] },
+): Promise<void> {
+  const key = userSecretsKey(root, userId);
+  await mkdir(join(checkout, 'cookie-jars'), { recursive: true });
+  await writeFile(
+    join(checkout, 'secrets.json'),
+    JSON.stringify({
+      version: 2,
+      entries: {
+        sec_slice2seededentry00000: {
+          value: seal(key, input.secret).toString('base64'),
+          encrypted: true,
+          label: input.label,
+          createdAt: '2026-09-24T12:00:00.000Z',
+        },
+      },
+    }),
+  );
+  await writeFile(
+    join(checkout, 'cookie-jars', `${input.workspaceId}.json`),
+    JSON.stringify({ version: 1, data: seal(key, JSON.stringify(input.cookie)).toString('base64') }),
+  );
 }

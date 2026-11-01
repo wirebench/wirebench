@@ -335,6 +335,19 @@ describe('startBrowserClient', () => {
     expect(h.fetch).not.toHaveBeenCalledWith(ME_PATH, expect.anything());
   });
 
+  it("says the server cannot open the user's data on 4503, and keeps retrying without a session check", async () => {
+    const h = start();
+    FakeSocket.last().drop(4503);
+    expect(bar()?.textContent).toBe(RECONNECT_TEXT.unavailable);
+    expect(bar()?.hidden).toBe(false);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(FakeSocket.all).toHaveLength(2);
+    FakeSocket.last().hello();
+    await h.started;
+    expect(bar()?.hidden).toBe(true);
+    expect(h.fetch).not.toHaveBeenCalledWith(ME_PATH, expect.anything());
+  });
+
   it('reloads the page when a later hello brings other capabilities', async () => {
     const h = start();
     FakeSocket.last().hello(['send:public', 'send:private']);

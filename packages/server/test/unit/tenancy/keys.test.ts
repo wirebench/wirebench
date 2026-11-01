@@ -53,6 +53,15 @@ describe('the environment key root', () => {
     await expect(environmentKeyRoot(ROOT).wrap(A, Buffer.alloc(16))).rejects.toThrow('32 bytes');
   });
 
+  it('refuses a tenant id that is not a lower-case UUID as the derivation input (Task 23 review M1)', async () => {
+    const root = environmentKeyRoot(ROOT);
+    const wrapped = await root.wrap(A, newDataKey());
+    for (const id of [A.toUpperCase(), `{${A}}`, A.replaceAll('-', ''), '', 'default']) {
+      await expect(root.wrap(id, newDataKey())).rejects.toMatchObject({ code: 'tenancy-tenant-id-invalid' });
+      await expect(root.unwrap(id, wrapped)).rejects.toMatchObject({ code: 'tenancy-tenant-id-invalid' });
+    }
+  });
+
   it('makes 32 random bytes for each data key', () => {
     const one = newDataKey();
     expect(one).toHaveLength(32);

@@ -19,7 +19,7 @@ import { ExitCode, packageVersion, type ServerIo } from '../io.js';
 import { appRoleReport, bypassReasons, MIN_POSTGRES_VERSION_NUM } from './checks.js';
 import { CONSERVATIVE_RATE, estimateSeconds, MEASURED_RATE, passesOf, type TableSize } from './estimate.js';
 import { KNOWN_ROOT_ENTRIES, MOVED_DIRS, OLD_TMP_DIR, readTenancyStep } from './file-step.js';
-import { hasDataKey } from './keys.js';
+import { dataKeyState, environmentKeyRoot, type DataKeyState } from './keys.js';
 import { appRolePlan, ensureAppRole, roleMode } from './roles.js';
 
 type TenancyRoleCommand = Extract<ServerCommand, { command: 'admin-tenancy-role' }>;
@@ -229,6 +229,15 @@ async function appRoleLine(config: ServerConfig): Promise<string> {
   }
 }
 
+/** The `data key:` line of `admin tenancy status`. */
+export const DATA_KEY_TEXT: Readonly<Record<DataKeyState, string>> = {
+  none: 'none',
+  made: 'made (WIREBENCH_SERVER_SECRETS_KEY is not set, so it was not tried)',
+  opens: 'made, and it opens under WIREBENCH_SERVER_SECRETS_KEY',
+  refused:
+    'made, but it does not open under WIREBENCH_SERVER_SECRETS_KEY: the key was changed. Restore the key it was made under; until then no browser host opens',
+};
+
 /** `admin tenancy status` (spec §19.11): where the upgrade stands. Never prints a slug. */
 export async function runTenancyStatus(io: ServerIo): Promise<number> {
   const loaded = configOf(io);
@@ -242,9 +251,10 @@ export async function runTenancyStatus(io: ServerIo): Promise<number> {
       io.stdout.write(`step: ${state.step}\n`);
       io.stdout.write(`default tenant: ${state.defaultTenantId}\n`);
     }
-    // Whether it exists, never the key or its wrap.
-    const made = state !== undefined && (await hasDataKey(db, state.defaultTenantId));
-    io.stdout.write(`data key: ${made ? 'made' : 'none'}\n`);
+    // Whether it exists and opens under the configured key, never the key or its wrap (Task 23 review I1, M6).
+    const root = loaded.secretsKey !== undefined ? environmentKeyRoot(loaded.secretsKey) : undefined;
+    const key: DataKeyState = state === undefined ? 'none' : await dataKeyState(db, state.defaultTenantId, root);
+    io.stdout.write(`data key: ${DATA_KEY_TEXT[key]}\n`);
     // Plan Task 24: the re-wrap.
     io.stdout.write('re-wrap: not run\n');
     io.stdout.write(`backups: ${BACKUP_ADVICE}\n`);

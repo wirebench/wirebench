@@ -7,7 +7,7 @@ import { afterAll, beforeAll, expect, it } from 'vitest';
 import { open, seal } from '../../../src/hooks/secret-box.js';
 import { userSecretsKey } from '../../../src/host/server-platform.js';
 import { TenantAdmin } from '../../../src/tenancy/directory.js';
-import { environmentKeyRoot, TenantKeys } from '../../../src/tenancy/keys.js';
+import { environmentKeyRoot, newDataKey, TenantKeys, type KeyRoot } from '../../../src/tenancy/keys.js';
 import type { TenantScope } from '../../../src/tenancy/scope.js';
 import { createTenancy, directoryOf, type Tenancy } from '../../../src/tenancy/tenancy.js';
 import { describeDb, testDatabase } from '../../helpers/database.js';
@@ -140,10 +140,102 @@ describeDb('the tenant data keys (spec §19.7)', () => {
     expect(keyA.equals(newA)).toBe(false);
   });
 
-  it('a tenant row that is gone is refused, and not cached', async () => {
+  it('a tenant row that is gone is refused, and the refusal is not cached', async () => {
     const here = await processWith(ROOT);
     const scope = await newTenant(here);
+    const row = (
+      await db.owner.query<{ slug: string; name: string }>('select slug, name from tenants where id = $1', [
+        scope.tenantId,
+      ])
+    ).rows[0]!;
     await db.owner.query('delete from tenants where id = $1', [scope.tenantId]);
     await expect(here.dataKey(scope)).rejects.toMatchObject({ code: 'tenancy-unknown-tenant' });
+    // Restored: the next call reads again rather than answering the kept refusal.
+    await db.owner.query('insert into tenants (id, slug, name) values ($1, $2, $3)', [
+      scope.tenantId,
+      row.slug,
+      row.name,
+    ]);
+    expect(await here.dataKey(scope)).toHaveLength(32);
+  });
+
+  it('a key cached before its row is deleted is still served, until invalidated (spec §19.7, slice 5)', async () => {
+    const here = await processWith(ROOT);
+    const scope = await newTenant(here);
+    const key = await here.dataKey(scope);
+    await db.owner.query('delete from tenants where id = $1', [scope.tenantId]);
+    expect(await here.dataKey(scope)).toEqual(key);
+    directoryOf(here).changed();
+    await expect(here.dataKey(scope)).rejects.toMatchObject({ code: 'tenancy-unknown-tenant' });
+  });
+
+  it("the loser of the compare-and-set uses the winner's key, and leaves the row as the winner wrote it", async () => {
+    const creator = await processWith(undefined);
+    const scope = await newTenant(creator);
+    const real = environmentKeyRoot(ROOT);
+    const winnerKey = Buffer.alloc(32, 0x77);
+    let winnerWrap: Buffer | undefined;
+    let made: Buffer | undefined;
+    // Between this process's read (null) and its update, another process stores its own key.
+    const racing: KeyRoot = {
+      wrap: async (tenantId, dataKey) => {
+        made = dataKey;
+        winnerWrap = await real.wrap(tenantId, winnerKey);
+        await db.owner.query('update tenants set data_key = $1 where id = $2', [winnerWrap, tenantId]);
+        return real.wrap(tenantId, dataKey);
+      },
+      unwrap: (tenantId, wrapped) => real.unwrap(tenantId, wrapped),
+    };
+    const loser = new TenantKeys(db, racing);
+    const got = await loser.dataKey(scope.tenantId);
+    expect(made).toBeDefined();
+    expect(got).toEqual(winnerKey);
+    expect(got.equals(made!)).toBe(false);
+    expect(await wrappedOf(scope)).toEqual(winnerWrap);
+    // Every other process opens the same key.
+    expect(await (await processWith(ROOT)).dataKey(scope)).toEqual(winnerKey);
+  });
+
+  it('a row cleared between the lost update and the re-read is a coded refusal, not a plain error', async () => {
+    const creator = await processWith(undefined);
+    const scope = await newTenant(creator);
+    const real = environmentKeyRoot(ROOT);
+    let updates = 0;
+    // A competitor's write lands, then the row is cleared again before the loser re-reads it.
+    const db2 = {
+      query: async (text: string, values?: unknown[]) => {
+        const result = await db.query(text, values);
+        if (text.startsWith('update tenants')) {
+          updates++;
+          await db.owner.query('update tenants set data_key = null where id = $1', [scope.tenantId]);
+        }
+        return result;
+      },
+    };
+    const racing: KeyRoot = {
+      wrap: async (tenantId, dataKey) => {
+        await db.owner.query('update tenants set data_key = $1 where id = $2', [
+          await real.wrap(tenantId, newDataKey()),
+          tenantId,
+        ]);
+        return real.wrap(tenantId, dataKey);
+      },
+      unwrap: (tenantId, wrapped) => real.unwrap(tenantId, wrapped),
+    };
+    const loser = new TenantKeys(db2 as unknown as typeof db, racing);
+    await expect(loser.dataKey(scope.tenantId)).rejects.toMatchObject({ code: 'tenancy-data-key-missing' });
+    expect(updates).toBe(1);
+  });
+
+  it('refuses a tenant id that is not a lower-case UUID before it reaches the key derivation', async () => {
+    const here = await processWith(ROOT);
+    const scope = await newTenant(here);
+    const keys = new TenantKeys(db, environmentKeyRoot(ROOT));
+    for (const id of [scope.tenantId.toUpperCase(), `{${scope.tenantId}}`, scope.tenantId.replaceAll('-', '')]) {
+      await expect(keys.dataKey(id)).rejects.toMatchObject({ code: 'tenancy-tenant-id-invalid' });
+      await expect(keys.wrapNew(id)).rejects.toMatchObject({ code: 'tenancy-tenant-id-invalid' });
+    }
+    // Nothing was stored for it under a derivation no canonical caller could open.
+    expect(await keys.dataKey(scope.tenantId)).toEqual(await here.dataKey(scope));
   });
 });

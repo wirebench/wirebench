@@ -38,6 +38,11 @@ export const HOST_CLOSE = {
   forbidden: 4403,
   /** The user already has {@link HOST_LIMITS.maxSocketsPerUser} host sockets open (HTTP's 429). */
   tooManySockets: 4429,
+  /**
+   * The embedder cannot build this user's host for a reason only its operator can fix (HTTP's 503): the server's
+   * secrets key no longer opens the stored data key. Reconnecting does not help until the key is restored.
+   */
+  unavailable: 4503,
 } as const;
 
 export const HOST_LIMITS = {

@@ -22,6 +22,7 @@
  * attached. So the `Origin` check here is what holds such a page out, and no route may rely on the
  * guard for a `GET` with side effects.
  */
+import { isWirebenchError } from '@wirebench/engine';
 import type { FastifyInstance } from 'fastify';
 import type { WebSocket } from 'ws';
 import { auditIp, recordAudit, type AuditInput, type ServerContext, type ServerModule } from '../context.js';
@@ -174,8 +175,9 @@ export function hostModule(options: HostModuleOptions = {}): ServerModule {
             dataDir: config.dataDir,
             dataKey,
             // Until the re-wrap (plan Task 24), what slice 2 sealed under the root still opens in the one tenant
-            // that has such blobs: the self-hosted installation's own.
-            ...(isDefaultTenant(ctx.tenancy, user.tenant) ? { legacyRoot: root } : {}),
+            // that has such blobs: a self-hosted installation's own. A hosted server starts fresh (§14), so no
+            // hosted platform is handed the root, its default tenant's included (Task 23 review M2).
+            ...(config.mode !== 'hosted' && isDefaultTenant(ctx.tenancy, user.tenant) ? { legacyRoot: root } : {}),
             egress: ctx.egress,
             appVersion: config.version,
             server: {
@@ -275,7 +277,22 @@ export function hostModule(options: HostModuleOptions = {}): ServerModule {
             log("a host socket's session age could not be read", error);
           });
         // The hello waits for that read too, so a session revoked since identity's check is never served.
-        const host = Promise.all([opened, checked]).then(([ready]) => ready);
+        // A data key that does not open under the configured root (the key was changed) is the operator's to fix,
+        // not a server fault: the socket closes `4503`, which the tab shows as such, and the log names the code.
+        // The error is a fixed string; no key, wrap or root reaches the log or the close (ADR-0004).
+        const host = Promise.all([opened, checked]).then(
+          ([ready]) => ready,
+          (error: unknown) => {
+            if (!isWirebenchError(error) || error.code !== 'tenancy-data-key-refused') throw error;
+            ctx.log.error(
+              // Not `code`: the logger redacts that name everywhere (pairing codes).
+              { errorCode: error.code },
+              'a browser host could not open: the stored data key does not open under WIREBENCH_SERVER_SECRETS_KEY. Restore the key it was made under',
+            );
+            running.socket?.end(HOST_CLOSE.unavailable, 'server key refused');
+            return undefined;
+          },
+        );
         running.socket = runHostSocket(runSocket, socket, {
           host,
           callerId: nextCallerId++,

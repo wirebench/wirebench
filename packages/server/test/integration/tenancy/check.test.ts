@@ -3,13 +3,15 @@
  * a `0019` database and its data directory, and reports the version, the role, the sizes and an estimate; the
  * status says where the upgrade stands; and the estimate's passes are the ones `0020` makes.
  */
+import { randomBytes } from 'node:crypto';
 import { readdir } from 'node:fs/promises';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { migrate } from '../../../src/db/migrate.js';
 import { main } from '../../../src/main.js';
 import { BUILTIN_MODULES } from '../../../src/modules.js';
 import { allMigrations } from '../../../src/serve.js';
-import { BACKUP_ADVICE } from '../../../src/tenancy/cli.js';
+import { BACKUP_ADVICE, DATA_KEY_TEXT } from '../../../src/tenancy/cli.js';
+import { environmentKeyRoot, newDataKey } from '../../../src/tenancy/keys.js';
 import { MIGRATION_PASSES } from '../../../src/tenancy/estimate.js';
 import { loadFixture0019 } from '../../fixtures/tenancy/load.js';
 import { SCOPED_TABLES } from '../../helpers/catalog.js';
@@ -37,10 +39,10 @@ describeDb('admin tenancy check and status', () => {
     WIREBENCH_SERVER_PUBLIC_URL: 'https://wirebench.test',
     WIREBENCH_SERVER_DATA_DIR: dataDir,
   });
-  const run = async (args: string[]) => {
+  const run = async (args: string[], extra: Record<string, string> = {}) => {
     const stdout = { write: vi.fn() };
     const stderr = { write: vi.fn() };
-    const code = await main(args, { stdout, stderr, env: env() });
+    const code = await main(args, { stdout, stderr, env: { ...env(), ...extra } });
     return {
       code,
       out: stdout.write.mock.calls.map((c) => String(c[0])).join(''),
@@ -112,13 +114,27 @@ describeDb('admin tenancy check and status', () => {
       `backups: ${BACKUP_ADVICE}`,
       '',
     ]);
-    // A wrapped key in the row: status says it exists, and prints nothing of it.
-    const wrapped = Buffer.alloc(45, 0xab);
+    // A key made under the root: without the root status only says it exists; with it, that it opens; under
+    // another root, that it does not, and what to do. Never anything of the key, its wrap or either root.
+    const root = randomBytes(32);
+    const other = randomBytes(32);
+    const dataKey = newDataKey();
+    const wrapped = await environmentKeyRoot(root).wrap(id, dataKey);
     await db.owner.query('update tenants set data_key = $1 where id = $2', [wrapped, id]);
-    const made = await run(['admin', 'tenancy', 'status']);
-    expect(made.out).toContain('data key: made\n');
-    expect(made.out).not.toContain(wrapped.toString('hex'));
-    expect(made.out).not.toContain(wrapped.toString('base64'));
+    const cases: [Record<string, string>, string][] = [
+      [{}, DATA_KEY_TEXT.made],
+      [{ WIREBENCH_SERVER_SECRETS_KEY: root.toString('base64') }, DATA_KEY_TEXT.opens],
+      [{ WIREBENCH_SERVER_SECRETS_KEY: other.toString('base64') }, DATA_KEY_TEXT.refused],
+    ];
+    for (const [extra, line] of cases) {
+      const status = await run(['admin', 'tenancy', 'status'], extra);
+      expect(status.code, status.err).toBe(0);
+      expect(status.out).toContain(`data key: ${line}\n`);
+      for (const secret of [wrapped, dataKey, root, other]) {
+        expect(status.out).not.toContain(secret.toString('hex'));
+        expect(status.out).not.toContain(secret.toString('base64'));
+      }
+    }
   });
 
   it("the estimate's passes are the ones 0020 makes over each scoped table: one plus each index it builds and each key", async () => {
