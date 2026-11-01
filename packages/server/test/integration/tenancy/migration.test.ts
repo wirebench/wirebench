@@ -885,6 +885,12 @@ describeDb('migration 0021 on the frozen 0019 fixture: forced isolation (hosted 
         "select for_each_tenant($$update users set display_name = 'x' where tenant_id = nullif(current_setting('wirebench.tenant_id', true), '')::uuid$$);\nselect for_each_tenant($$update captures set rejected = true$$);",
       ),
     ).toEqual([99]);
+    // A filtered call excuses only its own statement: a bare write beside it still runs outside every tenant (N2).
+    expect(
+      planted(
+        "select for_each_tenant($$update users set display_name = 'x' where tenant_id = nullif(current_setting('wirebench.tenant_id', true), '')::uuid$$);\nupdate captures set rejected = true;",
+      ),
+    ).toEqual([99]);
     expect(
       planted(
         "alter table users no force row level security;\nupdate users set display_name = 'x';\nalter table users force row level security;",

@@ -94,15 +94,18 @@ export class Scheduler {
   kick(scope: TenantScope): void {
     this.kicked.add(scope.tenantId);
     const under = this.passing;
-    void this.runOnce()
-      .then(() => {
+    // Tracked like a freed slot's start (`launch`), so `idle` and `stop` wait for the claim it makes after the pass.
+    const start: Promise<void> = this.runOnce()
+      .then(async () => {
         if (under === undefined || this.stopped) return;
         this.takeKicked();
-        return this.startQueued();
+        await this.startQueued();
       })
       .catch((error: unknown) => {
         this.env.log.error({ message: messageOf(error) }, 'scheduler pass failed');
-      });
+      })
+      .finally(() => this.starting.delete(start));
+    this.starting.add(start);
   }
 
   private takeKicked(): void {

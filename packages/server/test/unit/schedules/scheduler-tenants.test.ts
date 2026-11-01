@@ -40,6 +40,8 @@ function cast(
   broken: readonly string[] = [],
   /** Called after each tenant's pass unit: a Run now that lands mid-pass. */
   afterUnit: (scope: TenantScope) => void = () => undefined,
+  /** Called at each claim, which then takes a turn of the event loop, as a real unit does. */
+  onClaim?: (scope: TenantScope) => void,
 ) {
   const tenants = [ONE, TWO];
   const asked: string[] = [];
@@ -80,8 +82,12 @@ function cast(
         transaction: <T>(fn: (tx: TenantQuerier) => Promise<T>) => fn(emptyUnit(scope)),
       }),
     },
-    claimQueued: (tx: TenantQuerier, limit: number) => {
+    claimQueued: async (tx: TenantQuerier, limit: number) => {
       claims.push(tx.scope.slug);
+      if (onClaim !== undefined) {
+        onClaim(tx.scope);
+        await turn();
+      }
       return broken.includes(tx.scope.tenantId)
         ? Promise.reject(new Error('this tenant’s unit cannot open'))
         : Promise.resolve((queued[tx.scope.tenantId] ?? []).splice(0, limit));
@@ -174,6 +180,49 @@ describe('Scheduler across tenants', () => {
     expect(started.map((run) => run.runId)).toEqual(['manual']);
     await drain(started);
     await scheduler.idle();
+  });
+
+  it('idle and stop wait for the start a Run now makes after the pass merged its kicks (Task 17 fix re-review N1)', async () => {
+    for (const end of ['idle', 'stop'] as const) {
+      // TWO has a run when the pass asks, gone by its claim; ONE's Run now lands during that claim, after the merge.
+      const queued: Record<string, string[]> = { [ONE.tenantId]: [], [TWO.tenantId]: ['b1'] };
+      const ref: { scheduler?: Scheduler } = {};
+      const { scheduler, started, claims } = cast(
+        queued,
+        {},
+        [],
+        (scope) => {
+          if (scope.tenantId === TWO.tenantId) queued[TWO.tenantId]!.length = 0;
+        },
+        (scope) => {
+          if (scope.tenantId !== TWO.tenantId || queued[ONE.tenantId]!.length > 0) return;
+          queued[ONE.tenantId]!.push('manual');
+          ref.scheduler!.kick(ONE);
+        },
+      );
+      ref.scheduler = scheduler;
+      await scheduler.runOnce();
+      // idle: called with no turn of the loop in between. stop: called once the kick's claim is under way (a stop
+      // before it makes no claim at all). Either way the kick's start must be one of what they wait for.
+      if (end === 'stop') for (let i = 0; i < 10 && !claims.includes('one'); i++) await turn();
+      expect(claims, end).toContain(end === 'stop' ? 'one' : 'two');
+      let settled = false;
+      const waiting = (end === 'idle' ? scheduler.idle() : scheduler.stop()).then(() => {
+        settled = true;
+      });
+      for (let i = 0; i < 10 && started.length === 0; i++) await turn();
+      expect(
+        started.map((run) => run.runId),
+        end,
+      ).toEqual(['manual']);
+      // Still waiting: the kicked run is in flight (on stop, started into the shutdown).
+      expect(settled, end).toBe(false);
+      started[0]!.release();
+      await waiting;
+      const after = claims.length;
+      for (let i = 0; i < 10; i++) await turn();
+      expect(claims, end).toHaveLength(after);
+    }
   });
 
   it('a Run now with no pass under way starts at once', async () => {
