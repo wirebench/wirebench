@@ -195,7 +195,7 @@
 }
 
 /*
- * Colour themes, in picker order: Field kit, Sandstone, Dusk, Seed, Pith, Rind, Plume (see the header for
+ * Colour themes, in picker order: Field kit, Sandstone, Dusk, Seed, Pith, Rind, Plume, Kiln (see the header for
  * the cascade, and the spec, docs/specs/2026-10-30-colour-themes.md §3, for each palette's table).
  */
 
@@ -545,6 +545,54 @@
   --wb-status-success: #1f7a5a;
   --wb-fg-faint: #6a6874;
   --wb-border-strong: #8a8c9a;
+}
+
+/* Kiln dark. */
+[data-palette='kiln'] {
+  --wb-bg-sunken: #1f1e1d;
+  --wb-bg-base: #262624;
+  --wb-bg-raised: #2d2d2a;
+  --wb-bg-overlay: #32322f;
+  --wb-bg-hover: #353532;
+  --wb-bg-active: #3b3a36;
+  --wb-bg-selected: #4a3a30;
+  --wb-fg-default: #f0eee6;
+  --wb-fg-muted: #c9c6bc;
+  --wb-fg-subtle: #aeaba1;
+  --wb-border-default: #3b3a36;
+  --wb-accent-default: #e08a68;
+  --wb-accent-hover: #e9a083;
+  --wb-accent-muted: #78452f;
+  --wb-accent-surface: #3a2c25;
+  --wb-fg-on-accent: #1f1e1d;
+  --wb-status-success: #7fc79a;
+  --wb-fg-faint: #a19e94;
+  --wb-border-strong: #7a776e;
+  --wb-status-danger: #ef7d72;
+}
+
+/* Kiln light. */
+[data-palette='kiln'][data-theme='light'] {
+  --wb-bg-sunken: #f0eee6;
+  --wb-bg-base: #faf9f5;
+  --wb-bg-raised: #ffffff;
+  --wb-bg-overlay: #ffffff;
+  --wb-bg-hover: #f2f0e8;
+  --wb-bg-active: #e8e5da;
+  --wb-bg-selected: #ece2d4;
+  --wb-fg-default: #141413;
+  --wb-fg-muted: #3d3d3a;
+  --wb-fg-subtle: #5a5954;
+  --wb-border-default: #e3dfd3;
+  --wb-accent-default: #a64b29;
+  --wb-accent-hover: #8f3f22;
+  --wb-accent-muted: #e6bfae;
+  --wb-accent-surface: #f8ece5;
+  --wb-fg-on-accent: #ffffff;
+  --wb-status-success: #2b7550;
+  --wb-fg-faint: #6b6a64;
+  --wb-border-strong: #8c8a80;
+  --wb-status-danger: #b23b33;
 }
 
 * {

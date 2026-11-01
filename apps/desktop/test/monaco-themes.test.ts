@@ -39,10 +39,10 @@ const TOKEN: Readonly<Record<keyof EditorColours, string>> = {
 };
 
 describe('Monaco themes', () => {
-  it('names sixteen themes, all distinct, each with a definition', () => {
+  it('names eighteen themes, all distinct, each with a definition', () => {
     const names = PALETTES.flatMap((palette) => MODES.map((mode) => MONACO_THEMES[palette][mode]));
-    expect(names).toHaveLength(16);
-    expect(new Set(names).size).toBe(16);
+    expect(names).toHaveLength(18);
+    expect(new Set(names).size).toBe(18);
     expect(Object.keys(THEME_DEFINITIONS).sort()).toEqual([...names].sort());
   });
 
@@ -56,6 +56,7 @@ describe('Monaco themes', () => {
     expect(monacoThemeName('dark', 'default')).toBe('wirebench-dark');
     expect(monacoThemeName('light', 'rind')).toBe('wirebench-rind-light');
     expect(monacoThemeName('dark', 'plume')).toBe('wirebench-plume-dark');
+    expect(monacoThemeName('light', 'kiln')).toBe('wirebench-kiln-light');
   });
 
   it('paints a theme from its own colours', () => {
