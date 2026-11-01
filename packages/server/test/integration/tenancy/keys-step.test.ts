@@ -4,8 +4,9 @@
  * blob is sealed under it; every slice 2 blob is re-wrapped; a kill or a rolled-back unit resumes without sealing
  * twice; a re-run counts afresh; without the root the step waits at `keys` and says so.
  */
+import { EventEmitter } from 'node:events';
 import { existsSync } from 'node:fs';
-import { readdir, readFile, writeFile } from 'node:fs/promises';
+import { chmod, cp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { migrate } from '../../../src/db/migrate.js';
@@ -13,13 +14,14 @@ import { open, seal } from '../../../src/hooks/secret-box.js';
 import { userSecretsKey } from '../../../src/host/server-platform.js';
 import { main } from '../../../src/main.js';
 import { BUILTIN_MODULES } from '../../../src/modules.js';
-import { allMigrations } from '../../../src/serve.js';
+import { allMigrations, StartupError, startServer } from '../../../src/serve.js';
 import { KEYS_WAIT, readTenancyStep, runTenancySteps } from '../../../src/tenancy/file-step.js';
 import { environmentKeyRoot, TenantKeys } from '../../../src/tenancy/keys.js';
-import type { RewrapCounts } from '../../../src/tenancy/rewrap.js';
+import type { RewrapCounts, RewrapRun } from '../../../src/tenancy/rewrap.js';
 import { loadFixture0019, type Fixture0019 } from '../../fixtures/tenancy/load.js';
 import { describeDb, testDatabase } from '../../helpers/database.js';
 import { mkTempDir, removeTempDir } from '../../helpers/git.js';
+import { freePort } from '../../helpers/net.js';
 
 interface SecretsFile {
   entries: Record<string, { value: string; encrypted: boolean; label?: string }>;
@@ -90,7 +92,13 @@ describeDb('the keys step on the frozen 0019 fixture (spec §19.10)', () => {
     const old = await plaintexts(userSecretsKey(root, alice()));
     expect([...old.secrets, ...old.jars].every((plain) => plain === undefined)).toBe(true);
     expect(counts).toEqual([
-      { resealed: before.secrets.length + before.jars.length, already: 0, unopened: 0, files: 1 + before.jars.length },
+      {
+        resealed: before.secrets.length + before.jars.length,
+        already: 0,
+        unopened: 0,
+        skipped: 0,
+        files: 1 + before.jars.length,
+      },
     ]);
     expect(before.jars.join('')).toContain(fixture.plaintexts.cookies.staging.split('=')[1]!);
     // Another run of keys, as a re-armed step reaches it again: the same key, nothing sealed, and counts made
@@ -98,7 +106,7 @@ describeDb('the keys step on the frozen 0019 fixture (spec §19.10)', () => {
     await db.owner.query("update server_identity set tenancy_step = 'keys'");
     const again: RewrapCounts[] = [];
     expect(await runTenancySteps(db.owner, dataDir, { root, onRewrap: (made) => again.push(made) })).toBe('done');
-    expect(again).toEqual([{ resealed: 0, already: counts[0]!.resealed, unopened: 0, files: 0 }]);
+    expect(again).toEqual([{ resealed: 0, already: counts[0]!.resealed, unopened: 0, skipped: 0, files: 0 }]);
     expect(await storedKey()).toEqual(wrapped);
     expect(await plaintexts(userKey)).toEqual(before);
   });
@@ -191,4 +199,92 @@ describeDb('the keys step on the frozen 0019 fixture (spec §19.10)', () => {
       expect(text).not.toContain(fixture.plaintexts.hostSecret);
     }
   });
+
+  it('a user directory restored after done is re-wrapped at the next start, and a start with nothing to do writes nothing (review I2)', async () => {
+    // A backup of Alice's checkout, made before the upgrade.
+    const backup = await mkTempDir('wbs-keys-step-backup-');
+    try {
+      await cp(checkout(), join(backup, 'alice'), { recursive: true });
+      const before = await plaintexts(userSecretsKey(root, alice()));
+      expect(await runTenancySteps(db.owner, dataDir, { root })).toBe('done');
+      // A start at done with nothing to do: the check runs, finds every blob under the data key, and writes nothing.
+      const seen: [RewrapCounts, RewrapRun][] = [];
+      const record = (counts: RewrapCounts, run: RewrapRun) => seen.push([counts, run]);
+      const secretsBefore = await readFile(join(checkout(), 'secrets.json'), 'utf8');
+      expect(await runTenancySteps(db.owner, dataDir, { root, onRewrap: record })).toBe('done');
+      const total = before.secrets.length + before.jars.length;
+      expect(seen).toEqual([[{ resealed: 0, already: total, unopened: 0, skipped: 0, files: 0 }, 'check']]);
+      expect(await readFile(join(checkout(), 'secrets.json'), 'utf8')).toBe(secretsBefore);
+      // The operator restores Alice's directory from the backup: every blob is under the old key again.
+      const moved = checkout();
+      await rm(moved, { recursive: true });
+      await cp(join(backup, 'alice'), moved, { recursive: true });
+      seen.length = 0;
+      expect(await runTenancySteps(db.owner, dataDir, { root, onRewrap: record })).toBe('done');
+      expect(seen).toEqual([
+        [{ resealed: total, already: 0, unopened: 0, skipped: 0, files: 1 + before.jars.length }, 'check'],
+      ]);
+      expect(await plaintexts(userSecretsKey(await dataKey(), alice()))).toEqual(before);
+    } finally {
+      await removeTempDir(backup);
+    }
+  });
+
+  it('the check never runs without the root, and never at a step of the revert', async () => {
+    expect(await runTenancySteps(db.owner, dataDir, { root })).toBe('done');
+    const seen: RewrapRun[] = [];
+    expect(await runTenancySteps(db.owner, dataDir, { onRewrap: (_counts, run) => seen.push(run) })).toBe('done');
+    await db.owner.query("update server_identity set tenancy_step = 'reverting-keys'");
+    await expect(
+      runTenancySteps(db.owner, dataDir, { root, onRewrap: (_counts, run) => seen.push(run) }),
+    ).rejects.toMatchObject({ code: 'tenancy-reverting' });
+    expect(seen).toEqual([]);
+  });
+
+  it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)(
+    "a re-wrap that fails on a user's file is reported as such, by its code alone: migrate and start-up name no path under the checkouts (review m4)",
+    async () => {
+      const withRoot = {
+        WIREBENCH_SERVER_MIGRATION_DATABASE_URL: db.ownerUrl,
+        WIREBENCH_SERVER_DATABASE_URL: db.url,
+        WIREBENCH_SERVER_PUBLIC_URL: 'https://wirebench.test',
+        WIREBENCH_SERVER_DATA_DIR: dataDir,
+        WIREBENCH_SERVER_SECRETS_KEY: fixture.keys.secretsKey,
+      };
+      // Moved, at keys, then one user's file made unreadable.
+      expect(await runTenancySteps(db.owner, dataDir)).toBe('keys');
+      const secrets = join(checkout(), 'secrets.json');
+      await chmod(secrets, 0o000);
+      try {
+        const stdout = { write: vi.fn() };
+        const stderr = { write: vi.fn() };
+        const code = await main(['migrate'], { stdout, stderr, env: withRoot });
+        const err = stderr.write.mock.calls.map((c) => String(c[0])).join('');
+        expect(code).toBe(2);
+        expect(err).toContain('could not be moved or re-wrapped (EACCES)');
+        expect(err).not.toContain('migration failed');
+        expect(err).not.toContain('checkouts');
+        expect(err).not.toContain(alice());
+        const env = {
+          ...withRoot,
+          WIREBENCH_SERVER_HOST: '127.0.0.1',
+          WIREBENCH_SERVER_PORT: String(await freePort()),
+          WIREBENCH_SERVER_LOG_LEVEL: 'fatal',
+        };
+        const error = await startServer(
+          env,
+          { stdout: { write: vi.fn() }, stderr: { write: vi.fn() }, env },
+          { signals: new EventEmitter(), exit: vi.fn(), modules: BUILTIN_MODULES },
+        ).catch((caught: unknown) => caught);
+        expect(error).toBeInstanceOf(StartupError);
+        expect((error as Error).message).toContain('could not be moved or re-wrapped (EACCES)');
+        expect((error as Error).message).not.toContain('checkouts');
+        expect((await readTenancyStep(db.owner))?.step).toBe('keys');
+      } finally {
+        await chmod(secrets, 0o600);
+      }
+      // Fixed, the next run finishes.
+      expect(await runTenancySteps(db.owner, dataDir, { root })).toBe('done');
+    },
+  );
 });

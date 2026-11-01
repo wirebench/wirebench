@@ -18,8 +18,15 @@ import type { Querier } from '../db/querier.js';
 import { ExitCode, packageVersion, type ServerIo } from '../io.js';
 import { appRoleReport, bypassReasons, MIN_POSTGRES_VERSION_NUM } from './checks.js';
 import { CONSERVATIVE_RATE, estimateSeconds, MEASURED_RATE, passesOf, type TableSize } from './estimate.js';
-import { KNOWN_ROOT_ENTRIES, MOVED_DIRS, OLD_TMP_DIR, readTenancyStep, type TenancyStepState } from './file-step.js';
-import { dataKeyState, environmentKeyRoot, TenantKeys, type DataKeyState } from './keys.js';
+import {
+  blobs,
+  KNOWN_ROOT_ENTRIES,
+  MOVED_DIRS,
+  OLD_TMP_DIR,
+  readTenancyStep,
+  type TenancyStepState,
+} from './file-step.js';
+import { dataKeyState, environmentKeyRoot, storedDataKey, type DataKeyState } from './keys.js';
 import { tenantRootById } from './paths.js';
 import { rewrap } from './rewrap.js';
 import { appRolePlan, ensureAppRole, roleMode } from './roles.js';
@@ -261,12 +268,19 @@ async function rewrapStatus(
   if (state === undefined || state.step === 'files') return 'not run';
   if (config.secretsKey === undefined) return 'waits for WIREBENCH_SERVER_SECRETS_KEY';
   if (key !== 'opens') return 'not run';
-  const dataKey = await new TenantKeys(db, environmentKeyRoot(config.secretsKey)).dataKey(state.defaultTenantId);
+  // Read only: never makes a key, even if the row was cleared since `dataKeyState` read it (Task 24 review m8).
+  const dataKey = await storedDataKey(db, state.defaultTenantId, environmentKeyRoot(config.secretsKey));
+  if (dataKey === undefined) return 'not run';
   const checkouts = join(tenantRootById(config.dataDir, state.defaultTenantId), 'checkouts');
   const counts = await rewrap(checkouts, { root: config.secretsKey, dataKey }, 'forward', { dryRun: true });
+  const old =
+    counts.resealed > 0 && state.step === 'done'
+      ? ' (the next start, or `wirebench-server migrate`, re-seals them)'
+      : '';
   return (
-    `${counts.already} blobs under the data key, ${counts.resealed} still under the old key, ` +
-    `${counts.unopened} open under neither (left as they were)`
+    `${blobs(counts.already)} under the data key, ${String(counts.resealed)} still under the old key${old}, ` +
+    `${String(counts.unopened)} open under neither (left as they were), ` +
+    `${String(counts.skipped)} links or other entries skipped`
   );
 }
 

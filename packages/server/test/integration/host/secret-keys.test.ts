@@ -19,7 +19,7 @@ import { HOST_CLOSE } from '../../../src/host/errors.js';
 import { hostDirectories, userSecretsKey } from '../../../src/host/server-platform.js';
 import type { PendingWrites } from '../../../src/pending-writes.js';
 import { runTenancySteps } from '../../../src/tenancy/file-step.js';
-import type { RewrapCounts } from '../../../src/tenancy/rewrap.js';
+import type { RewrapCounts, RewrapRun } from '../../../src/tenancy/rewrap.js';
 import { environmentKeyRoot, newDataKey } from '../../../src/tenancy/keys.js';
 import { directoryOf } from '../../../src/tenancy/tenancy.js';
 import { describeDb } from '../../helpers/database.js';
@@ -242,7 +242,7 @@ describeDb('a server host’s secrets', () => {
             onRewrap: (made) => counts.push(made),
           }),
         ).toBe('done');
-        expect(counts).toEqual([{ resealed: 2, already: 0, unopened: 0, files: 2 }]);
+        expect(counts).toEqual([{ resealed: 2, already: 0, unopened: 0, skipped: 0, files: 2 }]);
         const client = await openHost(h, alice);
         await client.waitFor((frame) => frame.type === 'hello');
         expect(await client.call('workspace.joinFromServer', { url: PUBLIC_URL, workspaceId })).toMatchObject({
@@ -265,6 +265,48 @@ describeDb('a server host’s secrets', () => {
       }
     },
   );
+
+  it("a user's directory restored after done from a backup before the upgrade is re-wrapped at the next start, and its jar opens instead of being set aside (Task 24 review I2)", async () => {
+    const alice = await browserUser(h, 'alice@example.com');
+    const workspaceId = await workspaceFor(alice, 'https://restored.test/ok');
+    const root = h.ctx.config.secretsKey!;
+    // The upgrade reached done, with its data key.
+    expect(await runTenancySteps(h.db.owner, h.dataDir, { root })).toBe('done');
+    // Then the operator restores Alice's directory from a backup made before it: both blobs under the old key.
+    const checkout = hostDirectories(h.dataDir, h.tdb.scope, alice.user.id).checkout;
+    await seedSlice2(checkout, root, alice.user.id, {
+      workspaceId,
+      label: 'wirebench-secret:project-billing:API_KEY',
+      secret: 'restored-secret-0123456789',
+      cookie: [storedCookie('session', 'restored-cookie', 'restored.test')],
+    });
+    // The next start: the check at done re-seals them before any host opens.
+    const seen: [RewrapCounts, RewrapRun][] = [];
+    expect(
+      await runTenancySteps(h.db.owner, h.dataDir, { root, onRewrap: (counts, run) => seen.push([counts, run]) }),
+    ).toBe('done');
+    expect(seen).toEqual([[{ resealed: 2, already: 0, unopened: 0, skipped: 0, files: 2 }, 'check']]);
+    const client = await openHost(h, alice);
+    await client.waitFor((frame) => frame.type === 'hello');
+    expect(await client.call('workspace.joinFromServer', { url: PUBLIC_URL, workspaceId })).toMatchObject({
+      ok: true,
+    });
+    await vi.waitFor(async () => {
+      expect(await client.call('cookies.list')).toMatchObject({
+        ok: true,
+        value: { cookies: [expect.objectContaining({ name: 'session', value: 'restored-cookie' })] },
+      });
+    });
+    expect(existsSync(join(checkout, 'cookie-jars', `${workspaceId}.json.corrupt`))).toBe(false);
+    // The secret opens under the data key's user key too.
+    const file = JSON.parse(await readFile(join(checkout, 'secrets.json'), 'utf8')) as {
+      entries: Record<string, { value: string }>;
+    };
+    const userKey = userSecretsKey(await h.ctx.tenancy.dataKey(h.tdb.scope), alice.user.id);
+    expect(open(userKey, Buffer.from(file.entries['sec_slice2seededentry00000']!.value, 'base64'))).toBe(
+      'restored-secret-0123456789',
+    );
+  });
 
   it('no host socket is served before the steps are done: it closes 1013, builds no host and makes no key', async () => {
     const alice = await browserUser(h, 'alice@example.com');

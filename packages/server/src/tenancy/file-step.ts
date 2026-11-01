@@ -11,6 +11,10 @@
  *   with no data key while the root is set is `keys` again, so a root configured after the upgrade gets its key and
  *   its re-wrap. The step can also come back to `keys` after a re-arm to `files`, so the re-wrap is idempotent: a
  *   blob already under the data key is left, and counted as such.
+ * - **`done`**, with the root and the data key: the same re-wrap runs forward again at every start-up and `migrate`,
+ *   as a check (Task 24 review I2). It re-seals whatever is still under the old key, such as a user's directory
+ *   restored from a backup made before the upgrade, which the host would otherwise set aside. With nothing to do it
+ *   writes nothing, and costs a read of each user's `secrets.json` and jars.
  *
  * Every refusal comes from the pre-flight, before anything moves, so a refused step leaves the data directory as it
  * was: both locations of a directory present (`tenancy-move-conflict`), a source on another filesystem than the
@@ -27,9 +31,9 @@ import { lstat, mkdir, readdir, readFile, realpath, rm, rmdir } from 'node:fs/pr
 import { join, relative, resolve, sep } from 'node:path';
 import { WirebenchError } from '@wirebench/engine';
 import type { Database, Querier } from '../db/querier.js';
-import { environmentKeyRoot, TenantKeys } from './keys.js';
+import { environmentKeyRoot, storedDataKey, TenantKeys } from './keys.js';
 import { TENANTS_DIR, tenantRootById } from './paths.js';
-import { rewrap, type RewrapCounts } from './rewrap.js';
+import { rewrap, type RewrapCounts, type RewrapRun } from './rewrap.js';
 import { renameWithRetry } from './rename.js';
 import { SET_TENANT } from './tenant-db.js';
 
@@ -453,13 +457,28 @@ export async function dueStep(db: Querier, root: Buffer | undefined): Promise<Te
   return state.step;
 }
 
-/** What start-up and `migrate` say of the keys step's outcome: counts only. */
-export function rewrapLine(counts: RewrapCounts): string {
+/** "1 blob", "2 blobs". */
+export const blobs = (n: number): string => `${String(n)} ${n === 1 ? 'blob' : 'blobs'}`;
+
+/**
+ * What start-up and `migrate` say of a re-wrap's outcome: counts only, never a file, a user or a value. `step` is the
+ * keys step's; `check` is the run at `done`, said only when it found something (see {@link rewrapWorthSaying}).
+ */
+export function rewrapLine(counts: RewrapCounts, run: RewrapRun = 'step'): string {
+  const head =
+    run === 'step'
+      ? `re-wrap: ${String(counts.resealed)} re-sealed under the data key`
+      : `re-wrap check: ${String(counts.resealed)} found still under the old key (a directory restored from before the upgrade?) and re-sealed under the data key`;
   return (
-    `re-wrap: ${counts.resealed} re-sealed under the data key, ${counts.already} already under it, ` +
-    `${counts.unopened} opened under neither key and were left as they were`
+    `${head}, ${String(counts.already)} already under it, ` +
+    `${String(counts.unopened)} opened under neither key or did not parse, and were left as they were, ` +
+    `${String(counts.skipped)} links or other entries skipped (not followed)`
   );
 }
+
+/** Whether a check at `done` found anything to say: one with nothing to do says nothing. */
+export const rewrapWorthSaying = (counts: RewrapCounts): boolean =>
+  counts.resealed + counts.unopened + counts.skipped > 0;
 
 /** Why the step stopped at `keys`. */
 export const KEYS_WAIT =
@@ -480,8 +499,11 @@ export interface RunStepsOptions {
    * the step stops at `keys`.
    */
   readonly root?: Buffer;
-  /** Told of the re-wrap's counts, once it has run; counts only, never a file or a value. */
-  readonly onRewrap?: (counts: RewrapCounts) => void;
+  /**
+   * Told of the re-wrap's counts, once it has run: `step` for the keys step's, `check` for the run at `done`.
+   * Counts only, never a file or a value.
+   */
+  readonly onRewrap?: (counts: RewrapCounts, run: RewrapRun) => void;
   readonly checkpoint?: StepCheckpoint;
   readonly fs?: StepFs;
   /** Told of the state files the scan skipped for their size; names only, never their content. */
@@ -559,23 +581,44 @@ export async function runTenancySteps(
       await advance('files', 'keys');
     }
     const root = options.root;
-    // A `done` reached without the key (the root set only after the upgrade): the keys are still due.
+    // At `done` with the root: a `done` reached without the key (the root set only after the upgrade) is `keys`
+    // again; with the key, the re-wrap runs again below, as a check. A step of a revert never gets here (it is
+    // refused above), and must not: plan Task 28's `back` re-seals under the old key, which this would undo. Task 28
+    // keeps it so by refusing every `reverting-*` before this point.
+    let check: Buffer | undefined;
     if (step === 'done' && root !== undefined) {
-      const key = await tx.query<{ has: boolean }>('select data_key is not null as has from tenants where id = $1', [
-        state.defaultTenantId,
-      ]);
-      if (key.rows[0]?.has !== true) await advance('done', 'keys');
+      let hasKey = true;
+      try {
+        check = await storedDataKey(tx, state.defaultTenantId, environmentKeyRoot(root));
+        hasKey = check !== undefined;
+      } catch (error) {
+        // A stored key the root does not open: only the host module is blocked (it closes `4503` and says why, and
+        // `admin tenancy status` says so too), so the start goes on, and nothing is re-wrapped under a key this
+        // process cannot open.
+        if (!(error instanceof WirebenchError) || error.code !== 'tenancy-data-key-refused') throw error;
+      }
+      if (!hasKey) await advance('done', 'keys');
     }
+    const checkouts = join(tenantRootById(dataDir, state.defaultTenantId), 'checkouts');
     if (step === 'keys' && root !== undefined) {
       const keys = new TenantKeys(db, environmentKeyRoot(root));
       const dataKey = await keys.dataKey(state.defaultTenantId);
       options.checkpoint?.('made the data key');
-      const checkouts = join(tenantRootById(dataDir, state.defaultTenantId), 'checkouts');
       const counts = await rewrap(checkouts, { root, dataKey }, 'forward', {
         ...(options.checkpoint ? { checkpoint: () => options.checkpoint?.('re-wrapped a file') } : {}),
       });
-      options.onRewrap?.(counts);
+      options.onRewrap?.(counts, 'step');
+      // Only now: every file the re-wrap wrote is durable (`writeFileDurably`), and after `done` the old key opens
+      // nothing any more (review I1).
       await advance('keys', 'done');
+    } else if (step === 'done' && root !== undefined && check !== undefined) {
+      // Idempotent: a blob already under the data key is left, so with nothing to do nothing is written. No host
+      // runs yet in this process; before slice 5's multi-process self-hosted server, this races another process's
+      // hosts, which the upgrade notes' "stop every server first" rules out for now.
+      const counts = await rewrap(checkouts, { root, dataKey: check }, 'forward', {
+        ...(options.checkpoint ? { checkpoint: () => options.checkpoint?.('re-wrapped a file') } : {}),
+      });
+      options.onRewrap?.(counts, 'check');
     }
     return step;
   });

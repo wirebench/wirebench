@@ -25,7 +25,13 @@ import { createAgentConnection, type FetchAnswer } from './agent-connection.js';
 import { createSocketTransport, hostSocketUrl, type Hello, type SocketLike } from './socket-transport.js';
 
 /** The close codes the bootstrap reads (the server's `HOST_CLOSE`). */
-export const CLOSE_CODE = { unauthenticated: 4401, tooManySockets: 4429, unavailable: 4503 } as const;
+export const CLOSE_CODE = {
+  unauthenticated: 4401,
+  tooManySockets: 4429,
+  unavailable: 4503,
+  /** The server is up but finishing its upgrade's last step: no host opens until it has (spec §19.10). */
+  tryAgainLater: 1013,
+} as const;
 
 export const SIGN_IN_PATH = '/sign-in';
 /** The root sign-out (spec §17.2): a form post, so the browser sends the page's Origin, which it checks. */
@@ -50,6 +56,7 @@ export const RECONNECT_TEXT = {
   unreachable: 'Can’t reach your workspace; retrying…',
   tooManyTabs: 'Too many Wirebench tabs are open; close one to continue.',
   unavailable: 'The server can’t open your saved data with its current key. Ask your administrator; retrying…',
+  upgrading: 'The server is finishing an upgrade; retrying…',
 } as const;
 
 export interface BootstrapDeps {
@@ -208,6 +215,11 @@ export async function startBrowserClient(deps: BootstrapDeps): Promise<void> {
       // The server's secrets key no longer opens the stored data key: the operator's to fix, not the session's.
       if (code === CLOSE_CODE.unavailable) {
         bar.show(RECONNECT_TEXT.unavailable);
+        return;
+      }
+      // Reachable, and finishing its upgrade: not a lost connection, and not the session's to check.
+      if (code === CLOSE_CODE.tryAgainLater) {
+        bar.show(RECONNECT_TEXT.upgrading);
         return;
       }
       // Before the first hello the page is blank but for this bar, whatever the close (a server error,

@@ -103,10 +103,7 @@ export function environmentKeyRoot(root: Buffer): KeyRoot {
 export type DataKeyState = 'none' | 'made' | 'opens' | 'refused';
 
 export async function dataKeyState(db: Querier, tenantId: string, root: KeyRoot | undefined): Promise<DataKeyState> {
-  const rows = await db.query<{ key: Buffer | null }>('select data_key as key from tenants where id = $1::uuid', [
-    canonical(tenantId),
-  ]);
-  const wrapped = rows.rows[0]?.key ?? null;
+  const wrapped = await wrappedKey(db, tenantId);
   if (wrapped === null) return 'none';
   if (root === undefined) return 'made';
   try {
@@ -116,6 +113,25 @@ export async function dataKeyState(db: Querier, tenantId: string, root: KeyRoot 
     if (error instanceof WirebenchError && error.code === 'tenancy-data-key-refused') return 'refused';
     throw error;
   }
+}
+
+/**
+ * `tenantId`'s data key as its row holds it, unwrapped under `root`, or `undefined` when the row has none. It reads
+ * only: unlike {@link TenantKeys.dataKey} it never makes a key (`admin tenancy status`, the re-wrap check at `done`;
+ * Task 24 review m8).
+ *
+ * @throws WirebenchError `tenancy-tenant-id-invalid`, `tenancy-data-key-refused`.
+ */
+export async function storedDataKey(db: Querier, tenantId: string, root: KeyRoot): Promise<Buffer | undefined> {
+  const wrapped = await wrappedKey(db, tenantId);
+  return wrapped === null ? undefined : root.unwrap(tenantId, wrapped);
+}
+
+async function wrappedKey(db: Querier, tenantId: string): Promise<Buffer | null> {
+  const rows = await db.query<{ key: Buffer | null }>('select data_key as key from tenants where id = $1::uuid', [
+    canonical(tenantId),
+  ]);
+  return rows.rows[0]?.key ?? null;
 }
 
 /**

@@ -1497,7 +1497,10 @@ tenant through its own column, not only through `users`. The same email in two t
 - **The one-time re-wrap.** Every blob the server platform sealed before slice 4 is under the old per-user key,
   `HKDF(root, …, userId)`. The key step re-seals each one under the new user key. The step must finish before any
   host opens, because a blob the cookie store cannot open is set aside as `.corrupt` (`cookie-store.ts`): a
-  half-done re-wrap would lose cookie jars quietly rather than fail (§19.10).
+  half-done re-wrap would lose cookie jars quietly rather than fail (§19.10). Each file is written durably before the
+  step records `done`, after which the old key opens nothing. At `done` the same idempotent re-wrap runs again at
+  every start-up and `migrate`, so a user's directory restored from a backup made before the upgrade is re-sealed
+  before a host opens it.
 - **No `tenant_secrets` table** (my call; amends §3.5 and §4.3, settles §17.4's deferral). The host's own
   `SecretStore` is the one resolver of a sealed name, and its file is already per user inside the tenant's
   directory, under the tenant's key. A table would be a second store beside it, and would not change who can read a
@@ -1697,7 +1700,8 @@ Two forward steps, each resumable; a way back, also resumable; and a stated cost
 - **Step 2: files, at start-up.** It also runs from `wirebench-server migrate`. **The start-up order** is: the
   migrations, then this step, then `RepoStore.prepare` (now making only `tenants/` and `no-hooks/`) and the
   writability check of `tenants/`, then `buildServer`. `prepare` can therefore never make an empty `repos/` beside a
-  half-moved one. `migrate --check` exits `1` while `tenancy_step` is not `done`. `tenancy_step` drives the step:
+  half-moved one. `migrate --check` exits `1` while `tenancy_step` is not `done`, except at `keys` without the root
+  (see `keys` below). `tenancy_step` drives the step:
   - **`files`:**
     - Rename `repos/` and `checkouts/` into `tenants/<defaultId>/`. A rename is done when the source is gone and the
       destination is there, and is due when the reverse holds; both present refuses start-up with
@@ -1713,17 +1717,26 @@ Two forward steps, each resumable; a way back, also resumable; and a stated cost
   - **`keys`:**
     - With the root configured, create the default tenant's data key and re-wrap every blob (§19.7) in each user's
       `secrets.json` and `cookie-jars/*.json`.
-    - A blob that opens under the new key is already done; one that opens under the old key is re-sealed, and the
-      file is written atomically. One that opens under neither is left exactly as it is and counted in the log line,
-      never set aside.
-    - Then `tenancy_step = 'done'`.
+    - A blob that opens under the new key is already done; one that opens under the old key is re-sealed. One that
+      opens under neither, and a file or entry that does not parse, is left exactly as it is and counted in the log
+      line, never set aside. A link, or anything else that is not a regular file or directory where a user's
+      directory or a blob file is expected, is never followed and is counted as skipped: the host would follow it.
+    - Each file is written durably: an exclusive temporary file beside it with the original's mode, fsynced, renamed
+      over it (retried while Windows holds it), and the directory fsynced (not on Windows, which cannot, and whose
+      file system journals the rename).
+    - Then, only once every file is durable, `tenancy_step = 'done'`.
     - Without the root, the step stays `keys` and blocks only the host module, which cannot be on without the root
       anyway.
   - The server listens from `keys`; host sockets are accepted only at `done`. Before it a host socket closes `1013`
     (try again later) before any frame, and no host is built and no data key is made. `migrate --check` counts
     `keys` as pending only when the root is set, and a `done` with no data key is `keys` again once it is.
     Start-up and `migrate` print the re-wrap's counts, and, at `keys` without the root, why the step waits (on
-    stderr). `admin tenancy status` counts the blobs by a dry run.
+    stderr). A file the re-wrap cannot read or write fails start-up and `migrate` with its errno code alone, never
+    its path, and the step resumes at the next run.
+  - **`done`**, with the root and a data key the root opens: the forward re-wrap runs again at every start-up and
+    `migrate`, as a check. It re-seals what is still under the old key, such as a user's directory restored from a
+    backup made before the upgrade, which a host would otherwise set aside. With nothing to do it writes nothing and
+    says nothing; otherwise it logs its counts. It never runs at a step of the revert. `admin tenancy status` counts the blobs by a dry run.
 - **The way back** (my call). `wirebench-server admin tenancy revert` undoes slice 4. It runs as the owner role.
   - **It is refused:** when there is more than one tenant; when any migration newer than `0021` has run; and when it
     cannot take the server-running lock exclusively. "On a stopped server" is checked, not trusted:

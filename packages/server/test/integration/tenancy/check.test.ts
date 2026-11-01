@@ -167,10 +167,29 @@ describeDb('admin tenancy check and status', () => {
     expect(await runTenancySteps(db.owner, dataDir, { root })).toBe('done');
     const after = await run(['admin', 'tenancy', 'status'], withRoot);
     expect(after.out).toContain(
-      're-wrap: 1 blobs under the data key, 0 still under the old key, 0 open under neither (left as they were)\n',
+      're-wrap: 1 blob under the data key, 0 still under the old key, 0 open under neither (left as they were), ' +
+        '0 links or other entries skipped\n',
     );
     expect(after.out).not.toContain('old secret');
     expect(after.out).not.toContain(user);
+    // The user's directory restored from a backup made before the upgrade (Task 24 review I2): status names what
+    // re-seals it, and `migrate` does, at done, saying so in counts alone.
+    await writeFile(
+      join(dataDir, 'tenants', id, 'checkouts', user, 'secrets.json'),
+      JSON.stringify({ version: 2, entries: { sec_x: { value: sealed, encrypted: true, createdAt: 'x' } } }),
+    );
+    expect((await run(['admin', 'tenancy', 'status'], withRoot)).out).toContain(
+      '0 blobs under the data key, 1 still under the old key (the next start, or `wirebench-server migrate`, re-seals them)',
+    );
+    const migrated = await run(['migrate'], withRoot);
+    expect(migrated.code).toBe(0);
+    expect(migrated.out).toContain('re-wrap check: 1 found still under the old key');
+    expect(migrated.out).not.toContain(user);
+    expect((await run(['admin', 'tenancy', 'status'], withRoot)).out).toContain(
+      're-wrap: 1 blob under the data key, 0 still under the old key',
+    );
+    // With nothing to do, the check says nothing.
+    expect((await run(['migrate'], withRoot)).out).not.toContain('re-wrap');
   });
 
   it("the estimate's passes are the ones 0020 makes over each scoped table: one plus each index it builds and each key", async () => {

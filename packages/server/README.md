@@ -147,7 +147,11 @@ new place already holds data, and refuses a directory that lacks a workspace's r
 mounted after the upgrade. With `WIREBENCH_SERVER_SECRETS_KEY` set, the upgrade then re-seals the secrets and cookies
 each browser-client user stored, once, under a new key the database keeps sealed under it; keep the same
 `WIREBENCH_SERVER_SECRETS_KEY` across the upgrade. A value that opens under neither key is left as it was and
-counted. No browser tab opens until this is done, and a start or `migrate` prints the counts. Without the key it
+counted. No browser tab opens until this is done, and a start or `migrate` prints the counts. After the upgrade
+each start (and `migrate`) re-seals any of those values still under the old key, such as a user's directory restored
+from a backup made before the upgrade, and says how many. Restoring the database alone from a backup made before the
+upgrade loses every re-sealed value: to go back, use `wirebench-server admin tenancy revert`, or restore the
+database and the data directory together, from the same backup. Without the key it
 waits, and says so: nothing was ever sealed without one. `wirebench-server admin tenancy status` says where the
 upgrade stands, and counts those values.
 

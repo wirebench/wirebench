@@ -35,6 +35,7 @@ import {
   KEYS_WAIT,
   rearmLine,
   rewrapLine,
+  rewrapWorthSaying,
   runTenancySteps,
 } from './tenancy/file-step.js';
 import { TENANTS_DIR } from './tenancy/paths.js';
@@ -148,6 +149,15 @@ async function migrateAndGrant(owner: Database, appUrl: string, migrations: read
   const { applied } = await migrate(owner, migrations);
   await ensureAppRole(owner, appUrl);
   return applied;
+}
+
+/**
+ * How the tenancy step's failure that is not a refusal reads (an `EACCES` on one user's file, say): the errno code
+ * only, since Node's message names a path under `tenants/<id>/checkouts/<user>` (Task 22 review m2, Task 24 m4).
+ */
+function stepFailure(dataDir: string, error: unknown): string {
+  const code = (error as NodeJS.ErrnoException | null)?.code ?? 'an unexpected error';
+  return `data directory ${dataDir} could not be moved or re-wrapped (${code}); the step resumes at the next start`;
 }
 
 /** How a failed migration reads on stderr: a WirebenchError (e.g. `server-schema-too-new`) keeps its code. */
@@ -299,7 +309,9 @@ export async function runMigrate(
         onSkipped: skippedNote(io),
         onRearmed: (rearmed) => io.stderr.write(`${rearmLine(rearmed)}\n`),
         ...(config.secretsKey !== undefined ? { root: config.secretsKey } : {}),
-        onRewrap: (counts) => io.stdout.write(`${rewrapLine(counts)}\n`),
+        onRewrap: (counts, run) => {
+          if (run === 'step' || rewrapWorthSaying(counts)) io.stdout.write(`${rewrapLine(counts, run)}\n`);
+        },
       });
       if (step === 'keys') {
         io.stdout.write('data directory: in the new layout\n');
@@ -307,7 +319,12 @@ export async function runMigrate(
       } else if (step !== undefined)
         io.stdout.write(`data directory: ${step === 'done' ? 'in the new layout' : `step ${step}`}\n`);
     } catch (error) {
-      if (!(error instanceof WirebenchError)) throw error;
+      if (!(error instanceof WirebenchError)) {
+        // The errno code only, as at start-up: Node's message names a path under tenants/<id>/checkouts/<user>
+        // (Task 24 review m4). Not a failed migration: the schema is migrated, and the step resumes next time.
+        io.stderr.write(`${stepFailure(config.dataDir, error)}\n`);
+        return ExitCode.Config;
+      }
       io.stderr.write(`${error.code}: ${error.message}\n`);
       // The image's own empty /data, with the volume not mounted here: the schema is migrated, and the server moves
       // its real data directory at its next start (C1 of the Task 22 review).
@@ -412,26 +429,28 @@ export async function startServer(
         stepNotes.push({ level: 'warn', message: rearmLine(rearmed), details: { left: [...rearmed] } });
       },
       ...(config.secretsKey !== undefined ? { root: config.secretsKey } : {}),
-      onRewrap: (counts) => {
+      onRewrap: (counts, run) => {
+        // The check at `done` speaks only when it found something: a blob restored from before the upgrade, say.
+        if (run === 'check' && !rewrapWorthSaying(counts)) return;
         stepNotes.push({
-          level: counts.unopened > 0 ? 'warn' : 'info',
-          message: rewrapLine(counts),
-          details: { ...counts },
+          level: counts.unopened > 0 || counts.skipped > 0 || run === 'check' ? 'warn' : 'info',
+          message: rewrapLine(counts, run),
+          details: { ...counts, run },
         });
       },
     });
     // Also where an operator starting the server by hand sees it at once, before the log is up (no key material).
     if (step === 'keys') {
       io.stderr.write(`tenancy step keys: ${KEYS_WAIT}\n`);
-      stepNotes.push({ level: 'warn', message: `tenancy step keys: ${KEYS_WAIT}`, details: {} });
+      // `info`: not pending (`dueStep`), and said at every start of a server that never uses the browser client.
+      stepNotes.push({ level: 'info', message: `tenancy step keys: ${KEYS_WAIT}`, details: {} });
     }
   } catch (error) {
     if (error instanceof WirebenchError) {
       return fail(new StartupError(ExitCode.Config, `${error.code}: ${error.message}`));
     }
     // The errno code only: Node's message names a path under tenants/<id> (Task 22 review m2).
-    const code = (error as NodeJS.ErrnoException | null)?.code ?? 'an unexpected error';
-    return fail(new StartupError(ExitCode.Config, `data directory ${config.dataDir} could not be moved (${code})`));
+    return fail(new StartupError(ExitCode.Config, stepFailure(config.dataDir, error)));
   }
   // The step's connection is done with. The reference is cleared first, so `fail` never closes it a second time,
   // and a failure to close is reported as itself, not as a move that failed (fix round 2 review m4).
