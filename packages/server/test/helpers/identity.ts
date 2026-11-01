@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 import { directoryOf } from '../../src/tenancy/tenancy.js';
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, RouteOptions } from 'fastify';
 import type { GitCli } from '@wirebench/engine';
 import { loadConfig, type ServerConfig } from '../../src/config.js';
 import type { ServerContext, ServerHooks, ServerModule } from '../../src/context.js';
@@ -87,6 +87,8 @@ export async function identityHarness(
     /** Runs after the directory loaded and before the server is built: tenants the hosted map starts with. */
     /** The hosted tenant map, for a test that changes a tenant behind the directory's back. */
     readonly onTenantResolver?: (resolver: TenantResolver) => void;
+    /** Every route the server registers (`buildServer`'s `onRoute`). */
+    readonly onRoute?: (route: RouteOptions) => void;
     readonly beforeBuild?: (db: Awaited<ReturnType<typeof testDatabase>>, ctx: ServerContext) => Promise<void>;
   } = {},
 ): Promise<IdentityHarness> {
@@ -136,6 +138,7 @@ export async function identityHarness(
     modules,
     ...(options.logStream !== undefined ? { logStream: options.logStream } : {}),
     ...(options.onTenantResolver !== undefined ? { onTenantResolver: options.onTenantResolver } : {}),
+    ...(options.onRoute !== undefined ? { onRoute: options.onRoute } : {}),
   });
   return {
     app,

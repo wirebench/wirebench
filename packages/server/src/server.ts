@@ -6,7 +6,7 @@
  * dependency check in ADR-0009 found `fastify-type-provider-zod`'s required peers
  * (`@fastify/swagger`, `openapi-types`) would ship in the container image licensed for nothing.
  */
-import Fastify, { type FastifyInstance } from 'fastify';
+import Fastify, { type FastifyInstance, type RouteOptions } from 'fastify';
 import type { ServerContext, ServerModule } from './context.js';
 import { toProblem } from './problem.js';
 import { healthRoutes } from './routes/health.js';
@@ -20,6 +20,8 @@ export interface BuildServerOptions {
   readonly logStream?: NodeJS.WritableStream;
   /** Hands out the hosted tenant map, for tests that change a tenant and reload it; never called self-hosted. */
   readonly onTenantResolver?: (resolver: TenantResolver) => void;
+  /** Every route as it is registered, in every scope: the isolation suite's route map (spec §19.13). Tests only. */
+  readonly onRoute?: (route: RouteOptions) => void;
 }
 
 /**
@@ -83,6 +85,7 @@ export async function buildServer(ctx: ServerContext, options: BuildServerOption
     bodyLimit: ctx.config.bodyLimitMb * 1024 * 1024,
   });
 
+  if (options.onRoute !== undefined) app.addHook('onRoute', options.onRoute);
   const context: ServerContext = { ...ctx, log: app.log };
 
   // First, so it runs ahead of every module's hooks, on the API, the public routes and every upgrade.

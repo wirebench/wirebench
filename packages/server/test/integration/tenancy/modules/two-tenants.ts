@@ -8,7 +8,7 @@
  * `/api/v1` scope a WebSocket upgrade can be injected into with a `Host` header (Node's WebSocket client cannot set
  * one).
  */
-import type { FastifyInstance, InjectOptions, LightMyRequestResponse } from 'fastify';
+import type { FastifyInstance, InjectOptions, LightMyRequestResponse, RouteOptions } from 'fastify';
 import type { ServerConfig } from '../../../../src/config.js';
 import type { ServerModule } from '../../../../src/context.js';
 import type { OidcProvider } from '../../../../src/identity/oidc.js';
@@ -82,6 +82,10 @@ export async function twoTenants(
     readonly provider?: OidcProvider;
     readonly modules?: (clock: TestClock) => readonly ServerModule[];
     readonly logStream?: NodeJS.WritableStream;
+    /** Every route the server registers. */
+    readonly onRoute?: (route: RouteOptions) => void;
+    /** A database an earlier call made: the throwaway schema of the isolation suite's negative run. */
+    readonly db?: IdentityHarness['db'];
   } = {},
 ): Promise<TwoTenants> {
   const scopes: Partial<Record<'acme' | 'beta', TenantScope>> = {};
@@ -90,6 +94,8 @@ export async function twoTenants(
     ...(options.env !== undefined ? { env: options.env } : {}),
     ...(options.provider !== undefined ? { provider: options.provider } : {}),
     ...(options.logStream !== undefined ? { logStream: options.logStream } : {}),
+    ...(options.onRoute !== undefined ? { onRoute: options.onRoute } : {}),
+    ...(options.db !== undefined ? { db: options.db } : {}),
     configure: hosted,
     modules: (clock) => [
       ...(options.modules?.(clock) ?? []),
