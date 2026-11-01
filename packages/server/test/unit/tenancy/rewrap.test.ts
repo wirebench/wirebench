@@ -388,7 +388,8 @@ describe('writeFileDurably (review I1)', () => {
         return done();
       },
     });
-    const temp = (path: string) => path.replace(/tmp-[0-9a-f]+$/, 'tmp');
+    // The writer joins the temporary path with the platform's separator; record it with forward slashes.
+    const temp = (path: string) => path.replace(/\\/g, '/').replace(/tmp-[0-9a-f]+$/, 'tmp');
     const fs: DurableFs = {
       stat: () => Promise.resolve({ mode: 0o100600 }),
       open: (path, flags, mode) => {
@@ -396,7 +397,7 @@ describe('writeFileDurably (review I1)', () => {
         return Promise.resolve(handle(temp(path)));
       },
       rename: (from, to) => {
-        calls.push(`rename ${temp(from)} ${to}`);
+        calls.push(`rename ${temp(from)} ${temp(to)}`);
         return fail.rename !== undefined ? Promise.reject(fail.rename) : done();
       },
       rm: (path) => {
