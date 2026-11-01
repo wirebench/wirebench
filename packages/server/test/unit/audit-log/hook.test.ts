@@ -1,16 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import { auditHook, boundDetails } from '../../../src/audit-log/hook.js';
-import type { Querier } from '../../../src/context.js';
+import type { TenantQuerier } from '../../../src/tenancy/tenant-db.js';
+import { asTenantQuerier } from '../../helpers/tenancy.js';
 
 /** Records every statement; a `select ... from workspaces` answers from `teams` (workspace id → team id). */
 function capturing(teams: Record<string, string> = {}): {
-  db: Querier;
+  db: TenantQuerier;
   statements: { text: string; params: readonly unknown[] }[];
 } {
   const statements: { text: string; params: readonly unknown[] }[] = [];
   return {
     statements,
-    db: {
+    db: asTenantQuerier({
       query: (text, params = []) => {
         statements.push({ text, params });
         if (/from workspaces/.test(text)) {
@@ -20,7 +21,7 @@ function capturing(teams: Record<string, string> = {}): {
         }
         return Promise.resolve({ rows: [], rowCount: 1 });
       },
-    },
+    }),
   };
 }
 const inserted = (statements: { text: string; params: readonly unknown[] }[]) => {
@@ -144,7 +145,7 @@ describe('auditHook (audit-log spec §3.1, §4.2)', () => {
   });
 
   it('a failing insert rejects, so the action rolls back with it', async () => {
-    const db: Querier = { query: () => Promise.reject(new Error('connection lost')) };
+    const db = asTenantQuerier({ query: () => Promise.reject(new Error('connection lost')) });
     await expect(
       auditHook(() => new Date())(db, {
         actor: { kind: 'anonymous' },

@@ -11,9 +11,13 @@
  *
  * At most one instance per user exists at a time: a socket that arrives while the previous instance is
  * being evicted waits for that to finish, so two hosts never share a checkout.
+ *
+ * A user is a tenant and a user id (hosted edition spec §19.8 guard 5; Task 6 review m6): instances, evictions
+ * and socket counts are keyed `tenantId:userId`, and a session's end closes only the sockets of its own tenant, so
+ * one user id in two tenants is two users with two hosts.
  */
 import { rm } from 'node:fs/promises';
-import type { SessionEnded } from '../context.js';
+import type { SessionEndedEvent } from '../context.js';
 import { HOST_CLOSE } from './errors.js';
 import type { ServerHost } from './host-runtime.js';
 import { hostDirectories } from './server-platform.js';
@@ -39,6 +43,11 @@ export interface HostUser {
   /** The user's tenant: its in-process live client authenticates there. */
   readonly tenant: TenantScope;
 }
+
+/** Which user, in which tenant: what the instances are keyed by. */
+export type HostUserKey = Pick<HostUser, 'id' | 'tenant'>;
+
+const keyOf = (user: HostUserKey): string => `${user.tenant.tenantId}:${user.id}`;
 
 export interface HostInstancesDeps {
   readonly dataDir: string;
@@ -80,14 +89,18 @@ interface Instance {
 }
 
 export class HostInstances {
+  /** By `tenantId:userId`. */
   private readonly instances = new Map<string, Instance>();
-  /** Evictions still running, by user id: a new instance for that user waits for its one. */
+  /** Evictions still running, by the same key: a new instance for that user waits for its one. */
   private readonly evicting = new Map<string, Promise<void>>();
   /**
    * Sockets still waiting for their user's eviction to finish. A close or a session's end in that wait
    * marks one `gone`, and it then builds and joins nothing.
    */
-  private readonly waiting = new Map<HostSocketHandle, { readonly userId: string; gone: boolean }>();
+  private readonly waiting = new Map<
+    HostSocketHandle,
+    { readonly key: string; readonly tenantId: string; readonly userId: string; gone: boolean }
+  >();
   private closed = false;
 
   constructor(private readonly deps: HostInstancesDeps) {}
@@ -100,9 +113,10 @@ export class HostInstances {
    */
   async open(user: HostUser, socket: HostSocketHandle): Promise<ServerHost | undefined> {
     if (this.closed) return undefined;
-    const eviction = this.evicting.get(user.id);
+    const key = keyOf(user);
+    const eviction = this.evicting.get(key);
     if (eviction !== undefined) {
-      const wait = { userId: user.id, gone: false };
+      const wait = { key, tenantId: user.tenant.tenantId, userId: user.id, gone: false };
       this.waiting.set(socket, wait);
       try {
         await eviction;
@@ -111,7 +125,7 @@ export class HostInstances {
       }
       if (wait.gone || this.closed) return undefined;
     }
-    let instance = this.instances.get(user.id);
+    let instance = this.instances.get(key);
     if (instance === undefined) {
       const signedIn: Pick<Instance, 'credential'> = { credential: undefined };
       const created: Instance = Object.assign(signedIn, {
@@ -121,9 +135,9 @@ export class HostInstances {
         idle: undefined,
       });
       instance = created;
-      this.instances.set(user.id, instance);
+      this.instances.set(key, instance);
       instance.host.catch(() => {
-        if (this.instances.get(user.id) === created) this.instances.delete(user.id);
+        if (this.instances.get(key) === created) this.instances.delete(key);
       });
     }
     instance.idle?.cancel();
@@ -142,13 +156,13 @@ export class HostInstances {
    * `socket` closed. The credential moves to the newest socket still open; the last one to go starts
    * the idle timer.
    */
-  release(userId: string, socket: HostSocketHandle): void {
+  release(user: HostUserKey, socket: HostSocketHandle): void {
     const wait = this.waiting.get(socket);
     if (wait !== undefined) {
       wait.gone = true;
       return;
     }
-    const instance = this.instances.get(userId);
+    const instance = this.instances.get(keyOf(user));
     if (instance === undefined) return;
     this.forget(instance, socket);
     this.settle(instance);
@@ -158,18 +172,19 @@ export class HostInstances {
    * A session ended (identity's `sessionEnded`, or a socket's token found expired): the sockets that
    * used it close `4401` and stop counting at once, so the credential can never move back to them while
    * their close is under way. An instance whose credential ended moves to the newest socket left, or
-   * is evicted.
+   * is evicted. Only the event's tenant is touched: a token or user id of another tenant is another session.
    */
-  sessionEnded(event: SessionEnded): void {
-    const endedFor = (userId: string, tokenId: string): boolean =>
-      'tokenId' in event ? tokenId === event.tokenId : userId === event.userId && tokenId !== event.exceptTokenId;
+  sessionEnded(event: SessionEndedEvent): void {
+    const endedFor = (tenantId: string, userId: string, tokenId: string): boolean =>
+      tenantId === event.tenantId &&
+      ('tokenId' in event ? tokenId === event.tokenId : userId === event.userId && tokenId !== event.exceptTokenId);
     for (const [socket, wait] of this.waiting) {
-      if (wait.gone || !endedFor(wait.userId, socket.tokenId)) continue;
+      if (wait.gone || !endedFor(wait.tenantId, wait.userId, socket.tokenId)) continue;
       wait.gone = true;
       socket.close(HOST_CLOSE.unauthenticated, 'session ended');
     }
     for (const instance of [...this.instances.values()]) {
-      const ended = (tokenId: string): boolean => endedFor(instance.user.id, tokenId);
+      const ended = (tokenId: string): boolean => endedFor(instance.user.tenant.tenantId, instance.user.id, tokenId);
       const closing = instance.sockets.filter((one) => ended(one.tokenId));
       for (const socket of closing) {
         this.forget(instance, socket);
@@ -194,13 +209,14 @@ export class HostInstances {
   }
 
   /**
-   * How many host sockets `userId` has: open on their instance, or waiting for its eviction. The module
+   * How many host sockets `user` has: open on their instance, or waiting for its eviction. The module
    * turns away a socket past `HOST_LIMITS.maxSocketsPerUser` before calling {@link open}.
    */
-  socketCount(userId: string): number {
-    let count = this.instances.get(userId)?.sockets.length ?? 0;
+  socketCount(user: HostUserKey): number {
+    const key = keyOf(user);
+    let count = this.instances.get(key)?.sockets.length ?? 0;
     for (const wait of this.waiting.values()) {
-      if (wait.userId === userId && !wait.gone) count += 1;
+      if (wait.key === key && !wait.gone) count += 1;
     }
     return count;
   }
@@ -221,10 +237,10 @@ export class HostInstances {
       return;
     }
     if (instance.idle !== undefined) return;
-    const userId = instance.user.id;
+    const key = keyOf(instance.user);
     instance.idle = this.deps.setTimer(() => {
       instance.idle = undefined;
-      if (this.instances.get(userId) === instance && instance.sockets.length === 0) this.evict(instance);
+      if (this.instances.get(key) === instance && instance.sockets.length === 0) this.evict(instance);
     }, this.deps.idleMs);
   }
 
@@ -234,13 +250,15 @@ export class HostInstances {
   }
 
   private evict(instance: Instance): void {
-    const userId = instance.user.id;
-    if (this.instances.get(userId) !== instance) return;
-    this.instances.delete(userId);
+    const key = keyOf(instance.user);
+    if (this.instances.get(key) !== instance) return;
+    this.instances.delete(key);
     instance.idle?.cancel();
     instance.idle = undefined;
-    const { temp } = hostDirectories(this.deps.dataDir, userId);
-    const previous = this.evicting.get(userId) ?? Promise.resolve();
+    // The directories are still the user id's: one user id in two tenants would share this scratch directory, and
+    // this eviction would remove the other tenant's. Task 21 moves them, with `createServerHost`, under the tenant.
+    const { temp } = hostDirectories(this.deps.dataDir, instance.user.id);
+    const previous = this.evicting.get(key) ?? Promise.resolve();
     const done = previous
       .then(async () => {
         try {
@@ -254,8 +272,8 @@ export class HostInstances {
         });
       })
       .finally(() => {
-        if (this.evicting.get(userId) === done) this.evicting.delete(userId);
+        if (this.evicting.get(key) === done) this.evicting.delete(key);
       });
-    this.evicting.set(userId, done);
+    this.evicting.set(key, done);
   }
 }

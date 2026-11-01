@@ -154,7 +154,7 @@ describeDb('the schedules API (scheduled-runs §3.7)', () => {
       error: 'the alert to hooks.slack.example was answered 404',
     });
     // A test touches neither the alert state nor the outbox.
-    expect((await c.h.db.query('select 1 from schedule_alert_outbox')).rows).toEqual([]);
+    expect((await c.h.tdb.query('select 1 from schedule_alert_outbox')).rows).toEqual([]);
   });
 
   it('never hands back an alert URL or a secret value', async () => {
@@ -239,7 +239,7 @@ describeDb('the schedules API (scheduled-runs §3.7)', () => {
   it('holds at most a hundred schedules a workspace', async () => {
     c = await schedulesHarness();
     for (let i = 0; i < 100; i += 1) {
-      await c.h.db.query(
+      await c.h.tdb.query(
         `insert into schedules (id, workspace_id, name, cron, time_zone, target, options, alerts)
          values ($1, $2, $3, '* * * * *', 'UTC', '{}', '{}', '{}')`,
         [`01K00000000000000000000${String(i).padStart(3, '0')}`, c.workspaceId, `s${i}`],

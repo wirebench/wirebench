@@ -34,6 +34,15 @@ export function scimSource(request: FastifyRequest): AuditSource {
   return { ...base, actor: { kind: 'scim', tokenId: request.scimToken!.id } };
 }
 
+/** What the scope keys a failed attempt by: the tenant first (spec §19.8 guard 5), then the address. */
+type KeyedRequest = Pick<FastifyRequest, 'ip'> & { readonly tenant: Pick<FastifyRequest['tenant'], 'tenantId'> };
+
+/** The failed-attempt limiter's key, like identity's: one bucket per tenant and address. */
+export const scimLimiterKey = (request: KeyedRequest): string => `${request.tenant.tenantId}:scim:ip:${request.ip}`;
+
+/** The key of the once-a-minute audit of failed attempts: per tenant and address, too. */
+export const scimAuditKey = (request: KeyedRequest): string => `${request.tenant.tenantId}:${request.ip}`;
+
 function bearerOf(header: string | undefined): string | undefined {
   const match = /^Bearer\s+(\S+)$/i.exec(header?.trim() ?? '');
   const token = match?.[1];
@@ -49,7 +58,10 @@ function sameHash(a: string, b: string): boolean {
 export const scimPlugin =
   (env: SsoEnv) =>
   async (scim: FastifyInstance): Promise<void> => {
-    /** IP → when a failed attempt was last audited: at most one row a minute per address (§6.2). */
+    /**
+     * `tenantId:ip` → when a failed attempt was last audited: at most one row a minute per address and tenant (§6.2).
+     * The limiter's key leads with the tenant too (spec §19.8 guard 5), like identity's.
+     */
     const auditedAt = new Map<string, number>();
 
     const parseJson = (
@@ -80,7 +92,7 @@ export const scimPlugin =
     );
 
     const refuse = async (request: FastifyRequest, reply: FastifyReply, reason: string): Promise<FastifyReply> => {
-      const decision = env.limiter.take(`scim:ip:${request.ip}`);
+      const decision = env.limiter.take(scimLimiterKey(request));
       if (!decision.allowed) {
         return reply
           .code(429)
@@ -89,11 +101,12 @@ export const scimPlugin =
           .send(scimError(429, 'Too many failed attempts. Try again shortly.').body());
       }
       const now = env.now().getTime();
-      const last = auditedAt.get(request.ip);
+      const addressKey = scimAuditKey(request);
+      const last = auditedAt.get(addressKey);
       if (last === undefined || now - last >= MINUTE_MS) {
-        auditedAt.set(request.ip, now);
+        auditedAt.set(addressKey, now);
         if (auditedAt.size > 10_000) auditedAt.clear(); // bounded: an address scan cannot grow it forever
-        await recordAudit(env.ctx.hooks, env.ctx.db, {
+        await recordAudit(env.ctx.hooks, env.ctx.tenancy.db(request.tenant), {
           ...auditSource(request),
           ...ANONYMOUS_SOURCE,
           action: 'auth.sign_in_failed',
@@ -112,7 +125,8 @@ export const scimPlugin =
       const token = bearerOf(request.headers.authorization);
       if (token === undefined) return refuse(request, reply, 'scim-token-missing');
       const hash = hashSecret(token);
-      const row = await repo.scimTokenByHash(env.ctx.db, hash);
+      const db = env.ctx.tenancy.db(request.tenant);
+      const row = await repo.scimTokenByHash(db, hash);
       if (row === undefined || !sameHash(row.tokenHash, hash)) return refuse(request, reply, 'scim-token-unknown');
       if (row.revokedAt !== null) return refuse(request, reply, 'scim-token-revoked');
       if (!(await env.ctx.license.state(request.tenant)).features.includes('sso-provisioning')) {
@@ -124,7 +138,7 @@ export const scimPlugin =
       request.scimToken = { id: row.id };
       const now = env.now();
       if (row.lastUsedAt === null || now.getTime() - Date.parse(row.lastUsedAt) >= MINUTE_MS)
-        await repo.touchScimToken(env.ctx.db, row.id, now);
+        await repo.touchScimToken(db, row.id, now);
       return undefined;
     });
 

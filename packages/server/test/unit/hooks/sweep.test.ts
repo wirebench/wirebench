@@ -1,6 +1,6 @@
 import type { FastifyBaseLogger } from 'fastify';
 import { describe, expect, it } from 'vitest';
-import type { Querier } from '../../../src/context.js';
+import type { Querier } from '../../../src/db/querier.js';
 import { deleteCapturesBefore } from '../../../src/hooks/repo.js';
 import { asTenantQuerier } from '../../helpers/tenancy.js';
 import {
@@ -9,18 +9,33 @@ import {
   SWEEP_BATCH,
   SWEEP_INTERVAL_MS,
   captureSweepTarget,
-  rawSweepTarget,
+  type SweepTarget,
 } from '../../../src/hooks/sweep.js';
 import type { Tenancy } from '../../../src/tenancy/tenancy.js';
 
 const NOW = new Date('2026-09-28T10:00:00.000Z');
 const DAY = 24 * 60 * 60 * 1000;
 
-/** Answers each delete with the next row count; `hold()` keeps the next one pending until released. */
-/** The capture delete over the fake, which records the SQL a tenant unit would send. */
-const capturesBefore = (db: Querier, cutoff: Date, limit: number) =>
-  deleteCapturesBefore(asTenantQuerier(db), cutoff, limit);
+/**
+ * One tenant over the fake: its first batch in the job loop, later ones in `db(scope)`. A failing statement
+ * fails the whole pass here, as a job loop whose tenant listing failed would.
+ */
+function oneTenant(
+  db: Querier,
+  deleteBefore: SweepTarget['deleteBefore'] = (tx, cutoff, limit) => deleteCapturesBefore(tx, cutoff, limit),
+): SweepTarget {
+  const scope = { tenantId: 'one' } as never;
+  const tenancy: SweepTarget['tenancy'] = {
+    forEachTenant: async (_job, fn) => {
+      await fn(asTenantQuerier(db), scope);
+      return { served: 1, failed: [] };
+    },
+    db: (() => ({ transaction: (fn: (tx: never) => Promise<unknown>) => fn(asTenantQuerier(db) as never) })) as never,
+  };
+  return { tenancy, job: CAPTURE_SWEEP_JOB, deleteBefore };
+}
 
+/** Answers each delete with the next row count; `hold()` keeps the next one pending until released. */
 function fakeDb(counts: number[]) {
   const calls: { readonly text: string; readonly params: readonly unknown[] }[] = [];
   let gate: Promise<void> | undefined;
@@ -102,7 +117,7 @@ describe('CaptureSweeper (webhook-capture §3.4)', () => {
     const f = fakeDb([SWEEP_BATCH, SWEEP_BATCH, 3]);
     const t = timers();
     const sweeper = new CaptureSweeper({
-      target: rawSweepTarget(f.db, capturesBefore),
+      target: oneTenant(f.db),
       maxAgeDays: 7,
       now: () => NOW,
       setTimer: t.setTimer,
@@ -128,7 +143,7 @@ describe('CaptureSweeper (webhook-capture §3.4)', () => {
     const warnings: unknown[] = [];
     f.failWith(new Error('connection lost'));
     const sweeper = new CaptureSweeper({
-      target: rawSweepTarget(f.db, capturesBefore),
+      target: oneTenant(f.db),
       maxAgeDays: 7,
       now: () => NOW,
       setTimer: t.setTimer,
@@ -149,7 +164,7 @@ describe('CaptureSweeper (webhook-capture §3.4)', () => {
     const t = timers();
     const release = f.hold();
     const sweeper = new CaptureSweeper({
-      target: rawSweepTarget(f.db, capturesBefore),
+      target: oneTenant(f.db),
       maxAgeDays: 7,
       now: () => NOW,
       setTimer: t.setTimer,
@@ -167,7 +182,7 @@ describe('CaptureSweeper (webhook-capture §3.4)', () => {
     const t = timers();
     const release = f.hold();
     const sweeper = new CaptureSweeper({
-      target: rawSweepTarget(f.db, capturesBefore),
+      target: oneTenant(f.db),
       maxAgeDays: 7,
       now: () => NOW,
       setTimer: t.setTimer,
@@ -194,7 +209,7 @@ describe('CaptureSweeper (webhook-capture §3.4)', () => {
     const limits: number[] = [];
     const t = timers();
     const sweeper = new CaptureSweeper({
-      target: rawSweepTarget(fakeDb([]).db, (_db, _cutoff, limit) => {
+      target: oneTenant(fakeDb([]).db, (_db, _cutoff, limit) => {
         limits.push(limit);
         return Promise.resolve(limits.length === 1 ? 2 : 0);
       }),

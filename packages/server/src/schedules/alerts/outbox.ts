@@ -6,9 +6,12 @@
  * never touches the run. A claim leases its rows rather than locking them across a send, so a server
  * that dies mid-delivery leaves them to the next pass after the lease, here or on another server.
  */
-import { WirebenchError, type ScheduleRunStatus, type ScheduleRunSummary } from '@wirebench/engine';
+import type { ScheduleRunStatus, ScheduleRunSummary } from '@wirebench/engine';
 import type { FastifyBaseLogger } from 'fastify';
-import type { Database, LicenseService, Querier } from '../../context.js';
+import type { LicenseService } from '../../context.js';
+import type { TenantScope } from '../../tenancy/scope.js';
+import type { TenantQuerier } from '../../tenancy/tenant-db.js';
+import type { Tenancy } from '../../tenancy/tenancy.js';
 import type { SetTimer } from '../../hooks/env.js';
 import { newId } from '../../identity/tokens.js';
 import { openValue, type StoredAlertTarget, type StoredAlerts } from '../seal.js';
@@ -95,13 +98,21 @@ export function failuresOf(results: readonly unknown[]): AlertPayload['failures'
 export interface AlertEnv {
   readonly settings: Pick<SchedulesSettings, 'linkUrl'>;
   readonly now: () => Date;
+  readonly tenancy: Pick<Tenancy, 'db'>;
+  readonly log: Pick<FastifyBaseLogger, 'warn'>;
 }
 
 /**
- * Moves the schedule's alert state for `run`, which the caller's transaction has just stored, and
- * queues the alert it calls for, one delivery per target. Returns how many were queued.
+ * Moves the schedule's alert state for `run`, which the caller's tenant unit has just stored, and
+ * queues the alert it calls for, one delivery per target. Returns how many were queued. The run link is on the
+ * run's tenant's URL (spec §19.5).
  */
-export async function enqueueAlerts(tx: Querier, env: AlertEnv, scheduleId: string, run: AlertRun): Promise<number> {
+export async function enqueueAlerts(
+  tx: TenantQuerier,
+  env: Pick<AlertEnv, 'settings' | 'now'>,
+  scheduleId: string,
+  run: AlertRun,
+): Promise<number> {
   const row = (
     await tx.query<{
       name: string;
@@ -131,10 +142,7 @@ export async function enqueueAlerts(tx: Querier, env: AlertEnv, scheduleId: stri
   const send = decision.send;
   if (send === undefined || row.alerts.targets.length === 0) return 0;
   const summary = run.summary;
-  const linkUrl = env.settings.linkUrl;
-  if (linkUrl === undefined) {
-    throw new WirebenchError('tenancy-unscoped', 'an alert link needs a tenant; the scheduler has none yet');
-  }
+  const linkUrl = env.settings.linkUrl(tx.scope);
   const payload: AlertPayload = {
     kind: send.kind,
     streak: send.streak,
@@ -165,6 +173,34 @@ export async function enqueueAlerts(tx: Querier, env: AlertEnv, scheduleId: stri
     );
   }
   return row.alerts.targets.length;
+}
+
+/**
+ * {@link enqueueAlerts} inside a savepoint of the caller's unit (Task 6 review m8): an alert that cannot be
+ * queued is logged at warn and skipped, and the run it judges, stored in the same unit, still commits.
+ */
+export async function enqueueAlertsOrWarn(
+  tx: TenantQuerier,
+  env: AlertEnv,
+  scheduleId: string,
+  run: AlertRun,
+): Promise<number> {
+  try {
+    // Called inside the caller's unit, this joins it as a savepoint: a failure undoes only its own statements.
+    return await env.tenancy.db(tx.scope).transaction((inner) => enqueueAlerts(inner, env, scheduleId, run));
+  } catch (error) {
+    // Its name and message only, as the audit jobs log: a database error's `detail` can carry the failing row,
+    // which here is the alert's payload (Part C review M3).
+    env.log.warn(
+      { reason: reasonOf(error), scheduleId, runId: run.id },
+      'a schedule alert could not be queued; the run is stored without it',
+    );
+    return 0;
+  }
+}
+
+function reasonOf(error: unknown): string {
+  return error instanceof Error ? `${error.name}: ${error.message}` : 'unknown error';
 }
 
 /** Sends one alert to one target; throws why it did not arrive. */
@@ -203,8 +239,11 @@ export function alertDelivery(
   };
 }
 
+/** The outbox's name in the job loop's log lines. */
+export const OUTBOX_JOB = 'schedule-alert-outbox';
+
 export interface OutboxEnv {
-  readonly db: Database;
+  readonly tenancy: Pick<Tenancy, 'db' | 'forEachTenant'>;
   readonly now: () => Date;
   readonly setTimer: SetTimer;
   readonly log: FastifyBaseLogger;
@@ -271,28 +310,40 @@ export class AlertOutbox {
       });
   }
 
+  /**
+   * Claims per tenant, one unit each (spec §19.8 guard 6): a tenant without the feature keeps its rows for a
+   * license, and the others still go out. The sends run after every claim committed, outside any unit, since
+   * each waits on the network.
+   */
   private async pass(): Promise<OutboxPass> {
     if (this.stopped) return { delivered: 0, failed: 0 };
-    // Without the feature nothing goes out; the rows wait for a license.
-    const state = await this.env.license().stateWithoutScope();
-    if (!state.features.includes('scheduled-runs')) return { delivered: 0, failed: 0 };
-    const claimed = await this.claim();
-    const outcomes = await Promise.all(claimed.map((row) => this.deliverOne(row)));
+    const claimed: { readonly scope: TenantScope; readonly row: Claimed }[] = [];
+    await this.env.tenancy.forEachTenant(
+      OUTBOX_JOB,
+      async (tx, scope) => {
+        if (!(await this.env.license().state(scope, tx)).features.includes('scheduled-runs')) return;
+        for (const row of await this.claim(tx)) claimed.push({ scope, row });
+      },
+      this.env.log,
+    );
+    const outcomes = await Promise.all(claimed.map(({ scope, row }) => this.deliverOne(scope, row)));
     const delivered = outcomes.filter(Boolean).length;
     return { delivered, failed: outcomes.length - delivered };
   }
 
-  private async claim(): Promise<Claimed[]> {
+  private async claim(tx: TenantQuerier): Promise<Claimed[]> {
     const now = this.env.now();
-    const rows = await this.env.db.query<Claimed>(
-      `update schedule_alert_outbox o set next_at = $2
-       from schedules s
-       where s.id = o.schedule_id and o.id in (
+    const rows = await tx.query<Claimed>(
+      // A materialised pick, as `claimQueuedRuns` explains: a `limit` sub-select in `in (…)` may run once per row.
+      `with picked as materialized (
          select id from schedule_alert_outbox
          where state = 'pending' and next_at <= $1
          order by next_at, id
          limit $3
          for update skip locked)
+       update schedule_alert_outbox o set next_at = $2
+       from picked, schedules s
+       where o.id = picked.id and s.id = o.schedule_id
        returning o.id, o.schedule_id as "scheduleId", o.target_index as "targetIndex", o.payload, o.attempts,
          s.alerts`,
       [now, new Date(now.getTime() + LEASE_MS), CLAIM_BATCH],
@@ -301,7 +352,8 @@ export class AlertOutbox {
   }
 
   /** Delivers one row and records how it went; true when it arrived. */
-  private async deliverOne(row: Claimed): Promise<boolean> {
+  private async deliverOne(scope: TenantScope, row: Claimed): Promise<boolean> {
+    const db = this.env.tenancy.db(scope);
     const target = row.alerts.targets[row.targetIndex];
     try {
       // A target removed since the alert was queued gets nothing; one that took its place gets it.
@@ -311,7 +363,7 @@ export class AlertOutbox {
       const attempts = row.attempts + 1;
       const message = messageOf(error);
       if (attempts >= ALERT_MAX_ATTEMPTS) {
-        await this.env.db.query(
+        await db.query(
           "update schedule_alert_outbox set state = 'dead', attempts = $2, last_error = $3 where id = $1",
           [row.id, attempts, message],
         );
@@ -320,14 +372,16 @@ export class AlertOutbox {
           'schedule alert delivery gave up',
         );
       } else {
-        await this.env.db.query(
-          'update schedule_alert_outbox set attempts = $2, last_error = $3, next_at = $4 where id = $1',
-          [row.id, attempts, message, new Date(this.env.now().getTime() + backoffMs(attempts))],
-        );
+        await db.query('update schedule_alert_outbox set attempts = $2, last_error = $3, next_at = $4 where id = $1', [
+          row.id,
+          attempts,
+          message,
+          new Date(this.env.now().getTime() + backoffMs(attempts)),
+        ]);
       }
       return false;
     }
-    await this.env.db.query(
+    await db.query(
       "update schedule_alert_outbox set state = 'delivered', attempts = attempts + 1, last_error = null where id = $1",
       [row.id],
     );

@@ -26,7 +26,7 @@ const runs = (): string => `/workspaces/${c.workspaceId}/schedules/${scheduleId}
 /** A run of the schedule queued `minutesAgo` before the harness clock, with `status`. */
 async function seedRun(minutesAgo: number, status: 'queued' | 'running' | 'skipped' = 'skipped'): Promise<string> {
   const id = newId();
-  await repo.insertRun(c.h.db, {
+  await repo.insertRun(c.h.tdb, {
     id,
     scheduleId,
     trigger: 'schedule',
@@ -79,7 +79,7 @@ describeDb('the runs API (scheduled-runs spec §3.7)', () => {
   it('one run comes with its stored results and alert deliveries; a run of another schedule is not found', async () => {
     const runId = await seedRun(5, 'running');
     const failed = { path: 'Api/Fail', group: 'Api', name: 'Fail', protocol: 'rest', outcome: 'failed', exchange: {} };
-    await repo.finishRun(c.h.db, runId, {
+    await repo.finishRun(c.h.tdb, runId, {
       status: 'failed',
       reason: null,
       commit: 'c'.repeat(40),
@@ -88,7 +88,7 @@ describeDb('the runs API (scheduled-runs spec §3.7)', () => {
       results: [failed],
       at: c.h.clock.now,
     });
-    await c.h.db.query(
+    await c.h.tdb.query(
       `insert into schedule_alert_outbox (id, schedule_id, run_id, target_index, kind, payload, state, attempts, last_error)
        values ($1, $2, $3, 0, 'failure', '{}', 'dead', 8, 'the alert to hooks.example.test was answered 410')`,
       [newId(), scheduleId, runId],
@@ -120,7 +120,7 @@ describeDb('the runs API (scheduled-runs spec §3.7)', () => {
     expect(heard).toEqual([
       { tenantId: c.h.tdb.scope.tenantId, workspaceId: c.workspaceId, scheduleId, runId: queued, status: 'cancelled' },
     ]);
-    expect(await repo.runById(c.h.db, scheduleId, queued)).toMatchObject({
+    expect(await repo.runById(c.h.tdb, scheduleId, queued)).toMatchObject({
       status: 'cancelled',
       reason: 'cancelled',
     });

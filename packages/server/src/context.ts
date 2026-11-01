@@ -12,7 +12,7 @@ import type {
   LicenseState,
   ScheduleRunStatus,
 } from '@wirebench/engine';
-import type { ServerConfig } from './config.js';
+import type { ModuleConfig } from './config.js';
 import { requireFeature } from './licensing/gate.js';
 import type { RepoStore } from './repos/repo-store.js';
 import type { TenantScope } from './tenancy/scope.js';
@@ -28,20 +28,6 @@ declare module 'fastify' {
      */
     readonly tenant: TenantScope;
   }
-}
-
-/** The slice of `pg.Pool` the modules use, so tests can pass a fake. */
-export interface Querier {
-  query<R extends Record<string, unknown> = Record<string, unknown>>(
-    text: string,
-    params?: readonly unknown[],
-  ): Promise<{ readonly rows: R[]; readonly rowCount: number | null }>;
-}
-
-/** A querier that can also run a function inside one transaction. */
-export interface Database extends Querier {
-  transaction<T>(fn: (tx: Querier) => Promise<T>): Promise<T>;
-  close(): Promise<void>;
 }
 
 /** What identity reports when an invitation becomes a user (teams-access spec §3.4). */
@@ -105,11 +91,8 @@ export type SessionEndedEvent = SessionEnded & { readonly tenantId: string };
 export type HeadMovedEvent = HeadMoved & { readonly tenantId: string };
 export type CaptureReceivedEvent = CaptureReceived & { readonly tenantId: string };
 export type HooksChangedEvent = HooksChanged & { readonly tenantId: string };
-/**
- * `scheduleRunFinished` with its tenant when the announcer has one: a cancel's request does, the executor not
- * until Task 13 runs it per tenant.
- */
-export type ScheduleRunFinishedEvent = ScheduleRunFinished & { readonly tenantId?: string };
+/** `scheduleRunFinished` with its tenant: the cancel's request's, or the executor's job-loop scope (Task 13). */
+export type ScheduleRunFinishedEvent = ScheduleRunFinished & { readonly tenantId: string };
 
 /** A catch URL stored a capture (webhook-capture spec §3.6); fired after the insert's transaction committed. */
 export interface CaptureReceived {
@@ -139,6 +122,8 @@ export interface ScheduleRunFinished {
 export interface AgentUnpaired {
   readonly pairingId: string;
   readonly userId: string;
+  /** The tenant the pairing was in (hosted edition spec §19.8): a user id means nothing without it. */
+  readonly tenantId: string;
 }
 
 /** An after-commit listener: synchronous, never awaited, and its throw never reaches the caller (R3). */
@@ -177,12 +162,6 @@ export interface LicenseService {
   assertSeatAvailable(tx: TenantQuerier): Promise<void>;
   /** A preHandler for after a route's role guard: `licensing-feature-required` without the feature (§3.5). */
   requireFeature(feature: Feature): preHandlerAsyncHookHandler;
-  /**
-   * The license of a server whose jobs do not run per tenant yet: the scheduler's pass and alert outbox until
-   * Task 13, and the audit forwarder until Task 14 (`check:tenant-scope` names them). The one tenant's, on a
-   * self-hosted server; with several, Community.
-   */
-  stateWithoutScope(): Promise<LicenseState>;
 }
 
 /**
@@ -196,7 +175,6 @@ export function permissiveLicense(): LicenseService {
     state,
     assertSeatAvailable: () => Promise.resolve(),
     requireFeature: (feature) => requireFeature(feature, async () => (await state()).features),
-    stateWithoutScope: state,
   };
 }
 
@@ -226,7 +204,7 @@ export interface AuditInput extends AuditSource {
 }
 
 /** Runs inside the caller's transaction and is awaited (R1): a throw fails the action. */
-export type AuditHook = (tx: Querier, event: AuditInput) => Promise<void>;
+export type AuditHook = (tx: TenantQuerier, event: AuditInput) => Promise<void>;
 
 export const SYSTEM_SOURCE: AuditSource = { actor: { kind: 'system' } };
 export const ANONYMOUS_SOURCE: AuditSource = { actor: { kind: 'anonymous' } };
@@ -286,7 +264,7 @@ export async function runInvitationAccepted(
 }
 
 /** Records one event through every audit hook, in order, inside `tx`; the first throw propagates (audit-log §3.1). */
-export async function recordAudit(hooks: ServerHooks, tx: Querier, event: AuditInput): Promise<void> {
+export async function recordAudit(hooks: ServerHooks, tx: TenantQuerier, event: AuditInput): Promise<void> {
   for (const hook of hooks.audit) await hook(tx, event);
 }
 
@@ -412,11 +390,11 @@ export class MetaRegistry {
 }
 
 export interface ServerContext {
-  readonly config: ServerConfig;
-  readonly db: Database;
+  /** Without the configured public URL (`ModuleConfig`): a module asks `tenantUrl` for its tenant's. */
+  readonly config: ModuleConfig;
   /**
-   * The tenant databases, the tenant directory and the job loop (hosted edition spec §19.8). Beside `db`
-   * until Task 17 removes `db` from what modules see.
+   * The tenant databases and the job loop (hosted edition spec §19.8 guard 2): a module has no other way to the
+   * database, so every statement it sends runs in one tenant's unit.
    */
   readonly tenancy: Tenancy;
   readonly repos: RepoStore;

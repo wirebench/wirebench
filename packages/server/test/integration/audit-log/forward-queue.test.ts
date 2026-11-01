@@ -11,9 +11,13 @@ import {
   type ForwardSink,
 } from '../../../src/audit-log/forward/forwarder.js';
 import { auditHook } from '../../../src/audit-log/hook.js';
-import { deleteAuditEventsBefore } from '../../../src/audit-log/repo.js';
+import { deleteAuditEventsBefore, deleteForwarded } from '../../../src/audit-log/repo.js';
+import { createDatabase } from '../../../src/db/pool.js';
 import { permissiveLicense, type AuditInput, type LicenseService } from '../../../src/context.js';
 import { describeDb, testDatabase } from '../../helpers/database.js';
+import { tenantDbFactory, type TenantDb } from '../../../src/tenancy/tenant-db.js';
+import { createTenancy, type Tenancy } from '../../../src/tenancy/tenancy.js';
+import { defaultTenantDb } from '../../helpers/tenancy.js';
 
 /** Records every batch; `failWith` makes the next sends reject; `gate` holds sends until released. */
 class FakeSink implements ForwardSink {
@@ -90,26 +94,27 @@ function recordingLog() {
   return { lines, log: logger as unknown as FastifyBaseLogger };
 }
 
-function licensed(features: string[]): LicenseService & { features: string[] } {
+/** `features` for the tenant `tenantId()` names, and none for any other: a read of the wrong tenant's license shows. */
+function licensed(features: string[], tenantId: () => string): LicenseService & { features: string[] } {
   const base = permissiveLicense();
   const service = {
     ...base,
     features,
-    state: (): Promise<LicenseState> =>
+    state: (of: Parameters<LicenseService['state']>[0]): Promise<LicenseState> =>
       Promise.resolve({
         edition: 'enterprise',
         status: 'active',
         seats: { used: 0, limit: null },
-        features: [...service.features],
+        features: ('tenantId' in of ? of.tenantId : of.tenant.tenantId) === tenantId() ? [...service.features] : [],
       }),
-    // The forwarder reads the license without a scope until Task 14 runs it per tenant.
-    stateWithoutScope: (): Promise<LicenseState> => service.state(),
   };
   return service;
 }
 
 describeDb('the audit forward outbox and forwarder (issue #209)', () => {
   let db: Awaited<ReturnType<typeof testDatabase>>;
+  let tdb: TenantDb;
+  let tenancy: Tenancy;
   let tick = Date.parse('2026-10-03T00:00:00Z');
   const clock = () => new Date((tick += 1000));
   const forwarding = auditHook(clock, { forward: true });
@@ -123,12 +128,12 @@ describeDb('the audit forward outbox and forwarder (issue #209)', () => {
     details: { n },
   });
   const queued = async () =>
-    (await db.query<{ n: string }>('select count(*)::text as n from audit_forward_queue')).rows[0]!.n;
+    (await tdb.query<{ n: string }>('select count(*)::text as n from audit_forward_queue')).rows[0]!.n;
   const forwarder = (sink: ForwardSink, extra: Partial<ConstructorParameters<typeof AuditForwarder>[0]> = {}) =>
     new AuditForwarder({
-      db,
+      tenancy,
       sink,
-      license: () => licensed(['audit-log']),
+      license: () => licensed(['audit-log'], () => tdb.scope.tenantId),
       now: clock,
       setTimer: manualTimer().setTimer,
       log: recordingLog().log,
@@ -138,15 +143,17 @@ describeDb('the audit forward outbox and forwarder (issue #209)', () => {
   beforeAll(async () => {
     // Every migration, 0020 included: the repositories' upserts name the tenant keys.
     db = await testDatabase();
+    tdb = await defaultTenantDb(db);
+    tenancy = createTenancy(db);
   });
   afterAll(() => db.close());
   beforeEach(async () => {
-    await db.query('delete from audit_events');
+    await tdb.query('delete from audit_events');
   });
 
   describe('the hook', () => {
     it('configured, queues a recorded event in the same transaction', async () => {
-      await db.transaction(async (tx) => {
+      await tdb.transaction(async (tx) => {
         await forwarding(tx, event(1));
         const inside = await tx.query<{ event_id: string; id: string }>(
           'select q.event_id, e.id from audit_forward_queue q join audit_events e on e.id = q.event_id',
@@ -159,19 +166,18 @@ describeDb('the audit forward outbox and forwarder (issue #209)', () => {
 
     it('queues nothing when the action rolls back', async () => {
       await expect(
-        db.transaction(async (tx) => {
+        tdb.transaction(async (tx) => {
           await forwarding(tx, event(1));
           throw new Error('the action failed');
         }),
       ).rejects.toThrow('the action failed');
       expect(await queued()).toBe('0');
-      expect((await db.query('select id from audit_events')).rows).toHaveLength(0);
+      expect((await tdb.query('select id from audit_events')).rows).toHaveLength(0);
     });
 
-    it('outside a transaction (on the pool), the event and its queue row are written together', async () => {
-      const pool = { query: db.query.bind(db) };
-      await forwarding(pool, event(1));
-      const rows = await db.query<{ id: string; event_id: string | null }>(
+    it('in a unit of its own (one statement), the event and its queue row are written together', async () => {
+      await forwarding(tdb, event(1));
+      const rows = await tdb.query<{ id: string; event_id: string | null }>(
         'select e.id, q.event_id from audit_events e left join audit_forward_queue q on q.event_id = e.id',
       );
       expect(rows.rows).toHaveLength(1);
@@ -179,22 +185,22 @@ describeDb('the audit forward outbox and forwarder (issue #209)', () => {
     });
 
     it('unconfigured, records the event and queues nothing', async () => {
-      await plain(db, event(1));
-      expect((await db.query('select id from audit_events')).rows).toHaveLength(1);
+      await plain(tdb, event(1));
+      expect((await tdb.query('select id from audit_events')).rows).toHaveLength(1);
       expect(await queued()).toBe('0');
     });
 
     it('a deleted event (retention) takes its queue row with it', async () => {
-      await forwarding(db, event(1));
-      await forwarding(db, event(2));
-      expect(await deleteAuditEventsBefore(db, new Date(tick + 1), 10)).toBe(2);
+      await forwarding(tdb, event(1));
+      await forwarding(tdb, event(2));
+      expect(await deleteAuditEventsBefore(tdb, new Date(tick + 1), 10)).toBe(2);
       expect(await queued()).toBe('0');
     });
   });
 
   describe('runOnce', () => {
     it('sends oldest first, as the API returns events, and empties the queue', async () => {
-      for (let i = 0; i < 5; i++) await forwarding(db, event(i));
+      for (let i = 0; i < 5; i++) await forwarding(tdb, event(i));
       const sink = new FakeSink();
       const pass = await forwarder(sink, { batchSize: 2 }).runOnce();
       expect(pass).toEqual({ outcome: 'sent', sent: 2, nextDelayMs: FORWARD_BUSY_MS });
@@ -208,11 +214,11 @@ describeDb('the audit forward outbox and forwarder (issue #209)', () => {
       expect(await queued()).toBe('0');
       expect(await f.runOnce()).toEqual({ outcome: 'idle', sent: 0, nextDelayMs: FORWARD_IDLE_MS });
       // Forwarding never deletes the events themselves.
-      expect((await db.query('select id from audit_events')).rows).toHaveLength(5);
+      expect((await tdb.query('select id from audit_events')).rows).toHaveLength(5);
     });
 
     it('a failing sink keeps the rows and backs off 5 s, doubling to 300 s; a success resets it', async () => {
-      await forwarding(db, event(1));
+      await forwarding(tdb, event(1));
       const sink = new FakeSink();
       sink.failure = new Error('connection refused');
       const { lines, log } = recordingLog();
@@ -232,16 +238,16 @@ describeDb('the audit forward outbox and forwarder (issue #209)', () => {
       expect(lines.filter((l) => l.level === 'info')).toHaveLength(1);
       expect(await queued()).toBe('0');
       sink.failure = new Error('again');
-      await forwarding(db, event(2));
+      await forwarding(tdb, event(2));
       expect((await f.runOnce()).nextDelayMs).toBe(5_000);
       expect(lines.filter((l) => l.level === 'warn')).toHaveLength(2);
       expect(JSON.stringify(lines)).not.toContain('a@example.com');
     });
 
     it('without the audit-log feature sends nothing, keeps the rows, and checks again after 60 s', async () => {
-      await forwarding(db, event(1));
+      await forwarding(tdb, event(1));
       const sink = new FakeSink();
-      const license = licensed([]);
+      const license = licensed([], () => tdb.scope.tenantId);
       const { lines, log } = recordingLog();
       const f = forwarder(sink, { license: () => license, log });
       expect(await f.runOnce()).toEqual({ outcome: 'unlicensed', sent: 0, nextDelayMs: FORWARD_UNLICENSED_MS });
@@ -256,8 +262,8 @@ describeDb('the audit forward outbox and forwarder (issue #209)', () => {
       expect(await queued()).toBe('0');
     });
 
-    it('two concurrent passes never send the same event twice (skip locked)', async () => {
-      for (let i = 0; i < 5; i++) await forwarding(db, event(i));
+    it('two concurrent passes never send the same event twice (the lease)', async () => {
+      for (let i = 0; i < 5; i++) await forwarding(tdb, event(i));
       const sink = new FakeSink();
       let release: () => void = () => undefined;
       sink.gate = new Promise((resolve) => {
@@ -265,8 +271,8 @@ describeDb('the audit forward outbox and forwarder (issue #209)', () => {
       });
       const a = forwarder(sink, { batchSize: 3 }).runOnce();
       const b = forwarder(sink, { batchSize: 3 }).runOnce();
-      // Both passes have claimed and reached the sink before either send resolves, so each
-      // transaction still holds its rows' locks while the other claims.
+      // Both passes have claimed and reached the sink before either send resolves: each holds its rows' lease
+      // while the other claims, and neither holds a unit.
       await sink.enteredAtLeast(2);
       release();
       const passes = await Promise.all([a, b]);
@@ -278,9 +284,74 @@ describeDb('the audit forward outbox and forwarder (issue #209)', () => {
     });
   });
 
+  describe('the lease (Task 17)', () => {
+    const leases = async () =>
+      (
+        await tdb.query<{ lease: string | null; live: boolean | null }>(
+          'select lease_id as lease, leased_until > now() as live from audit_forward_queue order by event_id',
+        )
+      ).rows;
+
+    it('holds no pooled connection while the sink takes its time', async () => {
+      await forwarding(tdb, event(1));
+      // One connection in all: a forwarder holding it across the send would leave none for anyone else.
+      const single = createDatabase(db.url, { max: 1 });
+      try {
+        const sink = new FakeSink();
+        let release: () => void = () => undefined;
+        sink.gate = new Promise((resolve) => {
+          release = resolve;
+        });
+        const pass = forwarder(sink, { tenancy: createTenancy(single) });
+        const running = pass.runOnce();
+        await sink.enteredAtLeast(1);
+        // The send is under way; the one connection is free for a unit of the same tenant.
+        const during = await tenantDbFactory(single)(tdb.scope).query<{ lease: string }>(
+          'select lease_id as lease from audit_forward_queue',
+        );
+        expect(during.rows).toHaveLength(1);
+        expect(typeof during.rows[0]!.lease).toBe('string');
+        release();
+        expect((await running).sent).toBe(1);
+        expect(await queued()).toBe('0');
+      } finally {
+        await single.close();
+      }
+    });
+
+    it('a failed send frees its lease at once; a lease that ran out is claimed again', async () => {
+      await forwarding(tdb, event(1));
+      const sink = new FakeSink();
+      sink.failure = new Error('down');
+      expect((await forwarder(sink).runOnce()).outcome).toBe('failed');
+      expect(await leases()).toEqual([{ lease: null, live: null }]);
+      // A server that stalled after its claim: its lease runs out, and the next claim takes the row.
+      await tdb.query(
+        "update audit_forward_queue set lease_id = 'L-stalled', leased_until = now() - interval '1 second'",
+      );
+      sink.failure = undefined;
+      expect((await forwarder(sink).runOnce()).sent).toBe(1);
+      expect(await queued()).toBe('0');
+    });
+
+    it('a live lease keeps the row from another claim, and the stalled server’s delete misses a retaken row', async () => {
+      await forwarding(tdb, event(1));
+      await tdb.query(
+        "update audit_forward_queue set lease_id = 'L-other', leased_until = now() + interval '1 minute'",
+      );
+      const sink = new FakeSink();
+      expect(await forwarder(sink).runOnce()).toMatchObject({ outcome: 'idle', sent: 0 });
+      expect(sink.batches).toHaveLength(0);
+      // Under another lease id the delete takes nothing.
+      const [row] = (await tdb.query<{ id: string }>('select event_id as id from audit_forward_queue')).rows;
+      expect(await tdb.transaction((tx) => deleteForwarded(tx, [row!.id], 'L-mine'))).toBe(0);
+      expect(await leases()).toEqual([{ lease: 'L-other', live: true }]);
+    });
+  });
+
   describe('the loop', () => {
     it('passes at start, every 2 s while busy, every 5 s when idle, backing off on failure', async () => {
-      await forwarding(db, event(1));
+      await forwarding(tdb, event(1));
       const timer = manualTimer();
       const sink = new FakeSink();
       const f = forwarder(sink, { setTimer: timer.setTimer, batchSize: 1 });
@@ -292,7 +363,7 @@ describeDb('the audit forward outbox and forwarder (issue #209)', () => {
       await f.runOnce();
       expect(timer.delays()).toEqual([FORWARD_BUSY_MS, FORWARD_IDLE_MS]);
       sink.failure = new Error('down');
-      await forwarding(db, event(2));
+      await forwarding(tdb, event(2));
       timer.fire();
       await f.runOnce();
       timer.fire();
@@ -304,7 +375,7 @@ describeDb('the audit forward outbox and forwarder (issue #209)', () => {
     });
 
     it('a pass that rejects is logged and the loop re-arms', async () => {
-      await forwarding(db, event(1));
+      await forwarding(tdb, event(1));
       const timer = manualTimer();
       const sink = new FakeSink();
       sink.failure = new Error('down');
@@ -327,7 +398,7 @@ describeDb('the audit forward outbox and forwarder (issue #209)', () => {
     });
 
     it('stop waits for a batch under way, which still commits, and nothing runs after', async () => {
-      await forwarding(db, event(1));
+      await forwarding(tdb, event(1));
       const timer = manualTimer();
       const sink = new FakeSink();
       let release: () => void = () => undefined;

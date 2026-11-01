@@ -166,3 +166,41 @@ describe('admin tenancy role (hosted spec §19.4)', () => {
     expect(() => parseServerArgs(['migrate', '--print-sql'])).toThrow(/--print-sql applies to admin tenancy role only/);
   });
 });
+
+describe('--tenant (hosted spec §19.11)', () => {
+  it('rides on every admin command but tenancy role', () => {
+    const cases: [string[], string][] = [
+      [['admin', 'invite', 'a@example.com'], 'admin-invite'],
+      [['admin', 'list-invitations'], 'admin-list-invitations'],
+      [['admin', 'revoke-invitation', 'I1'], 'admin-revoke-invitation'],
+      [['admin', 'license', 'show'], 'admin-license-show'],
+      [['admin', 'license', 'install', 'f.lic'], 'admin-license-install'],
+      [['admin', 'license', 'remove'], 'admin-license-remove'],
+      [['admin', 'audit', 'export'], 'admin-audit-export'],
+      [['admin', 'audit', 'verify'], 'admin-audit-verify'],
+      [['admin', 'schedules', 'list'], 'admin-schedules-list'],
+      [['admin', 'schedules', 'enable', 'S1'], 'admin-schedules-enable'],
+      [['admin', 'schedules', 'disable', 'S1'], 'admin-schedules-disable'],
+      [['admin', 'schedules', 'runs', 'S1'], 'admin-schedules-runs'],
+      [['admin', 'scim-token', 'create', 'idp'], 'admin-scim-token-create'],
+      [['admin', 'scim-token', 'list'], 'admin-scim-token-list'],
+      [['admin', 'scim-token', 'revoke', 'K1'], 'admin-scim-token-revoke'],
+      [['admin', 'scim-group', 'list'], 'admin-scim-group-list'],
+      [['admin', 'scim-group', 'link', 'G', 'T'], 'admin-scim-group-link'],
+      [['admin', 'scim-group', 'unlink', 'G'], 'admin-scim-group-unlink'],
+    ];
+    for (const [args, command] of cases) {
+      expect(parseServerArgs([...args, '--tenant', 'acme']), args.join(' ')).toMatchObject({ command, tenant: 'acme' });
+      expect(parseServerArgs(args), args.join(' ')).not.toHaveProperty('tenant');
+    }
+  });
+
+  it('refuses it outside the admin commands, on tenancy role, and with a value that is no slug', () => {
+    expect(() => parseServerArgs(['serve', '--tenant', 'acme'])).toThrow(UsageError);
+    expect(() => parseServerArgs(['migrate', '--tenant', 'acme'])).toThrow(/--tenant applies to the admin commands/);
+    expect(() => parseServerArgs(['admin', 'tenancy', 'role', '--tenant', 'acme'])).toThrow(/not to admin tenancy/);
+    for (const slug of ['Acme', '-acme', 'acme-', 'ac me', '', 'x'.repeat(41)]) {
+      expect(() => parseServerArgs(['admin', 'list-invitations', '--tenant', slug]), slug).toThrow(UsageError);
+    }
+  });
+});

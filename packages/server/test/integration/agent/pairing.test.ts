@@ -155,7 +155,7 @@ describeDb('local-agent pairing (hosted edition spec §18.2)', () => {
     expect(stale.statusCode).toBe(400);
     expect(codeOf(stale)).toBe('agent-pairing-code-invalid');
     expect((await pair(second)).statusCode).toBe(201);
-    const stored = await h.db.query('select code_hash from agent_pairing_codes');
+    const stored = await h.tdb.query('select code_hash from agent_pairing_codes');
     expect(JSON.stringify(stored.rows)).not.toContain(second);
   });
 
@@ -184,7 +184,7 @@ describeDb('local-agent pairing (hosted edition spec §18.2)', () => {
 
   it('keeps the code as an HMAC, not a plain hash of it', async () => {
     const code = await newCode();
-    const stored = (await h.db.query<{ code_hash: string }>('select code_hash from agent_pairing_codes')).rows;
+    const stored = (await h.tdb.query<{ code_hash: string }>('select code_hash from agent_pairing_codes')).rows;
     expect(stored).toHaveLength(1);
     expect(stored[0]!.code_hash).toMatch(/^[0-9a-f]{64}$/);
     expect(stored[0]!.code_hash).not.toBe(sha256(code));
@@ -245,7 +245,7 @@ describeDb('local-agent pairing (hosted edition spec §18.2)', () => {
     expect((await pair(code, { remoteAddress: '198.51.100.7' })).statusCode).toBe(201);
   });
 
-  it('stops pairing for everyone after 50 failed attempts in ten minutes, from any addresses', async () => {
+  it('stops pairing for everyone in the tenant after 50 failed attempts in ten minutes, from any addresses', async () => {
     const code = await newCode();
     const wrong = code === 'AAAAAA' ? 'BBBBBB' : 'AAAAAA';
     for (let i = 0; i < 50; i++) {
@@ -444,7 +444,7 @@ describeDb('local-agent pairing (hosted edition spec §18.2)', () => {
       headers: browser(alice),
     });
     expect(res.statusCode).toBe(204);
-    expect(unpaired).toEqual([{ pairingId, userId: alice.user.id }]);
+    expect(unpaired).toEqual([{ pairingId, userId: alice.user.id, tenantId: h.tdb.scope.tenantId }]);
     expect(audits.find((e) => e.action === 'agent.unpaired')).toMatchObject({
       actor: { kind: 'user', userId: alice.user.id },
       details: { by: 'user' },
@@ -474,7 +474,7 @@ describeDb('local-agent pairing (hosted edition spec §18.2)', () => {
     });
     const res = await signedRequest('DELETE', pairingId);
     expect(res.statusCode).toBe(204);
-    expect(unpaired).toEqual([{ pairingId, userId: alice.user.id }]);
+    expect(unpaired).toEqual([{ pairingId, userId: alice.user.id, tenantId: h.tdb.scope.tenantId }]);
     expect(audits.find((e) => e.action === 'agent.unpaired')).toMatchObject({
       actor: { kind: 'user', userId: alice.user.id },
       details: { by: 'agent', agentId: 'agent-1' },
@@ -601,9 +601,9 @@ describeDb('local-agent pairing (hosted edition spec §18.2)', () => {
     const pairingId = await paired();
     await newCode();
     await issueNonce(pairingId);
-    expect(await sweepAgent(h.db, h.clock.now)).toEqual({ codes: 0, nonces: 0 });
+    expect(await sweepAgent(h.tdb, h.clock.now)).toEqual({ codes: 0, nonces: 0 });
     h.clock.advance(10 * 60 * 1000);
-    expect(await sweepAgent(h.db, h.clock.now)).toEqual({ codes: 1, nonces: 1 });
+    expect(await sweepAgent(h.tdb, h.clock.now)).toEqual({ codes: 1, nonces: 1 });
   });
 });
 

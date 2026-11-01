@@ -1,7 +1,13 @@
 import Fastify, { type FastifyRequest } from 'fastify';
 import { checkEgress, WirebenchError } from '@wirebench/engine';
 import { describe, expect, it, vi } from 'vitest';
-import { egressPolicyOf, HOSTED_REFUSED, loadConfig, type ServerConfig } from '../../../src/config.js';
+import {
+  egressPolicyOf,
+  HOSTED_REFUSED,
+  loadConfig,
+  type ModuleConfig,
+  type ServerConfig,
+} from '../../../src/config.js';
 import { main } from '../../../src/main.js';
 import type { TenantDirectory } from '../../../src/tenancy/directory.js';
 import { hostKey, registerTenantResolution, RELOAD_MS, TenantResolver } from '../../../src/tenancy/resolve.js';
@@ -50,6 +56,15 @@ describe("the tenant's URL (spec §19.5)", () => {
     expect(urlWithoutScope(selfHosted)).toBe('https://wb.test');
     expect(urlWithoutScope(hosted)).toBeUndefined();
     expect(operatorPublicUrl(hosted)).toBe('https://wb.test');
+  });
+
+  it("takes the module's view of the configuration, which has no public URL, and refuses one not loaded", () => {
+    // What `ctx.config` is typed as: `ModuleConfig`, without `publicUrl`. The object is still the loaded one.
+    const seen: ModuleConfig = selfHosted;
+    expect(tenantUrl(seen, ACME)).toBe('https://wb.test');
+    expect(() => tenantUrl({ mode: 'self-hosted' }, ACME)).toThrow(
+      expect.objectContaining({ code: 'tenancy-no-public-url' }),
+    );
   });
 });
 

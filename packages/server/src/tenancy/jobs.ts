@@ -5,7 +5,7 @@
 import type { FastifyBaseLogger } from 'fastify';
 import type { TenantDirectory } from './directory.js';
 import type { TenantScope } from './scope.js';
-import type { TenantDbFactory, TenantQuerier } from './tenant-db.js';
+import { outsideTenantUnit, type TenantDbFactory, type TenantQuerier } from './tenant-db.js';
 
 export interface JobLoopDeps {
   readonly directory: Pick<TenantDirectory, 'list'>;
@@ -16,6 +16,19 @@ export interface JobLoopDeps {
 /** What a job's function returns to end the pass early: the tenants after this one get no unit. */
 export const STOP_PASS: unique symbol = Symbol('stop the job pass');
 
+/**
+ * What a job's function returns for work that must wait on the network: `afterUnit` runs once the tenant's unit has
+ * committed, outside any unit, before the next tenant's unit opens. It opens units of its own where it needs them,
+ * so no pooled connection waits on a remote end (the audit forwarder's send). A throw counts as the tenant's
+ * failure, and `STOP_PASS` ends the pass as it does from the function itself.
+ */
+export interface AfterUnit {
+  readonly afterUnit: () => Promise<void | typeof STOP_PASS>;
+}
+
+/** What a job's function may return. */
+export type JobOutcome = void | typeof STOP_PASS | AfterUnit;
+
 export interface JobPass {
   readonly served: number;
   readonly failed: readonly string[];
@@ -24,13 +37,14 @@ export interface JobPass {
 export async function forEachTenant(
   deps: JobLoopDeps,
   job: string,
-  fn: (tx: TenantQuerier, scope: TenantScope) => Promise<void | typeof STOP_PASS>,
+  fn: (tx: TenantQuerier, scope: TenantScope) => Promise<JobOutcome>,
 ): Promise<JobPass> {
   const failed: string[] = [];
   let served = 0;
   for (const scope of await deps.directory.list()) {
     try {
-      const outcome = await deps.db(scope).transaction((tx) => fn(tx, scope));
+      const committed = await deps.db(scope).transaction((tx) => fn(tx, scope));
+      const outcome = typeof committed === 'object' ? await outsideTenantUnit(() => committed.afterUnit()) : committed;
       served++;
       if (outcome === STOP_PASS) break;
     } catch (error) {

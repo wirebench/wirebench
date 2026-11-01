@@ -1,11 +1,13 @@
 import { randomBytes } from 'node:crypto';
 import { describe } from 'vitest';
-import type { Database } from '../../src/context.js';
+import type { Database } from '../../src/db/querier.js';
 import { migrate, type Migration } from '../../src/db/migrate.js';
 import { createDatabase } from '../../src/db/pool.js';
 import { BUILTIN_MODULES } from '../../src/modules.js';
 import { allMigrations } from '../../src/serve.js';
 import { ensureAppRole } from '../../src/tenancy/roles.js';
+import { sqlSkeleton } from '../../src/tenancy/tenant-db.js';
+import { SCOPED_TABLES } from './catalog.js';
 
 /** The admin URL: a superuser, used only to create and drop each file's schema. */
 export const TEST_DATABASE_URL =
@@ -64,6 +66,59 @@ export const describeDb: (name: string, factory: () => void) => void = (() => {
   return describe.skip;
 })();
 
+const SETS_TENANT = /set_config\s*\(\s*'wirebench\.tenant_id'/i;
+
+/**
+ * The app role's pool, refusing a statement that names a scoped table outside a tenant unit (Task 17). Under the
+ * forced policy such a statement reads nothing and writes nothing, so a test that asserted on it would pass for
+ * nothing, and a server path that sent one would fail silently. A unit is a transaction whose `set_config` of
+ * `wirebench.tenant_id` came first, as `withTenant` sends it; a test writes its fixtures through one (`tdb`).
+ *
+ * With `onlyWhenForced` (the owner's pool, Task 17 review M4), only reads and writes (`select`, `insert`, `update`,
+ * `delete`, `with`) are refused, and only once a table they name is forced: the owner runs the migrations and
+ * loads the `0019` fixture, which name the tables freely before `0021`, and is held by the policy after it.
+ */
+function outsideUnitsRefused(db: Database, options: { readonly onlyWhenForced?: boolean } = {}): Database {
+  const named = (text: string): string[] => {
+    const skeleton = sqlSkeleton(text);
+    if (options.onlyWhenForced === true && !/^\s*(?:select|insert|update|delete|with)\b/i.test(skeleton)) return [];
+    return SCOPED_TABLES.filter((table) => new RegExp(`\\b${table}\\b`, 'i').test(skeleton));
+  };
+  const refused = async (querier: Pick<Database, 'query'>, text: string): Promise<Error | undefined> => {
+    const tables = named(text);
+    if (tables.length === 0) return undefined;
+    if (options.onlyWhenForced === true) {
+      const forced = await querier.query<{ forced: boolean | null }>(
+        `select bool_or(relforcerowsecurity) as forced from pg_class
+          where relnamespace = to_regnamespace(current_schema()) and relname = any($1::text[])`,
+        [tables],
+      );
+      if (forced.rows[0]?.forced !== true) return undefined;
+    }
+    return new Error(`a statement on a scoped table ran outside a tenant unit; send it through a TenantDb: ${text}`);
+  };
+  return {
+    query: async (text: string, params?: readonly unknown[]) => {
+      const error = await refused(db, text);
+      if (error !== undefined) throw error;
+      return db.query(text, params);
+    },
+    transaction: (fn) =>
+      db.transaction((tx) => {
+        let inUnit = false;
+        return fn({
+          query: async (text: string, params?: readonly unknown[]) => {
+            if (SETS_TENANT.test(text)) inUnit = true;
+            const error = inUnit ? undefined : await refused(tx, text);
+            if (error !== undefined) throw error;
+            return tx.query(text, params);
+          },
+        });
+      }),
+    close: () => db.close(),
+  };
+}
+
 export interface TestDatabase extends Database {
   readonly schema: string;
   /** The app role's URL with this schema on its search path: what a server under test connects with. */
@@ -111,8 +166,8 @@ export async function testDatabase(options: { readonly migrated?: boolean } = {}
   }
   const ownerUrl = withSchema(OWNER_URL!, schema);
   const url = withSchema(APP_URL!, schema);
-  const owner = createDatabase(ownerUrl);
-  const db = createDatabase(url);
+  const owner = outsideUnitsRefused(createDatabase(ownerUrl), { onlyWhenForced: true });
+  const db = outsideUnitsRefused(createDatabase(url));
   const grant = async (): Promise<void> => {
     await ensureAppRole(owner, url);
   };

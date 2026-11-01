@@ -160,6 +160,11 @@ describeDb('tenant resolution (spec §19.5)', () => {
     let h: IdentityHarness;
     let resolver: TenantResolver | undefined;
     const ids: Record<string, string> = {};
+    /** acme's database: a user signs in on acme's host only from acme's own rows (forced policy, 0021). */
+    const acme = async () => {
+      const scope = (await directoryOf(h.ctx.tenancy).list()).find((of) => of.slug === 'acme');
+      return h.ctx.tenancy.db(scope!);
+    };
     beforeAll(async () => {
       h = await identityHarness({
         env: { ...BROWSER_ENV, ...OIDC_ENV },
@@ -233,7 +238,7 @@ describeDb('tenant resolution (spec §19.5)', () => {
     it("prints and checks the tenant's URL: meta, the cookie and Origin", async () => {
       const meta = await h.app.inject({ method: 'GET', url: '/api/v1/meta', headers: { host: 'acme.example.test' } });
       expect(meta.json<{ publicUrl: string }>().publicUrl).toBe('https://acme.example.test');
-      const alice = await signedInUser(h, { email: 'alice@example.com', kind: 'browser' });
+      const alice = await signedInUser(h, { email: 'alice@example.com', kind: 'browser', tdb: await acme() });
       const post = (origin: string, cookie = '__Host-wb_session') =>
         h.app.inject({
           method: 'POST',
@@ -282,7 +287,7 @@ describeDb('tenant resolution (spec §19.5)', () => {
     });
 
     it("names the tenant's URL in an invitation link", async () => {
-      const admin = await signedInUser(h, { email: 'admin@example.com', serverAdmin: true });
+      const admin = await signedInUser(h, { email: 'admin@example.com', serverAdmin: true, tdb: await acme() });
       const res = await h.app.inject({
         method: 'POST',
         url: '/api/v1/invitations',

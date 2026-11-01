@@ -104,9 +104,9 @@ describe('allMigrations', () => {
     expect((await allMigrations([moduleWith(identity)], host, tenancy)).map((m) => m.version)).toEqual([1, 2]);
   });
 
-  it('puts 0020_tenancy after every built-in module', async () => {
+  it('puts 0020_tenancy and 0021_tenant-isolation after every built-in module', async () => {
     const versions = (await allMigrations(BUILTIN_MODULES)).map((m) => `${m.version}_${m.name}`);
-    expect(versions.slice(-2)).toEqual(['19_agent-pairings', '20_tenancy']);
+    expect(versions.slice(-3)).toEqual(['19_agent-pairings', '20_tenancy', '21_tenant-isolation']);
   });
 });
 

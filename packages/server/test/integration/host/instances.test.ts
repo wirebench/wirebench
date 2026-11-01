@@ -28,6 +28,7 @@ const BOB = {
   serverUrl: 'https://wirebench.test',
   tenant: TENANT,
 };
+const OTHER_TENANT = scopeOf({ id: '00000000-0000-4000-8000-000000000002', slug: 'acme' });
 const IDLE_MS = 30 * 60_000;
 
 function fakeHost(): ServerHost & { disposed: number } {
@@ -94,7 +95,7 @@ describe('HostInstances', () => {
     await instances.open(BOB, socket('token-b', 'tb'));
     expect(instances.size).toBe(2);
     // The newest socket closes: the credential is the newest left.
-    instances.release(ALICE.id, two);
+    instances.release(ALICE, two);
     expect(credentialOf(ALICE.id)).toBe('token-1');
   });
 
@@ -104,8 +105,58 @@ describe('HostInstances', () => {
     await instances.open(ALICE, one);
     await instances.open(ALICE, two);
     expect(made[0]!.session()).toEqual({ token: 'token-2', tokenId: 't2', ip: '198.51.100.2' });
-    instances.release(ALICE.id, two);
+    instances.release(ALICE, two);
     expect(made[0]!.session()).toEqual({ token: 'token-1', tokenId: 't1', ip: '198.51.100.1' });
+  });
+
+  it('one user id in two tenants is two users: two instances, two counts, and a session’s end in its tenant only', async () => {
+    const elsewhere = { ...ALICE, serverUrl: 'https://acme.example.test', tenant: OTHER_TENANT };
+    // One token id in both tenants, two different tokens: what tells them apart is the tenant.
+    const here = socket('token-1', 't1');
+    const there = socket('token-x', 't1');
+    const first = await instances.open(ALICE, here);
+    const second = await instances.open(elsewhere, there);
+    expect(second).not.toBe(first);
+    expect(made.map((one) => one.userId)).toEqual([ALICE.id, ALICE.id]);
+    expect(instances.size).toBe(2);
+    expect(instances.socketCount(ALICE)).toBe(1);
+    expect(instances.socketCount(elsewhere)).toBe(1);
+    // A release in one tenant leaves the other's instance alone: its count, its socket and its credential.
+    instances.release(elsewhere, there);
+    expect(instances.socketCount(elsewhere)).toBe(0);
+    expect(instances.socketCount(ALICE)).toBe(1);
+    expect(here.closedWith).toEqual([]);
+    expect(made[0]!.session()?.token).toBe('token-1');
+    // The same token id and user id, announced for the other tenant, closes nothing here.
+    const again = socket('token-x', 't1');
+    await instances.open(elsewhere, again);
+    instances.sessionEnded({ tenantId: OTHER_TENANT.tenantId, tokenId: 't1' });
+    expect(again.closedWith).toEqual([4401]);
+    expect(here.closedWith).toEqual([]);
+    instances.sessionEnded({ tenantId: OTHER_TENANT.tenantId, userId: ALICE.id });
+    expect(here.closedWith).toEqual([]);
+    expect(instances.socketCount(ALICE)).toBe(1);
+    expect(made[0]!.session()?.token).toBe('token-1');
+  });
+
+  it('counts a waiting socket in its own tenant only (Task 16 review M3)', async () => {
+    const gate = slowEviction();
+    const elsewhere = { ...ALICE, serverUrl: 'https://acme.example.test', tenant: OTHER_TENANT };
+    await instances.open(ALICE, socket('token-1', 't1'));
+    await instances.open(elsewhere, socket('token-x', 'tx'));
+    // Alice's instance here is evicted (her session ended); her next socket waits for the eviction.
+    instances.sessionEnded({ tenantId: TENANT.tenantId, tokenId: 't1' });
+    const waiting = socket('token-2', 't2');
+    const opened = instances.open(ALICE, waiting);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(instances.socketCount(ALICE)).toBe(1);
+    // The same user id elsewhere still has its one open socket, and the waiting one is not counted there.
+    expect(instances.socketCount(elsewhere)).toBe(1);
+    instances.release(ALICE, waiting);
+    expect(instances.socketCount(ALICE)).toBe(0);
+    expect(instances.socketCount(elsewhere)).toBe(1);
+    gate.finish();
+    await opened;
   });
 
   it('counts a user’s sockets, open or waiting for an eviction, and only theirs', async () => {
@@ -114,16 +165,16 @@ describe('HostInstances', () => {
     await instances.open(ALICE, first);
     await instances.open(ALICE, socket('token-1', 't1'));
     await instances.open(BOB, socket('token-b', 'tb'));
-    expect(instances.socketCount(ALICE.id)).toBe(2);
-    expect(instances.socketCount(BOB.id)).toBe(1);
-    instances.sessionEnded({ tokenId: 't1' });
-    expect(instances.socketCount(ALICE.id)).toBe(0);
+    expect(instances.socketCount(ALICE)).toBe(2);
+    expect(instances.socketCount(BOB)).toBe(1);
+    instances.sessionEnded({ tenantId: TENANT.tenantId, tokenId: 't1' });
+    expect(instances.socketCount(ALICE)).toBe(0);
     const waiting = socket('token-2', 't2');
     const opened = instances.open(ALICE, waiting);
     await vi.advanceTimersByTimeAsync(0);
-    expect(instances.socketCount(ALICE.id)).toBe(1);
-    instances.release(ALICE.id, waiting);
-    expect(instances.socketCount(ALICE.id)).toBe(0);
+    expect(instances.socketCount(ALICE)).toBe(1);
+    instances.release(ALICE, waiting);
+    expect(instances.socketCount(ALICE)).toBe(0);
     gate.finish();
     await opened;
   });
@@ -135,7 +186,7 @@ describe('HostInstances', () => {
     await mkdir(checkout, { recursive: true });
     const one = socket('token-1', 't1');
     await instances.open(ALICE, one);
-    instances.release(ALICE.id, one);
+    instances.release(ALICE, one);
     await vi.advanceTimersByTimeAsync(IDLE_MS - 1);
     const back = socket('token-1', 't1');
     await instances.open(ALICE, back);
@@ -143,7 +194,7 @@ describe('HostInstances', () => {
     expect(instances.size).toBe(1);
     expect(made[0]!.host.disposed).toBe(0);
 
-    instances.release(ALICE.id, back);
+    instances.release(ALICE, back);
     await vi.advanceTimersByTimeAsync(IDLE_MS);
     expect(instances.size).toBe(0);
     await vi.waitFor(() => expect(existsSync(temp)).toBe(false));
@@ -161,21 +212,21 @@ describe('HostInstances', () => {
     await instances.open(ALICE, old);
     await instances.open(ALICE, fresh);
     await instances.open(ALICE, otherTab);
-    instances.sessionEnded({ tokenId: 't1' });
+    instances.sessionEnded({ tenantId: TENANT.tenantId, tokenId: 't1' });
     expect(old.closedWith).toEqual([4401]);
     expect(fresh.closedWith).toEqual([]);
     expect(credentialOf(ALICE.id)).toBe('token-2');
 
     // The credential's own session ends; the user still has a socket with another token.
-    instances.release(ALICE.id, old);
+    instances.release(ALICE, old);
     const third = socket('token-3', 't3');
     await instances.open(ALICE, third);
-    instances.release(ALICE.id, third);
+    instances.release(ALICE, third);
     expect(credentialOf(ALICE.id)).toBe('token-2');
     const fourth = socket('token-4', 't4');
     await instances.open(ALICE, fourth);
     expect(credentialOf(ALICE.id)).toBe('token-4');
-    instances.sessionEnded({ tokenId: 't4' });
+    instances.sessionEnded({ tenantId: TENANT.tenantId, tokenId: 't4' });
     expect(fourth.closedWith).toEqual([4401]);
     expect(credentialOf(ALICE.id)).toBe('token-2');
     expect(instances.size).toBe(1);
@@ -187,7 +238,7 @@ describe('HostInstances', () => {
     await instances.open(ALICE, one);
     await instances.open(ALICE, two);
     await instances.open(BOB, socket('token-b', 'tb'));
-    instances.sessionEnded({ tokenId: 't1' });
+    instances.sessionEnded({ tenantId: TENANT.tenantId, tokenId: 't1' });
     expect(one.closedWith).toEqual([4401]);
     expect(two.closedWith).toEqual([4401]);
     expect(instances.size).toBe(1);
@@ -202,7 +253,7 @@ describe('HostInstances', () => {
     await instances.open(ALICE, one);
     await instances.open(ALICE, two);
     await instances.open(BOB, bob);
-    instances.sessionEnded({ userId: ALICE.id });
+    instances.sessionEnded({ tenantId: TENANT.tenantId, userId: ALICE.id });
     expect([one.closedWith, two.closedWith, bob.closedWith]).toEqual([[4401], [4401], []]);
     expect(instances.size).toBe(1);
     // Every session but one (a password change): that one's sockets stay.
@@ -210,7 +261,7 @@ describe('HostInstances', () => {
     const drop = socket('token-6', 't6');
     await instances.open(ALICE, keep);
     await instances.open(ALICE, drop);
-    instances.sessionEnded({ userId: ALICE.id, exceptTokenId: 't5' });
+    instances.sessionEnded({ tenantId: TENANT.tenantId, userId: ALICE.id, exceptTokenId: 't5' });
     expect([keep.closedWith, drop.closedWith]).toEqual([[], [4401]]);
     expect(credentialOf(ALICE.id)).toBe('token-5');
   });
@@ -236,7 +287,7 @@ describe('HostInstances', () => {
       },
     });
     await instances.open(ALICE, socket('token-1', 't1'));
-    instances.sessionEnded({ tokenId: 't1' });
+    instances.sessionEnded({ tenantId: TENANT.tenantId, tokenId: 't1' });
     const reopened = instances.open(ALICE, socket('token-2', 't2'));
     await vi.advanceTimersByTimeAsync(0);
     expect(made).toHaveLength(1);
@@ -277,11 +328,11 @@ describe('HostInstances', () => {
   it('a socket that closes while it waits for an eviction leaves no instance behind', async () => {
     const gate = slowEviction();
     await instances.open(ALICE, socket('token-1', 't1'));
-    instances.sessionEnded({ tokenId: 't1' });
+    instances.sessionEnded({ tenantId: TENANT.tenantId, tokenId: 't1' });
     const waiting = socket('token-2', 't2');
     const opened = instances.open(ALICE, waiting);
     await vi.advanceTimersByTimeAsync(0);
-    instances.release(ALICE.id, waiting);
+    instances.release(ALICE, waiting);
     gate.finish();
     await expect(opened).resolves.toBeUndefined();
     expect(instances.size).toBe(0);
@@ -291,11 +342,11 @@ describe('HostInstances', () => {
   it('a session that ends while its socket waits for an eviction closes it 4401 and builds nothing', async () => {
     const gate = slowEviction();
     await instances.open(ALICE, socket('token-1', 't1'));
-    instances.sessionEnded({ tokenId: 't1' });
+    instances.sessionEnded({ tenantId: TENANT.tenantId, tokenId: 't1' });
     const waiting = socket('token-2', 't2');
     const opened = instances.open(ALICE, waiting);
     await vi.advanceTimersByTimeAsync(0);
-    instances.sessionEnded({ userId: ALICE.id });
+    instances.sessionEnded({ tenantId: TENANT.tenantId, userId: ALICE.id });
     expect(waiting.closedWith).toEqual([4401]);
     gate.finish();
     await expect(opened).resolves.toBeUndefined();
@@ -305,7 +356,7 @@ describe('HostInstances', () => {
   it('builds no instance once closeAll has started, even for a socket that was waiting', async () => {
     const gate = slowEviction();
     await instances.open(ALICE, socket('token-1', 't1'));
-    instances.sessionEnded({ tokenId: 't1' });
+    instances.sessionEnded({ tenantId: TENANT.tenantId, tokenId: 't1' });
     const opened = instances.open(ALICE, socket('token-2', 't2'));
     await vi.advanceTimersByTimeAsync(0);
     const closing = instances.closeAll();
@@ -323,14 +374,14 @@ describe('HostInstances', () => {
     await instances.open(ALICE, b);
     await instances.open(ALICE, a1);
     await instances.open(ALICE, a2);
-    instances.sessionEnded({ tokenId: 'ta' });
+    instances.sessionEnded({ tenantId: TENANT.tenantId, tokenId: 'ta' });
     expect(credentialOf(ALICE.id)).toBe('token-b');
-    instances.release(ALICE.id, a2);
+    instances.release(ALICE, a2);
     expect(credentialOf(ALICE.id)).toBe('token-b');
-    instances.release(ALICE.id, a1);
+    instances.release(ALICE, a1);
     expect(credentialOf(ALICE.id)).toBe('token-b');
     // The last socket with a live token goes: the idle timer starts, with B still the credential.
-    instances.release(ALICE.id, b);
+    instances.release(ALICE, b);
     expect(credentialOf(ALICE.id)).toBe('token-b');
     await vi.advanceTimersByTimeAsync(IDLE_MS);
     expect(instances.size).toBe(0);
@@ -342,8 +393,8 @@ describe('HostInstances', () => {
     await instances.open(ALICE, a);
     await instances.open(ALICE, b);
     // B closes; A is the credential, and its session then ends: nothing live is left.
-    instances.release(ALICE.id, b);
-    instances.sessionEnded({ tokenId: 'ta' });
+    instances.release(ALICE, b);
+    instances.sessionEnded({ tenantId: TENANT.tenantId, tokenId: 'ta' });
     expect(instances.size).toBe(0);
   });
 });

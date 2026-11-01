@@ -155,7 +155,7 @@ export function hostModule(options: HostModuleOptions = {}): ServerModule {
           // A token the server refused is over even if no announcement said so (idle or lazy expiry).
           const refused = (tokenId: string): void => {
             queueMicrotask(() => {
-              instances.sessionEnded({ tokenId });
+              instances.sessionEnded({ tokenId, tenantId: user.tenant.tenantId });
             });
           };
           return createServerHost({
@@ -179,8 +179,10 @@ export function hostModule(options: HostModuleOptions = {}): ServerModule {
                 ),
               credential,
             },
+            // In the user's tenant: the audit row is that tenant's.
             onSecret: (event) => {
-              ctx.db
+              ctx.tenancy
+                .db(user.tenant)
                 .transaction((tx) => recordAudit(ctx.hooks, tx, secretAudit(user, session(), event)))
                 .catch((error: unknown) => {
                   log('a secret audit event could not be recorded', error);
@@ -220,7 +222,7 @@ export function hostModule(options: HostModuleOptions = {}): ServerModule {
           refuse(HOST_CLOSE.serverError, 'server error');
           return;
         }
-        if (instances.socketCount(caller.id) >= HOST_LIMITS.maxSocketsPerUser) {
+        if (instances.socketCount({ id: caller.id, tenant: request.tenant }) >= HOST_LIMITS.maxSocketsPerUser) {
           refuse(HOST_CLOSE.tooManySockets, 'too many host sockets');
           return;
         }
@@ -246,11 +248,11 @@ export function hostModule(options: HostModuleOptions = {}): ServerModule {
             if (closed) return;
             // Revoked or deleted since identity's check: the session is over, so is this socket.
             if (found === undefined || found.token.revokedAt !== null) {
-              instances.sessionEnded({ tokenId: caller.tokenId });
+              instances.sessionEnded({ tokenId: caller.tokenId, tenantId: request.tenant.tenantId });
               return;
             }
             deadline = at(Date.parse(found.token.createdAt) + tokenMaxMs, () => {
-              instances.sessionEnded({ tokenId: caller.tokenId });
+              instances.sessionEnded({ tokenId: caller.tokenId, tenantId: request.tenant.tenantId });
             });
           })
           .catch((error: unknown) => {
@@ -266,7 +268,7 @@ export function hostModule(options: HostModuleOptions = {}): ServerModule {
           onClosed: () => {
             closed = true;
             deadline?.cancel();
-            instances.release(user.id, handle);
+            instances.release(user, handle);
           },
         });
       });

@@ -10,7 +10,7 @@
  */
 import { createHash, createHmac, pbkdf2Sync, randomBytes } from 'node:crypto';
 import { WirebenchError } from '@wirebench/engine';
-import type { Database, Querier } from '../context.js';
+import type { Database, Querier } from '../db/querier.js';
 import { appRoleGrants } from './grants.js';
 
 /** PostgreSQL's own default (`scram_iterations`), so a verifier made here costs what one made there does. */

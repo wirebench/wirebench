@@ -6,17 +6,20 @@
  *
  * It comes after `host`. It announces `agentUnpaired` for the server host to drop a pairing from its view;
  * nothing listens yet (Part B's server host will).
- * Expired codes and nonces are swept daily, like identity's flows.
+ * Expired codes and nonces are swept daily, like identity's flows, in each tenant's unit through the job loop.
  */
 import { fileURLToPath } from 'node:url';
 import type { FastifyInstance } from 'fastify';
-import type { Querier, ServerContext, ServerModule } from '../context.js';
+import type { ServerContext, ServerModule } from '../context.js';
+import type { TenantQuerier } from '../tenancy/tenant-db.js';
 import * as repo from './repo.js';
 import { agentRoutes } from './routes.js';
 
 export const AGENT_MIGRATIONS_DIR = fileURLToPath(new URL('../../migrations/agent/', import.meta.url));
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+/** The sweep's name in the job loop's log lines. */
+export const AGENT_SWEEP_JOB = 'agent-sweep';
 
 export interface AgentModuleOptions {
   /** Injected clock for expiry and timestamp tests. */
@@ -25,8 +28,8 @@ export interface AgentModuleOptions {
   readonly sweepIntervalMs?: number;
 }
 
-/** Deletes expired pairing codes and nonces. */
-export function sweepAgent(db: Querier, now: Date): Promise<{ codes: number; nonces: number }> {
+/** Deletes one tenant's expired pairing codes and nonces. */
+export function sweepAgent(db: TenantQuerier, now: Date): Promise<{ codes: number; nonces: number }> {
   return repo.deleteExpired(db, now);
 }
 
@@ -44,7 +47,15 @@ export function agentModule(options: AgentModuleOptions = {}): ServerModule {
       const interval = options.sweepIntervalMs ?? DAY_MS;
       if (interval > 0) {
         const timer = setInterval(() => {
-          sweepAgent(ctx.db, now()).catch((error: unknown) => ctx.log.warn({ err: error }, 'agent sweep failed'));
+          ctx.tenancy
+            .forEachTenant(
+              AGENT_SWEEP_JOB,
+              async (tx) => {
+                await sweepAgent(tx, now());
+              },
+              ctx.log,
+            )
+            .catch((error: unknown) => ctx.log.warn({ err: error }, 'agent sweep failed'));
         }, interval);
         timer.unref();
         app.addHook('onClose', () => {

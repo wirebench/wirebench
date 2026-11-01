@@ -20,7 +20,7 @@ import * as teamsRepo from '../teams/repo.js';
 import * as repo from './repo.js';
 
 export interface ProvisioningEnv {
-  readonly ctx: Pick<ServerContext, 'db' | 'tenancy' | 'hooks'>;
+  readonly ctx: Pick<ServerContext, 'tenancy' | 'hooks'>;
   readonly now: () => Date;
 }
 

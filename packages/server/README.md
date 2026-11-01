@@ -92,7 +92,8 @@ password stored as a SCRAM-SHA-256 verifier), and grants it its privileges. `com
 `wirebench` as the owner and `wirebench_app` as the app role, so an existing volume starts as well.
 
 With only `WIREBENCH_SERVER_DATABASE_URL` set, that one role migrates and queries, as before, and start-up
-logs a warning that row-level security does not apply to it. Two URLs that name the same role are one role
+logs a warning that row-level security cannot be relied on for it: a superuser skips it, and the owner of the
+tables is held by it (the server forces it on every table) but may switch it off. Two URLs that name the same role are one role
 too: the migrations run over the migration URL. With two roles, both must be `postgres://` URLs that name
 their users, and the app URL must name the password the role is created with.
 
@@ -117,6 +118,12 @@ plain `alter role … password '…'` would. The role is shared by
 every database of the cluster, since PostgreSQL roles are. Going back is pointing
 `WIREBENCH_SERVER_DATABASE_URL` at the owner again and unsetting the migration URL; unsetting only the
 migration URL would leave migrations to the app role, which may not create tables.
+
+**Backups.** Every table but `schema_migrations`, `server_identity` and `tenants` is under forced row-level
+security. `pg_dump` as the app role, or as an owner that is no superuser, refuses those tables (with
+`--enable-row-security`, it dumps them empty). Back up as a superuser or as a role of its own with `BYPASSRLS`.
+On the default compose installation the owner, `wirebench`, is a superuser, so existing backup scripts keep
+working.
 
 The image carries the browser client's build. A server run from a checkout with
 `WIREBENCH_SERVER_BROWSER_CLIENT` on needs it too, or it refuses to start: run

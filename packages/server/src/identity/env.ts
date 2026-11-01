@@ -1,4 +1,4 @@
-import type { ServerConfig } from '../config.js';
+import type { ModuleConfig } from '../config.js';
 import type { ServerContext } from '../context.js';
 import { tenantUrl, type ScopeSource } from '../tenancy/urls.js';
 import type { OidcProvider } from './oidc.js';
@@ -24,7 +24,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  * gives each tenant its own would sign people into any tenant with a matching email. So the OIDC routes answer
  * `404`, as they do on a server without OIDC, and nothing reports it.
  */
-export function identitySettings(config: ServerConfig): IdentitySettings {
+export function identitySettings(config: ModuleConfig): IdentitySettings {
   return {
     local: config.localAuth,
     oidc:
@@ -50,7 +50,7 @@ export interface IdentityEnv {
 
 /** What the invitation functions need: the CLI builds one without a Fastify app or a provider. */
 export interface InvitationEnv {
-  readonly ctx: Pick<ServerContext, 'db' | 'tenancy' | 'config' | 'hooks' | 'license'>;
+  readonly ctx: Pick<ServerContext, 'tenancy' | 'config' | 'hooks' | 'license'>;
   readonly settings: Pick<IdentitySettings, 'invitationMs' | 'local' | 'oidc'>;
   readonly now: () => Date;
 }

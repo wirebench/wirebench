@@ -15,32 +15,25 @@ import {
   type ScheduleRunDetail,
   type ScheduleRunPage,
 } from '@wirebench/engine';
-import type { FastifyInstance, preHandlerAsyncHookHandler } from 'fastify';
-import {
-  announce,
-  auditSource,
-  recordAudit,
-  type Database,
-  type LicenseService,
-  type ServerHooks,
-} from '../context.js';
+import type { FastifyInstance, FastifyRequest, preHandlerAsyncHookHandler } from 'fastify';
+import { announce, auditSource, recordAudit, type LicenseService, type ServerHooks } from '../context.js';
 import { newId } from '../identity/tokens.js';
 import { jsonSchema } from '../schema.js';
 import { requireWorkspaceRole } from '../teams/roles.js';
 import { cursorInvalid, runFinished, runNotFound, runOpen, scheduleNotFound } from './errors.js';
 import * as repo from './repo.js';
+import type { TenantScope } from '../tenancy/scope.js';
 import type { Tenancy } from '../tenancy/tenancy.js';
 
 /** What the routes ask of the scheduler on this server. */
 export interface RunControl {
-  /** Starts queued runs now, rather than at the next tick. */
-  kick(): void;
-  /** Aborts a run this server is running; false when it is not running here. */
-  cancel(runId: string): boolean;
+  /** Starts `scope`'s queued runs now, rather than at the next tick; called once its run is committed. */
+  kick(scope: TenantScope): void;
+  /** Aborts a run this server is running in `scope`'s tenant. */
+  cancel(scope: TenantScope, runId: string): boolean;
 }
 
 export interface ScheduleRunRoutesEnv {
-  readonly db: Database;
   /** The tenant databases: the role guard and teams' reads run in the request's tenant (tenancy Task 9). */
   readonly tenancy: Pick<Tenancy, 'db'>;
   readonly hooks: ServerHooks;
@@ -78,7 +71,8 @@ function decodeCursor(text: string): Cursor {
 export const scheduleRunRoutes =
   (env: ScheduleRunRoutesEnv) =>
   (app: FastifyInstance): void => {
-    const { db } = env;
+    // The request's tenant database (spec §19.8 guard 2).
+    const tdb = (request: FastifyRequest) => env.tenancy.db(request.tenant);
     const feature: preHandlerAsyncHookHandler = async function (request, reply) {
       await env.license().requireFeature('scheduled-runs').call(this, request, reply);
     };
@@ -86,8 +80,12 @@ export const scheduleRunRoutes =
     const writer = [requireWorkspaceRole(env.tenancy, 'admin'), feature];
     const scheduleParams = jsonSchema(scheduleParamsSchema, { io: 'input' });
     const runParams = jsonSchema(scheduleRunParamsSchema, { io: 'input' });
-    const scheduleOf = async (workspaceId: string, scheduleId: string): Promise<repo.ScheduleRow> => {
-      const row = await repo.scheduleById(db, workspaceId, scheduleId);
+    const scheduleOf = async (
+      request: FastifyRequest,
+      workspaceId: string,
+      scheduleId: string,
+    ): Promise<repo.ScheduleRow> => {
+      const row = await repo.scheduleById(tdb(request), workspaceId, scheduleId);
       if (row === undefined) throw scheduleNotFound();
       return row;
     };
@@ -99,7 +97,7 @@ export const scheduleRunRoutes =
         const { workspaceId } = request.workspaceAccess!;
         const { scheduleId } = request.params as { readonly scheduleId: string };
         const id = newId();
-        await db.transaction(async (tx) => {
+        await tdb(request).transaction(async (tx) => {
           // Locked, so two requests at once cannot both find no open run.
           const row = await repo.scheduleById(tx, workspaceId, scheduleId, true);
           if (row === undefined) throw scheduleNotFound();
@@ -113,8 +111,8 @@ export const scheduleRunRoutes =
             details: { name: row.name, runId: id },
           });
         });
-        env.runs.kick();
-        return reply.code(201).send(await repo.runById(db, scheduleId, id));
+        env.runs.kick(request.tenant);
+        return reply.code(201).send(await repo.runById(tdb(request), scheduleId, id));
       },
     );
 
@@ -132,9 +130,9 @@ export const scheduleRunRoutes =
         const { scheduleId } = request.params as { readonly scheduleId: string };
         const query = scheduleRunsQuerySchema.parse(request.query);
         const after = query.after === undefined ? undefined : decodeCursor(query.after);
-        const schedule = await scheduleOf(request.workspaceAccess!.workspaceId, scheduleId);
+        const schedule = await scheduleOf(request, request.workspaceAccess!.workspaceId, scheduleId);
         // One more than asked tells whether there is a next page.
-        const runs = await repo.runsPage(db, schedule.id, {
+        const runs = await repo.runsPage(tdb(request), schedule.id, {
           ...(query.status !== undefined ? { status: query.status } : {}),
           ...(after !== undefined ? { after } : {}),
           limit: query.limit + 1,
@@ -152,13 +150,13 @@ export const scheduleRunRoutes =
       { preHandler: reader, schema: { params: runParams, response: { 200: jsonSchema(scheduleRunDetailSchema) } } },
       async (request): Promise<ScheduleRunDetail> => {
         const { scheduleId, runId } = request.params as { readonly scheduleId: string; readonly runId: string };
-        const schedule = await scheduleOf(request.workspaceAccess!.workspaceId, scheduleId);
-        const run = await repo.runById(db, schedule.id, runId);
+        const schedule = await scheduleOf(request, request.workspaceAccess!.workspaceId, scheduleId);
+        const run = await repo.runById(tdb(request), schedule.id, runId);
         if (run === undefined) throw runNotFound();
         return {
           ...run,
-          results: (await repo.resultsOf(db, run.id)) as ScheduleResult[],
-          alerts: await repo.alertsOfRun(db, run.id),
+          results: (await repo.resultsOf(tdb(request), run.id)) as ScheduleResult[],
+          alerts: await repo.alertsOfRun(tdb(request), run.id),
         };
       },
     );
@@ -169,7 +167,7 @@ export const scheduleRunRoutes =
       async (request, reply) => {
         const { workspaceId } = request.workspaceAccess!;
         const { scheduleId, runId } = request.params as { readonly scheduleId: string; readonly runId: string };
-        const scheduleRowId = await db.transaction(async (tx) => {
+        const scheduleRowId = await tdb(request).transaction(async (tx) => {
           const schedule = await repo.scheduleById(tx, workspaceId, scheduleId);
           if (schedule === undefined) throw scheduleNotFound();
           if ((await repo.runById(tx, schedule.id, runId)) === undefined) throw runNotFound();
@@ -186,7 +184,7 @@ export const scheduleRunRoutes =
         });
         // After the commit, so the executor finds the run no longer running and keeps the cancel. A run
         // on another server sends on until it ends or reaches its deadline, but its outcome stays cancelled.
-        env.runs.cancel(runId);
+        env.runs.cancel(request.tenant, runId);
         announce(
           env.hooks.scheduleRunFinished,
           { tenantId: request.tenant.tenantId, workspaceId, scheduleId: scheduleRowId, runId, status: 'cancelled' },

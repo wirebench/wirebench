@@ -52,7 +52,7 @@ describe('requireFeature (licensing spec §3.5)', () => {
   it('the permissive default grants no feature and never refuses a seat', async () => {
     const license = permissiveLicense();
     await expect(license.assertSeatAvailable({} as never)).resolves.toBeUndefined();
-    const res = await probe(() => license.stateWithoutScope());
+    const res = await probe(() => license.state({} as never));
     expect(res.statusCode).toBe(403);
   });
 });

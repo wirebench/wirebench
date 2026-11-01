@@ -4,7 +4,6 @@
  * (hosted edition spec §19.8 guard 2). `server_identity` is server-wide and has no tenant, so its reader
  * takes a plain querier.
  */
-import type { Querier } from '../context.js';
 import { MISSING_SERVER_ID } from '../tenancy/directory.js';
 import type { TenantQuerier } from '../tenancy/tenant-db.js';
 
@@ -56,8 +55,11 @@ export async function deleteLicense(db: TenantQuerier): Promise<boolean> {
 /** Defined beside the tenant directory, whose start-up load reports it too; re-exported for this module's callers. */
 export { MISSING_SERVER_ID };
 
-/** The id migration 0013 minted (license-binding spec §3.1). Never re-minted: a missing row is an error. */
-export async function serverId(db: Querier): Promise<string> {
+/**
+ * The id migration 0013 minted (license-binding spec §3.1). Never re-minted: a missing row is an error. `server_identity`
+ * is server-wide, so any tenant's unit reads the same row.
+ */
+export async function serverId(db: TenantQuerier): Promise<string> {
   const row = (await db.query<{ id: string }>('select server_id::text as id from server_identity')).rows[0];
   if (row === undefined) throw new Error(MISSING_SERVER_ID);
   return row.id;

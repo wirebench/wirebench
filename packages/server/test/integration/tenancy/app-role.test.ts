@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { afterEach, beforeAll, beforeEach, expect, it, vi } from 'vitest';
-import type { Database } from '../../../src/context.js';
+import type { Database } from '../../../src/db/querier.js';
 import { createDatabase } from '../../../src/db/pool.js';
 import { main } from '../../../src/main.js';
 import { startServer } from '../../../src/serve.js';
@@ -354,7 +354,7 @@ describeDb('serve and migrate with one URL or two (hosted spec §19.4)', () => {
   it('with one URL, the one role migrates and queries, and nothing is granted, as before', async () => {
     const server = await start({ WIREBENCH_SERVER_DATABASE_URL: db.ownerUrl });
     try {
-      const me = await server.ctx.db.query<{ me: string }>('select current_user::text as me');
+      const me = await server.db.query<{ me: string }>('select current_user::text as me');
       expect(me.rows[0]!.me).toBe(OWNER_ROLE);
     } finally {
       await server.close();
@@ -367,9 +367,9 @@ describeDb('serve and migrate with one URL or two (hosted spec §19.4)', () => {
     const urls = { WIREBENCH_SERVER_MIGRATION_DATABASE_URL: db.ownerUrl, WIREBENCH_SERVER_DATABASE_URL: db.url };
     const server = await start(urls);
     try {
-      const me = await server.ctx.db.query<{ me: string }>('select current_user::text as me');
+      const me = await server.db.query<{ me: string }>('select current_user::text as me');
       expect(me.rows[0]!.me).toBe(APP_ROLE);
-      expect((await server.ctx.db.query('select version from schema_migrations')).rowCount).toBe(1);
+      expect((await server.db.query('select version from schema_migrations')).rowCount).toBe(1);
     } finally {
       await server.close();
     }

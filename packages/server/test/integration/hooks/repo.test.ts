@@ -209,12 +209,12 @@ describeDb('webhook-capture repository (§3.2, §3.4)', () => {
     await repo.insertCapture(h.tdb, newCapture(row.id));
     expect(await repo.deleteCatchUrl(h.tdb, row.id)).toBe(true);
     expect(await repo.deleteCatchUrl(h.tdb, row.id)).toBe(false);
-    expect((await h.db.query('select count(*)::int as n from captures')).rows[0]).toEqual({ n: 0 });
+    expect((await h.tdb.query('select count(*)::int as n from captures')).rows[0]).toEqual({ n: 0 });
     const kept = await seedCatchUrl(h, workspaceId, 'Kept');
     await repo.insertCapture(h.tdb, newCapture(kept.id));
     await teamsRepo.deleteWorkspace(h.tdb, workspaceId);
     expect(await repo.catchUrlsOfWorkspace(h.tdb, workspaceId)).toEqual([]);
-    expect((await h.db.query('select count(*)::int as n from captures')).rows[0]).toEqual({ n: 0 });
+    expect((await h.tdb.query('select count(*)::int as n from captures')).rows[0]).toEqual({ n: 0 });
   });
 
   it('names the foreign keys a racing delete trips, and locks only an existing workspace', async () => {

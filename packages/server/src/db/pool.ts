@@ -1,5 +1,5 @@
 import pg from 'pg';
-import type { Database, Querier } from '../context.js';
+import type { Database, Querier } from './querier.js';
 
 function querierOf(runner: { query(text: string, values?: unknown[]): Promise<pg.QueryResult> }): Querier {
   return {

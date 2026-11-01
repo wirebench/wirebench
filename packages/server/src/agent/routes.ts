@@ -4,7 +4,7 @@
  * - The browser's routes need a cookie session (`via: 'cookie'`); identity's guard already refuses a
  *   cookie write whose `Origin` is not the public URL. A bearer caller is treated as not signed in.
  * - `POST /pairings` has no session: the code is the credential. It is limited per address, and failures
- *   are limited server-wide (below).
+ *   are limited per tenant (below).
  * - The agent's own requests (redeem, and an unpair or its port, told at every start) carry the
  *   `AGENT_HEADERS` and are verified against the pairing's Ed25519 key (`signature.ts`). A `DELETE` or
  *   `PATCH` signs the hash of its exact body bytes, so these routes sit in a scope of their own whose JSON
@@ -13,8 +13,9 @@
  * A wrong code cannot be tied to any user or code: the request carries only the code, lookup is by its
  * HMAC, and a wrong guess matches no row. So guessing is bounded by two limits instead: 20 attempts per
  * address in ten minutes (the life of a code; an office behind one NAT address pairs many machines), and 50
- * failed attempts server-wide in ten minutes, after which pairing answers 429 for everyone until the window
- * refills. Against 31^6 ≈ 887 million codes that keeps a distributed guess hopeless.
+ * failed attempts per tenant in ten minutes, after which pairing answers 429 for everyone in that tenant until the
+ * window refills (spec §19.8 guard 5: server-wide, one tenant's attacker would shut pairing for every customer).
+ * Against 31^6 ≈ 887 million codes that keeps a distributed guess hopeless.
  *
  * The agent's signed requests are limited per address loosely (a whole office's agents may share one) and,
  * for a redeem, per pairing once its signature holds: one agent cannot spend its office's allowance, and a
@@ -94,7 +95,6 @@ export const AGENT_RATE_LIMITS = {
 } as const;
 
 const CODE_COLLISION_RETRIES = 3;
-const ALL = 'all';
 
 const limiterFor = (limit: { capacity: number; windowMs: number }, now: () => Date): RateLimiter =>
   new RateLimiter({
@@ -102,6 +102,27 @@ const limiterFor = (limit: { capacity: number; windowMs: number }, now: () => Da
     refillPerMs: limit.capacity / limit.windowMs,
     now: () => now().getTime(),
   });
+
+/**
+ * The failed-pairing budget (spec §18.2), per tenant (spec §19.8 guard 5): server-wide, one tenant's attacker
+ * would shut pairing for every customer. `open` peeks without charging; `failed` charges one attempt.
+ */
+export class PairingBudget {
+  readonly #limiter: RateLimiter;
+
+  constructor(now: () => Date) {
+    this.#limiter = limiterFor(AGENT_RATE_LIMITS.pairFailures, now);
+  }
+
+  /** Whether the tenant may try a pairing now, and if not, when again. */
+  open(tenantId: string): { readonly allowed: boolean; readonly retryAfterSeconds: number } {
+    return this.#limiter.peek(`${tenantId}:pairings`);
+  }
+
+  failed(tenantId: string): void {
+    this.#limiter.take(`${tenantId}:pairings`);
+  }
+}
 
 const RATE_LIMITED = { code: 'identity-rate-limited', message: 'Too many attempts. Try again shortly.' } as const;
 
@@ -137,10 +158,11 @@ const wire = (pairing: PairingRow): AgentPairingsResponse['pairings'][number] =>
 /** The pairing routes, registered in a scope of their own (see the module header) under the caller's prefix. */
 export function agentRoutes(env: AgentRoutesEnv): (app: FastifyInstance) => Promise<void> {
   const { ctx, now } = env;
-  const { db, hooks } = ctx;
+  const { hooks } = ctx;
+  const tdb = (request: FastifyRequest) => ctx.tenancy.db(request.tenant);
   const hashCode = pairingCodeHasher(env.secretsKey);
   const pairPerAddress = limiterFor(AGENT_RATE_LIMITS.pairPerAddress, now);
-  const pairFailures = limiterFor(AGENT_RATE_LIMITS.pairFailures, now);
+  const pairFailures = new PairingBudget(now);
   const codesPerUser = limiterFor(AGENT_RATE_LIMITS.codesPerUser, now);
   const redeemPerAddress = limiterFor(AGENT_RATE_LIMITS.redeemPerAddress, now);
   const redeemPerPairing = limiterFor(AGENT_RATE_LIMITS.redeemPerPairing, now);
@@ -151,8 +173,7 @@ export function agentRoutes(env: AgentRoutesEnv): (app: FastifyInstance) => Prom
   ]);
 
   /**
-   * The pairing's user as the actor of what its agent did (the agent acts for them). In the request's tenant
-   * unit, since identity's repository takes one (tenancy Task 8; the rest of this module moves in Task 15).
+   * The pairing's user as the actor of what its agent did (the agent acts for them), in the request's tenant unit.
    */
   const asUser = async (tx: TenantQuerier, userId: string): Promise<AuditInput['actor']> => {
     const user = await findUserById(tx, userId);
@@ -169,7 +190,7 @@ export function agentRoutes(env: AgentRoutesEnv): (app: FastifyInstance) => Prom
   ): Promise<{ pairing: PairingRow } | { refused: RefusedReason; pairing?: PairingRow }> => {
     const headers = agentHeaders(request.headers);
     if (headers === undefined || !TEAMS_ID_PATTERN.test(headers.pairingId)) return { refused: 'headers' };
-    const pairing = await repo.pairingById(db, headers.pairingId);
+    const pairing = await repo.pairingById(tdb(request), headers.pairingId);
     if (pairing === undefined) return { refused: 'unknown-pairing' };
     const failure = checkAgentSignature(
       {
@@ -183,12 +204,13 @@ export function agentRoutes(env: AgentRoutesEnv): (app: FastifyInstance) => Prom
     return failure === undefined ? { pairing } : { refused: failure, pairing };
   };
 
-  /** Records a refusal in its own transaction: the request fails, the audit row stays. */
-  const auditRefusal = (event: AuditInput): Promise<void> => db.transaction((tx) => recordAudit(hooks, tx, event));
+  /** Records a refusal in a unit of its own: the request fails, the audit row stays. */
+  const auditRefusal = (request: FastifyRequest, event: AuditInput): Promise<void> =>
+    tdb(request).transaction((tx) => recordAudit(hooks, tx, event));
 
-  /** Answers 429 while the server-wide failed-pairing bucket is empty; it is charged only on a failure. */
-  const pairingOpen = (_request: FastifyRequest, reply: FastifyReply, done: (error?: Error) => void): void => {
-    const decision = pairFailures.peek(ALL);
+  /** Answers 429 while the tenant's failed-pairing bucket is empty; it is charged only on a failure. */
+  const pairingOpen = (request: FastifyRequest, reply: FastifyReply, done: (error?: Error) => void): void => {
+    const decision = pairFailures.open(request.tenant.tenantId);
     if (!decision.allowed) {
       void reply.header('retry-after', String(decision.retryAfterSeconds)).code(429).send(RATE_LIMITED);
       return;
@@ -216,7 +238,7 @@ export function agentRoutes(env: AgentRoutesEnv): (app: FastifyInstance) => Prom
       throw refused === 'unknown-pairing' ? pairingUnknown() : signatureInvalid();
     }
     const signer = verified.pairing;
-    await ctx.tenancy.db(request.tenant).transaction(async (tx) =>
+    await tdb(request).transaction(async (tx) =>
       recordAudit(hooks, tx, {
         ...auditSource(request),
         // The signature held for `signer`: its user is the actor, as for any verified refusal.
@@ -255,7 +277,7 @@ export function agentRoutes(env: AgentRoutesEnv): (app: FastifyInstance) => Prom
         for (let attempt = 0; ; attempt++) {
           const code = newPairingCode();
           try {
-            await repo.replaceCode(db, { userId: caller.id, codeHash: hashCode(code), expiresAt });
+            await repo.replaceCode(tdb(request), { userId: caller.id, codeHash: hashCode(code), expiresAt });
           } catch (error) {
             // Another user's live code has the same HMAC: one in 887 million, so draw again.
             if (attempt < CODE_COLLISION_RETRIES && isUniqueViolation(error, 'agent_pairing_codes_pkey')) continue;
@@ -278,7 +300,7 @@ export function agentRoutes(env: AgentRoutesEnv): (app: FastifyInstance) => Prom
       async (request, reply) => {
         const body = request.body as AgentPairRequest;
         const failed = (): Error => {
-          pairFailures.take(ALL);
+          pairFailures.failed(request.tenant.tenantId);
           return pairingCodeInvalid();
         };
         const code = normalizePairingCode(body.code);
@@ -287,7 +309,7 @@ export function agentRoutes(env: AgentRoutesEnv): (app: FastifyInstance) => Prom
         if (parseAgentPublicKey(body.publicKey) === undefined) {
           throw problem('invalid-request', 'The public key is not an Ed25519 key in base64 SPKI DER.', 400);
         }
-        const paired = await ctx.tenancy.db(request.tenant).transaction(async (tx) => {
+        const paired = await tdb(request).transaction(async (tx) => {
           const userId = await repo.takeCode(tx, hashCode(code), now());
           if (userId === undefined) return undefined;
           const user = await findUserById(tx, userId);
@@ -328,7 +350,9 @@ export function agentRoutes(env: AgentRoutesEnv): (app: FastifyInstance) => Prom
 
     app.get('/agent/pairings', { preHandler: requireBrowser }, async (request) => {
       const caller = browserCaller(request);
-      const answer: AgentPairingsResponse = { pairings: (await repo.pairingsOfUser(db, caller.id)).map(wire) };
+      const answer: AgentPairingsResponse = {
+        pairings: (await repo.pairingsOfUser(tdb(request), caller.id)).map(wire),
+      };
       return answer;
     });
 
@@ -338,11 +362,14 @@ export function agentRoutes(env: AgentRoutesEnv): (app: FastifyInstance) => Prom
       async (request, reply) => {
         const caller = browserCaller(request);
         const { pairingId } = request.body as AgentNonceRequest;
-        const pairing = await repo.pairingById(db, pairingId);
-        if (pairing === undefined || pairing.userId !== caller.id) throw pairingUnknown();
         const { secret, hash } = mintSecret();
         const expiresAt = new Date(now().getTime() + AGENT_LIMITS.nonceTtlMs);
-        await repo.insertNonce(db, { nonceHash: hash, pairingId, userId: caller.id, expiresAt });
+        // The pairing's owner check and the nonce: one unit.
+        await tdb(request).transaction(async (tx) => {
+          const pairing = await repo.pairingById(tx, pairingId);
+          if (pairing === undefined || pairing.userId !== caller.id) throw pairingUnknown();
+          await repo.insertNonce(tx, { nonceHash: hash, pairingId, userId: caller.id, expiresAt });
+        });
         const answer: AgentNonceResponse = { nonce: secret, expiresAt: expiresAt.toISOString() };
         return reply.code(201).send(answer);
       },
@@ -369,7 +396,7 @@ export function agentRoutes(env: AgentRoutesEnv): (app: FastifyInstance) => Prom
             request.log.debug({ reason: refused }, 'agent nonce redeem refused');
             throw refused === 'unknown-pairing' ? pairingUnknown() : signatureInvalid();
           }
-          await auditRefusal({
+          await auditRefusal(request, {
             ...auditSource(request),
             actor: { kind: 'anonymous' },
             action: 'agent.nonce_refused',
@@ -380,9 +407,9 @@ export function agentRoutes(env: AgentRoutesEnv): (app: FastifyInstance) => Prom
         }
         const { pairing } = verified;
         // Charged only now the signature holds, so no one else can spend this pairing's allowance.
-        const retryAfter = chargeKeys(redeemPerPairing, [`pairing:${pairing.id}`]);
+        const retryAfter = chargeKeys(redeemPerPairing, [`${request.tenant.tenantId}:pairing:${pairing.id}`]);
         if (retryAfter > 0) return reply.header('retry-after', String(retryAfter)).code(429).send(RATE_LIMITED);
-        const redeemed = await ctx.tenancy.db(request.tenant).transaction(async (tx) => {
+        const redeemed = await tdb(request).transaction(async (tx) => {
           const userId = await repo.takeNonce(tx, { nonceHash: hashSecret(nonce), pairingId: pairing.id, now: now() });
           if (userId === undefined) return { refused: 'nonce' as const };
           const user = await findUserById(tx, userId);
@@ -401,7 +428,7 @@ export function agentRoutes(env: AgentRoutesEnv): (app: FastifyInstance) => Prom
         if ('refused' in redeemed) {
           const reason = redeemed.refused;
           // The signature held, so the refusal is the pairing's user's.
-          await ctx.tenancy.db(request.tenant).transaction(async (tx) =>
+          await tdb(request).transaction(async (tx) =>
             recordAudit(hooks, tx, {
               ...auditSource(request),
               actor: await asUser(tx, pairing.userId),
@@ -427,11 +454,11 @@ export function agentRoutes(env: AgentRoutesEnv): (app: FastifyInstance) => Prom
           by = 'agent';
         } else {
           const caller = browserCaller(request);
-          const pairing = await repo.pairingById(db, id);
+          const pairing = await repo.pairingById(tdb(request), id);
           if (pairing === undefined || pairing.userId !== caller.id) throw pairingUnknown();
           by = 'user';
         }
-        const removed = await ctx.tenancy.db(request.tenant).transaction(async (tx) => {
+        const removed = await tdb(request).transaction(async (tx) => {
           const row = await repo.deletePairing(tx, id);
           if (row === undefined) return undefined;
           await recordAudit(hooks, tx, {
@@ -444,7 +471,11 @@ export function agentRoutes(env: AgentRoutesEnv): (app: FastifyInstance) => Prom
           return row;
         });
         if (removed === undefined) throw pairingUnknown();
-        announce(hooks.agentUnpaired, { pairingId: removed.id, userId: removed.userId }, request.log);
+        announce(
+          hooks.agentUnpaired,
+          { pairingId: removed.id, userId: removed.userId, tenantId: request.tenant.tenantId },
+          request.log,
+        );
         return reply.code(204).send();
       },
     );
@@ -463,7 +494,7 @@ export function agentRoutes(env: AgentRoutesEnv): (app: FastifyInstance) => Prom
         const { id } = request.params as { id: string };
         const { port } = request.body as AgentPortRequest;
         const pairing = await verifiedRequest(request, 'PATCH', id);
-        await ctx.tenancy.db(request.tenant).transaction(async (tx) => {
+        await tdb(request).transaction(async (tx) => {
           await repo.setPort(tx, id, port, now());
           // The agent tells its port at every start; only a move is worth an audit row.
           if (pairing.port === port) return;

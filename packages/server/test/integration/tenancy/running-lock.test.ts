@@ -1,7 +1,8 @@
 import { EventEmitter } from 'node:events';
 import { Writable } from 'node:stream';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import type { Database, ServerModule } from '../../../src/context.js';
+import type { ServerModule } from '../../../src/context.js';
+import type { Database } from '../../../src/db/querier.js';
 import { createDatabase, openSession, type Session } from '../../../src/db/pool.js';
 import { BUILTIN_MODULES } from '../../../src/modules.js';
 import { startServer, type RunningServer, type StartOptions } from '../../../src/serve.js';
@@ -188,7 +189,7 @@ describeDb('the server-running lock and the start-up checks (hosted spec §19.4,
         .map((line) => JSON.parse(line) as { level: number; msg: string })
         .find((line) => line.level === 40);
       expect(warning?.msg).toMatch(
-        /wirebench_owner owns \d+ of the server's tables, so row-level security does not apply/,
+        /wirebench_owner owns \d+ of the server's tables, so row-level security cannot be relied on/,
       );
     } finally {
       await server.close();
@@ -199,7 +200,7 @@ describeDb('the server-running lock and the start-up checks (hosted spec §19.4,
     const lines: string[] = [];
     const server = await start(db.url, lines);
     try {
-      expect(lines.join('')).not.toContain('row-level security does not apply');
+      expect(lines.join('')).not.toContain('row-level security cannot be relied on');
     } finally {
       await server.close();
     }

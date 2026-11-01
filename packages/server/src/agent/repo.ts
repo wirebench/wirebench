@@ -1,8 +1,9 @@
 /**
- * Every SQL statement of the agent module (hosted edition spec §18.2), one function each over a `Querier`.
+ * Every SQL statement of the agent module (hosted edition spec §18.2), one function each over a `TenantQuerier`:
+ * one tenant's unit.
  * Codes and nonces are taken with `delete … returning`, so two requests racing for one can never both win.
  */
-import type { Querier } from '../context.js';
+import type { TenantQuerier } from '../tenancy/tenant-db.js';
 
 export interface PairingRow {
   readonly id: string;
@@ -33,7 +34,7 @@ const pairingOf = (row: Raw): PairingRow => ({
 
 /** Stores the user's code, replacing any earlier one: a user has one live code. */
 export async function replaceCode(
-  db: Querier,
+  db: TenantQuerier,
   input: { readonly userId: string; readonly codeHash: string; readonly expiresAt: Date },
 ): Promise<void> {
   await db.query(
@@ -44,7 +45,7 @@ export async function replaceCode(
 }
 
 /** Consumes a live code; the user it was for, or `undefined` for a wrong, used or expired one. */
-export async function takeCode(db: Querier, codeHash: string, now: Date): Promise<string | undefined> {
+export async function takeCode(db: TenantQuerier, codeHash: string, now: Date): Promise<string | undefined> {
   const rows = (
     await db.query<{ userId: string }>(
       'delete from agent_pairing_codes where code_hash = $1 and expires_at > $2 returning user_id as "userId"',
@@ -58,7 +59,7 @@ export async function takeCode(db: Querier, codeHash: string, now: Date): Promis
 
 /** Pairs an agent install with a user; pairing the same install again keeps the id and replaces the rest. */
 export async function upsertPairing(
-  db: Querier,
+  db: TenantQuerier,
   input: {
     readonly id: string;
     readonly userId: string;
@@ -83,7 +84,11 @@ export async function upsertPairing(
 }
 
 /** The pairing of `agentId` for `userId`, if that install paired before. */
-export async function pairingOfAgent(db: Querier, userId: string, agentId: string): Promise<PairingRow | undefined> {
+export async function pairingOfAgent(
+  db: TenantQuerier,
+  userId: string,
+  agentId: string,
+): Promise<PairingRow | undefined> {
   const row = (
     await db.query(`select ${PAIRING_COLUMNS} from agent_pairings where user_id = $1 and agent_id = $2`, [
       userId,
@@ -93,12 +98,12 @@ export async function pairingOfAgent(db: Querier, userId: string, agentId: strin
   return row === undefined ? undefined : pairingOf(row);
 }
 
-export async function pairingById(db: Querier, id: string): Promise<PairingRow | undefined> {
+export async function pairingById(db: TenantQuerier, id: string): Promise<PairingRow | undefined> {
   const row = (await db.query(`select ${PAIRING_COLUMNS} from agent_pairings where id = $1`, [id])).rows[0];
   return row === undefined ? undefined : pairingOf(row);
 }
 
-export async function pairingsOfUser(db: Querier, userId: string): Promise<readonly PairingRow[]> {
+export async function pairingsOfUser(db: TenantQuerier, userId: string): Promise<readonly PairingRow[]> {
   const rows = (
     await db.query(
       `select ${PAIRING_COLUMNS} from agent_pairings where user_id = $1 order by created_at desc, id desc`,
@@ -109,23 +114,23 @@ export async function pairingsOfUser(db: Querier, userId: string): Promise<reado
 }
 
 /** Deletes the pairing (its nonces go with it); `undefined` when there was none. */
-export async function deletePairing(db: Querier, id: string): Promise<PairingRow | undefined> {
+export async function deletePairing(db: TenantQuerier, id: string): Promise<PairingRow | undefined> {
   const row = (await db.query(`delete from agent_pairings where id = $1 returning ${PAIRING_COLUMNS}`, [id])).rows[0];
   return row === undefined ? undefined : pairingOf(row);
 }
 
-export async function setPort(db: Querier, id: string, port: number, at: Date): Promise<void> {
+export async function setPort(db: TenantQuerier, id: string, port: number, at: Date): Promise<void> {
   await db.query('update agent_pairings set port = $2, last_seen_at = $3 where id = $1', [id, port, at]);
 }
 
-export async function touchPairing(db: Querier, id: string, at: Date): Promise<void> {
+export async function touchPairing(db: TenantQuerier, id: string, at: Date): Promise<void> {
   await db.query('update agent_pairings set last_seen_at = $2 where id = $1', [id, at]);
 }
 
 // ---- nonces ------------------------------------------------------------------------------
 
 export async function insertNonce(
-  db: Querier,
+  db: TenantQuerier,
   input: { readonly nonceHash: string; readonly pairingId: string; readonly userId: string; readonly expiresAt: Date },
 ): Promise<void> {
   await db.query('insert into agent_nonces (nonce_hash, pairing_id, user_id, expires_at) values ($1, $2, $3, $4)', [
@@ -141,7 +146,7 @@ export async function insertNonce(
  * pairing is left alone, so a wrong agent cannot burn a tab's nonce.
  */
 export async function takeNonce(
-  db: Querier,
+  db: TenantQuerier,
   input: { readonly nonceHash: string; readonly pairingId: string; readonly now: Date },
 ): Promise<string | undefined> {
   const rows = (
@@ -156,7 +161,7 @@ export async function takeNonce(
 // ---- sweep -------------------------------------------------------------------------------
 
 /** Deletes expired codes and nonces; the count of each. */
-export async function deleteExpired(db: Querier, now: Date): Promise<{ codes: number; nonces: number }> {
+export async function deleteExpired(db: TenantQuerier, now: Date): Promise<{ codes: number; nonces: number }> {
   const codes = (await db.query('delete from agent_pairing_codes where expires_at <= $1', [now])).rowCount ?? 0;
   const nonces = (await db.query('delete from agent_nonces where expires_at <= $1', [now])).rowCount ?? 0;
   return { codes, nonces };

@@ -47,7 +47,7 @@ describeDb('ci_tokens (callback-assertion §3)', () => {
       lastUsedAt: null,
       revokedAt: null,
     });
-    const stored = await h.db.query<{ token_hash: string }>('select token_hash from ci_tokens');
+    const stored = await h.tdb.query<{ token_hash: string }>('select token_hash from ci_tokens');
     expect(JSON.stringify(stored.rows)).not.toContain(minted.token);
 
     h.clock.advance(5_000);

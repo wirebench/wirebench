@@ -36,7 +36,7 @@ const patch = (c: Cast, as: SignedInUser, body: object) =>
   call<CatchUrl & { code?: string }>(c.h, as, 'PATCH', `/workspaces/${c.workspaceId}/hooks/${c.hook.id}`, body);
 const list = (c: Cast, as: SignedInUser) => call<CatchUrl[]>(c.h, as, 'GET', `/workspaces/${c.workspaceId}/hooks`);
 const sealedOf = async (c: Cast): Promise<Buffer | null> =>
-  (await c.h.db.query<{ s: Buffer | null }>('select signature_secret as s from catch_urls where id = $1', [c.hook.id]))
+  (await c.h.tdb.query<{ s: Buffer | null }>('select signature_secret as s from catch_urls where id = $1', [c.hook.id]))
     .rows[0]?.s ?? null;
 
 let c: Cast | undefined;

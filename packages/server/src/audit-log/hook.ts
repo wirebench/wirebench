@@ -4,7 +4,8 @@
  * happened. `details` is bounded (§4.2) and never built from a body (§6).
  */
 import { AUDIT_LIMITS, type AuditDetails } from '@wirebench/engine';
-import type { AuditHook, AuditInput, Querier } from '../context.js';
+import type { AuditHook, AuditInput } from '../context.js';
+import type { TenantQuerier } from '../tenancy/tenant-db.js';
 import { newId } from '../identity/tokens.js';
 import { insertAuditEvent, workspaceTeamId } from './repo.js';
 
@@ -46,7 +47,7 @@ export interface AuditHookOptions {
  * statement, so only a committed event is ever forwarded, even when the caller passes the pool.
  */
 export function auditHook(now: () => Date, options: AuditHookOptions = { forward: false }): AuditHook {
-  return async (tx: Querier, event: AuditInput) => {
+  return async (tx: TenantQuerier, event: AuditInput) => {
     const teamId =
       event.teamId ?? (event.workspaceId !== undefined ? await workspaceTeamId(tx, event.workspaceId) : undefined);
     await insertAuditEvent(

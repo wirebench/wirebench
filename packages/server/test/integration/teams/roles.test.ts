@@ -112,7 +112,7 @@ describeDb('requireWorkspaceRole and requireTeamRole (§3.3)', () => {
     const theirs = await seedWorkspace(h, { team: other, name: 'W', defaultRole: 'editor' });
     expect(await effectiveRole(h.tdb, admin.user.id, workspaceId)).toEqual({ role: 'admin', source: 'team-admin' });
     expect(await effectiveRole(h.tdb, admin.user.id, theirs)).toEqual({ role: 'editor', source: 'default' });
-    await h.db.query('update users set disabled_at = now() where id = $1', [admin.user.id]);
+    await h.tdb.query('update users set disabled_at = now() where id = $1', [admin.user.id]);
     expect(await effectiveRole(h.tdb, admin.user.id, workspaceId)).toEqual({ role: 'none' });
   });
 });

@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import type { FastifyInstance } from 'fastify';
 import type { ServerContext, ServerModule } from '../context.js';
 import { RateLimiter } from '../identity/rate-limit.js';
+import type { TenantQuerier } from '../tenancy/tenant-db.js';
 import { tenantUrl, urlWithoutScope } from '../tenancy/urls.js';
 import { samlSettings, ssoUrls, type SsoEnv } from './env.js';
 import * as repo from './repo.js';
@@ -31,8 +32,11 @@ export interface SsoOptions {
   readonly metadata?: IdpMetadata;
 }
 
-/** The daily sweep: SAML flows nobody finished. */
-export async function sweepSso(db: ServerContext['db'], now: Date): Promise<void> {
+/** The sweep's name in the job loop's log lines. */
+export const SSO_SWEEP_JOB = 'sso-sweep';
+
+/** The daily sweep: one tenant's SAML flows nobody finished. */
+export async function sweepSso(db: TenantQuerier, now: Date): Promise<void> {
   await repo.deleteExpiredSamlFlows(db, now);
 }
 
@@ -87,14 +91,22 @@ export function ssoModule(options: SsoOptions = {}): ServerModule {
         saml,
       };
       shared = env;
-      authSamlRoutes(env)(app);
-      scimTokenRoutes(env)(app);
-      scimGroupRoutes(env)(app);
+      // Hosted mode serves no SAML route, desktop or browser, and no SCIM base, for any tenant (spec §19.1): the
+      // operator's one identity provider would sign people into every tenant. They answer `404`, as unknown routes.
+      // So do the SCIM token and group admin routes, which manage a base nobody can reach (Task 15 review M2); they
+      // come back with per-tenant SSO in slice 7.
+      if (ctx.config.mode !== 'hosted') {
+        authSamlRoutes(env)(app);
+        scimTokenRoutes(env)(app);
+        scimGroupRoutes(env)(app);
+      }
 
       const interval = options.sweepIntervalMs ?? DAY_MS;
       if (interval > 0) {
         const timer = setInterval(() => {
-          sweepSso(ctx.db, now()).catch((error: unknown) => ctx.log.warn({ err: error }, 'sso sweep failed'));
+          ctx.tenancy
+            .forEachTenant(SSO_SWEEP_JOB, (tx) => sweepSso(tx, now()), ctx.log)
+            .catch((error: unknown) => ctx.log.warn({ err: error }, 'sso sweep failed'));
         }, interval);
         timer.unref();
         app.addHook('onClose', () => {
@@ -104,6 +116,7 @@ export function ssoModule(options: SsoOptions = {}): ServerModule {
     },
 
     async registerPublic(root: FastifyInstance, ctx: ServerContext): Promise<void> {
+      if (ctx.config.mode === 'hosted') return;
       // Beside `/api/v1`, never inside it: a SCIM token must not reach the device-token routes (§6.2).
       await root.register(scimPlugin(shared!), { prefix: '/scim/v2' });
       // Hosted spec §17.2: the browser's SAML start sits beside identity's `/sign-in` page.

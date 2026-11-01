@@ -17,14 +17,14 @@ describeDb('the server id (license-binding spec §3.1)', () => {
     h = await licensingHarness(keys);
     const rows = (await h.db.query('select server_id::text as id from server_identity')).rows;
     expect(rows).toHaveLength(1);
-    expect(await repo.serverId(h.db)).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+    expect(await repo.serverId(h.tdb)).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
   });
 
   it('survives a restart over the same schema', async () => {
     h = await licensingHarness(keys);
-    const before = await repo.serverId(h.db);
+    const before = await repo.serverId(h.tdb);
     const restarted = await licensingHarness(keys, { db: h.db });
-    expect(await repo.serverId(restarted.db)).toBe(before);
+    expect(await repo.serverId(restarted.tdb)).toBe(before);
     await restarted.close();
   });
 
@@ -32,6 +32,6 @@ describeDb('the server id (license-binding spec §3.1)', () => {
     h = await licensingHarness(keys);
     // The app role only reads server_identity, so the owner takes the row away.
     await h.db.owner.query('delete from server_identity');
-    await expect(repo.serverId(h.db)).rejects.toThrow(repo.MISSING_SERVER_ID);
+    await expect(repo.serverId(h.tdb)).rejects.toThrow(repo.MISSING_SERVER_ID);
   });
 });

@@ -110,7 +110,7 @@ describeDb('identity fire sites (audit-log spec §3.2)', () => {
     });
     h.hooks.invitationAccepted.pop();
     expect(res.statusCode).toBe(500);
-    const rows = await h.db.query(
+    const rows = await h.tdb.query(
       `select 1 from audit_events where action = 'user.created' and details->>'emailLower' = 'rollback@example.com'`,
     );
     expect(rows.rowCount).toBe(0);
@@ -201,7 +201,7 @@ describeDb('identity fire sites (audit-log spec §3.2)', () => {
 
   it('a failing audit insert fails the sign-in and leaves no token row', async () => {
     const user = await signedInUser(h, { email: 'f@example.com', password: PASSWORD });
-    const before = await h.db.query('select 1 from device_tokens where user_id = $1', [user.user.id]);
+    const before = await h.tdb.query('select 1 from device_tokens where user_id = $1', [user.user.id]);
     h.hooks.audit.push(() => Promise.reject(new Error('audit down')));
     const res = await h.app.inject({
       method: 'POST',
@@ -210,9 +210,9 @@ describeDb('identity fire sites (audit-log spec §3.2)', () => {
     });
     h.hooks.audit.pop();
     expect(res.statusCode).toBe(500);
-    const after = await h.db.query('select 1 from device_tokens where user_id = $1', [user.user.id]);
+    const after = await h.tdb.query('select 1 from device_tokens where user_id = $1', [user.user.id]);
     expect(after.rowCount).toBe(before.rowCount);
   });
 
-  it('writes no secret-shaped value', () => expectNoSecretsInAudit(h.db));
+  it('writes no secret-shaped value', () => expectNoSecretsInAudit(h.tdb));
 });

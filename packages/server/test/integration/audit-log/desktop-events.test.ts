@@ -80,7 +80,7 @@ describeDb('POST /workspaces/:id/audit/desktop-events (#211)', () => {
 
   const rows = async (action?: string) =>
     (
-      await h.db.query<{
+      await h.tdb.query<{
         action: string;
         actor_kind: string;
         actor_user_id: string | null;

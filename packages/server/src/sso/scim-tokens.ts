@@ -9,13 +9,14 @@ import { recordAudit, type AuditSource, type ServerContext } from '../context.js
 import { isUniqueViolation } from '../db/errors.js';
 import { hashSecret, newId } from '../identity/tokens.js';
 import { problem } from '../problem.js';
+import type { TenantScope } from '../tenancy/scope.js';
 import * as repo from './repo.js';
 
 export const SCIM_TOKEN_PREFIX = 'wbscim_';
 const NAME_INDEX = 'scim_tokens_name_lower';
 
 export interface ScimTokenEnv {
-  readonly ctx: Pick<ServerContext, 'db' | 'hooks'>;
+  readonly ctx: Pick<ServerContext, 'tenancy' | 'hooks'>;
   readonly now: () => Date;
 }
 
@@ -41,6 +42,7 @@ export function scimTokenSummary(row: repo.ScimTokenRow): ScimTokenSummary {
 /** Creates a token named `rawName` (trimmed); the answer is the only place the token ever appears. */
 export async function createScimToken(
   env: ScimTokenEnv,
+  scope: TenantScope,
   rawName: string,
   createdBy: string | null,
   source: AuditSource,
@@ -50,7 +52,7 @@ export async function createScimToken(
   const minted = mintScimToken();
   const id = newId();
   try {
-    const row = await env.ctx.db.transaction(async (tx) => {
+    const row = await env.ctx.tenancy.db(scope).transaction(async (tx) => {
       const inserted = await repo.insertScimToken(tx, { id, name, tokenHash: minted.hash, createdBy, at: env.now() });
       await recordAudit(env.ctx.hooks, tx, {
         ...source,
@@ -68,8 +70,13 @@ export async function createScimToken(
 }
 
 /** Revokes a live token; a token already revoked, or unknown, is `scimTokenNotFound`. */
-export async function revokeScimToken(env: ScimTokenEnv, id: string, source: AuditSource): Promise<void> {
-  await env.ctx.db.transaction(async (tx) => {
+export async function revokeScimToken(
+  env: ScimTokenEnv,
+  scope: TenantScope,
+  id: string,
+  source: AuditSource,
+): Promise<void> {
+  await env.ctx.tenancy.db(scope).transaction(async (tx) => {
     const row = await repo.scimTokenById(tx, id);
     if (row === undefined || !(await repo.revokeScimToken(tx, id, env.now()))) throw scimTokenNotFound();
     await recordAudit(env.ctx.hooks, tx, {

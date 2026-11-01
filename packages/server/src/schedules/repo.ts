@@ -1,4 +1,4 @@
-/** The scheduled-runs tables (scheduled-runs spec §4). Raw SQL over `Querier`, like every module's repo. */
+/** The scheduled-runs tables (scheduled-runs spec §4). Raw SQL over a `TenantQuerier`: one tenant's unit. */
 import type {
   ScheduleAlertDelivery,
   ScheduleAlertState,
@@ -9,7 +9,7 @@ import type {
   ScheduleRunTrigger,
   ScheduleTarget,
 } from '@wirebench/engine';
-import type { Querier } from '../context.js';
+import type { TenantQuerier } from '../tenancy/tenant-db.js';
 import type { StoredAlerts, StoredSecrets } from './seal.js';
 
 export interface ScheduleRow {
@@ -84,7 +84,7 @@ export interface NewSchedule {
   readonly at: Date;
 }
 
-export async function insertSchedule(db: Querier, input: NewSchedule): Promise<void> {
+export async function insertSchedule(db: TenantQuerier, input: NewSchedule): Promise<void> {
   await db.query(
     `insert into schedules (id, workspace_id, name, cron, time_zone, target, options, alerts, enabled, next_run_at,
        created_by, created_at, updated_at)
@@ -108,7 +108,7 @@ export async function insertSchedule(db: Querier, input: NewSchedule): Promise<v
 
 /** One schedule of the workspace; `forUpdate` locks the row for the rest of the transaction. */
 export async function scheduleById(
-  db: Querier,
+  db: TenantQuerier,
   workspaceId: string,
   id: string,
   forUpdate = false,
@@ -119,13 +119,13 @@ export async function scheduleById(
   return raw === undefined ? undefined : rowOf(raw);
 }
 
-export async function schedulesOfWorkspace(db: Querier, workspaceId: string): Promise<ScheduleRow[]> {
+export async function schedulesOfWorkspace(db: TenantQuerier, workspaceId: string): Promise<ScheduleRow[]> {
   const rows = (await db.query<Raw>(`${SELECT} where s.workspace_id = $1 order by lower(s.name), s.id`, [workspaceId]))
     .rows;
   return rows.map(rowOf);
 }
 
-export async function countSchedules(db: Querier, workspaceId: string): Promise<number> {
+export async function countSchedules(db: TenantQuerier, workspaceId: string): Promise<number> {
   const result = await db.query<{ n: string }>('select count(*) as n from schedules where workspace_id = $1', [
     workspaceId,
   ]);
@@ -134,7 +134,7 @@ export async function countSchedules(db: Querier, workspaceId: string): Promise<
 
 /** Every field a `PATCH` can change, written whole: the route reads the row, merges and writes. */
 export async function updateSchedule(
-  db: Querier,
+  db: TenantQuerier,
   input: Omit<NewSchedule, 'workspaceId' | 'createdBy'>,
 ): Promise<void> {
   await db.query(
@@ -156,12 +156,17 @@ export async function updateSchedule(
   );
 }
 
-export async function setScheduleSecrets(db: Querier, id: string, secrets: StoredSecrets, at: Date): Promise<void> {
+export async function setScheduleSecrets(
+  db: TenantQuerier,
+  id: string,
+  secrets: StoredSecrets,
+  at: Date,
+): Promise<void> {
   await db.query('update schedules set secrets = $2, updated_at = $3 where id = $1', [id, JSON.stringify(secrets), at]);
 }
 
 /** The deleted schedule's name, or `undefined` when there was none. Its runs and deliveries go with it. */
-export async function deleteSchedule(db: Querier, workspaceId: string, id: string): Promise<string | undefined> {
+export async function deleteSchedule(db: TenantQuerier, workspaceId: string, id: string): Promise<string | undefined> {
   const result = await db.query<{ name: string }>(
     'delete from schedules where id = $1 and workspace_id = $2 returning name',
     [id, workspaceId],
@@ -189,7 +194,7 @@ export function runOf(raw: Raw): ScheduleRun {
 }
 
 /** Each schedule's latest run, newest queued first, by schedule id. */
-export async function lastRunsOf(db: Querier, scheduleIds: readonly string[]): Promise<Map<string, ScheduleRun>> {
+export async function lastRunsOf(db: TenantQuerier, scheduleIds: readonly string[]): Promise<Map<string, ScheduleRun>> {
   if (scheduleIds.length === 0) {
     return new Map();
   }
@@ -213,7 +218,7 @@ export interface NewRun {
   readonly at: Date;
 }
 
-export async function insertRun(db: Querier, run: NewRun): Promise<void> {
+export async function insertRun(db: TenantQuerier, run: NewRun): Promise<void> {
   const finished = run.status === 'skipped' ? run.at : null;
   const started = run.status === 'running' ? run.at : null;
   await db.query(
@@ -225,7 +230,7 @@ export async function insertRun(db: Querier, run: NewRun): Promise<void> {
 
 /** A run with the schedule it belongs to, whichever workspace that is: the scheduler's read. */
 export async function runWithSchedule(
-  db: Querier,
+  db: TenantQuerier,
   runId: string,
 ): Promise<{ readonly run: ScheduleRun; readonly schedule: ScheduleRow } | undefined> {
   const raw = (await db.query<Raw>(`select ${RUN_COLUMNS} from schedule_runs r where r.id = $1`, [runId])).rows[0];
@@ -250,7 +255,7 @@ export interface FinishedRun {
  * Ends a running run and stores its results. False when the run was no longer running: a cancel
  * got there first, and that outcome stands.
  */
-export async function finishRun(db: Querier, runId: string, finished: FinishedRun): Promise<boolean> {
+export async function finishRun(db: TenantQuerier, runId: string, finished: FinishedRun): Promise<boolean> {
   const updated = await db.query(
     `update schedule_runs set status = $2, reason = $3, commit_id = $4, environment = $5, summary = $6,
        finished_at = $7
@@ -277,7 +282,7 @@ export async function finishRun(db: Querier, runId: string, finished: FinishedRu
 }
 
 /** A run's stored results, in order. */
-export async function resultsOf(db: Querier, runId: string): Promise<unknown[]> {
+export async function resultsOf(db: TenantQuerier, runId: string): Promise<unknown[]> {
   const rows = await db.query<{ result: unknown }>(
     'select result from schedule_results where run_id = $1 order by ordinal',
     [runId],
@@ -290,7 +295,7 @@ export async function resultsOf(db: Querier, runId: string): Promise<unknown[]> 
  * schedule another server is firing is left to it.
  */
 export async function claimDueSchedules(
-  tx: Querier,
+  tx: TenantQuerier,
   now: Date,
   limit: number,
 ): Promise<{ readonly id: string; readonly cron: string; readonly timeZone: string }[]> {
@@ -305,8 +310,16 @@ export async function claimDueSchedules(
   return rows.rows;
 }
 
+/** Whether the tenant has a run waiting to start: the scheduler claims only in tenants that do (Task 17). */
+export async function hasQueuedRun(db: TenantQuerier): Promise<boolean> {
+  const rows = await db.query<{ queued: boolean }>(
+    "select exists (select 1 from schedule_runs where status = 'queued') as queued",
+  );
+  return rows.rows[0]?.queued === true;
+}
+
 /** Whether the schedule has a run queued or running. */
-export async function hasOpenRun(db: Querier, scheduleId: string): Promise<boolean> {
+export async function hasOpenRun(db: TenantQuerier, scheduleId: string): Promise<boolean> {
   const rows = await db.query(
     "select 1 from schedule_runs where schedule_id = $1 and status in ('queued', 'running') limit 1",
     [scheduleId],
@@ -314,21 +327,27 @@ export async function hasOpenRun(db: Querier, scheduleId: string): Promise<boole
   return rows.rows.length > 0;
 }
 
-export async function setNextRunAt(db: Querier, id: string, at: Date | null): Promise<void> {
+export async function setNextRunAt(db: TenantQuerier, id: string, at: Date | null): Promise<void> {
   await db.query('update schedules set next_run_at = $2 where id = $1', [id, at]);
 }
 
-/** Up to `limit` queued runs, oldest first, marked running; `skip locked` leaves others' claims alone. */
-export async function claimQueuedRuns(tx: Querier, limit: number, at: Date): Promise<string[]> {
+/**
+ * Up to `limit` queued runs, oldest first, marked running; `skip locked` leaves others' claims alone. The pick is a
+ * materialised CTE, not `where id in (select … limit)`: under the forced policy (0021) the planner runs that
+ * sub-select once per row it updates, each run locking and returning the next queued row, so a claim of one
+ * marked every queued run running.
+ */
+export async function claimQueuedRuns(tx: TenantQuerier, limit: number, at: Date): Promise<string[]> {
   const rows = await tx.query<{ id: string; queuedAt: Date }>(
-    `update schedule_runs set status = 'running', started_at = $2
-     where id in (
+    `with picked as materialized (
        select id from schedule_runs where status = 'queued'
        order by queued_at, id
        limit $1
        for update skip locked
      )
-     returning id, queued_at as "queuedAt"`,
+     update schedule_runs r set status = 'running', started_at = $2
+     from picked where r.id = picked.id
+     returning r.id, r.queued_at as "queuedAt"`,
     [limit, at],
   );
   // `returning` keeps no order: oldest first again.
@@ -350,7 +369,7 @@ export type InterruptedRun = {
  * aborted it by then, so that server is gone. It ends `errored` with reason `interrupted`. A deadline,
  * not "every running run", because servers sharing a database each run their own. Returns those runs.
  */
-export async function interruptStaleRuns(db: Querier, now: Date): Promise<InterruptedRun[]> {
+export async function interruptStaleRuns(db: TenantQuerier, now: Date): Promise<InterruptedRun[]> {
   const result = await db.query<InterruptedRun>(
     `update schedule_runs r set status = 'errored', reason = 'interrupted', finished_at = $1
      from schedules s
@@ -364,7 +383,7 @@ export async function interruptStaleRuns(db: Querier, now: Date): Promise<Interr
 
 /** A page of a schedule's runs, newest first, after the `(queuedAt, id)` cursor when given. */
 export async function runsPage(
-  db: Querier,
+  db: TenantQuerier,
   scheduleId: string,
   input: {
     readonly status?: ScheduleRunStatus;
@@ -391,7 +410,7 @@ export async function runsPage(
 }
 
 /** One run of the schedule. */
-export async function runById(db: Querier, scheduleId: string, runId: string): Promise<ScheduleRun | undefined> {
+export async function runById(db: TenantQuerier, scheduleId: string, runId: string): Promise<ScheduleRun | undefined> {
   const raw = (
     await db.query<Raw>(`select ${RUN_COLUMNS} from schedule_runs r where r.id = $1 and r.schedule_id = $2`, [
       runId,
@@ -405,7 +424,7 @@ export async function runById(db: Querier, scheduleId: string, runId: string): P
  * Ends a queued or running run as `cancelled`. Returns the status it had, or `undefined` when it had
  * already finished (or does not exist).
  */
-export async function cancelRun(db: Querier, runId: string, at: Date): Promise<'queued' | 'running' | undefined> {
+export async function cancelRun(db: TenantQuerier, runId: string, at: Date): Promise<'queued' | 'running' | undefined> {
   const rows = await db.query<{ previous: 'queued' | 'running' }>(
     `update schedule_runs r set status = 'cancelled', reason = 'cancelled', finished_at = $2
      from (select id, status as previous from schedule_runs where id = $1 for update) old
@@ -420,7 +439,7 @@ export async function cancelRun(db: Querier, runId: string, at: Date): Promise<'
  * Up to `limit` finished runs queued before `cutoff`, oldest first, with their results (retention,
  * scheduled-runs spec §3.6). A queued or running run is never deleted. Returns how many.
  */
-export async function deleteRunsBefore(db: Querier, cutoff: Date, limit: number): Promise<number> {
+export async function deleteRunsBefore(db: TenantQuerier, cutoff: Date, limit: number): Promise<number> {
   const result = await db.query(
     `delete from schedule_runs where id in (
        select id from schedule_runs where queued_at < $1 and status not in ('queued', 'running')
@@ -431,7 +450,7 @@ export async function deleteRunsBefore(db: Querier, cutoff: Date, limit: number)
 }
 
 /** Up to `limit` alert deliveries that are done (delivered or dead) and were created before `cutoff`. */
-export async function deleteOutboxBefore(db: Querier, cutoff: Date, limit: number): Promise<number> {
+export async function deleteOutboxBefore(db: TenantQuerier, cutoff: Date, limit: number): Promise<number> {
   const result = await db.query(
     `delete from schedule_alert_outbox where id in (
        select id from schedule_alert_outbox where state <> 'pending' and created_at < $1
@@ -442,7 +461,7 @@ export async function deleteOutboxBefore(db: Querier, cutoff: Date, limit: numbe
 }
 
 /** The alerts a run sent, by when they were queued then by target. */
-export async function alertsOfRun(db: Querier, runId: string): Promise<ScheduleAlertDelivery[]> {
+export async function alertsOfRun(db: TenantQuerier, runId: string): Promise<ScheduleAlertDelivery[]> {
   const rows = await db.query<ScheduleAlertDelivery & Record<string, unknown>>(
     `select kind, target_index as target, state, attempts, last_error as "lastError"
      from schedule_alert_outbox where run_id = $1 order by created_at, target_index`,
@@ -452,13 +471,13 @@ export async function alertsOfRun(db: Querier, runId: string): Promise<ScheduleA
 }
 
 /** A workspace's name, for an alert. */
-export async function workspaceName(db: Querier, workspaceId: string): Promise<string | undefined> {
+export async function workspaceName(db: TenantQuerier, workspaceId: string): Promise<string | undefined> {
   const rows = await db.query<{ name: string }>('select name from workspaces where id = $1', [workspaceId]);
   return rows.rows[0]?.name;
 }
 
 /** Every schedule, or a workspace's, ordered by workspace then name: the operator's view. */
-export async function allSchedules(db: Querier, workspaceId?: string): Promise<ScheduleRow[]> {
+export async function allSchedules(db: TenantQuerier, workspaceId?: string): Promise<ScheduleRow[]> {
   const rows =
     workspaceId === undefined
       ? await db.query<Raw>(`${SELECT} order by s.workspace_id, lower(s.name), s.id`)
@@ -467,14 +486,18 @@ export async function allSchedules(db: Querier, workspaceId?: string): Promise<S
 }
 
 /** One schedule by id, whatever its workspace; `forUpdate` locks it for the transaction. */
-export async function scheduleAnywhere(db: Querier, id: string, forUpdate = false): Promise<ScheduleRow | undefined> {
+export async function scheduleAnywhere(
+  db: TenantQuerier,
+  id: string,
+  forUpdate = false,
+): Promise<ScheduleRow | undefined> {
   const lock = forUpdate ? ' for update of s' : '';
   const raw = (await db.query<Raw>(`${SELECT} where s.id = $1${lock}`, [id])).rows[0];
   return raw === undefined ? undefined : rowOf(raw);
 }
 
 export async function setEnabled(
-  db: Querier,
+  db: TenantQuerier,
   id: string,
   enabled: boolean,
   nextRunAt: Date | null,

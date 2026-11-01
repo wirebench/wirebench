@@ -7,8 +7,11 @@ import { fileURLToPath } from 'node:url';
 import type { FastifyInstance } from 'fastify';
 import type { ServerContext, ServerModule } from '../context.js';
 import type { SetTimer } from '../hooks/env.js';
-import { CaptureSweeper, rawSweepTarget } from '../hooks/sweep.js';
+import { CaptureSweeper } from '../hooks/sweep.js';
 import { realTimer } from '../live/module.js';
+import type { TenantQuerier } from '../tenancy/tenant-db.js';
+import { isDefaultTenant } from '../tenancy/tenancy.js';
+import { chainKeys } from './chain/keys.js';
 import { RetentionStopLog } from './chain/retention-log.js';
 import { AuditSealer } from './chain/sealer.js';
 import { desktopEventsLimiter, desktopRoutes } from './desktop-routes.js';
@@ -20,6 +23,9 @@ import { deleteAuditEventsBefore, deleteSealedBefore, deleteUnsealedBefore, read
 import { auditRoutes } from './routes.js';
 
 export const AUDIT_LOG_MIGRATIONS_DIR = fileURLToPath(new URL('../../migrations/audit-log/', import.meta.url));
+
+/** The audit sweep's name in the job loop's log lines. */
+export const AUDIT_SWEEP_JOB = 'audit-retention';
 
 export interface AuditLogOptions {
   readonly now?: () => Date;
@@ -40,9 +46,14 @@ export function auditLogModule(options: AuditLogOptions = {}): ServerModule {
       ctx.meta.addCapability('audit-log');
       // The workspace `recordDesktopActivity` setting (#211); a server without it ignores the field, so the desktop hides the switch.
       ctx.meta.addCapability('desktop-activity');
-      auditRoutes({ db: ctx.db, tenancy: ctx.tenancy, hooks: ctx.hooks, license: () => ctx.license })(app);
-      desktopRoutes({ db: ctx.db, tenancy: ctx.tenancy, hooks: ctx.hooks, limiter: desktopEventsLimiter(now) })(app);
-      const key = ctx.config.auditChainKey;
+      auditRoutes({ tenancy: ctx.tenancy, hooks: ctx.hooks, license: () => ctx.license })(app);
+      desktopRoutes({ tenancy: ctx.tenancy, hooks: ctx.hooks, limiter: desktopEventsLimiter(now) })(app);
+      const configured = ctx.config.auditChainKey;
+      // Each tenant's chain key (spec §19.7): the configured one for the self-hosted default tenant, else derived.
+      const keys =
+        configured === undefined
+          ? undefined
+          : chainKeys(configured, ctx.config.mode, (scope) => isDefaultTenant(ctx.tenancy, scope));
       const stops = new RetentionStopLog(ctx.log);
       // With a chain key, retention deletes only checked sealed rows from the chain's oldest end and moves
       // the anchor (audit-chain spec §3.3). Without one it deletes by `at`, but once a chain exists only
@@ -52,25 +63,29 @@ export function auditLogModule(options: AuditLogOptions = {}): ServerModule {
         now,
         setTimer,
         log: ctx.log,
-        target: rawSweepTarget(
-          ctx.db,
-          key === undefined
-            ? async (db, cutoff, limit) =>
-                (await readAnchor(db)) === undefined
-                  ? deleteAuditEventsBefore(db, cutoff, limit)
-                  : deleteUnsealedBefore(db, cutoff, limit)
-            : (_db, cutoff, limit) => deleteSealedBefore(ctx.db, key, cutoff, limit, stops),
-        ),
+        target: {
+          tenancy: ctx.tenancy,
+          job: AUDIT_SWEEP_JOB,
+          deleteBefore:
+            keys === undefined
+              ? async (tx: TenantQuerier, cutoff: Date, limit: number) =>
+                  (await readAnchor(tx)) === undefined
+                    ? deleteAuditEventsBefore(tx, cutoff, limit)
+                    : deleteUnsealedBefore(tx, cutoff, limit)
+              : (tx: TenantQuerier, cutoff: Date, limit: number) =>
+                  deleteSealedBefore(tx, keys(tx.scope), cutoff, limit, stops),
+        },
         label: 'audit sweep',
       });
       sweeper.start();
       const forwarder =
         sink === undefined
           ? undefined
-          : new AuditForwarder({ db: ctx.db, sink, license: () => ctx.license, now, setTimer, log: ctx.log });
+          : new AuditForwarder({ tenancy: ctx.tenancy, sink, license: () => ctx.license, now, setTimer, log: ctx.log });
       forwarder?.start();
       // Only with a chain key (audit-chain spec §3.2); without one nothing is built and no timer armed.
-      const sealer = key === undefined ? undefined : new AuditSealer({ db: ctx.db, key, now, setTimer, log: ctx.log });
+      const sealer =
+        keys === undefined ? undefined : new AuditSealer({ tenancy: ctx.tenancy, keys, now, setTimer, log: ctx.log });
       sealer?.start();
       // Before `startServer` drains and closes the pool (host spec §3.7): a sealing pass under way commits
       // before the sweeper stops, a sweep or a forward batch under way finishes (or rolls back, leaving its

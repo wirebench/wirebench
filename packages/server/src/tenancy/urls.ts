@@ -6,11 +6,23 @@
  * `config.publicUrl`, so a module cannot keep a copy made at registration.
  */
 import { WirebenchError } from '@wirebench/engine';
-import type { ServerConfig } from '../config.js';
+import type { ModuleConfig, ServerConfig } from '../config.js';
 import type { TenantScope } from './scope.js';
 
-/** The part of the configuration a tenant's URL is made from. */
-export type UrlConfig = Pick<ServerConfig, 'mode' | 'publicUrl' | 'appDomain'>;
+/**
+ * The part of the configuration a tenant's URL is made from. Typed without `publicUrl`, as modules see the
+ * configuration (`ModuleConfig`); the object is always the loaded `ServerConfig`, and only this file reads the field.
+ */
+export type UrlConfig = Pick<ModuleConfig, 'mode' | 'appDomain'>;
+
+/** The configured URL behind a module's view of the configuration: what `loadConfig` loaded. */
+function configuredUrl(config: UrlConfig): string {
+  const url = (config as Partial<Pick<ServerConfig, 'publicUrl'>>).publicUrl;
+  if (url === undefined) {
+    throw new WirebenchError('tenancy-no-public-url', 'this configuration was not loaded: it has no public URL');
+  }
+  return url;
+}
 
 /** A request (`request.tenant`) or a scope a job or the admin command line holds. */
 export type ScopeSource = TenantScope | { readonly tenant: TenantScope };
@@ -20,19 +32,18 @@ export type ScopeSource = TenantScope | { readonly tenant: TenantScope };
  * may be passed for its scope: self-hosted mode reads neither, so a self-hosted request never resolves one.
  */
 export function tenantUrl(config: UrlConfig, of: ScopeSource): string {
-  if (config.mode !== 'hosted') return config.publicUrl;
+  if (config.mode !== 'hosted') return configuredUrl(config);
   const scope = 'tenantId' in of ? of : of.tenant;
   return `https://${scope.slug}.${appDomainOf(config)}`;
 }
 
 /**
- * The URL where nothing gives a scope yet: the admin command line until `--tenant` (Task 16), the scheduler's
- * alert links until its jobs run per tenant (Task 13), and the server-wide SAML provider, which is the
- * default tenant's until slice 7. The public URL in self-hosted mode, where every tenant's URL is that one;
- * `undefined` in hosted mode, where a URL needs a tenant.
+ * The URL where nothing gives a scope yet: the server-wide SAML provider, which is the default tenant's until
+ * slice 7. The public URL in self-hosted mode, where every tenant's URL is that one; `undefined` in hosted mode,
+ * where a URL needs a tenant.
  */
 export function urlWithoutScope(config: UrlConfig): string | undefined {
-  return config.mode === 'hosted' ? undefined : config.publicUrl;
+  return config.mode === 'hosted' ? undefined : configuredUrl(config);
 }
 
 /**

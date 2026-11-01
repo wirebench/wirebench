@@ -1,8 +1,7 @@
 /**
  * Server-sync, webhook capture and CI tokens in a tenant (tenancy plan Task 10; spec §19.8, §19.13). Until `0021`
  * there is one tenant, so the suite shows that every statement the three modules send goes through the tenant
- * database: the harness registers them with `scopedContext`, whose `ctx.db` throws, and the statement log shows
- * each one after its unit's `set_config`. A catch URL has no session: its tenant is the one its `Host` names.
+ * database: a module has no `ctx.db`, and the statement log shows each one after its unit's `set_config`. A catch URL has no session: its tenant is the one its `Host` names.
  */
 import { afterEach, beforeEach, expect, it } from 'vitest';
 import type { SyncChange, SyncPushCommit } from '@wirebench/engine';
@@ -15,14 +14,11 @@ import { describeDb } from '../../helpers/database.js';
 import { identityHarness, signedInUser, type IdentityHarness, type SignedInUser } from '../../helpers/identity.js';
 import { seedSyncWorkspace } from '../../helpers/sync.js';
 import { call, seedTeam } from '../../helpers/teams.js';
-import { expectAllScoped, expectNoRawStatementsOn } from '../../helpers/tenancy.js';
+import { expectAllScoped } from '../../helpers/tenancy.js';
 
 const AT = '2026-09-24T12:00:00.000Z';
 const text = (path: string, content: string): SyncChange => ({ path, encoding: 'utf8', content });
 const commit = (subject: string, changes: SyncChange[]): SyncPushCommit => ({ subject, at: AT, changes });
-
-/** The three modules' own tables, and the workspace rows they read: none may be reached around a unit. */
-const TABLES = ['catch_urls', 'captures', 'ci_tokens', 'workspaces'];
 
 describeDb('server-sync, webhook capture and CI tokens in a tenant (tenancy Task 10)', () => {
   let h: IdentityHarness;
@@ -99,7 +95,6 @@ describeDb('server-sync, webhook capture and CI tokens in a tenant (tenancy Task
     await ok(204, call(h, admin, 'DELETE', `${ws}/hooks/${hook.id}`));
 
     expectAllScoped(h.statements, h.tdb.scope.tenantId);
-    expectNoRawStatementsOn(h.ctx, TABLES);
     // Every announcement carries the tenant (spec §19.8 guard 5).
     const tenantId = h.tdb.scope.tenantId;
     expect(heads.map((event) => event.tenantId)).toEqual([tenantId]);

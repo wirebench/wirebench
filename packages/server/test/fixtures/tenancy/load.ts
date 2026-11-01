@@ -8,7 +8,7 @@ import { createHash } from 'node:crypto';
 import { readdirSync, readFileSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { Database } from '../../../src/context.js';
+import type { Database } from '../../../src/db/querier.js';
 import { migrate } from '../../../src/db/migrate.js';
 import { BUILTIN_MODULES } from '../../../src/modules.js';
 import { allMigrations } from '../../../src/serve.js';

@@ -4,7 +4,7 @@
  */
 import { WirebenchError } from '@wirebench/engine';
 import type { ServerMode } from '../config.js';
-import type { Querier } from '../context.js';
+import type { Querier } from '../db/querier.js';
 
 /** `on delete set null (column)` on a composite foreign key needs PostgreSQL 15. */
 export const MIN_POSTGRES_VERSION_NUM = 150000;
@@ -49,7 +49,10 @@ export async function appRoleReport(db: Querier): Promise<AppRoleReport> {
   return rows.rows[0]!;
 }
 
-/** Why row-level security would not apply to the role, in words for the log; empty when it applies. */
+/**
+ * Why row-level security cannot be relied on for the role, in words for the log; empty when it can. A superuser and
+ * a `BYPASSRLS` role skip it; the tables' owner is under it since 0021 forces it, but may switch it off.
+ */
 export function bypassReasons(report: AppRoleReport): string[] {
   return [
     ...(report.superuser ? ['is a superuser'] : []),
@@ -71,7 +74,7 @@ export async function checkAppRole(
   const report = await appRoleReport(db);
   const reasons = bypassReasons(report);
   if (reasons.length === 0) return report;
-  const message = `the database role ${report.role} ${reasons.join(', ')}, so row-level security does not apply to it`;
+  const message = `the database role ${report.role} ${reasons.join(', ')}, so row-level security cannot be relied on for it`;
   if (mode === 'hosted') throw new WirebenchError('tenancy-role-bypasses', `${message}; hosted mode refuses it`);
   warn(`${message}; see "Database roles" in the README to give the server an app role of its own`, {
     role: report.role,

@@ -51,9 +51,9 @@ describeDb('SCIM tokens (saml-scim spec §3.4)', () => {
       const body = created.json<{ id: string; name: string; token: string; createdAt: string }>();
       expect(body.name).toBe('Entra ID');
       expect(body.token).toMatch(SCIM_TOKEN_PATTERN);
-      const row = await repo.scimTokenById(h.db, body.id);
+      const row = await repo.scimTokenById(h.tdb, body.id);
       expect(row?.tokenHash).toBe(hashSecret(body.token));
-      const stored = await h.db.query<Record<string, unknown>>('select * from scim_tokens');
+      const stored = await h.tdb.query<Record<string, unknown>>('select * from scim_tokens');
       expect(JSON.stringify(stored.rows)).not.toContain(body.token);
 
       const list = await call('GET', '/scim-tokens');
@@ -162,7 +162,12 @@ describeDb('wirebench-server admin scim-token (saml-scim spec §3.4)', () => {
     expect(await runAdmin({ command: 'admin-license-install', file }, io().io, options)).toBe(0);
     await removeTempDir(dir);
     const team = await teamsRepo.insertTeam(await defaultTenantDb(db), { id: newId(), name: 'Payments', at: NOW });
-    await repo.insertScimGroup(db, { id: newId(), displayName: 'Engineering', externalId: null, at: NOW });
+    await repo.insertScimGroup(await defaultTenantDb(db), {
+      id: newId(),
+      displayName: 'Engineering',
+      externalId: null,
+      at: NOW,
+    });
 
     const linked = io();
     expect(
@@ -174,7 +179,7 @@ describeDb('wirebench-server admin scim-token (saml-scim spec §3.4)', () => {
     expect(list.stdout()).toMatch(/Engineering\s+0\s+Payments/);
     const unlinked = io();
     expect(await runAdmin({ command: 'admin-scim-group-unlink', group: 'Engineering' }, unlinked.io, options)).toBe(0);
-    expect((await repo.listScimGroups(db))[0]!.teamId).toBeNull();
+    expect((await repo.listScimGroups(await defaultTenantDb(db)))[0]!.teamId).toBeNull();
     expect(team.id).toBeDefined();
     const missing = io();
     expect(await runAdmin({ command: 'admin-scim-group-unlink', group: 'nope' }, missing.io, options)).toBe(1);

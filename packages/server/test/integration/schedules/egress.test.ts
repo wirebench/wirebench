@@ -42,9 +42,9 @@ const never = new AbortController().signal;
 async function runTo(url: string, egress: { denyPrivate: boolean }) {
   const { runId } = await seedRun(c);
   const files = await workspaceSnapshot([probe('Out', url)]);
-  await executeRun(executorEnv(c, files, tmpRoot, { egress }), runId, never);
-  const found = await repo.runWithSchedule(c.h.db, runId);
-  return { run: found!.run, results: await repo.resultsOf(c.h.db, runId) };
+  await executeRun(executorEnv(c, files, tmpRoot, { egress }), c.h.tdb.scope, runId, never);
+  const found = await repo.runWithSchedule(c.h.tdb, runId);
+  return { run: found!.run, results: await repo.resultsOf(c.h.tdb, runId) };
 }
 
 describeDb('the egress rule on scheduled runs and alerts (hosted edition spec §17.5)', () => {
@@ -80,8 +80,8 @@ describeDb('the egress rule on scheduled runs and alerts (hosted edition spec §
     try {
       const { runId } = await seedRun(c);
       const files = await workspaceSnapshot(['A', 'B', 'C', 'D', 'E'].map((name) => probe(name, `${base}/ok`)));
-      await executeRun(executorEnv(c, files, tmpRoot, { egress: { denyPrivate: false } }), runId, never);
-      const found = await repo.runWithSchedule(c.h.db, runId);
+      await executeRun(executorEnv(c, files, tmpRoot, { egress: { denyPrivate: false } }), c.h.tdb.scope, runId, never);
+      const found = await repo.runWithSchedule(c.h.tdb, runId);
       expect(found!.run.status).toBe('passed');
       // Five requests, kept alive: undici may open a second socket before it takes the first back.
       expect(opened).toBeGreaterThan(0);

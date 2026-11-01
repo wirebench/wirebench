@@ -5,9 +5,14 @@ import { afterAll, beforeAll, expect, it } from 'vitest';
 import { verifyChain } from '../../../src/audit-log/chain/verify.js';
 import { FIXTURE_VERSION, loadFixture0019, type Fixture0019 } from '../../fixtures/tenancy/load.js';
 import { describeDb, testDatabase } from '../../helpers/database.js';
+import { scopeOf } from '../../../src/tenancy/scope.js';
+import { tenantDbFactory } from '../../../src/tenancy/tenant-db.js';
 import { mkTempDir, removeTempDir } from '../../helpers/git.js';
 
-/** Plan Task 3: the frozen `0019` fixture loads, fills every table, and its audit chain verifies. */
+/**
+ * Plan Task 3: the frozen `0019` fixture loads, fills every table, and its audit chain verifies. At 0019 there is no
+ * tenant and no policy, so the owner reads the rows.
+ */
 describeDb('the frozen 0019 fixture (hosted spec §19.13)', () => {
   let db: Awaited<ReturnType<typeof testDatabase>>;
   let dataDir: string;
@@ -25,7 +30,8 @@ describeDb('the frozen 0019 fixture (hosted spec §19.13)', () => {
   });
 
   it('is at 0019, with rows in all 37 tables', async () => {
-    const versions = (await db.query<{ version: number }>('select version from schema_migrations order by 1')).rows;
+    const versions = (await db.owner.query<{ version: number }>('select version from schema_migrations order by 1'))
+      .rows;
     expect(versions.map((row) => Number(row.version))).toEqual(
       Array.from({ length: FIXTURE_VERSION }, (_, i) => i + 1),
     );
@@ -37,16 +43,16 @@ describeDb('the frozen 0019 fixture (hosted spec §19.13)', () => {
     expect(tables).toHaveLength(37);
     const empty: string[] = [];
     for (const table of tables) {
-      if ((await db.query(`select 1 from ${table} limit 1`)).rowCount === 0) empty.push(table);
+      if ((await db.owner.query(`select 1 from ${table} limit 1`)).rowCount === 0) empty.push(table);
     }
     expect(empty).toEqual([]);
   });
 
   it('holds the named rows, a sealed chain with an unsealed tail, and its own server id', async () => {
-    const users = (await db.query<{ id: string }>('select id from users order by id')).rows.map((row) => row.id);
+    const users = (await db.owner.query<{ id: string }>('select id from users order by id')).rows.map((row) => row.id);
     expect(users).toEqual([...Object.values(fixture.users)].sort());
     const chain = (
-      await db.query<{ first: string; last: string; unsealed: string }>(
+      await db.owner.query<{ first: string; last: string; unsealed: string }>(
         `select min(chain_seq)::text as first, max(chain_seq)::text as last,
            count(*) filter (where chain_seq is null)::text as unsealed from audit_events`,
       )
@@ -58,11 +64,11 @@ describeDb('the frozen 0019 fixture (hosted spec §19.13)', () => {
     });
     expect(Number(fixture.chain.lastSeq)).toBeGreaterThan(1);
     expect(fixture.chain.unsealed).toBeGreaterThan(0);
-    expect((await db.query('select 1 from server_identity')).rowCount).toBe(1);
+    expect((await db.owner.query('select 1 from server_identity')).rowCount).toBe(1);
   });
 
   it('holds the edge rows the rebuilt keys must carry: disabled, accepted, revoked, rejected', async () => {
-    const one = async (sql: string) => (await db.query(sql)).rows;
+    const one = async (sql: string) => (await db.owner.query(sql)).rows;
     expect(await one('select id from users where disabled_at is not null')).toEqual([{ id: fixture.users.leaver }]);
     expect(await one('select email_lower from invitations where accepted_at is not null')).toEqual([
       { email_lower: 'joined@example.com' },
@@ -83,7 +89,9 @@ describeDb('the frozen 0019 fixture (hosted spec §19.13)', () => {
   // Through the verifier, not `admin audit verify`: the command refuses a schema with migrations pending, and
   // 0020 is pending here.
   it('has an intact audit chain at 0019 under the test chain key', async () => {
-    const outcome = await verifyChain(db, fixture.keys.auditChainKey);
+    // At 0019 there is no tenant: any scope's unit reads the one chain, as the setting names no column yet.
+    const unscoped = tenantDbFactory(db)(scopeOf({ id: '00000000-0000-4000-8000-000000000000', slug: 'none' }));
+    const outcome = await verifyChain(unscoped, fixture.keys.auditChainKey);
     expect(outcome).toMatchObject({
       kind: 'checked',
       result: 'intact',

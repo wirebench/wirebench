@@ -33,7 +33,7 @@ describeDb('schedule alerts: state, outbox and delivery (scheduled-runs spec §3
   beforeEach(async () => {
     c = await schedulesHarness();
     scheduleId = newId();
-    await repo.insertSchedule(c.h.db, {
+    await repo.insertSchedule(c.h.tdb, {
       id: scheduleId,
       workspaceId: c.workspaceId,
       name: 'Nightly',
@@ -69,20 +69,26 @@ describeDb('schedule alerts: state, outbox and delivery (scheduled-runs spec §3
       summary: { total: 2, passed: 1, failed: status === 'failed' ? 1 : 0, errored: 0, skipped: 0, durationMs: 1200 },
       results,
     };
-    await repo.insertRun(c.h.db, { id: run.id, scheduleId, trigger: 'schedule', status: 'running', at: c.h.clock.now });
-    await c.h.db.transaction((tx) => enqueueAlerts(tx, env(), scheduleId, run));
+    await repo.insertRun(c.h.tdb, {
+      id: run.id,
+      scheduleId,
+      trigger: 'schedule',
+      status: 'running',
+      at: c.h.clock.now,
+    });
+    await c.h.tdb.transaction((tx) => enqueueAlerts(tx, env(), scheduleId, run));
     return run;
   };
   const rows = async (): Promise<OutboxRow[]> =>
     (
-      await c.h.db.query<OutboxRow>(
+      await c.h.tdb.query<OutboxRow>(
         `select state, attempts, next_at as "nextAt", last_error as "lastError", kind, target_index as "targetIndex",
            payload from schedule_alert_outbox order by created_at, target_index`,
       )
     ).rows;
   const alertState = async () =>
     (
-      await c.h.db.query<{ alertState: string; failureStreak: number }>(
+      await c.h.tdb.query<{ alertState: string; failureStreak: number }>(
         'select alert_state as "alertState", failure_streak as "failureStreak" from schedules where id = $1',
         [scheduleId],
       )
@@ -183,8 +189,8 @@ describeDb('schedule alerts: state, outbox and delivery (scheduled-runs spec §3
 
   it('a target removed since the alert was queued is not delivered to', async () => {
     await finish('failed');
-    const row = await repo.scheduleById(c.h.db, c.workspaceId, scheduleId);
-    await c.h.db.query('update schedules set alerts = $2 where id = $1', [
+    const row = await repo.scheduleById(c.h.tdb, c.workspaceId, scheduleId);
+    await c.h.tdb.query('update schedules set alerts = $2 where id = $1', [
       scheduleId,
       JSON.stringify({ ...row!.alerts, targets: row!.alerts.targets.slice(0, 1) }),
     ]);

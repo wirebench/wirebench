@@ -65,3 +65,9 @@ that seals a server host's files derives from the tenant's data key, never from 
   The migration's key step holds host sockets until it is done (§19.10).
 - Changing the salts, the `info` binding or the order of derivation would orphan every sealed value, so any later
   change adds a version to the secret box's header rather than editing these.
+- The audit chain follows the same split (spec §19.7): the self-hosted default tenant keeps the configured chain key,
+  and every other tenant, and every tenant in hosted mode, seals under a key derived from it and the tenant id.
+  Switching an existing self-hosted install to hosted mode would therefore leave its default tenant's chain sealed
+  under the configured key while the server derives another: the sealer refuses it (`wrong-key`, logged once) and
+  seals nothing more. A hosted server starts fresh (§14) and moving an installation in is slice 7's import, so no
+  supported path does this; the configured key still verifies that chain.

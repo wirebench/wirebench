@@ -136,7 +136,7 @@ describeDb('SAML sign-in from the browser (hosted spec §17.2)', () => {
       const flowLine = setCookies(res).find((l) => l.startsWith(`${FLOW_COOKIE}=`))!;
       expect(flowLine).toContain('SameSite=None');
       expect(flowLine).toContain('Secure');
-      const row = await h.db.query<{ provider: string; state_hash: string; nonce: string }>(
+      const row = await h.tdb.query<{ provider: string; state_hash: string; nonce: string }>(
         'select * from browser_flows',
       );
       expect(row.rows).toMatchObject([
@@ -155,12 +155,12 @@ describeDb('SAML sign-in from the browser (hosted spec §17.2)', () => {
       expect(me.statusCode).toBe(200);
       const userId = me.json<{ user: { id: string } }>().user.id;
       expect((await identityRepo.tokensOfUser(h.tdb, userId)).map((t) => t.kind)).toEqual(['browser']);
-      const signedIn = await h.db.query<{ details: { method: string } }>(
+      const signedIn = await h.tdb.query<{ details: { method: string } }>(
         "select details from audit_events where action = 'auth.signed_in'",
       );
       expect(signedIn.rows.map((r) => r.details.method)).toEqual(['saml']);
-      expect((await h.db.query('select 1 from browser_flows')).rowCount).toBe(0);
-      await expectNoSecretsInAudit(h.db);
+      expect((await h.tdb.query('select 1 from browser_flows')).rowCount).toBe(0);
+      await expectNoSecretsInAudit(h.tdb);
     });
 
     it('refuses a replayed response', async () => {
@@ -219,7 +219,7 @@ describeDb('SAML sign-in from the browser (hosted spec §17.2)', () => {
       );
       expect(res.statusCode).toBe(403);
       expect(cookieValue(res, COOKIE)).toBeUndefined();
-      const failed = await h.db.query<{ details: { reason: string } }>(
+      const failed = await h.tdb.query<{ details: { reason: string } }>(
         "select details from audit_events where action = 'auth.sign_in_failed'",
       );
       expect(failed.rows.map((r) => r.details.reason)).toEqual(['saml-recipient']);

@@ -23,7 +23,7 @@ describeDb('webhook-signatures storage (§3.2)', () => {
   afterEach(() => h.close());
 
   it('0005 adds the columns', async () => {
-    const columns = await h.db.query<{ table_name: string; column_name: string }>(
+    const columns = await h.tdb.query<{ table_name: string; column_name: string }>(
       `select table_name, column_name from information_schema.columns
        where table_schema = current_schema()
          and column_name in ('signature', 'signature_secret', 'signature_hint', 'reject_unverified',
@@ -81,7 +81,7 @@ describeDb('webhook-signatures storage (§3.2)', () => {
   it('refuses a scheme without a secret, and reject unverified without a scheme (check constraints)', async () => {
     const hook = await seedCatchUrl(h, workspaceId, 'Payments');
     await expect(
-      h.db.query(`update catch_urls set signature = '{"kind":"standard","toleranceSec":300}'::jsonb where id = $1`, [
+      h.tdb.query(`update catch_urls set signature = '{"kind":"standard","toleranceSec":300}'::jsonb where id = $1`, [
         hook.id,
       ]),
     ).rejects.toMatchObject({ code: '23514' });

@@ -430,7 +430,7 @@ it.runIf(OUT !== undefined)(
       // ---- scheduled runs: a schedule with a sealed secret and a Slack alert, a failed run with results.
       const schedulesKey = Buffer.from(FIXTURE_KEYS.schedulesSecretKey, 'base64');
       const scheduleId = newId();
-      await schedulesRepo.insertSchedule(h.db, {
+      await schedulesRepo.insertSchedule(h.db as never, {
         id: scheduleId,
         workspaceId: staging,
         name: 'Nightly health',
@@ -450,9 +450,9 @@ it.runIf(OUT !== undefined)(
         createdBy: admin.user.id,
         at,
       });
-      await schedulesRepo.setScheduleSecrets(h.db, scheduleId, { API_KEY: sealValue(schedulesKey, FIXTURE_PLAINTEXTS.scheduleSecret) }, at);
+      await schedulesRepo.setScheduleSecrets(h.db as never, scheduleId, { API_KEY: sealValue(schedulesKey, FIXTURE_PLAINTEXTS.scheduleSecret) }, at);
       const runId = newId();
-      await schedulesRepo.insertRun(h.db, { id: runId, scheduleId, trigger: 'schedule', status: 'running', at });
+      await schedulesRepo.insertRun(h.db as never, { id: runId, scheduleId, trigger: 'schedule', status: 'running', at });
       const finished: schedulesRepo.FinishedRun = {
         status: 'failed',
         reason: null,
@@ -466,21 +466,21 @@ it.runIf(OUT !== undefined)(
         at,
       };
       await h.db.transaction(async (tx) => {
-        expect(await schedulesRepo.finishRun(tx, runId, finished)).toBe(true);
-        await enqueueAlerts(tx, { settings: { linkUrl: PUBLIC_URL }, now: () => at }, scheduleId, {
+        expect(await schedulesRepo.finishRun(tx as never, runId, finished)).toBe(true);
+        await enqueueAlerts(tx as never, { settings: { linkUrl: PUBLIC_URL }, now: () => at } as never, scheduleId, {
           id: runId,
           ...finished,
         });
       });
 
       // ---- SSO: a SAML identity and flow, a SCIM token, a provisioned user in a group linked to the team.
-      await ssoRepo.insertSamlIdentity(h.db, {
+      await ssoRepo.insertSamlIdentity(h.db as never, {
         entityId: 'https://idp.example.test/saml',
         nameId: 'viewer-name-id',
         userId: viewer.user.id,
         at,
       });
-      await ssoRepo.insertSamlFlow(h.db, {
+      await ssoRepo.insertSamlFlow(h.db as never, {
         id: newId(),
         requestId: `_${randomBytes(16).toString('hex')}`,
         codeChallenge: sha256('saml-verifier-0019'),
@@ -490,16 +490,16 @@ it.runIf(OUT !== undefined)(
         createdAt: at,
         expiresAt: new Date(at.getTime() + 600_000),
       });
-      await ssoRepo.insertScimToken(h.db, { id: newId(), name: 'Entra provisioning', tokenHash: mintToken().hash, createdBy: admin.user.id, at });
-      await ssoRepo.upsertScimUser(h.db, viewer.user.id, 'entra-viewer-0019', at);
+      await ssoRepo.insertScimToken(h.db as never, { id: newId(), name: 'Entra provisioning', tokenHash: mintToken().hash, createdBy: admin.user.id, at });
+      await ssoRepo.upsertScimUser(h.db as never, viewer.user.id, 'entra-viewer-0019', at);
       const groupId = newId();
-      await ssoRepo.insertScimGroup(h.db, { id: groupId, displayName: 'QA Engineers', externalId: 'entra-group-0019', at });
-      await ssoRepo.setGroupTeam(h.db, groupId, teamId, at);
-      await ssoRepo.addGroupMembers(h.db, groupId, [viewer.user.id]);
-      await ssoRepo.insertProvisioned(h.db, { teamId, userId: viewer.user.id, groupId });
+      await ssoRepo.insertScimGroup(h.db as never, { id: groupId, displayName: 'QA Engineers', externalId: 'entra-group-0019', at });
+      await ssoRepo.setGroupTeam(h.db as never, groupId, teamId, at);
+      await ssoRepo.addGroupMembers(h.db as never, groupId, [viewer.user.id]);
+      await ssoRepo.insertProvisioned(h.db as never, { teamId, userId: viewer.user.id, groupId });
 
       // ---- session logs: one ended log with two chunks.
-      const opened = await sessionLogsRepo.openLog(h.db, {
+      const opened = await sessionLogsRepo.openLog(h.db as never, {
         id: newId(),
         workspaceId: staging,
         userId: editor.user.id,
@@ -512,18 +512,18 @@ it.runIf(OUT !== undefined)(
         startedAt: '2026-09-24T11:00:00.000Z',
         at,
       });
-      await sessionLogsRepo.appendChunk(h.db, { logId: opened.log.id, offset: 0, data: Buffer.from('$ uptime\r\n'), truncated: false, at });
-      await sessionLogsRepo.appendChunk(h.db, {
+      await sessionLogsRepo.appendChunk(h.db as never, { logId: opened.log.id, offset: 0, data: Buffer.from('$ uptime\r\n'), truncated: false, at });
+      await sessionLogsRepo.appendChunk(h.db as never, {
         logId: opened.log.id,
         offset: 10,
         data: Buffer.from(' 11:00:01 up 12 days\r\n'),
         truncated: false,
         at,
       });
-      await sessionLogsRepo.endLog(h.db, { logId: opened.log.id, endedAt: at, exitCode: 0, signal: null, reason: 'exit', at });
+      await sessionLogsRepo.endLog(h.db as never, { logId: opened.log.id, endedAt: at, exitCode: 0, signal: null, reason: 'exit', at });
 
       // ---- the local agent: a pairing, an unused code and a nonce.
-      const pairing = await agentRepo.upsertPairing(h.db, {
+      const pairing = await agentRepo.upsertPairing(h.db as never, {
         id: newId(),
         userId: alice.user.id,
         agentId: 'agent-fixture-0019',
@@ -532,8 +532,8 @@ it.runIf(OUT !== undefined)(
         sshOptIn: true,
         at,
       });
-      await agentRepo.replaceCode(h.db, { userId: editor.user.id, codeHash: sha256('code-0019'), expiresAt: new Date(at.getTime() + 600_000) });
-      await agentRepo.insertNonce(h.db, {
+      await agentRepo.replaceCode(h.db as never, { userId: editor.user.id, codeHash: sha256('code-0019'), expiresAt: new Date(at.getTime() + 600_000) });
+      await agentRepo.insertNonce(h.db as never, {
         nonceHash: sha256('nonce-0019'),
         pairingId: pairing.id,
         userId: alice.user.id,
@@ -547,7 +547,7 @@ it.runIf(OUT !== undefined)(
         now: () => h.clock.now,
         setTimer: timers.setTimer,
         log: h.app.log,
-      });
+      } as never);
       const sealed = await sealer.runOnce();
       expect(sealed.outcome, JSON.stringify(sealed)).toBe('sealed');
       h.clock.advance(60_000);

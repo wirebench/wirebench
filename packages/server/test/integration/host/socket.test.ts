@@ -33,7 +33,7 @@ import { signedInUser } from '../../helpers/identity.js';
 import { workspaceSnapshot } from '../../helpers/schedule-runs.js';
 import { seedSyncWorkspace } from '../../helpers/sync.js';
 import { call, seedTeam } from '../../helpers/teams.js';
-import type { Database } from '../../../src/context.js';
+import type { Database } from '../../../src/db/querier.js';
 
 const AT = '2026-09-24T12:00:00.000Z';
 
@@ -191,6 +191,26 @@ describeDb('the host socket (hosted edition spec §17.3)', () => {
       ]);
     });
     expect(JSON.stringify(h.audit)).not.toContain('alpha-secret');
+  });
+
+  it('writes a secret.* audit row in the user’s tenant unit, where the forced policy files it (Task 16 review M3)', async () => {
+    const alice = await browserUser(h, 'alice@example.com');
+    // What the database itself sees inside the unit the row is written in, not only the scope the code passed.
+    const units: { readonly action: string; readonly scope: string; readonly setting: string }[] = [];
+    h.hooks.audit.push(async (tx, event) => {
+      if (!event.action.startsWith('secret.')) return;
+      const setting = await tx.query<{ s: string }>("select current_setting('wirebench.tenant_id', true) as s");
+      units.push({ action: event.action, scope: tx.scope.tenantId, setting: setting.rows[0]!.s });
+    });
+    const client = await openHost(h, alice);
+    await client.waitFor((frame) => frame.type === 'hello');
+    expect(await client.call('secrets.set', { value: 'beta-secret-0123456789', label: 'tenant key' })).toMatchObject({
+      ok: true,
+    });
+    const tenantId = h.tdb.scope.tenantId;
+    await vi.waitFor(() => {
+      expect(units).toEqual([{ action: 'secret.written', scope: tenantId, setting: tenantId }]);
+    });
   });
 
   it('sign-out closes the socket 4401 and evicts the instance', async () => {
@@ -648,7 +668,7 @@ describeDb('the host socket (hosted edition spec §17.3)', () => {
           query: async (text, params) => {
             // The identity check's lookup is the first; revoke the token before the host module's own.
             if (text.includes('from device_tokens t join users u') && ++lookups === 2) {
-              await h.db.query('update device_tokens set revoked_at = now() where id = $1', [alice.tokenId]);
+              await h.tdb.query('update device_tokens set revoked_at = now() where id = $1', [alice.tokenId]);
             }
             return await tx.query(text, params);
           },

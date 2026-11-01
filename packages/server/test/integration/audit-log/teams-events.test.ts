@@ -103,12 +103,12 @@ describeDb('teams-access fire sites (audit-log spec §3.2, plan ruling 7)', () =
     const res = await call(h, admin, 'POST', '/teams', { name: 'Never' });
     h.hooks.audit.pop();
     expect(res.status).toBe(500);
-    expect((await h.db.query(`select 1 from teams where name = 'Never'`)).rowCount).toBe(0);
+    expect((await h.tdb.query(`select 1 from teams where name = 'Never'`)).rowCount).toBe(0);
     expect(
-      (await h.db.query(`select 1 from audit_events where action = 'team.created' and details->>'name' = 'Never'`))
+      (await h.tdb.query(`select 1 from audit_events where action = 'team.created' and details->>'name' = 'Never'`))
         .rowCount,
     ).toBe(0);
   });
 
-  it('writes no secret-shaped value', () => expectNoSecretsInAudit(h.db));
+  it('writes no secret-shaped value', () => expectNoSecretsInAudit(h.tdb));
 });

@@ -7,7 +7,7 @@
  * or module that reached for it would pass every one-tenant test.
  */
 import { WirebenchError } from '@wirebench/engine';
-import type { Querier } from '../context.js';
+import type { Querier } from '../db/querier.js';
 import { scopeOf, type TenantScope } from './scope.js';
 
 /**
@@ -74,6 +74,23 @@ export class TenantDirectory {
       throw new WirebenchError('tenancy-not-loaded', 'the tenant directory was used before it was loaded');
     }
     return this.#defaultTenant;
+  }
+
+  /**
+   * The one tenant of a server whose `server_identity` row is gone, for the audit commands, the forensics path
+   * that must still run on such a database: `undefined` unless exactly one tenant exists. Only a self-hosted
+   * server has one tenant, and that one is its default.
+   */
+  async onlyTenant(): Promise<TenantScope | undefined> {
+    const rows = await this.#db.query<{ id: string; slug: string }>(
+      'select id::text as id, slug from tenants order by created_at, id limit 2',
+    );
+    return rows.rows.length === 1 ? scopeOf(rows.rows[0]!) : undefined;
+  }
+
+  /** Whether `scope` is the default tenant: a predicate, so a caller learns nothing it could serve. */
+  isDefault(scope: TenantScope): boolean {
+    return this.defaultScope().tenantId === scope.tenantId;
   }
 
   /** Every tenant not being deleted, as scopes: what the job loop serves. */

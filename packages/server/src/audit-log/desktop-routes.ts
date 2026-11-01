@@ -8,7 +8,7 @@
  */
 import { desktopAuditBatchSchema, teamWorkspaceParamsSchema } from '@wirebench/engine';
 import type { FastifyInstance } from 'fastify';
-import { auditSource, recordAudit, type Querier, type ServerHooks } from '../context.js';
+import { auditSource, recordAudit, type ServerHooks } from '../context.js';
 import { callerKey, rateLimit, RateLimiter } from '../identity/rate-limit.js';
 import { jsonSchema } from '../schema.js';
 import { forbidden } from '../teams/errors.js';
@@ -37,8 +37,7 @@ export function desktopEventsLimiter(now: () => Date): RateLimiter {
 }
 
 export interface DesktopRoutesEnv {
-  readonly db: Querier & { transaction<T>(fn: (tx: Querier) => Promise<T>): Promise<T> };
-  /** The tenant databases: the role guard and teams' reads run in the request's tenant (tenancy Task 9). */
+  /** The tenant databases: the role guard, the reads and the batch's rows run in the request's tenant. */
   readonly tenancy: Pick<Tenancy, 'db'>;
   readonly hooks: ServerHooks;
   readonly limiter: RateLimiter;
@@ -47,7 +46,7 @@ export interface DesktopRoutesEnv {
 export const desktopRoutes =
   (env: DesktopRoutesEnv) =>
   (app: FastifyInstance): void => {
-    const { db, hooks } = env;
+    const { hooks } = env;
     app.post(
       '/workspaces/:workspaceId/audit/desktop-events',
       {
@@ -63,15 +62,16 @@ export const desktopRoutes =
         if (request.caller === undefined) throw forbidden();
         const batch = desktopAuditBatchSchema.parse(request.body);
         const { workspaceId } = request.workspaceAccess!;
-        const workspace = await workspaceById(env.tenancy.db(request.tenant), workspaceId);
-        if (workspace === undefined || !workspace.recordDesktopActivity) throw desktopRecordingOff();
         const source = auditSource(request);
-        const scope = {
-          target: { kind: 'workspace' as const, id: workspaceId },
-          workspaceId,
-          teamId: workspace.teamId,
-        };
-        await db.transaction(async (tx) => {
+        // The setting's read and the batch's rows: one unit.
+        await env.tenancy.db(request.tenant).transaction(async (tx) => {
+          const workspace = await workspaceById(tx, workspaceId);
+          if (workspace === undefined || !workspace.recordDesktopActivity) throw desktopRecordingOff();
+          const scope = {
+            target: { kind: 'workspace' as const, id: workspaceId },
+            workspaceId,
+            teamId: workspace.teamId,
+          };
           for (const event of batch.events) {
             await recordAudit(hooks, tx, { ...source, ...scope, action: event.action, details: event.details });
           }

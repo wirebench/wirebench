@@ -23,7 +23,6 @@ import {
   type AuditInput,
   type AuditSource,
   type LicenseService,
-  type Querier,
   type ServerHooks,
 } from '../context.js';
 import { unauthenticated } from '../identity/errors.js';
@@ -33,11 +32,11 @@ import { jsonSchema } from '../schema.js';
 import { teamRequired } from './errors.js';
 import { decodeCursor, encodeCursor, type Cursor } from './cursor.js';
 import { listAuditEvents, listAuditEventsAscending, type AuditFilter } from './repo.js';
+import type { TenantQuerier } from '../tenancy/tenant-db.js';
 import type { Tenancy } from '../tenancy/tenancy.js';
 
 export interface AuditRoutesEnv {
-  readonly db: Querier;
-  /** The tenant databases: the role guard and teams' reads run in the request's tenant (tenancy Task 9). */
+  /** The tenant databases: every read and the export's own event run in the request's tenant (tenancy Task 14). */
   readonly tenancy: Pick<Tenancy, 'db'>;
   readonly hooks: ServerHooks;
   /** Read per request, never at registration: `ctx.license` is replaced when a license is installed (context.ts). */
@@ -62,7 +61,7 @@ export function filterOf(query: AuditExportQuery): AuditFilter {
  * (§3.5). `onEnd(count)` runs after the last line and never when the consumer stops early.
  */
 export async function* exportLines(
-  db: Querier,
+  db: TenantQuerier,
   filter: AuditFilter,
   onEnd: (count: number) => Promise<void>,
 ): AsyncGenerator<string, void, undefined> {
@@ -143,7 +142,7 @@ export const auditRoutes =
         const query = request.query as AuditQuery;
         const limit = query.limit ?? AUDIT_LIMITS.defaultPageSize;
         const after = query.after !== undefined ? decodeCursor(query.after) : undefined;
-        const events = await listAuditEvents(env.db, filterOf(query), {
+        const events = await listAuditEvents(env.tenancy.db(request.tenant), filterOf(query), {
           ...(after !== undefined ? { after } : {}),
           limit,
         });
@@ -160,8 +159,10 @@ export const auditRoutes =
       (request, reply) => {
         const query = request.query as AuditExportQuery;
         const source = auditSource(request);
-        const lines = exportLines(env.db, filterOf(query), (count) =>
-          recordAudit(env.hooks, env.db, exportedEvent(source, query, count)),
+        // Each batch is a unit of its own: none is held while a line waits for the client.
+        const db = env.tenancy.db(request.tenant);
+        const lines = exportLines(db, filterOf(query), (count) =>
+          recordAudit(env.hooks, db, exportedEvent(source, query, count)),
         );
         return reply.header('content-type', 'application/x-ndjson; charset=utf-8').send(Readable.from(lines));
       },

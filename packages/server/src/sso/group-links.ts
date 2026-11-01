@@ -23,12 +23,12 @@ export function groupSummary(row: repo.ScimGroupListRow): ScimGroupSummary {
   };
 }
 
-export async function listGroupSummaries(env: ProvisioningEnv): Promise<ScimGroupSummary[]> {
-  return (await repo.listScimGroups(env.ctx.db)).map(groupSummary);
+export async function listGroupSummaries(env: ProvisioningEnv, scope: TenantScope): Promise<ScimGroupSummary[]> {
+  return (await repo.listScimGroups(env.ctx.tenancy.db(scope))).map(groupSummary);
 }
 
-async function summaryOf(env: ProvisioningEnv, groupId: string): Promise<ScimGroupSummary> {
-  const row = (await repo.listScimGroups(env.ctx.db)).find((group) => group.id === groupId);
+async function summaryOf(env: ProvisioningEnv, scope: TenantScope, groupId: string): Promise<ScimGroupSummary> {
+  const row = (await repo.listScimGroups(env.ctx.tenancy.db(scope))).find((group) => group.id === groupId);
   if (row === undefined) throw scimGroupNotFound();
   return groupSummary(row);
 }
@@ -55,5 +55,5 @@ export async function setGroupLink(
     await linkGroup(env, tx, group, teamId, source, changes);
   });
   if (log !== undefined) announceAccess(env, scope, changes, log);
-  return summaryOf(env, groupId);
+  return summaryOf(env, scope, groupId);
 }

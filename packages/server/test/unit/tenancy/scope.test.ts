@@ -1,15 +1,15 @@
 import type { FastifyBaseLogger } from 'fastify';
 import { describe, expect, it, vi } from 'vitest';
-import type { Database, Querier, ServerContext } from '../../../src/context.js';
+import type { Database, Querier } from '../../../src/db/querier.js';
 import { checkAppRole, checkPostgresVersion } from '../../../src/tenancy/checks.js';
-import { forEachTenant } from '../../../src/tenancy/jobs.js';
+import { forEachTenant, STOP_PASS } from '../../../src/tenancy/jobs.js';
 import { scopeOf, type TenantScope } from '../../../src/tenancy/scope.js';
 import { SET_TENANT, tenantDbFactory } from '../../../src/tenancy/tenant-db.js';
 import { announce } from '../../../src/context.js';
 import { TenantDirectory } from '../../../src/tenancy/directory.js';
 import { directoryOf } from '../../../src/tenancy/tenancy.js';
 import { testContext } from '../../helpers/context.js';
-import { expectNoRawStatementsOn, rawStatementsOf, scopedContext, statementLog } from '../../helpers/tenancy.js';
+import { statementLog } from '../../helpers/tenancy.js';
 
 const A = scopeOf({ id: '00000000-0000-4000-8000-00000000000a', slug: 'a' });
 const B = scopeOf({ id: '00000000-0000-4000-8000-00000000000b', slug: 'b' });
@@ -316,6 +316,47 @@ describe('forEachTenant (spec §19.8 guard 6)', () => {
     expect(sent.filter((line) => line === 'ROLLBACK')).toHaveLength(1);
     expect(sent.filter((line) => line === 'delete from captures')).toHaveLength(2);
   });
+
+  it("runs a function's afterUnit once its unit committed, outside any unit, before the next tenant (Task 17)", async () => {
+    const { db, sent } = recordingDatabase();
+    const tenantDb = tenantDbFactory(db);
+    const error = vi.fn();
+    const pass = await forEachTenant(
+      { directory: { list: () => Promise.resolve([A, B]) }, db: tenantDb, log: { error } },
+      'audit-forwarder',
+      async (tx, scope) => {
+        await tx.query(`claim ${scope.slug}`);
+        return {
+          afterUnit: async () => {
+            sent.push(`send ${scope.slug}`);
+            // Outside the unit: a unit of the same tenant opened here is a unit of its own, not a join.
+            await tenantDb(scope).query(`delete ${scope.slug}`);
+            if (scope === A) throw new Error('A failed after its unit');
+            return STOP_PASS;
+          },
+        };
+      },
+    );
+    expect(sent.filter((line) => !line.startsWith('select set_config'))).toEqual([
+      'BEGIN',
+      'claim a',
+      'COMMIT',
+      'send a',
+      'BEGIN',
+      'delete a',
+      'COMMIT',
+      'BEGIN',
+      'claim b',
+      'COMMIT',
+      'send b',
+      'BEGIN',
+      'delete b',
+      'COMMIT',
+    ]);
+    // A's throw counts as A's failure; B's STOP_PASS ends the pass after it.
+    expect(pass).toEqual({ served: 1, failed: [A.tenantId] });
+    expect(error.mock.calls[0]![0]).toMatchObject({ job: 'audit-forwarder', tenantId: A.tenantId });
+  });
 });
 
 describe('the start-up checks (spec §19.1, §19.4)', () => {
@@ -360,29 +401,19 @@ describe('the start-up checks (spec §19.1, §19.4)', () => {
   });
 });
 
-describe('scopedContext (plan, Global Constraints)', () => {
-  it('throws tenancy-unscoped on db, and passes license and log writes through to the shared context', async () => {
-    const shared = await testContext();
-    const scoped = scopedContext(shared);
-    expect(() => scoped.db).toThrow(expect.objectContaining({ code: 'tenancy-unscoped' }));
-    const license = { ...shared.license };
-    scoped.license = license;
-    expect(shared.license).toBe(license);
-    const log = { info: vi.fn() } as unknown as ServerContext['log'];
-    (scoped as { log: ServerContext['log'] }).log = log;
-    expect(shared.log).toBe(log);
-    expect(scoped.log).toBe(log);
-    expect(scoped.tenancy).toBe(shared.tenancy);
-    expect(scoped.config).toBe(shared.config);
+describe('the context a module registers with (spec §19.8 guard 2)', () => {
+  it('has no raw database, only the tenancy', async () => {
+    const ctx = await testContext();
+    expect('db' in ctx).toBe(false);
   });
 
   it("hands a module no tenant directory, so no scope but the request's or the job loop's (Task 6 review m2)", async () => {
-    const scoped = scopedContext(await testContext());
-    expect(Object.keys(scoped.tenancy).sort()).toEqual(['db', 'forEachTenant']);
-    expect('directory' in scoped.tenancy).toBe(false);
+    const ctx = await testContext();
+    expect(Object.keys(ctx.tenancy).sort()).toEqual(['db', 'forEachTenant', 'reachable']);
+    expect('directory' in ctx.tenancy).toBe(false);
     // The start-up, the resolver and the admin command line reach it through `directoryOf` alone.
-    expect(directoryOf(scoped.tenancy)).toBeInstanceOf(TenantDirectory);
-    expect(() => directoryOf({ ...scoped.tenancy })).toThrow(expect.objectContaining({ code: 'tenancy-not-loaded' }));
+    expect(directoryOf(ctx.tenancy)).toBeInstanceOf(TenantDirectory);
+    expect(() => directoryOf({ ...ctx.tenancy })).toThrow(expect.objectContaining({ code: 'tenancy-not-loaded' }));
   });
 });
 
@@ -457,20 +488,5 @@ describe('announcements run outside the tenant unit (Task 6 re-review R4)', () =
         querying(tenancy)();
       }),
     ).rejects.toThrow(expect.objectContaining({ code: 'tenancy-unawaited' }));
-  });
-});
-
-describe('the raw statement log (Task 5 review M8)', () => {
-  it("records what went through ctx.db, not the tenant database's units", async () => {
-    const { db } = recordingDatabase();
-    const ctx = await testContext({ db });
-    await ctx.db.query('select * from teams');
-    await ctx.db.transaction((tx) => tx.query('update workspaces set name = $1', ['x']));
-    await ctx.tenancy.db(A).query('select * from schedules');
-    expect(rawStatementsOf(ctx)).toEqual(['select * from teams', 'update workspaces set name = $1']);
-    expect(() => {
-      expectNoRawStatementsOn(ctx, ['workspaces']);
-    }).toThrow();
-    expectNoRawStatementsOn(ctx, ['schedules', 'team']);
   });
 });
