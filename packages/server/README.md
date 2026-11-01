@@ -78,7 +78,8 @@ development put it behind a TLS-terminating proxy that forwards WebSocket upgrad
 [Live updates](#live-updates)) and set `WIREBENCH_SERVER_PUBLIC_URL` to the `https://` origin users will
 reach. Run **one** replica: the per-workspace lock (ADR-0009) and the live-updates hub (ADR-0013) are
 in-process. `wirebench-server migrate` applies schema migrations ahead of a restart;
-`wirebench-server migrate --check` exits 1 while any are pending; `wirebench-server config check`
+`wirebench-server migrate --check` exits 1 while any are pending, or while the data directory's move (below)
+is not done; `wirebench-server config check`
 lists each variable as set, defaulted or missing without printing values. `/healthz` reports
 pass/fail per check (database, data directory, git) and nothing else.
 
@@ -124,6 +125,18 @@ security. `pg_dump` as the app role, or as an owner that is no superuser, refuse
 `--enable-row-security`, it dumps them empty). Back up as a superuser or as a role of its own with `BYPASSRLS`.
 On the default compose installation the owner, `wirebench`, is a superuser, so existing backup scripts keep
 working.
+
+**Upgrading to this version.** It moves the data directory's `repos/` and `checkouts/` into a new
+subdirectory, keeps the deleted workspaces' repositories from `tmp/` and deletes the rest of `tmp/`, which is
+scratch. Before the upgrade, run `wirebench-server admin tenancy check` from the new image against the old
+database: it changes nothing, and reports the PostgreSQL version, whether the app role is under row-level
+security, how to back up, what the move will do and whether a rename can do it (`repos/` and `checkouts/` must be
+on the data directory's own filesystem), each table's size, and how long the migration should take. Then stop
+every server process, back up the database (see **Backups**) and the data directory, and start the new version:
+the first start, or `wirebench-server migrate`, migrates and moves. A move cut short resumes at the next start.
+Start-up refuses when a directory is in both its old and its new place (it names both), or when a user's state
+file names the old `checkouts/` path (it names the file). `wirebench-server admin tenancy status` says where the
+upgrade stands.
 
 The image carries the browser client's build. A server run from a checkout with
 `WIREBENCH_SERVER_BROWSER_CLIENT` on needs it too, or it refuses to start: run

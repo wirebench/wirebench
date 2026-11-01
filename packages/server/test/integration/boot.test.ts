@@ -192,30 +192,6 @@ describeDb('startServer', () => {
     expect(exit).not.toHaveBeenCalled();
   });
 
-  it('refuses a data directory still in the layout before §19.6 and leaves it exactly as it was (until the file step)', async () => {
-    for (const legacy of [['repos'], ['checkouts'], ['repos', 'checkouts']]) {
-      const dir = await mkTempDir();
-      try {
-        for (const name of legacy) await mkdir(join(dir, name, 'kept'), { recursive: true });
-        await mkdir(join(dir, 'tmp'), { recursive: true });
-        const before = (await readdir(dir, { recursive: true })).sort();
-        const error = await startServer({ ...env(), WIREBENCH_SERVER_DATA_DIR: dir }, io(), {
-          signals: new EventEmitter(),
-          exit: vi.fn(),
-          allowNoTenants: true,
-        }).catch((caught: unknown) => caught);
-        expect(error).toBeInstanceOf(StartupError);
-        expect(error).toMatchObject({ exitCode: 2 });
-        const message = (error as StartupError).message;
-        expect(message).toContain('tenancy-files-pending');
-        for (const name of legacy) expect(message).toContain(`${name}/`);
-        expect((await readdir(dir, { recursive: true })).sort()).toEqual(before);
-      } finally {
-        await removeTempDir(dir);
-      }
-    }
-  });
-
   it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)(
     'exits 2 when tenants/ is not writable',
     async () => {

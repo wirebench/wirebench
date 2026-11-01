@@ -28,7 +28,8 @@ import { createTenancy, directoryOf } from './tenancy/tenancy.js';
 import { ensureAppRole, roleMode } from './tenancy/roles.js';
 import { ExitCode, packageVersion, type ServerIo } from './io.js';
 import { NO_HOOKS_DIR, RepoStore } from './repos/repo-store.js';
-import { legacyLayout, TENANTS_DIR } from './tenancy/paths.js';
+import { readTenancyStep, runTenancySteps } from './tenancy/file-step.js';
+import { TENANTS_DIR } from './tenancy/paths.js';
 import { buildServer } from './server.js';
 
 /** The exit code of an interrupted shutdown: a second signal while the first is still draining. */
@@ -192,6 +193,12 @@ export async function allMigrations(
   return combined;
 }
 
+const exists = (path: string): Promise<boolean> =>
+  access(path).then(
+    () => true,
+    () => false,
+  );
+
 export async function runMigrate(
   env: NodeJS.ProcessEnv,
   io: ServerIo,
@@ -234,7 +241,11 @@ export async function runMigrate(
           ? 'migrations: up to date\n'
           : `migrations: ${pending.length} pending (${pending.map((m) => m.version).join(', ')})\n`,
       );
-      return pending.length === 0 ? ExitCode.Ok : ExitCode.Pending;
+      // Spec §19.10: the data directory's move is part of the upgrade, so a step short of `done` is pending too.
+      const state = await readTenancyStep(db);
+      const stepPending = state !== undefined && state.step !== 'done';
+      if (stepPending) io.stdout.write(`data directory: the move to the new layout is pending (step ${state.step})\n`);
+      return pending.length === 0 && !stepPending ? ExitCode.Ok : ExitCode.Pending;
     }
     const applied =
       mode === 'two-roles'
@@ -243,6 +254,22 @@ export async function runMigrate(
     io.stdout.write(
       applied.length === 0 ? 'migrations: nothing to apply\n' : `migrations: applied ${applied.join(', ')}\n`,
     );
+    // The file step runs from here too (spec §19.10), so an upgrade can be finished before the server starts. A
+    // `migrate` run where the data directory is not mounted (a job that only applies the schema) leaves the move
+    // to the server's next start, as before this step existed.
+    if (!(await exists(config.dataDir))) {
+      io.stdout.write(`data directory: ${config.dataDir} not found here; the server moves it at its next start\n`);
+      return ExitCode.Ok;
+    }
+    try {
+      const step = await runTenancySteps(db, config.dataDir);
+      if (step !== undefined)
+        io.stdout.write(`data directory: ${step === 'done' ? 'in the new layout' : `step ${step}`}\n`);
+    } catch (error) {
+      if (!(error instanceof WirebenchError)) throw error;
+      io.stderr.write(`${error.code}: ${error.message}\n`);
+      return ExitCode.Config;
+    }
     return ExitCode.Ok;
   } catch (error) {
     io.stderr.write(`${error instanceof StartupError ? error.message : migrationFailure(error)}\n`);
@@ -317,22 +344,16 @@ export async function startServer(
     }
     return fail(new StartupError(ExitCode.Migration, migrationFailure(error)));
   }
-  // Interim until the file step (spec §19.10, plan Task 22): a data directory in the layout before §19.6 is
-  // refused, untouched, rather than served beside, which would lose sight of every repository and checkout.
-  let legacy: string[];
+  // Spec §19.10's order: the migrations, then the file step, then `prepare` and the writability check, so
+  // `prepare` can never make an empty tenants/ tree beside a half-moved data directory.
   try {
-    legacy = await legacyLayout(config.dataDir);
-  } catch {
-    return fail(new StartupError(ExitCode.Config, `data directory ${config.dataDir} is not readable`));
-  }
-  if (legacy.length > 0) {
-    return fail(
-      new StartupError(
-        ExitCode.Config,
-        `tenancy-files-pending: data directory ${config.dataDir} still holds ${legacy.map((d) => `${d}/`).join(' and ')} ` +
-          'from before this version, which cannot move them yet; keep running the previous version',
-      ),
-    );
+    await runTenancySteps(db, config.dataDir);
+  } catch (error) {
+    if (error instanceof WirebenchError) {
+      return fail(new StartupError(ExitCode.Config, `${error.code}: ${error.message}`));
+    }
+    const reason = error instanceof Error ? error.message : String(error);
+    return fail(new StartupError(ExitCode.Config, `data directory ${config.dataDir} could not be moved: ${reason}`));
   }
   try {
     await RepoStore.prepare(config.dataDir);

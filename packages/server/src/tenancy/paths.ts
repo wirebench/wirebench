@@ -16,7 +16,7 @@
  * workspace or user id is only ever joined beneath a root it returned, so one id in two tenants is two places.
  */
 import { lstatSync, realpathSync } from 'node:fs';
-import { lstat, readdir } from 'node:fs/promises';
+import { readdir } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { WirebenchError } from '@wirebench/engine';
 import type { TenantScope } from './scope.js';
@@ -56,6 +56,14 @@ export function tenantsDir(dataDir: string): string {
  */
 export function tenantRoot(dataDir: string, scope: TenantScope): string {
   return checkedRoot(dataDir, scope.tenantId);
+}
+
+/**
+ * {@link tenantRoot} by a bare tenant id, for the file step (spec §19.10), which runs before any scope exists and
+ * reads the default tenant's id from `server_identity`. Every check is the same.
+ */
+export function tenantRootById(dataDir: string, tenantId: string): string {
+  return checkedRoot(dataDir, tenantId);
 }
 
 function checkedRoot(dataDir: string, tenantId: string): string {
@@ -105,25 +113,4 @@ export async function tenantTmpDirs(dataDir: string): Promise<string[]> {
     throw error;
   }
   return names.filter((name) => CANONICAL_UUID.test(name)).map((name) => join(checkedRoot(dataDir, name), 'tmp'));
-}
-
-/** What the data directory held at its root before this layout, and the file step (§19.10) moves. */
-const LEGACY_DIRS = ['repos', 'checkouts'] as const;
-
-/**
- * Which of `repos/` and `checkouts/` are still at the data directory's root: the layout before §19.6. Until the
- * file step (§19.10) exists to move them, start-up refuses such a directory rather than serve beside it, where
- * every workspace's repository would be missing and a host's first start would split its checkout in two.
- */
-export async function legacyLayout(dataDir: string): Promise<string[]> {
-  const found: string[] = [];
-  for (const name of LEGACY_DIRS) {
-    try {
-      await lstat(join(resolve(dataDir), name));
-      found.push(name);
-    } catch (error) {
-      if (!isMissing(error)) throw error;
-    }
-  }
-  return found;
 }

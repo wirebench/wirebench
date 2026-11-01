@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { describeDb, testDatabase } from '../helpers/database.js';
+import { mkTempDir, removeTempDir } from '../helpers/git.js';
 
 const run = promisify(execFile);
 const bin = fileURLToPath(new URL('../../dist/bin.js', import.meta.url));
@@ -37,12 +38,21 @@ describeDb('migrate --check against PostgreSQL', () => {
   });
   afterAll(() => db.close());
 
-  // `migrate` is the owner's to run.
+  // `migrate` is the owner's to run. It also moves the data directory (spec §19.10), which --check counts.
   it('reports pending, applies, then reports up to date', async () => {
-    const env = { WIREBENCH_SERVER_DATABASE_URL: db.ownerUrl, WIREBENCH_SERVER_PUBLIC_URL: 'https://x.test' };
-    expect((await exec(['migrate', '--check'], env)).code).toBe(1);
-    expect((await exec(['migrate'], env)).code).toBe(0);
-    expect((await exec(['migrate', '--check'], env)).code).toBe(0);
-    expect((await exec(['migrate'], env)).code).toBe(0);
+    const dataDir = await mkTempDir('wbs-bin-migrate-');
+    try {
+      const env = {
+        WIREBENCH_SERVER_DATABASE_URL: db.ownerUrl,
+        WIREBENCH_SERVER_PUBLIC_URL: 'https://x.test',
+        WIREBENCH_SERVER_DATA_DIR: dataDir,
+      };
+      expect((await exec(['migrate', '--check'], env)).code).toBe(1);
+      expect((await exec(['migrate'], env)).code).toBe(0);
+      expect((await exec(['migrate', '--check'], env)).code).toBe(0);
+      expect((await exec(['migrate'], env)).code).toBe(0);
+    } finally {
+      await removeTempDir(dataDir);
+    }
   });
 });

@@ -30,7 +30,10 @@ import { createInvitation, invitationSummary, isOpen, revokeOpenInvitation } fro
 import * as repo from './repo.js';
 
 // `admin tenancy role` runs as the owner, not the app role, so it has its own runner (tenancy/cli.ts).
-type AdminCommand = Exclude<Extract<ServerCommand, { command: `admin-${string}` }>, { command: 'admin-tenancy-role' }>;
+type AdminCommand = Exclude<
+  Extract<ServerCommand, { command: `admin-${string}` }>,
+  { command: `admin-tenancy-${string}` }
+>;
 
 /**
  * The tenant the command line works in (spec §19.11): the one `--tenant` names, or, without it, the default one,

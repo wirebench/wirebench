@@ -42,6 +42,8 @@ export type ServerCommand =
    */
   | (TenantAdminCommand & { readonly tenant?: string })
   | { readonly command: 'admin-tenancy-role'; readonly printSql: boolean }
+  | { readonly command: 'admin-tenancy-check' }
+  | { readonly command: 'admin-tenancy-status' }
   | { readonly command: 'help' }
   | { readonly command: 'version' };
 
@@ -86,14 +88,21 @@ Usage:
                                     app role of WIREBENCH_SERVER_DATABASE_URL if missing and grant it its
                                     privileges; --print-sql prints the statements instead, which
                                     hold a password verifier: handle them as a secret
+  wirebench-server admin tenancy check
+                                    Before an upgrade, read only: the PostgreSQL version, the app role,
+                                    backups, the data directory's move and the migration's estimated time
+  wirebench-server admin tenancy status
+                                    Where the upgrade stands: its step, the data key and the re-wrap
   wirebench-server --version
   wirebench-server --help
 
-Every admin command but tenancy role takes --tenant <slug>: the tenant it works in. Hosted mode requires it;
+Every admin command but admin tenancy takes --tenant <slug>: the tenant it works in. Hosted mode requires it;
 a self-hosted server has one tenant and refuses it.
 
 Configuration is read from WIREBENCH_SERVER_* environment variables; see README.md.
 `;
+
+const TENANCY_USAGE = 'usage: wirebench-server admin tenancy role [--print-sql] | check | status';
 
 const OPTIONS = {
   help: { type: 'boolean', short: 'h' },
@@ -248,8 +257,17 @@ export function parseServerArgs(argv: readonly string[]): ServerCommand {
               throw new UsageError(SCHEDULES_USAGE);
           }
         case 'tenancy':
-          if (third !== 'role') throw new UsageError('usage: wirebench-server admin tenancy role [--print-sql]');
-          return { command: 'admin-tenancy-role', printSql: parsed.values['print-sql'] === true };
+          if (fourth !== undefined) throw new UsageError(TENANCY_USAGE);
+          switch (third) {
+            case 'role':
+              return { command: 'admin-tenancy-role', printSql: parsed.values['print-sql'] === true };
+            case 'check':
+              return { command: 'admin-tenancy-check' };
+            case 'status':
+              return { command: 'admin-tenancy-status' };
+            default:
+              throw new UsageError(TENANCY_USAGE);
+          }
         case 'license':
           switch (third) {
             case 'install':
