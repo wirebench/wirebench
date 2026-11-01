@@ -13,7 +13,8 @@
  * - The reconnect bar, a plain element shown while the socket is down, hidden by the next hello. Before
  *   the first hello it says the workspace cannot be reached (the page is otherwise blank); after it, that
  *   the connection was lost; after a `4503` close, that the server cannot open the user's saved data with its
- *   current key. A hello whose capabilities differ from the first reloads the page: the renderer hid
+ *   current key; after a `4409`, that another server process still has the user's workspace open (the host lease,
+ *   spec §19.9), and the next attempt waits out the lease's `retryAfterMs`. A hello whose capabilities differ from the first reloads the page: the renderer hid
  *   what the first set lacked, and only a fresh load redoes that.
  *
  * It also opens the tab's second socket, to the user's paired local agent (`agent-connection.ts`, spec
@@ -27,6 +28,8 @@ import { createSocketTransport, hostSocketUrl, type Hello, type SocketLike } fro
 /** The close codes the bootstrap reads (the server's `HOST_CLOSE`). */
 export const CLOSE_CODE = {
   unauthenticated: 4401,
+  /** Another server process holds the user's host lease (spec §19.9). */
+  leaseHeld: 4409,
   tooManySockets: 4429,
   unavailable: 4503,
   /** The server is up but finishing its upgrade's last step: no host opens until it has (spec §19.10). */
@@ -49,6 +52,16 @@ export function signInUrl(location: {
   return `${SIGN_IN_PATH}?redirect_to=${encodeURIComponent(location.pathname + location.search + location.hash)}`;
 }
 export const ME_PATH = '/api/v1/me';
+
+/**
+ * The wait a `4409` close asks for: the server's reason is `host-lease-held retryAfterMs=<ms>` (`host/lease.ts`), or
+ * `host-lease-lost` with none. Capped at a lease's length, so a garbled reason cannot park the tab.
+ */
+export function leaseRetryAfterMs(reason: string): number | undefined {
+  const match = /^host-lease-held retryAfterMs=(\d+)$/.exec(reason);
+  return match === null ? undefined : Math.min(Number(match[1]), LEASE_MS);
+}
+const LEASE_MS = 60_000;
 export const RECONNECT_BAR_ID = 'wirebench-reconnect-bar';
 
 export const RECONNECT_TEXT = {
@@ -57,6 +70,7 @@ export const RECONNECT_TEXT = {
   tooManyTabs: 'Too many Wirebench tabs are open; close one to continue.',
   unavailable: 'The server can’t open your saved data with its current key. Ask your administrator; retrying…',
   upgrading: 'The server is finishing an upgrade; retrying…',
+  leaseHeld: 'Your workspace is still open on another server; retrying…',
 } as const;
 
 export interface BootstrapDeps {
@@ -203,10 +217,16 @@ export async function startBrowserClient(deps: BootstrapDeps): Promise<void> {
     onOpenFailed() {
       bar.show(first === undefined ? RECONNECT_TEXT.unreachable : RECONNECT_TEXT.reconnecting);
     },
-    onClosed(code, helloSeen) {
+    onClosed(code, helloSeen, reason) {
       if (code === CLOSE_CODE.unauthenticated) {
         toSignIn();
         return;
+      }
+      // Reachable, but another process has this user's host until its lease ends: wait that long at least.
+      if (code === CLOSE_CODE.leaseHeld) {
+        bar.show(RECONNECT_TEXT.leaseHeld);
+        const retryAfterMs = leaseRetryAfterMs(reason);
+        return retryAfterMs === undefined ? undefined : { retryAfterMs };
       }
       if (code === CLOSE_CODE.tooManySockets) {
         bar.show(RECONNECT_TEXT.tooManyTabs);

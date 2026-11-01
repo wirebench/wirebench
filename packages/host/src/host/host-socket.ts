@@ -38,6 +38,8 @@ export const HOST_CLOSE = {
   unauthenticated: 4401,
   /** Another site's page, or a caller that is not a browser session. */
   forbidden: 4403,
+  /** Another server process holds the user's host lease (HTTP's 409; hosted edition spec §19.9). */
+  leaseHeld: 4409,
   /** The user already has {@link HOST_LIMITS.maxSocketsPerUser} host sockets open (HTTP's 429). */
   tooManySockets: 4429,
   /**

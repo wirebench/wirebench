@@ -15,11 +15,16 @@
  * A user is a tenant and a user id (hosted edition spec §19.8 guard 5; Task 6 review m6): instances, evictions
  * and socket counts are keyed `tenantId:userId`, and a session's end closes only the sockets of its own tenant, so
  * one user id in two tenants is two users with two hosts.
+ *
+ * With a lease (`lease.ts`, spec §19.9), a new instance takes the user's lease before its host is built, and gives
+ * it back once its eviction has run the quit path, so no two processes hold one user's host. A lease lost to
+ * another holder, or one this process could not renew in time, closes the instance's sockets `4409` and evicts it.
  */
 import { rm } from 'node:fs/promises';
 import type { SessionEndedEvent } from '../context.js';
 import { HOST_CLOSE } from './errors.js';
 import type { ServerHost } from './host-runtime.js';
+import type { InstanceLeases } from './lease.js';
 import { hostDirectories } from './server-platform.js';
 import type { TenantScope } from '../tenancy/scope.js';
 
@@ -61,6 +66,8 @@ export interface HostInstancesDeps {
   readonly idleMs: number;
   readonly setTimer: (fn: () => void, ms: number) => { cancel(): void };
   readonly log: (message: string, error: unknown) => void;
+  /** The host-instance lease; without one (a test), instances are this process's alone. */
+  readonly leases?: InstanceLeases;
 }
 
 /** The browser session an instance is signed in with. */
@@ -103,7 +110,11 @@ export class HostInstances {
   >();
   private closed = false;
 
-  constructor(private readonly deps: HostInstancesDeps) {}
+  constructor(private readonly deps: HostInstancesDeps) {
+    deps.leases?.onLost((user) => {
+      this.leaseLost(user);
+    });
+  }
 
   /**
    * The user's host, created on first use, with `socket` counted as open and its token as the
@@ -130,7 +141,7 @@ export class HostInstances {
       const signedIn: Pick<Instance, 'credential'> = { credential: undefined };
       const created: Instance = Object.assign(signedIn, {
         user,
-        host: this.deps.create(user, () => signedIn.credential),
+        host: this.build(user, () => signedIn.credential),
         sockets: [],
         idle: undefined,
       });
@@ -201,11 +212,15 @@ export class HostInstances {
     }
   }
 
-  /** Server shutdown: every instance is evicted; resolves once each host has run its quit path. */
+  /**
+   * Server shutdown: every instance is evicted; resolves once each host has run its quit path and given its lease
+   * back, and the renewals have stopped.
+   */
   async closeAll(): Promise<void> {
     this.closed = true;
     for (const instance of [...this.instances.values()]) this.evict(instance);
     await Promise.all([...this.evicting.values()]);
+    await this.deps.leases?.close();
   }
 
   /**
@@ -224,6 +239,32 @@ export class HostInstances {
   /** How many instances exist, for tests and logs. */
   get size(): number {
     return this.instances.size;
+  }
+
+  /**
+   * The lease first, then the host. A host that cannot be built gives the lease back before its promise rejects,
+   * and so before the instance is forgotten and another can take the lease again.
+   */
+  private async build(user: HostUser, session: () => HostSession | undefined): Promise<ServerHost> {
+    const leases = this.deps.leases;
+    await leases?.take(user);
+    try {
+      return await this.deps.create(user, session);
+    } catch (error) {
+      await leases?.release(user);
+      throw error;
+    }
+  }
+
+  /** Another holder has the user's lease, or this process could not keep it: the instance stops now. */
+  private leaseLost(user: HostUserKey): void {
+    const instance = this.instances.get(keyOf(user));
+    if (instance === undefined) return;
+    for (const socket of [...instance.sockets]) {
+      this.forget(instance, socket);
+      socket.close(HOST_CLOSE.leaseHeld, 'host-lease-lost');
+    }
+    this.evict(instance);
   }
 
   /**
@@ -276,6 +317,15 @@ export class HostInstances {
           .catch((error: unknown) => {
             this.deps.log("a host's scratch directory could not be removed", error);
           });
+        // After the quit path (spec §19.9), and before a socket waiting on this eviction takes the lease again.
+        // A host that was never built took no lease, or gave it back already.
+        if (
+          await instance.host.then(
+            () => true,
+            () => false,
+          )
+        )
+          await this.deps.leases?.release(instance.user);
       })
       .finally(() => {
         if (this.evicting.get(key) === done) this.evicting.delete(key);

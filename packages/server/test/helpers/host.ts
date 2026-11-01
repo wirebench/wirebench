@@ -135,6 +135,8 @@ export interface HostTestClient {
   sendRaw(data: string | Buffer): void;
   close(): void;
   readonly closed: Promise<{ readonly code: number }>;
+  /** The same close, with its reason. */
+  readonly closedWith: Promise<{ readonly code: number; readonly reason: string }>;
 }
 
 let nextId = 1;
@@ -158,10 +160,11 @@ export async function openHost(
   const socket = new Socket(`ws://127.0.0.1:${h.port}/api/v1/host`, { headers: sent });
   const frames: HostFrame[] = [];
   const waiters = new Set<{ accepts: (frame: HostFrame) => boolean; resolve: (frame: HostFrame) => void }>();
-  let resolveClosed: (value: { code: number }) => void = () => undefined;
-  const closed = new Promise<{ code: number }>((resolve) => {
+  let resolveClosed: (value: { code: number; reason: string }) => void = () => undefined;
+  const closedWith = new Promise<{ code: number; reason: string }>((resolve) => {
     resolveClosed = resolve;
   });
+  const closed = closedWith.then(({ code }) => ({ code }));
   let isClosed = false;
   socket.addEventListener('message', (event: MessageEvent) => {
     const frame = JSON.parse(String(event.data)) as HostFrame;
@@ -175,7 +178,7 @@ export async function openHost(
   });
   socket.addEventListener('close', (event: CloseEvent) => {
     isClosed = true;
-    resolveClosed({ code: event.code });
+    resolveClosed({ code: event.code, reason: event.reason });
   });
   await new Promise<void>((resolve) => {
     socket.addEventListener('open', () => resolve(), { once: true });
@@ -222,6 +225,7 @@ export async function openHost(
       if (!isClosed) socket.close(1000);
     },
     closed,
+    closedWith,
   };
 }
 

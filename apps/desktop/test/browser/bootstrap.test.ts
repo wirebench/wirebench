@@ -361,6 +361,38 @@ describe('startBrowserClient', () => {
     expect(h.fetch).not.toHaveBeenCalledWith(ME_PATH, expect.anything());
   });
 
+  it('waits out a held host lease on 4409 before trying again, then backs off as usual', async () => {
+    const h = start();
+    FakeSocket.last().drop(4409, 'host-lease-held retryAfterMs=12000');
+    expect(bar()?.textContent).toBe(RECONNECT_TEXT.leaseHeld);
+    expect(bar()?.hidden).toBe(false);
+    // Not after the first second's backoff: after the lease's remaining time.
+    await vi.advanceTimersByTimeAsync(11_999);
+    expect(FakeSocket.all).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(FakeSocket.all).toHaveLength(2);
+    // A shorter lease than the backoff already due does not shorten it.
+    FakeSocket.last().drop(4409, 'host-lease-held retryAfterMs=10');
+    await vi.advanceTimersByTimeAsync(1_999);
+    expect(FakeSocket.all).toHaveLength(2);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(FakeSocket.all).toHaveLength(3);
+    FakeSocket.last().hello();
+    await h.started;
+    expect(bar()?.hidden).toBe(true);
+    expect(h.fetch).not.toHaveBeenCalledWith(ME_PATH, expect.anything());
+  });
+
+  it('a lease lost to another process (4409 without a time) retries on the usual backoff', async () => {
+    const h = start();
+    FakeSocket.last().hello();
+    await h.started;
+    FakeSocket.last().drop(4409, 'host-lease-lost');
+    expect(bar()?.textContent).toBe(RECONNECT_TEXT.leaseHeld);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(FakeSocket.all).toHaveLength(2);
+  });
+
   it('reloads the page when a later hello brings other capabilities', async () => {
     const h = start();
     FakeSocket.last().hello(['send:public', 'send:private']);
