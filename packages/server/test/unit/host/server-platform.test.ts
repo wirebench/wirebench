@@ -7,15 +7,20 @@ import { join, relative, isAbsolute } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createServerPlatform, hostDirectories, userSecretsKey } from '../../../src/host/server-platform.js';
 import { loadHostRuntime } from '../../../src/host/host-runtime.js';
+import { scopeOf } from '../../../src/tenancy/scope.js';
 
 const DATA_DIR = join('/', 'srv', 'wirebench-data');
 const KEY = Buffer.alloc(32, 7);
+const TENANT = scopeOf({ id: '00000000-0000-4000-8000-000000000001', slug: 'default' });
+const OTHER = scopeOf({ id: '00000000-0000-4000-8000-000000000002', slug: 'other' });
+const TENANT_DIR = join(DATA_DIR, 'tenants', TENANT.tenantId);
 const ALICE = '01JB3Z9K7Q4ZJ6X1V8W2M5N0PA';
 const BOB = '01JB3Z9K7Q4ZJ6X1V8W2M5N0PB';
 
-function platformFor(userId: string, secretsKey = KEY): ReturnType<typeof createServerPlatform> {
+function platformFor(userId: string, secretsKey = KEY, scope = TENANT): ReturnType<typeof createServerPlatform> {
   return createServerPlatform({
     userId,
+    scope,
     dataDir: DATA_DIR,
     secretsKey,
     egress: { denyPrivate: true },
@@ -32,7 +37,7 @@ function isInside(dir: string, path: string): boolean {
 describe('server platform paths', () => {
   it('names the user checkout as userData and root, and logs inside it', () => {
     const platform = platformFor(ALICE);
-    const checkout = join(DATA_DIR, 'checkouts', ALICE);
+    const checkout = join(TENANT_DIR, 'checkouts', ALICE);
     expect(platform.paths.userData()).toBe(checkout);
     expect(platform.paths.root()).toBe(checkout);
     expect(isInside(checkout, platform.paths.logs())).toBe(true);
@@ -41,14 +46,23 @@ describe('server platform paths', () => {
   it('gives each user a temp directory of their own, outside every checkout', () => {
     const alice = platformFor(ALICE).paths.temp();
     const bob = platformFor(BOB).paths.temp();
-    expect(alice).toBe(join(DATA_DIR, 'tmp', ALICE));
+    expect(alice).toBe(join(TENANT_DIR, 'tmp', 'hosts', ALICE));
     expect(alice).not.toBe(bob);
-    expect(isInside(join(DATA_DIR, 'checkouts'), alice)).toBe(false);
+    expect(isInside(join(TENANT_DIR, 'checkouts'), alice)).toBe(false);
+  });
+
+  it('gives one user id in two tenants two checkouts and two temp directories (Task 16 review M1)', () => {
+    const here = platformFor(ALICE);
+    const there = platformFor(ALICE, KEY, OTHER);
+    expect(there.paths.root()).toBe(join(DATA_DIR, 'tenants', OTHER.tenantId, 'checkouts', ALICE));
+    expect(isInside(here.paths.root(), there.paths.root())).toBe(false);
+    expect(isInside(there.paths.root(), here.paths.root())).toBe(false);
+    expect(here.paths.temp()).not.toBe(there.paths.temp());
   });
 
   it('names nothing outside the user checkout but that temp directory', () => {
     const platform = platformFor(ALICE);
-    const { checkout, temp } = hostDirectories(DATA_DIR, ALICE);
+    const { checkout, temp } = hostDirectories(DATA_DIR, TENANT, ALICE);
     const named = [platform.paths.userData(), platform.paths.root(), platform.paths.logs()];
     expect(named.every((path) => isInside(checkout, path))).toBe(true);
     expect(platform.paths.temp()).toBe(temp);

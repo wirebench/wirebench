@@ -178,7 +178,7 @@ export function executorEnv(
     hooks: c.h.hooks,
     settings: testSettings(),
     snapshot: () => Promise.resolve(files === null ? { head: null, files: [] } : { head: HEAD, files: [...files] }),
-    tmpRoot,
+    tmpRoot: () => tmpRoot,
     version: '0.0.0-test',
     now: () => c.h.clock.now,
     setTimer: c.timers.setTimer,

@@ -160,6 +160,7 @@ export function hostModule(options: HostModuleOptions = {}): ServerModule {
           };
           return createServerHost({
             userId: user.id,
+            scope: user.tenant,
             dataDir: config.dataDir,
             secretsKey,
             egress: ctx.egress,

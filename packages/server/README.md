@@ -341,7 +341,7 @@ server-side send path until an operator asks for them.
   instead (or fails with `send-needs-agent`); the rule stays the server's own backstop.
 - **Memory and disk.** A user's host starts with their first tab and stops
   `WIREBENCH_SERVER_HOST_IDLE_MINUTES` (default 30) after their last tab closes; the working copies and
-  state under `<data dir>/checkouts/<user id>/` stay. One user holds at most 8 tab sockets (the ninth closes
+  state in the user's own checkout in the data directory stay. One user holds at most 8 tab sockets (the ninth closes
   `4429`), and a socket frame is at most 32 MiB.
 - **Reverse proxy.** Forward the whole origin, not only `/api/v1/`: the page at `/`, `/assets/`,
   `/sign-in`, `/sign-out`, and the WebSocket upgrade for `/api/v1/host` with `Upgrade` and `Connection`,

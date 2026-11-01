@@ -32,9 +32,9 @@ export const headRoutes =
       (request): Promise<SyncHeadResponse> => {
         const { workspaceId, role } = request.workspaceAccess!;
         const { from } = request.query as SyncHeadQuery;
-        return whileRepositoryExists(repos, workspaceId, async () => {
-          const head = await env.store.head(workspaceId);
-          const { commits, behind } = await env.store.counts(workspaceId, from, head);
+        return whileRepositoryExists(repos, request.tenant, workspaceId, async () => {
+          const head = await env.store.head(request.tenant, workspaceId);
+          const { commits, behind } = await env.store.counts(request.tenant, workspaceId, from, head);
           const workspace = await workspaceById(env.ctx.tenancy.db(request.tenant), workspaceId);
           return {
             head,

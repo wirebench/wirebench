@@ -18,6 +18,7 @@ const run = promisify(execFile);
 const bundle = fileURLToPath(new URL('../../../dist/host/bundle.js', import.meta.url));
 const dataDir = mkdtempSync(join(tmpdir(), 'wirebench-host-bundle-'));
 const USER = '01JB3Z9K7Q4ZJ6X1V8W2M5N0PA';
+const TENANT_ID = '00000000-0000-4000-8000-000000000001';
 
 afterAll(() => rmSync(dataDir, { recursive: true, force: true }));
 
@@ -45,6 +46,7 @@ process.dlopen = (module, filename, ...rest) => {
 const { createServerHost, hostWire, runHostSocket } = await import(bundleUrl);
 const host = await createServerHost({
   userId,
+  scope: { tenantId: '00000000-0000-4000-8000-000000000001', slug: 'default' },
   dataDir,
   secretsKey: Buffer.alloc(32, 7),
   egress: { denyPrivate: true },
@@ -128,7 +130,10 @@ describe('the host bundle', () => {
     expect(report.hostWire).toEqual({ close: HOST_CLOSE, limits: HOST_LIMITS });
     expect(report.socketLoop).toBe('function');
     // The host wrote its state into the user's checkout and nowhere else in the data directory.
-    expect(readdirSync(dataDir)).toEqual(['checkouts']);
-    expect(readdirSync(join(dataDir, 'checkouts'))).toEqual([USER]);
+    // Under its tenant (spec §19.6).
+    expect(readdirSync(dataDir)).toEqual(['tenants']);
+    expect(readdirSync(join(dataDir, 'tenants'))).toEqual([TENANT_ID]);
+    expect(readdirSync(join(dataDir, 'tenants', TENANT_ID))).toEqual(['checkouts']);
+    expect(readdirSync(join(dataDir, 'tenants', TENANT_ID, 'checkouts'))).toEqual([USER]);
   });
 });

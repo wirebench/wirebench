@@ -225,7 +225,7 @@ on the machine your browser runs on, never in a container, whose `127.0.0.1` the
 
 - **One host per user.** The server starts a user's host with their first tab and stops it
   `WIREBENCH_SERVER_HOST_IDLE_MINUTES` (30 by default) after their last tab closes. Their working copies
-  and state stay under `<data dir>/checkouts/<user id>/`, so the next tab picks up where they left off.
+  and state stay in their own checkout in the data directory, so the next tab picks up where they left off.
 - **Eight tabs.** One user holds at most 8 tab connections, every tab and window together; the ninth is
   refused.
 - **32 MiB a message.** A single message between a tab and its host is at most 32 MiB, which bounds the

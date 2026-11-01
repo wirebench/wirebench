@@ -33,7 +33,9 @@ export const changesRoutes =
       (request): Promise<SyncChangesResponse> => {
         const { workspaceId } = request.workspaceAccess!;
         const { from, to } = request.query as ChangesQuery;
-        return whileRepositoryExists(repos, workspaceId, () => env.store.changes(workspaceId, from, to));
+        return whileRepositoryExists(repos, request.tenant, workspaceId, () =>
+          env.store.changes(request.tenant, workspaceId, from, to),
+        );
       },
     );
   };

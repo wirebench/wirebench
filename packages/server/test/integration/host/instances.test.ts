@@ -180,8 +180,8 @@ describe('HostInstances', () => {
   });
 
   it('evicts after the idle time once the last socket closed; a socket in between keeps it', async () => {
-    const temp = hostDirectories(dataDir, ALICE.id).temp;
-    const checkout = hostDirectories(dataDir, ALICE.id).checkout;
+    const { temp, checkout } = hostDirectories(dataDir, ALICE.tenant, ALICE.id);
+    expect(temp).toBe(join(dataDir, 'tenants', TENANT.tenantId, 'tmp', 'hosts', ALICE.id));
     await mkdir(temp, { recursive: true });
     await mkdir(checkout, { recursive: true });
     const one = socket('token-1', 't1');
@@ -203,6 +203,25 @@ describe('HostInstances', () => {
     // A new socket builds a new host.
     await instances.open(ALICE, socket('token-3', 't3'));
     expect(made).toHaveLength(2);
+  });
+
+  it("evicting a user's host in one tenant removes that tenant's scratch only, never the same user id's in another (Task 16 review M1)", async () => {
+    const elsewhere = { ...ALICE, serverUrl: 'https://acme.example.test', tenant: OTHER_TENANT };
+    const here = hostDirectories(dataDir, ALICE.tenant, ALICE.id);
+    const there = hostDirectories(dataDir, OTHER_TENANT, ALICE.id);
+    expect(there.temp).not.toBe(here.temp);
+    expect(there.checkout).not.toBe(here.checkout);
+    for (const dir of [here.temp, here.checkout, there.temp, there.checkout]) await mkdir(dir, { recursive: true });
+    const inHere = socket('token-1', 't1');
+    await instances.open(ALICE, inHere);
+    await instances.open(elsewhere, socket('token-9', 't9'));
+    instances.release(ALICE, inHere);
+    await vi.advanceTimersByTimeAsync(IDLE_MS);
+    await vi.waitFor(() => expect(existsSync(here.temp)).toBe(false));
+    expect(instances.size).toBe(1);
+    expect(existsSync(there.temp)).toBe(true);
+    expect(existsSync(there.checkout)).toBe(true);
+    expect(existsSync(here.checkout)).toBe(true);
   });
 
   it('a session’s end closes its sockets 4401 and moves the credential to a live token', async () => {

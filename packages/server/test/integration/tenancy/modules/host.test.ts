@@ -67,7 +67,7 @@ describeDb('the server host in two tenants (tenancy Task 18)', () => {
       createdBy: null,
       at: t.h.clock.now,
     });
-    await t.h.repos.withLock(t.a.scope, onlyA, () => t.h.repos.create(onlyA));
+    await t.h.repos.withLock(t.a.scope, onlyA, () => t.h.repos.create(t.a.scope, onlyA));
     // A shared workspace's first commit, its workspace.yaml naming the server workspace's id.
     const files = (await workspaceSnapshot([])).map((file) =>
       file.path === 'workspace.yaml'
@@ -136,7 +136,7 @@ describeDb('the server host in two tenants (tenancy Task 18)', () => {
       ok: false,
       error: { code: 'unknown-project' },
     });
-    const dirs = hostDirectories(t.h.dataDir, user(t.b).user.id);
+    const dirs = hostDirectories(t.h.dataDir, t.b.scope, user(t.b).user.id);
     const checkedOut = await readdir(dirs.checkout, { recursive: true }).catch(() => [] as string[]);
     expect(checkedOut.join('\n')).not.toContain(onlyA);
     // A's own host joins it.

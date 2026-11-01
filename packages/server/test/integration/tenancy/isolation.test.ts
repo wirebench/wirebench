@@ -33,7 +33,16 @@ import { SSO_SWEEP_JOB, sweepSso } from '../../../src/sso/module.js';
 import * as teamsRepo from '../../../src/teams/repo.js';
 import { SCOPED_TABLES } from '../../helpers/catalog.js';
 import { describeDb, TEST_DATABASE_URL } from '../../helpers/database.js';
-import { chainKeysOf, cookie, fill as _fill, isolationWorld, sealerOf, type Filled, type World } from './fill.js';
+import {
+  chainKeysOf,
+  cookie,
+  fill as _fill,
+  firstCommitFiles,
+  isolationWorld,
+  sealerOf,
+  type Filled,
+  type World,
+} from './fill.js';
 import { openSocket, type Tenant, type TestSocket } from './modules/two-tenants.js';
 import { ROUTE_MAP, routeKey, SOCKET_ROUTES, type Ctx } from './route-map.js';
 
@@ -291,16 +300,49 @@ describeDb('the cross-tenant isolation suite (spec §19.13)', () => {
       );
     });
 
-    it("B's create with A's workspace id answers 409 until the per-tenant layout (plan Task 21), and leaves A's", async () => {
-      // Spec §19.13 asks for 201 and two repositories: the store is keyed by id alone until Task 21, which flips this.
-      const res = await w.b.tenant.call<{ code: string }>(w.b.admin, 'POST', `/teams/${w.b.teamId}/workspaces`, {
-        name: 'beta copy',
-        id: w.a.workspaceId,
+    it("B's create with A's workspace id answers 201, as a second repository, and leaves A's (Task 9 review M8)", async () => {
+      // Spec §19.6, §19.13: the repository store is led by the tenant, so the answer says nothing of A. A fresh
+      // workspace of A's, so the route sweep below, which looks for A's filled ids in B's answers, never meets
+      // this one in B's own audit.
+      const made = await w.a.tenant.call<{ id: string }>(w.a.admin, 'POST', `/teams/${w.a.teamId}/workspaces`, {
+        name: 'acme second',
+        id: newId(),
       });
-      expect(res.status).toBe(409);
-      expect(res.body.code).toBe('teams-workspace-exists');
-      expect(await teamsRepo.workspaceById(w.b.tenant.tdb, w.a.workspaceId)).toBeUndefined();
-      expect((await teamsRepo.workspaceById(w.a.tenant.tdb, w.a.workspaceId))?.name).toBe('acme staging');
+      expect(made.status).toBe(201);
+      const id = made.body.id;
+      const repos = w.t.h.repos;
+      const res = await w.b.tenant.call<{ id: string }>(w.b.admin, 'POST', `/teams/${w.b.teamId}/workspaces`, {
+        name: 'beta copy',
+        id,
+      });
+      try {
+        expect(res.status).toBe(201);
+        expect(res.body.id).toBe(id);
+        expect((await teamsRepo.workspaceById(w.b.tenant.tdb, id))?.name).toBe('beta copy');
+        expect((await teamsRepo.workspaceById(w.a.tenant.tdb, id))?.name).toBe('acme second');
+        expect(repos.path(w.a.tenant.scope, id)).not.toBe(repos.path(w.b.tenant.scope, id));
+        expect(await repos.exists(w.a.tenant.scope, id)).toBe(true);
+        expect(await repos.exists(w.b.tenant.scope, id)).toBe(true);
+        // A push in B lands in B's repository: A's stays unborn.
+        const pushed = await w.b.tenant.call<{ head: string }>(w.b.admin, 'POST', `/workspaces/${id}/sync/commits`, {
+          parent: null,
+          commits: [{ subject: 'beta', at: new Date().toISOString(), changes: await firstCommitFiles(id) }],
+        });
+        expect(pushed.status).toBe(201);
+        const inA = await w.a.tenant.call<{ head: string | null }>(w.a.admin, 'GET', `/workspaces/${id}/sync/head`);
+        expect(inA.status).toBe(200);
+        expect(inA.body.head).toBeNull();
+      } finally {
+        for (const [tenant, admin] of [
+          [w.b.tenant, w.b.admin],
+          [w.a.tenant, w.a.admin],
+        ] as const) {
+          expect((await tenant.call(admin, 'DELETE', `/workspaces/${id}`)).status).toBe(204);
+        }
+      }
+      expect(await repos.exists(w.b.tenant.scope, id)).toBe(false);
+      expect(await repos.exists(w.a.tenant.scope, id)).toBe(false);
+      expect(await repos.exists(w.a.tenant.scope, w.a.workspaceId)).toBe(true);
     });
   });
 

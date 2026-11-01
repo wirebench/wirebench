@@ -67,7 +67,7 @@ describeDb('server-sync races (§3.2, R11)', () => {
     await lock.done;
     expect((await deleting).status).toBe(204);
     expect(await pushing).toMatchObject({ status: 404, body: { code: 'teams-workspace-not-found' } });
-    expect(await f.h.repos.exists(f.workspaceId)).toBe(false);
+    expect(await f.h.repos.exists(f.h.tdb.scope, f.workspaceId)).toBe(false);
   });
 
   it('every read after a delete answers 404', async () => {
@@ -84,7 +84,7 @@ describeDb('server-sync races (§3.2, R11)', () => {
   it('a read or a push that finds the repository gone while the row remains answers 404, never 500', async () => {
     const first = await push(f.editor, null, [commit('One', [text('workspace.yaml', 'a\n')])]);
     // What a delete looks like between its guard and its row delete, or a repository lost on disk.
-    await f.h.repos.withLock(f.h.tdb.scope, f.workspaceId, () => f.h.repos.remove(f.workspaceId));
+    await f.h.repos.withLock(f.h.tdb.scope, f.workspaceId, () => f.h.repos.remove(f.h.tdb.scope, f.workspaceId));
     for (const route of reads(first.body.head)) {
       expect(await call(f.h, f.viewer, 'GET', url(route))).toMatchObject({
         status: 404,

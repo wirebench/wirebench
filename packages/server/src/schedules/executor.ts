@@ -57,13 +57,10 @@ export interface ExecutorEnv {
   readonly tenancy: Pick<Tenancy, 'db'>;
   readonly hooks: ServerHooks;
   readonly settings: SchedulesSettings;
-  /**
-   * The workspace's files at its head, from the tenant's repository store: `CommitStore.snapshot`. The scope is
-   * passed for the per-tenant layout (Task 21); the store's path is still the workspace id's until then.
-   */
+  /** The workspace's files at its head, from the tenant's repository: `CommitStore.snapshot`. */
   readonly snapshot: (scope: TenantScope, workspaceId: string) => Promise<SyncSnapshotResponse>;
-  /** Absolute: `<dataDir>/tmp/schedules`. */
-  readonly tmpRoot: string;
+  /** Where `scope`'s run copies go, absolute: `<dataDir>/tenants/<tenantId>/tmp/schedules` (spec §19.6). */
+  readonly tmpRoot: (scope: TenantScope) => string;
   /** The server's version, for the stored report's `tool`. */
   readonly version: string;
   readonly now: () => Date;
@@ -192,7 +189,7 @@ export async function executeRun(
     if (head.head === null) throw new RunStopped('workspace-empty', 'The workspace has nothing pushed yet.');
     commit = head.head;
     snapshot = await materialise({
-      root: env.tmpRoot,
+      root: env.tmpRoot(scope),
       runId,
       files: head.files,
       maxBytes: env.settings.maxSnapshotBytes,

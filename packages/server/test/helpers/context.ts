@@ -11,6 +11,7 @@ import {
 import type { Database } from '../../src/db/querier.js';
 import type { TenantQuerier } from '../../src/tenancy/tenant-db.js';
 import type { RepoStore } from '../../src/repos/repo-store.js';
+import type { TenantScope } from '../../src/tenancy/scope.js';
 import { createTenancy, directoryOf } from '../../src/tenancy/tenancy.js';
 
 /** A database whose every query succeeds with no rows; `failing` flips `select 1` to a rejection. */
@@ -62,10 +63,13 @@ export async function testContext(
       },
       '0.0.0-test',
     ),
-    // `RepoStore` is a class with private fields now (Task 6); this fake only ever needs `path`
-    // from tests that don't exercise the real store, so it is cast through `unknown` rather than
-    // built as a real `RepoStore` instance.
-    repos: { path: (id: string) => `${dataDir}/repos/${id}.git` } as unknown as RepoStore,
+    // `RepoStore` is a class with private fields now (Task 6); this fake only ever needs `path` and the
+    // start-up sweep's `tmpDirs` from tests that don't exercise the real store, so it is cast through
+    // `unknown` rather than built as a real `RepoStore` instance.
+    repos: {
+      path: (scope: TenantScope, id: string) => `${dataDir}/tenants/${scope.tenantId}/repos/${id}.git`,
+      tmpDirs: () => Promise.resolve([]),
+    } as unknown as RepoStore,
     git: new GitCli(location, { hooksDir: dataDir }),
     log: undefined as unknown as ServerContext['log'], // buildServer replaces it with the app's logger
     meta: new MetaRegistry(),

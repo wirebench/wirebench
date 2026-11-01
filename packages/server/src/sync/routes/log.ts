@@ -33,7 +33,9 @@ export const logRoutes =
       (request): Promise<SyncLogEntry[]> => {
         const { workspaceId } = request.workspaceAccess!;
         const { limit } = request.query as LogQuery;
-        return whileRepositoryExists(repos, workspaceId, () => env.store.log(workspaceId, limit ?? DEFAULT_LOG_LIMIT));
+        return whileRepositoryExists(repos, request.tenant, workspaceId, () =>
+          env.store.log(request.tenant, workspaceId, limit ?? DEFAULT_LOG_LIMIT),
+        );
       },
     );
   };

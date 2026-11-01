@@ -28,6 +28,7 @@ import { createTenancy, directoryOf } from './tenancy/tenancy.js';
 import { ensureAppRole, roleMode } from './tenancy/roles.js';
 import { ExitCode, packageVersion, type ServerIo } from './io.js';
 import { NO_HOOKS_DIR, RepoStore } from './repos/repo-store.js';
+import { legacyLayout, TENANTS_DIR } from './tenancy/paths.js';
 import { buildServer } from './server.js';
 
 /** The exit code of an interrupted shutdown: a second signal while the first is still draining. */
@@ -316,11 +317,27 @@ export async function startServer(
     }
     return fail(new StartupError(ExitCode.Migration, migrationFailure(error)));
   }
+  // Interim until the file step (spec §19.10, plan Task 22): a data directory in the layout before §19.6 is
+  // refused, untouched, rather than served beside, which would lose sight of every repository and checkout.
+  let legacy: string[];
+  try {
+    legacy = await legacyLayout(config.dataDir);
+  } catch {
+    return fail(new StartupError(ExitCode.Config, `data directory ${config.dataDir} is not readable`));
+  }
+  if (legacy.length > 0) {
+    return fail(
+      new StartupError(
+        ExitCode.Config,
+        `tenancy-files-pending: data directory ${config.dataDir} still holds ${legacy.map((d) => `${d}/`).join(' and ')} ` +
+          'from before this version, which cannot move them yet; keep running the previous version',
+      ),
+    );
+  }
   try {
     await RepoStore.prepare(config.dataDir);
-    for (const sub of ['repos', 'tmp']) {
-      await access(join(config.dataDir, sub), constants.W_OK);
-    }
+    // Spec §19.6: every repository, checkout and scratch file is under tenants/ now.
+    await access(join(config.dataDir, TENANTS_DIR), constants.W_OK);
   } catch {
     return fail(new StartupError(ExitCode.Config, `data directory ${config.dataDir} is not writable`));
   }

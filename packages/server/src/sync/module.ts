@@ -3,11 +3,9 @@
  * `/api/v1` scope, so identity's `onRequest` hook has set `request.caller` before
  * `requireWorkspaceRole` runs. It has no migrations: the bare repositories hold everything (§4.3).
  */
-import { resolve } from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import type { ServerContext, ServerModule } from '../context.js';
 import { RateLimiter } from '../identity/rate-limit.js';
-import { TMP_DIR } from '../repos/repo-store.js';
 import { CommitStore, sweepIndexFiles } from './commit-store.js';
 import type { SyncEnv } from './env.js';
 import { changesRoutes } from './routes/changes.js';
@@ -24,15 +22,12 @@ export function syncModule(): ServerModule {
     name: 'server-sync',
 
     async register(app: FastifyInstance, ctx: ServerContext): Promise<void> {
-      // Absolute, as the store requires: git and Node resolve a relative index path differently.
-      const tmpDir = resolve(ctx.config.dataDir, TMP_DIR);
-      // R11: a crash mid-push leaves its private index file behind. Before the first route exists,
-      // nothing can own one, so every leftover goes.
-      await sweepIndexFiles(tmpDir);
+      // R11: a crash mid-push leaves its private index file behind, in its tenant's tmp/ (spec §19.6). Before the
+      // first route exists, nothing can own one, so every tenant's leftovers go.
+      for (const tmpDir of await ctx.repos.tmpDirs()) await sweepIndexFiles(tmpDir);
       const store = new CommitStore({
         git: ctx.git.withPlumbing(),
         repos: ctx.repos,
-        tmpDir,
         // R5: one operator setting bounds a push (Fastify's bodyLimit) and a snapshot (the store).
         limitBytes: ctx.config.bodyLimitMb * MIB,
       });

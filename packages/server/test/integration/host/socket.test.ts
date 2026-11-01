@@ -176,8 +176,8 @@ describeDb('the host socket (hosted edition spec §17.3)', () => {
     );
     expect(await other.call('app.version')).toMatchObject({ ok: true });
     expect(other.frames.filter((frame) => frame.event === 'preferences.changed')).toEqual([]);
-    const aliceDir = hostDirectories(h.dataDir, alice.user.id).checkout;
-    const bobDir = hostDirectories(h.dataDir, bob.user.id).checkout;
+    const aliceDir = hostDirectories(h.dataDir, h.tdb.scope, alice.user.id).checkout;
+    const bobDir = hostDirectories(h.dataDir, h.tdb.scope, bob.user.id).checkout;
     expect(await readFile(join(aliceDir, 'secrets.json'), 'utf8')).not.toContain('alpha-secret');
     expect(existsSync(join(bobDir, 'secrets.json'))).toBe(false);
     // Audited by name, never by value. The audit row is written after the call answers, so wait for it.
@@ -244,7 +244,7 @@ describeDb('the host socket (hosted edition spec §17.3)', () => {
     const alice = await browserUser(h, 'alice@example.com');
     const client = await openHost(h, alice);
     await client.waitFor((frame) => frame.type === 'hello');
-    const dirs = hostDirectories(h.dataDir, alice.user.id);
+    const dirs = hostDirectories(h.dataDir, h.tdb.scope, alice.user.id);
     await client.call('secrets.set', { value: 'kept-0123456789', label: 'kept' });
     client.close();
     await client.closed;
@@ -462,7 +462,9 @@ describeDb('the host socket (hosted edition spec §17.3)', () => {
     ).toMatchObject({ ok: true, value: { replaced: false } });
 
     // Sealed: neither value is in the user's secrets file as text.
-    const sealed = await readFile(join(hostDirectories(h.dataDir, alice.user.id).checkout, 'secrets.json'));
+    const sealed = await readFile(
+      join(hostDirectories(h.dataDir, h.tdb.scope, alice.user.id).checkout, 'secrets.json'),
+    );
     expect(sealed.includes(leaked)).toBe(false);
     expect(sealed.includes(typed)).toBe(false);
     // Reported by name only: one audit row per write, whose details hold a name and nothing else.
@@ -604,7 +606,7 @@ describeDb('the host socket (hosted edition spec §17.3)', () => {
     );
     // Behind any refresh the pull started, on the team-secrets queue.
     expect(await client.call('teamSecrets.status')).toMatchObject({ ok: true });
-    const secrets = join(hostDirectories(h.dataDir, alice.user.id).checkout, 'secrets.json');
+    const secrets = join(hostDirectories(h.dataDir, h.tdb.scope, alice.user.id).checkout, 'secrets.json');
     const stored = existsSync(secrets) ? await readFile(secrets, 'utf8') : '';
     expect(stored).not.toContain('wirebench-team-key:');
     // No key request reached the server either: the vault still has the one key it started with.
@@ -648,7 +650,9 @@ describeDb('the host socket (hosted edition spec §17.3)', () => {
       raw.sendClose();
       await raw.ended;
       await vi.waitFor(() => expect(h.instances().size).toBe(0));
-      await vi.waitFor(() => expect(existsSync(hostDirectories(h.dataDir, alice.user.id).temp)).toBe(false));
+      await vi.waitFor(() =>
+        expect(existsSync(hostDirectories(h.dataDir, h.tdb.scope, alice.user.id).temp)).toBe(false),
+      );
       expect(raw.json().filter((frame) => frame.id === 1)).toEqual([]);
       expect(h.audit.filter((event) => event.action === 'secret.written')).toEqual([]);
     } finally {

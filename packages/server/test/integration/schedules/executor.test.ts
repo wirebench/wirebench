@@ -5,7 +5,10 @@ import type { SyncFile } from '@wirebench/engine';
 import type { FastifyBaseLogger } from 'fastify';
 import { afterEach, beforeEach, expect, it } from 'vitest';
 import { executeRun, type ExecutorEnv } from '../../../src/schedules/executor.js';
+import { runCopiesRoot } from '../../../src/schedules/module.js';
 import * as repo from '../../../src/schedules/repo.js';
+import { tenantPaths } from '../../../src/tenancy/paths.js';
+import { scopeOf } from '../../../src/tenancy/scope.js';
 import { sealAlertTargets } from '../../../src/schedules/seal.js';
 import { describeDb } from '../../helpers/database.js';
 import {
@@ -208,6 +211,24 @@ describeDb('executeRun (scheduled-runs spec §3.2)', () => {
     await running;
     expect((await repo.runWithSchedule(c.h.tdb, runId))!.run).toMatchObject({ status: 'errored', reason: 'timeout' });
     expect(await readdir(tmpRoot)).toEqual([]);
+  });
+
+  it("writes a run's copy under its tenant's tmp/schedules/ (spec §19.6), and removes it after", async () => {
+    // `tmpRoot` stands in for the data directory here: the module's own mapping, over it.
+    const roots = runCopiesRoot(tmpRoot);
+    const other = scopeOf({ id: '00000000-0000-4000-8000-0000000000bb', slug: 'other' });
+    expect(roots(c.h.tdb.scope)).toBe(join(tmpRoot, 'tenants', c.h.tdb.scope.tenantId, 'tmp', 'schedules'));
+    expect(roots(other)).not.toBe(roots(c.h.tdb.scope));
+    const files = await workspaceSnapshot([probe('Hang', `${server.url}/hang`)]);
+    const { runId } = await seedRun(c, { options: { timeoutMinutes: 2 } });
+    const running = executeRun(executorEnv(c, files, tmpRoot, { tmpRoot: roots }), c.h.tdb.scope, runId, never);
+    await server.hanging;
+    const copies = tenantPaths(tmpRoot, c.h.tdb.scope).schedules;
+    expect(await readdir(copies)).toEqual([runId]);
+    expect(await readdir(join(tmpRoot, 'tenants'))).toEqual([c.h.tdb.scope.tenantId]);
+    expect(c.timers.fire(2 * 60_000)).toBe(1);
+    await running;
+    expect(await readdir(copies)).toEqual([]);
   });
 
   it('a shutdown cancels a running run with reason shutdown, and the deadline is disarmed', async () => {

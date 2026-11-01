@@ -1,13 +1,15 @@
 import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { tenantPaths } from '../../src/tenancy/paths.js';
 import { afterEach, beforeEach, expect, it } from 'vitest';
 import type { GitCli } from '@wirebench/engine';
 import { isWorkspaceId, NO_HOOKS_DIR, RepoStore } from '../../src/repos/repo-store.js';
 import { describeGit, mkTempDir, removeTempDir, testGit } from '../helpers/git.js';
 import { scopeOf } from '../../src/tenancy/scope.js';
 
-/** Any tenant: these locks are about one workspace id, not tenants. */
+/** Any tenant: most of these cases are about one workspace id, not tenants. */
 const LOCK_SCOPE = scopeOf({ id: '00000000-0000-4000-8000-000000000001', slug: 'default' });
+const OTHER_SCOPE = scopeOf({ id: '00000000-0000-4000-8000-000000000002', slug: 'other' });
 
 const ID = '01J8ZC5Q0V7R3T9XK2M4N6P8QA';
 const OTHER = '01J8ZC5Q0V7R3T9XK2M4N6P8QB';
@@ -22,16 +24,54 @@ describeGit('RepoStore', () => {
   });
   afterEach(() => removeTempDir(dataDir));
 
-  it('prepare creates repos/, tmp/ and an empty no-hooks/', () => {
-    expect(readdirSync(dataDir).sort()).toEqual([NO_HOOKS_DIR, 'repos', 'tmp']);
+  it('prepare creates tenants/ and an empty no-hooks/ only (spec §19.6)', () => {
+    expect(readdirSync(dataDir).sort()).toEqual([NO_HOOKS_DIR, 'tenants']);
     expect(readdirSync(join(dataDir, NO_HOOKS_DIR))).toEqual([]);
+    expect(readdirSync(join(dataDir, 'tenants'))).toEqual([]);
+  });
+
+  it("lands a new workspace's repository under its tenant", async () => {
+    await store.create(LOCK_SCOPE, ID);
+    const dir = join(dataDir, 'tenants', LOCK_SCOPE.tenantId, 'repos', `${ID}.git`);
+    expect(store.path(LOCK_SCOPE, ID)).toBe(dir);
+    expect(existsSync(join(dir, 'HEAD'))).toBe(true);
+    expect(readdirSync(dataDir).sort()).toEqual([NO_HOOKS_DIR, 'tenants']);
+  });
+
+  it('gives one workspace id in two tenants two repositories, each created, found and removed on its own', async () => {
+    await store.create(LOCK_SCOPE, ID);
+    expect(await store.exists(OTHER_SCOPE, ID)).toBe(false);
+    await store.create(OTHER_SCOPE, ID);
+    expect(store.path(LOCK_SCOPE, ID)).not.toBe(store.path(OTHER_SCOPE, ID));
+    expect(await store.exists(LOCK_SCOPE, ID)).toBe(true);
+    expect(await store.exists(OTHER_SCOPE, ID)).toBe(true);
+    await store.remove(LOCK_SCOPE, ID);
+    expect(await store.exists(LOCK_SCOPE, ID)).toBe(false);
+    expect(await store.exists(OTHER_SCOPE, ID)).toBe(true);
+    // The moved-away repository is in its own tenant's tmp/, not the other's.
+    expect(readdirSync(tenantPaths(dataDir, LOCK_SCOPE).tmp).some((n) => n.startsWith(`removed-${ID}-`))).toBe(true);
+    expect(readdirSync(tenantPaths(dataDir, OTHER_SCOPE).tmp).some((n) => n.startsWith('removed-'))).toBe(false);
+    expect((await store.tmpDirs()).sort()).toEqual(
+      [tenantPaths(dataDir, LOCK_SCOPE).tmp, tenantPaths(dataDir, OTHER_SCOPE).tmp].sort(),
+    );
+  });
+
+  it('refuses a tenant whose root is a symlink, and a non-UUID tenant id', async () => {
+    const { mkdirSync, symlinkSync } = await import('node:fs');
+    mkdirSync(join(dataDir, 'tenants', OTHER_SCOPE.tenantId), { recursive: true });
+    symlinkSync(join(dataDir, 'tenants', OTHER_SCOPE.tenantId), join(dataDir, 'tenants', LOCK_SCOPE.tenantId), 'dir');
+    await expect(store.create(LOCK_SCOPE, ID)).rejects.toMatchObject({ code: 'tenancy-tenant-path-refused' });
+    expect(() => store.path(LOCK_SCOPE, ID)).toThrow(expect.objectContaining({ code: 'tenancy-tenant-path-refused' }));
+    const bad = scopeOf({ id: '../x', slug: 'x' });
+    expect(() => store.path(bad, ID)).toThrow(expect.objectContaining({ code: 'tenancy-tenant-path-refused' }));
+    expect(readdirSync(join(dataDir, 'tenants', OTHER_SCOPE.tenantId))).toEqual([]);
   });
 
   it('creates a bare repository on main with hooks disabled and non-fast-forwards denied', async () => {
-    await store.create(ID);
-    expect(await store.exists(ID)).toBe(true);
+    await store.create(LOCK_SCOPE, ID);
+    expect(await store.exists(LOCK_SCOPE, ID)).toBe(true);
     const git = testGit(join(dataDir, NO_HOOKS_DIR));
-    const dir = store.path(ID);
+    const dir = store.path(LOCK_SCOPE, ID);
     expect((await git.run(dir, ['symbolic-ref', 'HEAD'])).stdout.trim()).toBe('refs/heads/main');
     expect((await git.run(dir, ['config', 'core.hooksPath'])).stdout.trim()).toBe(join(dataDir, NO_HOOKS_DIR));
     expect((await git.run(dir, ['config', 'receive.denyNonFastForwards'])).stdout.trim()).toBe('true');
@@ -39,22 +79,22 @@ describeGit('RepoStore', () => {
   });
 
   it('refuses to create twice and to touch an invalid id', async () => {
-    await store.create(ID);
-    await expect(store.create(ID)).rejects.toMatchObject({ code: 'server-repo-exists' });
+    await store.create(LOCK_SCOPE, ID);
+    await expect(store.create(LOCK_SCOPE, ID)).rejects.toMatchObject({ code: 'server-repo-exists' });
     for (const bad of ['../etc', 'abc', ID.toLowerCase(), `${ID}/x`]) {
       expect(isWorkspaceId(bad)).toBe(false);
-      await expect(store.create(bad)).rejects.toMatchObject({ code: 'server-workspace-id-invalid' });
-      expect(() => store.path(bad)).toThrow();
+      await expect(store.create(LOCK_SCOPE, bad)).rejects.toMatchObject({ code: 'server-workspace-id-invalid' });
+      expect(() => store.path(LOCK_SCOPE, bad)).toThrow();
     }
   });
 
-  it('remove moves the repository under tmp/ instead of deleting it', async () => {
-    await store.create(ID);
-    await store.remove(ID);
-    expect(await store.exists(ID)).toBe(false);
-    const moved = readdirSync(join(dataDir, 'tmp')).filter((name) => name.startsWith(`removed-${ID}-`));
+  it("remove moves the repository under the tenant's tmp/ instead of deleting it", async () => {
+    await store.create(LOCK_SCOPE, ID);
+    await store.remove(LOCK_SCOPE, ID);
+    expect(await store.exists(LOCK_SCOPE, ID)).toBe(false);
+    const moved = readdirSync(tenantPaths(dataDir, LOCK_SCOPE).tmp).filter((name) => name.startsWith(`removed-${ID}-`));
     expect(moved).toHaveLength(1);
-    expect(existsSync(join(dataDir, 'tmp', moved[0]!, 'HEAD'))).toBe(true);
+    expect(existsSync(join(tenantPaths(dataDir, LOCK_SCOPE).tmp, moved[0]!, 'HEAD'))).toBe(true);
   });
 
   it('withLock serialises callers per workspace in FIFO order and isolates workspaces', async () => {
@@ -110,21 +150,25 @@ describeGit('RepoStore', () => {
     expect(await store.withLock(LOCK_SCOPE, ID, () => Promise.resolve('ok'))).toBe('ok');
   });
 
-  it('builds under tmp/ and renames into place: a failed init leaves nothing at the real path', async () => {
+  it("builds under the tenant's tmp/ and renames into place: a failed init leaves nothing at the real path", async () => {
     const real = testGit(join(dataDir, NO_HOOKS_DIR));
     const failing = {
       run: (dir: string, args: readonly string[]) =>
         args[0] === 'config' ? Promise.reject(new Error('config failed')) : real.run(dir, args),
     } as unknown as GitCli;
     const broken = new RepoStore({ git: failing, dataDir });
-    await expect(broken.create(ID)).rejects.toThrow('config failed');
-    expect(existsSync(store.path(ID))).toBe(false);
-    expect(await store.exists(ID)).toBe(false);
+    await expect(broken.create(LOCK_SCOPE, ID)).rejects.toThrow('config failed');
+    expect(existsSync(store.path(LOCK_SCOPE, ID))).toBe(false);
+    expect(await store.exists(LOCK_SCOPE, ID)).toBe(false);
     // The failed attempt's staging directory stays in tmp/ (the store never deletes); a retry works.
-    expect(readdirSync(join(dataDir, 'tmp')).filter((name) => name.startsWith(`creating-${ID}-`))).toHaveLength(1);
-    await store.create(ID);
-    expect(await store.exists(ID)).toBe(true);
-    expect(readdirSync(join(dataDir, 'tmp')).filter((name) => name.startsWith(`creating-${ID}-`))).toHaveLength(1);
+    expect(
+      readdirSync(tenantPaths(dataDir, LOCK_SCOPE).tmp).filter((name) => name.startsWith(`creating-${ID}-`)),
+    ).toHaveLength(1);
+    await store.create(LOCK_SCOPE, ID);
+    expect(await store.exists(LOCK_SCOPE, ID)).toBe(true);
+    expect(
+      readdirSync(tenantPaths(dataDir, LOCK_SCOPE).tmp).filter((name) => name.startsWith(`creating-${ID}-`)),
+    ).toHaveLength(1);
   });
 
   it('drain waits for running and queued work, whatever its outcome, then refuses new work with a 503', async () => {

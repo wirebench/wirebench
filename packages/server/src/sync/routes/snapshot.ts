@@ -30,7 +30,9 @@ export const snapshotRoutes =
       (request): Promise<SyncSnapshotResponse> => {
         const { workspaceId } = request.workspaceAccess!;
         const { at } = request.query as SnapshotQuery;
-        return whileRepositoryExists(repos, workspaceId, () => env.store.snapshot(workspaceId, at));
+        return whileRepositoryExists(repos, request.tenant, workspaceId, () =>
+          env.store.snapshot(request.tenant, workspaceId, at),
+        );
       },
     );
   };

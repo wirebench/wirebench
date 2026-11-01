@@ -5,6 +5,7 @@
 import type { ServerContext } from '../context.js';
 import type { RateLimiter } from '../identity/rate-limit.js';
 import type { RepoStore } from '../repos/repo-store.js';
+import type { TenantScope } from '../tenancy/scope.js';
 import { workspaceNotFound } from '../teams/errors.js';
 import type { CommitStore } from './commit-store.js';
 
@@ -16,7 +17,7 @@ export interface SyncEnv {
 }
 
 /**
- * Runs `read` against `workspaceId`'s repository. A workspace delete that won the race after the guard
+ * Runs `read` against `scope`'s repository for `workspaceId`. A workspace delete that won the race after the guard
  * passed has moved the repository away, and git then fails to start in it (`git-not-found`) or fails
  * inside it (`git-failed`). Neither code says "gone", so after any failure the repository is looked up
  * once. If it is missing, the answer is `404 teams-workspace-not-found`, never a 500. Otherwise the
@@ -24,13 +25,14 @@ export interface SyncEnv {
  */
 export async function whileRepositoryExists<T>(
   repos: RepoStore,
+  scope: TenantScope,
   workspaceId: string,
   read: () => Promise<T>,
 ): Promise<T> {
   try {
     return await read();
   } catch (error) {
-    if (!(await repos.exists(workspaceId))) throw workspaceNotFound();
+    if (!(await repos.exists(scope, workspaceId))) throw workspaceNotFound();
     throw error;
   }
 }

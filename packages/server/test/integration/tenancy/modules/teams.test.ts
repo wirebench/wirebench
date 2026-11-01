@@ -115,18 +115,28 @@ describeDb('teams and licensing in two tenants (tenancy Task 18)', () => {
     expect((await teamsRepo.workspaceById(t.a.tdb, id))?.name).toBe('Copy in acme');
   });
 
-  it("B creating a workspace with A's id is refused 409 until the per-tenant layout, and A's is left alone", async () => {
-    // Plan Task 21 (Task 9 review M8): the repository store is keyed by id alone until then, so B's create meets
-    // A's repository and rolls back. Task 21 turns this into 201 with two repositories.
+  it("B creating a workspace with A's id answers 201 too: two workspaces, two repositories (Task 9 review M8)", async () => {
+    // Spec §19.6: the repository store is led by the tenant, so B's create never meets A's repository, and the
+    // answer says nothing about what another tenant holds.
     const inA = await createWorkspace(t.a, await createTeam(t.a, 'Desk A'), { name: 'Mine', id: newId() });
     expect(inA.status).toBe(201);
     const id = inA.body.id;
     const inB = await createWorkspace(t.b, await createTeam(t.b, 'Desk B'), { name: 'Mine too', id });
-    expect(inB.status).toBe(409);
-    expect(inB.body.code).toBe('teams-workspace-exists');
-    expect(await teamsRepo.workspaceById(t.b.tdb, id)).toBeUndefined();
+    expect(inB.status).toBe(201);
+    expect(inB.body.id).toBe(id);
+    expect((await teamsRepo.workspaceById(t.b.tdb, id))?.name).toBe('Mine too');
     expect((await teamsRepo.workspaceById(t.a.tdb, id))?.name).toBe('Mine');
-    expect(await t.h.repos.exists(id)).toBe(true);
+    expect(await t.h.repos.exists(t.a.scope, id)).toBe(true);
+    expect(await t.h.repos.exists(t.b.scope, id)).toBe(true);
+    expect(t.h.repos.path(t.a.scope, id)).not.toBe(t.h.repos.path(t.b.scope, id));
+    // Within one tenant the id is still taken.
+    const again = await createWorkspace(t.b, await createTeam(t.b, 'Desk B2'), { name: 'Third', id });
+    expect(again.status).toBe(409);
+    expect(again.body.code).toBe('teams-workspace-exists');
+    // A delete in B moves B's repository only.
+    expect((await t.b.call(root(t.b), 'DELETE', `/workspaces/${id}`)).status).toBe(204);
+    expect(await t.h.repos.exists(t.b.scope, id)).toBe(false);
+    expect(await t.h.repos.exists(t.a.scope, id)).toBe(true);
   });
 
   it('a license installed in A leaves B on Community: meta, the feature gate and the seat cap', async () => {

@@ -3,7 +3,7 @@
  * the workspace's bare repository, and a read comes straight from git objects. There is no worktree
  * and no server-side merge (ADR-0012).
  *
- * - A push builds its trees in a private index file (`GIT_INDEX_FILE` under `<dataDir>/tmp/`),
+ * - A push builds its trees in a private index file (`GIT_INDEX_FILE` under its tenant's `tmp/`, spec §19.6),
  *   removed in a `finally`. No two pushes share an index, and a crash leaves only a file the module
  *   sweeps at start-up ({@link sweepIndexFiles}).
  * - Every git call goes through the plumbing-enabled `GitCli`, so the subcommand allow-list and the
@@ -13,8 +13,8 @@
  */
 import { isUtf8 } from 'node:buffer';
 import { randomBytes } from 'node:crypto';
-import { readdir, rm, stat } from 'node:fs/promises';
-import { isAbsolute, join } from 'node:path';
+import { mkdir, readdir, rm, stat } from 'node:fs/promises';
+import { join } from 'node:path';
 import {
   assertTreePath,
   MAX_SYNC_FILE_BYTES,
@@ -35,6 +35,7 @@ import {
 } from '@wirebench/engine';
 import { problem } from '../problem.js';
 import type { RepoStore } from '../repos/repo-store.js';
+import type { TenantScope } from '../tenancy/scope.js';
 import {
   syncContentInvalid,
   syncNotAncestor,
@@ -84,13 +85,12 @@ export interface CommitAuthor {
 export interface CommitStoreDeps {
   /** Plumbing-enabled: `ctx.git.withPlumbing()`. */
   readonly git: GitCli;
-  /** For `path(id)` only; the caller holds `withLock` for a push. */
-  readonly repos: RepoStore;
   /**
-   * `<dataDir>/tmp`, where private index files live. Absolute: git resolves `GIT_INDEX_FILE` against
-   * the repository it runs in, Node's `rm` against the process's cwd, so a relative path names two places.
+   * For `path(scope, id)` and `tmpDir(scope)` only; the caller holds `withLock` for a push. The tenant's `tmp/`
+   * is where private index files live; the store's paths are absolute, as they must be: git resolves
+   * `GIT_INDEX_FILE` against the repository it runs in, Node's `rm` against the process's cwd.
    */
-  readonly tmpDir: string;
+  readonly repos: RepoStore;
   /** `bodyLimitMb` in bytes: the most blob content one snapshot or changes answer may carry (R5). */
   readonly limitBytes: number;
 }
@@ -293,20 +293,17 @@ async function clearStaleRefLock(lock: string): Promise<void> {
 export class CommitStore {
   private readonly git: GitCli;
   private readonly repos: RepoStore;
-  private readonly tmpDir: string;
   private readonly limitBytes: number;
 
   constructor(deps: CommitStoreDeps) {
-    if (!isAbsolute(deps.tmpDir)) throw new Error(`CommitStore needs an absolute tmpDir, got "${deps.tmpDir}"`);
     this.git = deps.git;
     this.repos = deps.repos;
-    this.tmpDir = deps.tmpDir;
     this.limitBytes = deps.limitBytes;
   }
 
   /** `refs/heads/main`, or `null` while the branch is unborn (an empty workspace, §2). */
-  head(workspaceId: string): Promise<string | null> {
-    return this.resolve(this.repos.path(workspaceId), MAIN);
+  head(scope: TenantScope, workspaceId: string): Promise<string | null> {
+    return this.resolve(this.repos.path(scope, workspaceId), MAIN);
   }
 
   /**
@@ -316,13 +313,14 @@ export class CommitStore {
    * between the two reads cannot make the counts describe a newer head than the one answered.
    */
   async counts(
+    scope: TenantScope,
     workspaceId: string,
     from?: string,
     at?: string | null,
   ): Promise<{ readonly commits: number; readonly behind?: number }> {
     if (from !== undefined) commitId(from);
     if (typeof at === 'string') commitId(at);
-    const dir = this.repos.path(workspaceId);
+    const dir = this.repos.path(scope, workspaceId);
     const head = at === undefined ? await this.resolve(dir, MAIN) : at;
     if (head === null) return from === undefined ? { commits: 0 } : { commits: 0, behind: 0 };
     const commits = await this.count(dir, head);
@@ -332,9 +330,9 @@ export class CommitStore {
   }
 
   /** Whether `path` names a file in commit `at`. @throws syncPathRefused for a path outside the tree rules */
-  async hasFile(workspaceId: string, at: string, path: string): Promise<boolean> {
+  async hasFile(scope: TenantScope, workspaceId: string, at: string, path: string): Promise<boolean> {
     commitId(at);
-    const dir = this.repos.path(workspaceId);
+    const dir = this.repos.path(scope, workspaceId);
     try {
       await this.git.run(dir, [GIT.catFile, '-e', `${at}:${treePath(path)}`]);
       return true;
@@ -345,8 +343,8 @@ export class CommitStore {
   }
 
   /** Every file at `at` (default: the head). @throws syncUnknownCommit, syncTooLarge */
-  async snapshot(workspaceId: string, at?: string): Promise<SyncSnapshotResponse> {
-    const dir = this.repos.path(workspaceId);
+  async snapshot(scope: TenantScope, workspaceId: string, at?: string): Promise<SyncSnapshotResponse> {
+    const dir = this.repos.path(scope, workspaceId);
     const commit = at === undefined ? await this.resolve(dir, MAIN) : await this.known(dir, at);
     if (commit === null) return { head: null, files: [] };
     const entries = parseTree((await this.git.run(dir, [GIT.lsTree, '-r', '-z', commit])).stdout);
@@ -362,10 +360,15 @@ export class CommitStore {
    * undefined means the empty tree, so the answer is every file of `to`.
    * @throws syncUnknownCommit, syncNotAncestor, syncTooLarge
    */
-  async changes(workspaceId: string, from: string | undefined, to: string): Promise<SyncChangesResponse> {
+  async changes(
+    scope: TenantScope,
+    workspaceId: string,
+    from: string | undefined,
+    to: string,
+  ): Promise<SyncChangesResponse> {
     commitId(to);
     if (from !== undefined) commitId(from);
-    const dir = this.repos.path(workspaceId);
+    const dir = this.repos.path(scope, workspaceId);
     await this.known(dir, to);
     if (from === undefined) {
       const entries = parseTree((await this.git.run(dir, [GIT.lsTree, '-r', '-z', to])).stdout);
@@ -398,6 +401,7 @@ export class CommitStore {
    * @throws syncPushRejected when `parent` is not the head
    */
   async appendCommits(
+    scope: TenantScope,
     workspaceId: string,
     parent: string | null,
     commits: readonly SyncPushCommit[],
@@ -410,11 +414,13 @@ export class CommitStore {
       date: gitDate(commit.at),
       changes: commit.changes.map(stage),
     }));
-    const dir = this.repos.path(workspaceId);
+    const dir = this.repos.path(scope, workspaceId);
     await clearStaleRefLock(join(dir, ...MAIN.split('/')) + '.lock');
     if ((await this.resolve(dir, MAIN)) !== parent) throw syncPushRejected();
 
-    const index = join(this.tmpDir, `${workspaceId}-${randomBytes(8).toString('hex')}.idx`);
+    const tmpDir = this.repos.tmpDir(scope);
+    await mkdir(tmpDir, { recursive: true });
+    const index = join(tmpDir, `${workspaceId}-${randomBytes(8).toString('hex')}.idx`);
     const withIndex: Partial<Record<GitCallEnv, string>> = { GIT_INDEX_FILE: index };
     // The committer is the caller too, dated by the server. Every identity variable is set on each
     // call, so a GIT_AUTHOR_* or GIT_COMMITTER_* in the process environment can never leak in.
@@ -468,8 +474,8 @@ export class CommitStore {
   }
 
   /** Newest first, at most `limit` (1 to MAX_SYNC_LOG_LIMIT) entries; `[]` for an empty workspace. */
-  async log(workspaceId: string, limit: number): Promise<SyncLogEntry[]> {
-    const dir = this.repos.path(workspaceId);
+  async log(scope: TenantScope, workspaceId: string, limit: number): Promise<SyncLogEntry[]> {
+    const dir = this.repos.path(scope, workspaceId);
     const head = await this.resolve(dir, MAIN);
     if (head === null) return [];
     const count = Math.min(Math.max(Math.trunc(limit) || 1, 1), MAX_SYNC_LOG_LIMIT);

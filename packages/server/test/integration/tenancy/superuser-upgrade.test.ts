@@ -22,8 +22,15 @@ describeDb('a 0019 installation on one superuser URL (spec §19.4, owner ruling 
 
   beforeAll(async () => {
     db = await testDatabase({ migrated: false });
+    // The fixture's rows, on an empty data directory: its files are in the layout before §19.6, which start-up
+    // refuses until the file step (plan Task 22) moves them. Task 22 starts this upgrade on the fixture's own.
+    const fixtureDir = await mkTempDir('wbs-superuser-0019-files-');
+    try {
+      await loadFixture0019(db.owner, fixtureDir);
+    } finally {
+      await removeTempDir(fixtureDir);
+    }
     dataDir = await mkTempDir('wbs-superuser-0019-');
-    await loadFixture0019(db.owner, dataDir);
     const superuser = new URL(TEST_DATABASE_URL!);
     superuser.searchParams.set('options', `-c search_path=${db.schema}`);
     const env = {
