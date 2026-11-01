@@ -28,6 +28,12 @@ const commit = (subject: string, changes: SyncChange[]): SyncPushCommit => ({ su
 
 interface Cast {
   readonly admin: SignedInUser;
+  /**
+   * A server admin of the tenant: admin of any workspace row a read finds (teams `resolveRole`), so against A's
+   * workspace only the policy stands between B's and A's rows (Task 18 review I1).
+   */
+  readonly root: SignedInUser;
+  readonly teamId: string;
   readonly workspaceId: string;
 }
 
@@ -48,6 +54,7 @@ describeDb('server-sync, webhook capture and CI tokens in two tenants (tenancy T
     });
     for (const tenant of [t.a, t.b]) {
       const admin = await tenant.user({ email: 'admin@example.com' });
+      const root = await tenant.user({ email: 'root@example.com', serverAdmin: true });
       const team = await teamsRepo.insertTeam(tenant.tdb, { id: newId(), name: 'Payments QA', at: t.h.clock.now });
       await teamsRepo.insertMember(tenant.tdb, {
         teamId: team.id,
@@ -66,7 +73,7 @@ describeDb('server-sync, webhook capture and CI tokens in two tenants (tenancy T
         at: t.h.clock.now,
       });
       await t.h.repos.withLock(tenant.scope, workspaceId, () => t.h.repos.create(workspaceId));
-      casts[tenant.slug] = { admin, workspaceId };
+      casts[tenant.slug] = { admin, root, teamId: team.id, workspaceId };
     }
   });
   afterAll(() => t.close());
@@ -99,15 +106,16 @@ describeDb('server-sync, webhook capture and CI tokens in two tenants (tenancy T
     ] as const;
     for (const [method, path] of reads) {
       expect((await t.a.call(cast(t.a).admin, method, path)).status, `A ${path}`).toBe(200);
-      const res = await t.b.call<{ code: string }>(cast(t.b).admin, method, path);
+      const res = await t.b.call<{ code: string }>(cast(t.b).root, method, path);
       expect(res.status, `B ${path}`).toBe(404);
       expect(res.body.code, `B ${path}`).toBe('teams-workspace-not-found');
     }
-    const push = await t.b.call(cast(t.b).admin, 'POST', `${ws}/sync/commits`, {
+    const push = await t.b.call<{ code: string }>(cast(t.b).root, 'POST', `${ws}/sync/commits`, {
       parent: head,
       commits: [commit('Planted', [text('workspace.yaml', 'b\n')])],
     });
     expect(push.status).toBe(404);
+    expect(push.body.code).toBe('teams-workspace-not-found');
     expect((await t.a.call<{ head: string }>(cast(t.a).admin, 'GET', `${ws}/sync/head`)).body.head).toBe(head);
   });
 
@@ -129,8 +137,9 @@ describeDb('server-sync, webhook capture and CI tokens in two tenants (tenancy T
 
   it('one secret in both tenants (unique per tenant): each Host stores in its own, and announces its own tenant', async () => {
     const secret = mintCatchSecret();
-    const inA = await seedHook(t.a, secret);
+    // B's first: a lookup that crossed tenants would find B's row before A's.
     const inB = await seedHook(t.b, secret);
+    const inA = await seedHook(t.a, secret);
     const events: CaptureReceivedEvent[] = [];
     t.h.hooks.captureReceived.push((event) => events.push(event));
     const res = await t.a.inject({ method: 'POST', url: `/hooks/${secret}`, payload: 'x' });
@@ -140,26 +149,58 @@ describeDb('server-sync, webhook capture and CI tokens in two tenants (tenancy T
     expect(events.map((event) => [event.tenantId, event.hookId])).toEqual([[t.a.scope.tenantId, inA.id]]);
   });
 
-  it("A's catch URL and capture ids, sent under B's workspace by B's admin, are 404", async () => {
-    const hook = await seedHook(t.a);
+  it("A's catch URL and capture ids, under a workspace of B's with the same id, are not found for B's server admin", async () => {
+    // A workspace of A's with no repository (the hook routes need none), and one of B's with the very same id: the
+    // hook and capture lookups filter on that id, so only the policy can tell A's rows from B's.
+    const id = newId();
+    for (const tenant of [t.a, t.b]) {
+      await teamsRepo.insertWorkspace(tenant.tdb, {
+        id,
+        name: `Hooks ${tenant.slug}`,
+        teamId: cast(tenant).teamId,
+        defaultRole: 'viewer',
+        createdBy: null,
+        at: t.h.clock.now,
+      });
+    }
+    const hook = await hooksRepo.insertCatchUrl(t.a.tdb, {
+      id: newId(),
+      workspaceId: id,
+      name: 'Payments',
+      secret: mintCatchSecret(),
+      enabled: true,
+      response: CATCH_URL_DEFAULT_RESPONSE,
+      createdBy: null,
+      at: t.h.clock.now,
+    });
     const capture = newCapture(hook.id);
     await hooksRepo.insertCapture(t.a.tdb, capture);
-    const ws = `/workspaces/${cast(t.b).workspaceId}`;
-    const refused = [
-      ['PATCH', `${ws}/hooks/${hook.id}`, { name: 'Taken' }],
-      ['POST', `${ws}/hooks/${hook.id}/rotate`, undefined],
-      ['GET', `${ws}/hooks/${hook.id}/captures`, undefined],
-      ['GET', `${ws}/hooks/${hook.id}/captures/${capture.id}`, undefined],
-      ['DELETE', `${ws}/hooks/${hook.id}/captures`, undefined],
-      ['DELETE', `${ws}/hooks/${hook.id}`, undefined],
+    const ws = `/workspaces/${id}`;
+    const routes = [
+      ['PATCH', `${ws}/hooks/${hook.id}`, { name: 'Taken' }, 'hooks-not-found'],
+      ['POST', `${ws}/hooks/${hook.id}/rotate`, undefined, 'hooks-not-found'],
+      ['GET', `${ws}/hooks/${hook.id}/captures`, undefined, 'hooks-not-found'],
+      ['GET', `${ws}/hooks/${hook.id}/captures/${capture.id}`, undefined, 'hooks-not-found'],
+      ['DELETE', `${ws}/hooks/${hook.id}/captures`, undefined, 'hooks-not-found'],
+      ['DELETE', `${ws}/hooks/${hook.id}`, undefined, 'hooks-not-found'],
     ] as const;
-    for (const [method, path, payload] of refused) {
-      expect((await t.b.call(cast(t.b).admin, method, path, payload)).status, `${method} ${path}`).toBe(404);
+    for (const [method, path, payload, code] of routes) {
+      const res = await t.b.call<{ code: string }>(cast(t.b).root, method, path, payload);
+      expect(res.status, `${method} ${path}`).toBe(404);
+      expect(res.body.code, `${method} ${path}`).toBe(code);
     }
-    const listed = await t.b.call<{ id: string }[]>(cast(t.b).admin, 'GET', `${ws}/hooks`);
-    expect(listed.body.map((row) => row.id)).not.toContain(hook.id);
+    const listed = await t.b.call<{ id: string }[]>(cast(t.b).root, 'GET', `${ws}/hooks`);
+    expect(listed.status).toBe(200);
+    expect(listed.body).toEqual([]);
     expect(await countIn(t.a, 'captures', 'id = $1', [capture.id])).toBe(1);
-    expect((await hooksRepo.catchUrlInWorkspace(t.a.tdb, cast(t.a).workspaceId, hook.id))?.name).toBe(hook.name);
+    expect((await hooksRepo.catchUrlInWorkspace(t.a.tdb, id, hook.id))?.name).toBe('Payments');
+    // A's server admin reaches each read on A's host.
+    for (const [method, path] of routes.filter(([method]) => method === 'GET')) {
+      expect((await t.a.call(cast(t.a).root, method, path)).status, `A ${path}`).toBe(200);
+    }
+    expect((await t.a.call<{ id: string }[]>(cast(t.a).root, 'GET', `${ws}/hooks`)).body.map((row) => row.id)).toEqual([
+      hook.id,
+    ]);
   });
 
   it("A's CI token on B's host is 401", async () => {

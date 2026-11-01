@@ -49,7 +49,8 @@ describeDb('the server host in two tenants (tenancy Task 18)', () => {
       ],
     });
     for (const tenant of [t.a, t.b]) {
-      users[tenant.slug] = await tenant.user({ email: 'alice@example.com', kind: 'browser' });
+      // Server admins: admin of any workspace row a read finds, so only the policy keeps B's from A's (Task 18 review I1).
+      users[tenant.slug] = await tenant.user({ email: 'alice@example.com', kind: 'browser', serverAdmin: true });
     }
     const team = await teamsRepo.insertTeam(t.a.tdb, { id: newId(), name: 'Ops', at: t.h.clock.now });
     await teamsRepo.insertMember(t.a.tdb, {
@@ -131,7 +132,10 @@ describeDb('the server host in two tenants (tenancy Task 18)', () => {
     const joined = await call(inB, 'workspace.joinFromServer', { url: t.b.origin, workspaceId: onlyA });
     expect(joined).toMatchObject({ ok: false, error: { code: 'teams-workspace-not-found' } });
     // A project path that climbs towards A's user's directory opens nothing either.
-    expect((await call(inB, 'secretScan.scan', { projectId: `../../${user(t.a).user.id}` })).ok).toBe(false);
+    expect(await call(inB, 'secretScan.scan', { projectId: `../../${user(t.a).user.id}` })).toMatchObject({
+      ok: false,
+      error: { code: 'unknown-project' },
+    });
     const dirs = hostDirectories(t.h.dataDir, user(t.b).user.id);
     const checkedOut = await readdir(dirs.checkout, { recursive: true }).catch(() => [] as string[]);
     expect(checkedOut.join('\n')).not.toContain(onlyA);

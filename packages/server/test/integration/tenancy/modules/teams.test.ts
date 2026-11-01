@@ -65,7 +65,7 @@ describeDb('teams and licensing in two tenants (tenancy Task 18)', () => {
       ['GET', `/teams/${teamId}/members`, undefined, 'teams-team-not-found'],
       ['PATCH', `/teams/${teamId}`, { name: 'Taken over' }, 'teams-team-not-found'],
       ['POST', `/teams/${teamId}/workspaces`, { name: 'Planted' }, 'teams-team-not-found'],
-      ['DELETE', `/teams/${teamId}`, undefined, undefined],
+      ['DELETE', `/teams/${teamId}`, undefined, 'teams-team-not-found'],
       ['GET', `/workspaces/${workspaceId}`, undefined, 'teams-workspace-not-found'],
       ['PATCH', `/workspaces/${workspaceId}`, { name: 'Taken over' }, 'teams-workspace-not-found'],
       ['GET', `/workspaces/${workspaceId}/access`, undefined, 'teams-workspace-not-found'],
@@ -76,7 +76,7 @@ describeDb('teams and licensing in two tenants (tenancy Task 18)', () => {
     for (const [method, path, payload, code] of refused) {
       const res = await t.b.call<{ code: string }>(root(t.b), method, path, payload);
       expect(res.status, `${method} ${path}`).toBe(404);
-      if (code !== undefined) expect(res.body.code, `${method} ${path}`).toBe(code);
+      expect(res.body.code, `${method} ${path}`).toBe(code);
     }
     // A's rows are as they were, and B's list never shows them.
     expect((await teamsRepo.teamById(t.a.tdb, teamId))?.name).toBe('Payments');
@@ -148,6 +148,7 @@ describeDb('teams and licensing in two tenants (tenancy Task 18)', () => {
     expect((await t.a.call(root(t.a), 'GET', `/workspaces/${wsA}/schedules`)).status).toBe(200);
     const gated = await t.b.call<{ code: string }>(root(t.b), 'GET', `/workspaces/${wsB}/schedules`);
     expect(gated.status).toBe(403);
+    expect(gated.body.code).toBe('licensing-feature-required');
   });
 
   it("seats count only the tenant's users, and a remove in B leaves A's license", async () => {

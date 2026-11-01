@@ -896,6 +896,29 @@ describeDb('migration 0021 on the frozen 0019 fixture: forced isolation (hosted 
         "alter table users no force row level security;\nupdate users set display_name = 'x';\nalter table users force row level security;",
       ),
     ).toEqual([]);
+    // A filtered call runs one statement: `execute` would run a second, unfiltered one too (Task 18 review M4).
+    expect(
+      planted(
+        "select for_each_tenant($$update users set display_name = 'x' where tenant_id = nullif(current_setting('wirebench.tenant_id', true), '')::uuid; update captures set rejected = true$$);",
+      ),
+    ).toEqual([99]);
+    // A `;` inside a quoted value is no second statement.
+    expect(
+      planted(
+        "select for_each_tenant($$update users set display_name = 'a;b' where tenant_id = nullif(current_setting('wirebench.tenant_id', true), '')::uuid;$$);",
+      ),
+    ).toEqual([]);
+    // The bracket names the table it writes, and encloses the write.
+    expect(
+      planted(
+        'alter table users no force row level security;\nupdate captures set rejected = true;\nalter table users force row level security;',
+      ),
+    ).toEqual([99]);
+    expect(
+      planted(
+        "alter table users no force row level security;\nalter table users force row level security;\nupdate users set display_name = 'x';",
+      ),
+    ).toEqual([99]);
     // Only one half of the bracket is no bracket.
     expect(planted("alter table users no force row level security;\nupdate users set display_name = 'x';")).toEqual([
       99,

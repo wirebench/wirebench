@@ -22,8 +22,11 @@ import { openSocket, twoTenants, type Tenant, type TestSocket, type TwoTenants }
 const keys = testKeys();
 
 interface Cast {
+  /** A server admin: admin of any workspace row a read finds, so only the policy keeps A's from it (Task 18 review I1). */
+  readonly root: SignedInUser;
   readonly owner: SignedInUser;
   readonly viewer: SignedInUser;
+  readonly teamId: string;
 }
 
 describeDb('live updates and terminal shares in two tenants (tenancy Task 18)', () => {
@@ -71,7 +74,7 @@ describeDb('live updates and terminal shares in two tenants (tenancy Task 18)', 
           at: t.h.clock.now,
         });
       }
-      casts[tenant.slug] = { owner, viewer };
+      casts[tenant.slug] = { root, owner, viewer, teamId: team.id };
     }
   });
   afterAll(async () => {
@@ -104,8 +107,8 @@ describeDb('live updates and terminal shares in two tenants (tenancy Task 18)', 
     expect(await socket.closed).toBe(LIVE_CLOSE.unauthenticated);
   });
 
-  it("B's socket, with B's token on B's host, is refused A's workspace id", async () => {
-    const socket = await live(t.b, cast(t.b).viewer.token);
+  it("B's socket, with B's server admin's token on B's host, is refused A's workspace id", async () => {
+    const socket = await live(t.b, cast(t.b).root.token);
     await socket.next('ready');
     socket.send({ type: 'subscribe', workspaceId: onlyA });
     expect(await socket.next('refused')).toEqual({
@@ -118,12 +121,6 @@ describeDb('live updates and terminal shares in two tenants (tenancy Task 18)', 
   it("announcements in A reach A's room only, though B's room has the same workspace id", async () => {
     const inA = await subscribed(t.a, shared);
     const inB = await subscribed(t.b, shared);
-    // An access change in A re-checks A's room only: B's viewer is no one in A, and must not be dropped.
-    announce(
-      t.h.hooks.accessChanged,
-      { tenantId: t.a.scope.tenantId, tenant: t.a.scope, workspaceId: shared },
-      t.h.app.log,
-    );
     const head = 'a'.repeat(40);
     announce(
       t.h.hooks.headMoved,
@@ -134,6 +131,15 @@ describeDb('live updates and terminal shares in two tenants (tenancy Task 18)', 
     announce(t.h.hooks.scheduleRunFinished, { tenantId: t.a.scope.tenantId, ...run }, t.h.app.log);
     expect(await inA.next('head')).toMatchObject({ workspaceId: shared, head });
     expect(await inA.next('schedule-run')).toMatchObject({ runId: run.runId });
+    // An access change in A re-checks A's room only. A's viewer leaves A's team first, so the re-check has an
+    // effect to wait for in A before B is looked at; B's viewer, no one in A, must not be dropped (Task 18 review M1).
+    await teamsRepo.deleteMember(t.a.tdb, cast(t.a).teamId, cast(t.a).viewer.user.id);
+    announce(
+      t.h.hooks.accessChanged,
+      { tenantId: t.a.scope.tenantId, tenant: t.a.scope, workspaceId: shared },
+      t.h.app.log,
+    );
+    expect(await inA.next('access')).toEqual({ type: 'access', workspaceId: shared });
     // Then B's own head: B's socket is still subscribed, and saw nothing of A's before it.
     const headB = 'b'.repeat(40);
     announce(
@@ -147,6 +153,13 @@ describeDb('live updates and terminal shares in two tenants (tenancy Task 18)', 
     expect(seen).not.toContain('access');
     expect(seen).not.toContain('refused');
     expect(inB.messages.filter((message) => message.type === 'head')).toHaveLength(1);
+    // A's viewer back on A's team, for the share case.
+    await teamsRepo.insertMember(t.a.tdb, {
+      teamId: cast(t.a).teamId,
+      userId: cast(t.a).viewer.user.id,
+      role: 'member',
+      at: t.h.clock.now,
+    });
   });
 
   const shareAuth = (token: string, workspaceId: string, shareId: string) => ({

@@ -131,7 +131,8 @@ describeDb('SSO, session logs and the agent in two tenants (tenancy Task 18)', (
     expect(await ssoRepo.claimGrantedSamlFlow(t.a.tdb, id, grant)).toBe(true);
   });
 
-  it("A's SCIM token hash is unknown on B, and each tenant's SCIM users are its own", async () => {
+  // The SCIM users and groups halves need the SCIM base, which hosted mode serves from slice 7 (Task 18 review M2).
+  it("A's SCIM token hash is unknown on B, and B lists none of A's tokens", async () => {
     const minted = mintToken();
     await ssoRepo.insertScimToken(t.a.tdb, {
       id: newId(),
@@ -154,7 +155,7 @@ describeDb('SSO, session logs and the agent in two tenants (tenancy Task 18)', (
     }
   });
 
-  it('the SSO sweep deletes expired SAML flows in each tenant', async () => {
+  it("the SSO sweep in A's unit deletes only A's expired SAML flows; the job loop then sweeps B's", async () => {
     const expired = new Date(t.h.clock.now.getTime() - 60_000);
     for (const tenant of [t.a, t.b]) {
       await ssoRepo.insertSamlFlow(tenant.tdb, {
@@ -168,9 +169,13 @@ describeDb('SSO, session logs and the agent in two tenants (tenancy Task 18)', (
         expiresAt: expired,
       });
     }
+    const expiredIn = (tenant: Tenant) => countIn(tenant, 'saml_flows', 'expires_at < $1', [t.h.clock.now]);
+    // The delete names no tenant: in A's unit it must leave B's.
+    await t.a.tdb.transaction((tx) => sweepSso(tx, t.h.clock.now));
+    expect(await expiredIn(t.a)).toBe(0);
+    expect(await expiredIn(t.b)).toBe(1);
     await t.h.ctx.tenancy.forEachTenant(SSO_SWEEP_JOB, (tx) => sweepSso(tx, t.h.clock.now), t.h.app.log);
-    for (const tenant of [t.a, t.b])
-      expect(await countIn(tenant, 'saml_flows', 'expires_at < $1', [t.h.clock.now])).toBe(0);
+    expect(await expiredIn(t.b)).toBe(0);
   });
 
   // ---- session logs, through the routes ---------------------------------------------------------
@@ -219,7 +224,9 @@ describeDb('SSO, session logs and the agent in two tenants (tenancy Task 18)', (
     const oldLogs: Record<string, string[]> = { acme: [], beta: [] };
     const fresh: Record<string, string> = {};
     for (const tenant of [t.a, t.b]) {
-      for (let i = 0; i < 3; i += 1) oldLogs[tenant.slug]!.push((await openLog(tenant, old)).id);
+      // B's are the older: a delete that crossed tenants would take B's first.
+      const at = tenant === t.b ? new Date(old.getTime() - DAY) : old;
+      for (let i = 0; i < 3; i += 1) oldLogs[tenant.slug]!.push((await openLog(tenant, at)).id);
       fresh[tenant.slug] = (await openLog(tenant)).id;
     }
     const cutoff = new Date(t.h.clock.now.getTime() - 365 * DAY);
@@ -317,15 +324,33 @@ describeDb('SSO, session logs and the agent in two tenants (tenancy Task 18)', (
         codeHash: `expired-${tenant.slug}-${newId()}`,
         expiresAt: past,
       });
+      const pairing = await agentRepo.upsertPairing(tenant.tdb, {
+        id: newId(),
+        userId: cast(tenant).root.user.id,
+        agentId: `agent-sweep-${tenant.slug}`,
+        publicKey: agentKey().publicKey,
+        port: 47615,
+        sshOptIn: false,
+        at: t.h.clock.now,
+      });
+      await agentRepo.insertNonce(tenant.tdb, {
+        nonceHash: `expired-${tenant.slug}-${newId()}`,
+        pairingId: pairing.id,
+        userId: cast(tenant).root.user.id,
+        expiresAt: past,
+      });
     }
+    const expired = (tenant: Tenant, table: string) => countIn(tenant, table, 'expires_at <= $1', [t.h.clock.now]);
     await t.a.tdb.transaction((tx) => sweepAgent(tx, t.h.clock.now));
-    expect(await countIn(t.a, 'agent_pairing_codes', 'expires_at <= $1', [t.h.clock.now])).toBe(0);
-    expect(await countIn(t.b, 'agent_pairing_codes', 'expires_at <= $1', [t.h.clock.now])).toBe(1);
+    for (const table of ['agent_pairing_codes', 'agent_nonces']) {
+      expect(await expired(t.a, table), table).toBe(0);
+      expect(await expired(t.b, table), table).toBe(1);
+    }
     await t.h.ctx.tenancy.forEachTenant(
       'agent-sweep',
       (tx) => sweepAgent(tx, t.h.clock.now).then(() => undefined),
       t.h.app.log,
     );
-    expect(await countIn(t.b, 'agent_pairing_codes', 'expires_at <= $1', [t.h.clock.now])).toBe(0);
+    for (const table of ['agent_pairing_codes', 'agent_nonces']) expect(await expired(t.b, table), table).toBe(0);
   });
 });

@@ -179,6 +179,7 @@ describeDb('scheduled runs in two tenants (tenancy Task 18)', () => {
     for (const [method, path, payload] of refused) {
       const res = await t.b.call<{ code: string }>(cast(t.b).admin, method, path, payload);
       expect(res.status, `${method} ${path}: ${JSON.stringify(res.body)}`).toBe(404);
+      expect(res.body.code, `${method} ${path}`).toBe('schedules-not-found');
     }
     const listed = await t.b.call<{ id: string }[]>(cast(t.b).admin, 'GET', `/workspaces/${workspaceId}/schedules`);
     expect(listed.status).toBe(200);
@@ -186,8 +187,10 @@ describeDb('scheduled runs in two tenants (tenancy Task 18)', () => {
     // A's schedule and run are as they were.
     expect((await repo.scheduleById(t.a.tdb, workspaceId, scheduleId))?.name).toContain('acme');
     expect((await runsOf(t.a, scheduleId)).map((run) => run.status)).toEqual(['queued']);
-    // And A's admin, on A's host, reaches both.
-    expect((await t.a.call(cast(t.a).admin, 'GET', `${base}/runs/${runId}`)).status).toBe(200);
+    // And A's admin, on A's host, reaches each read (the writes' positive controls are Task 19's route sweep).
+    for (const [method, path] of refused.filter(([method]) => method === 'GET')) {
+      expect((await t.a.call(cast(t.a).admin, method, path)).status, `A ${path}`).toBe(200);
+    }
   });
 
   it('interrupted runs end in both tenants, and each alert is claimed and delivered in its own turn, with its link', async () => {

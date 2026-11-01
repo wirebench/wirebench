@@ -230,36 +230,58 @@ export const FIRST_LINTED_MIGRATION = 22;
  * security`. Without either, under the forced policy, it touches no row and still succeeds on a non-superuser
  * owner. Comments are skipped; a write inside a `do` block or a string still counts, so the check errs on the
  * strict side.
- * A `for_each_tenant` call counts only when its statement names the setting itself
- * (`current_setting('wirebench.tenant_id'…)`): a migration role that bypasses the policy, as the compose superuser
- * does, would otherwise reach every tenant's rows on each pass (Task 17 review M1). A call excuses only the statement
- * it runs: a write elsewhere in the file still needs the bracket.
+ * - A `for_each_tenant` call counts only when its statement names the setting itself
+ *   (`current_setting('wirebench.tenant_id'…)`): a migration role that bypasses the policy, as the compose superuser
+ *   does, would otherwise reach every tenant's rows on each pass (Task 17 review M1). Its body is one statement:
+ *   `execute` runs several, and a second would go unfiltered (Task 18 review M4).
+ * - A call excuses only the statement it runs. Every other write needs a bracket on the table it writes: a
+ *   `no force` of that table before it and a `force` of that table after it (Task 17 fix re-review N2, Task 18
+ *   review M4).
  * Returns the versions that break it.
  */
 export function unscopedDataMigrations(
   migrations: readonly { readonly version: number; readonly sql: string }[],
 ): number[] {
+  const tables = SCOPED_TABLES.join('|');
   const writes = new RegExp(
-    `\\b(?:insert\\s+into|update|delete\\s+from)\\s+(?:only\\s+)?(?:"?\\w+"?\\.)?"?(?:${SCOPED_TABLES.join('|')})"?(?![\\w"])`,
-    'i',
+    `\\b(?:insert\\s+into|update|delete\\s+from)\\s+(?:only\\s+)?(?:"?\\w+"?\\.)?"?(${tables})"?(?![\\w"])`,
+    'gi',
   );
   const uncommented = (sql: string) => sql.replace(/--[^\n]*|\/\*[\s\S]*?\*\//g, ' ');
   return migrations
     .filter((migration) => migration.version >= FIRST_LINTED_MIGRATION)
     .filter((migration) => {
       const sql = uncommented(migration.sql);
-      if (!writes.test(sql)) return false;
-      // Both halves: `no force …`, and a `force …` that is not part of one.
-      const unforced = /\bno\s+force\s+row\s+level\s+security\b/i.test(sql);
-      const forced = /\bforce\s+row\s+level\s+security\b/i.test(sql.replace(/\bno\s+force\b/gi, 'no_force'));
-      if (unforced && forced) return false;
-      // Every call filters on the setting; a call that does not is no per-tenant statement.
-      if (!forEachTenantArguments(sql).every((statement) => SETTING_PREDICATE.test(statement))) return true;
-      // A filtered call excuses only its own statement (Task 17 fix re-review N2): any write left outside the calls'
-      // arguments runs outside every tenant.
-      return writes.test(withoutForEachTenantArguments(sql));
+      if (!new RegExp(writes.source, 'i').test(sql)) return false;
+      // Every call runs one statement that filters on the setting; a call that does not is no per-tenant statement.
+      const calls = forEachTenantArguments(sql);
+      if (!calls.every((body) => oneStatement(body) && SETTING_PREDICATE.test(body))) return true;
+      // What is left outside the calls must be bracketed, write by write, on the table each one writes.
+      const rest = withoutForEachTenantArguments(sql);
+      for (const write of rest.matchAll(writes)) {
+        const table = write[1]!.toLowerCase();
+        const at = write.index;
+        const brackets = [
+          ...rest.matchAll(
+            new RegExp(
+              `\\balter\\s+table\\s+(?:only\\s+)?(?:"?\\w+"?\\.)?"?${table}"?\\s+(no\\s+)?force\\s+row\\s+level\\s+security\\b`,
+              'gi',
+            ),
+          ),
+        ];
+        const opened = brackets.some((bracket) => bracket[1] !== undefined && bracket.index < at);
+        const closed = brackets.some((bracket) => bracket[1] === undefined && bracket.index > at);
+        if (!opened || !closed) return true;
+      }
+      return false;
     })
     .map((migration) => migration.version);
+}
+
+/** Whether `body` is one SQL statement: no `;` outside a quoted string, but a trailing one. */
+function oneStatement(body: string): boolean {
+  const unquoted = body.replace(/'(?:[^']|'')*'/g, "''");
+  return unquoted.split(';').filter((part) => part.trim() !== '').length === 1;
 }
 
 /** What a statement run through `for_each_tenant` filters on: the tenant the loop has set. */
