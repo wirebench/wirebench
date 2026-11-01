@@ -735,6 +735,37 @@ describeDb('the host socket (hosted edition spec §17.3)', () => {
     expect(rows.rows[0]!.holder).not.toBe('another-process');
   });
 
+  it('closes 4429 host-instance-cap when every seat of the tenant has a live host, read from the license', async () => {
+    // A license of one seat, read in the take's unit when the socket arrives.
+    const capped = await hostHarness({
+      license: (base) => ({
+        ...base,
+        state: async (of, tx) => {
+          const state = await base.state(of, tx);
+          return { ...state, seats: { ...state.seats, limit: 1 } };
+        },
+      }),
+    });
+    try {
+      const alice = await browserUser(capped, 'alice@example.com');
+      const bob = await browserUser(capped, 'bob@example.com');
+      await capped.tdb.query(
+        "insert into host_leases (user_id, holder, acquired_at, renewed_at, expires_at) values ($1, 'another-process', now(), now(), now() + interval '40 seconds')",
+        [bob.user.id],
+      );
+      const refused = await openHost(capped, alice);
+      expect(await refused.closedWith).toEqual({ code: HOST_CLOSE.tooManySockets, reason: 'host-instance-cap' });
+      expect(refused.frames).toEqual([]);
+      expect(capped.instances().size).toBe(0);
+      // With the seat free again, Alice's host opens.
+      await capped.tdb.query('delete from host_leases');
+      const client = await openHost(capped, alice);
+      await client.waitFor((frame) => frame.type === 'hello');
+    } finally {
+      await capped.close();
+    }
+  });
+
   it('refuses a browser sign-in (authorization code) before binding the callback port', async () => {
     const alice = await browserUser(h, 'alice@example.com');
     const taken: Server = createServer();

@@ -14,7 +14,9 @@
  * otherwise it is closed before any frame, `4401` without a session (or one revoked by the time its
  * token is read here) and `4403` for another site or a bearer caller. A user's
  * `HOST_LIMITS.maxSocketsPerUser + 1`th socket closes `4429`, also before any frame. A user whose host another
- * server process holds (the lease, spec §19.9) closes `4409`, `host-lease-held` with a `retryAfterMs`.
+ * server process holds (the lease, spec §19.9) closes `4409`, `host-lease-held` with a `retryAfterMs`. A user
+ * of a tenant whose every seat has a live host, once this process's idle ones are evicted, closes `4429` with
+ * `host-instance-cap` (the ninth socket's `4429` says `too many host sockets`).
  *
  * Identity's guard checks `Origin` only on mutating methods: every `GET` under `/api/v1` is free of side
  * effects, so a cross-site `GET` with the cookie can read nothing it may not and change nothing. That
@@ -40,7 +42,7 @@ import { HOST_CLOSE, HOST_LIMITS } from './errors.js';
 import { loadHostRuntime, loadHostSocketLoop, type HostSecretEvent } from './host-runtime.js';
 import { injectSend } from './inject-send.js';
 import { HostInstances, type HostSession, type HostSocketHandle, type HostUser } from './instances.js';
-import { clearLeasesAtStartUp, HostLeases, leaseHeldReason, leaseRetryAfter } from './lease.js';
+import { clearLeasesAtStartUp, HostLeases, isInstanceCap, leaseHeldReason, leaseRetryAfter } from './lease.js';
 import { liveBridge } from './live-bridge.js';
 import { pendingWrites, type PendingWrites } from '../pending-writes.js';
 import { outsideTenantUnit } from '../tenancy/tenant-db.js';
@@ -173,7 +175,14 @@ export function hostModule(options: HostModuleOptions = {}): ServerModule {
       const holder = randomUUID();
       ctx.log.info({ holder }, 'browser hosts lease as this holder');
       await clearLeasesAtStartUp(config.mode, ctx.tenancy, ctx.log);
-      const leases = new HostLeases({ db: ctx.tenancy.db, holder, setTimer, log });
+      const leases = new HostLeases({
+        db: ctx.tenancy.db,
+        holder,
+        setTimer,
+        log,
+        // Read in the take's unit, from `ctx.license` at that moment: licensing replaces it after registration.
+        seatLimit: async (tx) => (await ctx.license.state(tx.scope, tx)).seats.limit,
+      });
 
       const instances = new HostInstances({
         dataDir: config.dataDir,
@@ -310,6 +319,12 @@ export function hostModule(options: HostModuleOptions = {}): ServerModule {
             if (retryAfterMs !== undefined) {
               ctx.log.info({ ...details, retryAfterMs }, 'a browser host is held by another server process');
               running.socket?.end(HOST_CLOSE.leaseHeld, leaseHeldReason(retryAfterMs));
+              return undefined;
+            }
+            // Every seat of the tenant has a live host, and this process had no idle one of it to evict.
+            if (isInstanceCap(error)) {
+              ctx.log.info(details, 'a browser host was refused: every seat of the tenant has one open');
+              running.socket?.end(HOST_CLOSE.tooManySockets, 'host-instance-cap');
               return undefined;
             }
             if (error.code === 'tenancy-keys-pending') {

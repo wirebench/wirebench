@@ -8,7 +8,7 @@ import { randomBytes } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { connect, type Socket } from 'node:net';
 import { join } from 'node:path';
-import type { AuditInput } from '../../src/context.js';
+import type { AuditInput, LicenseService } from '../../src/context.js';
 import { seal } from '../../src/hooks/secret-box.js';
 import { HostInstances } from '../../src/host/instances.js';
 import { hostModule } from '../../src/host/module.js';
@@ -51,6 +51,8 @@ export async function hostHarness(
     readonly onSecretWrites?: (writes: PendingWrites) => void;
     /** Where the server logs, at the level `env` sets. */
     readonly logStream?: NodeJS.WritableStream;
+    /** Replaces the license the modules read (the permissive default without it): a seat limit, say. */
+    readonly license?: (base: LicenseService) => LicenseService;
   } = {},
 ): Promise<HostHarness> {
   const timers = manualTimers();
@@ -60,6 +62,14 @@ export async function hostHarness(
   const build = await browserBuildFixture();
   const started = identityHarness({
     ...(options.logStream !== undefined ? { logStream: options.logStream } : {}),
+    ...(options.license !== undefined
+      ? {
+          beforeBuild: (_db, ctx) => {
+            ctx.license = options.license!(ctx.license);
+            return Promise.resolve();
+          },
+        }
+      : {}),
     env: {
       WIREBENCH_SERVER_BROWSER_CLIENT: 'true',
       WIREBENCH_SERVER_SECRETS_KEY: randomBytes(32).toString('base64'),

@@ -322,9 +322,9 @@ describe('startBrowserClient', () => {
     expect(bar()?.hidden).toBe(true);
   });
 
-  it('says too many tabs are open on 4429 and retries with backoff', async () => {
+  it('says too many tabs are open on 4429 too many host sockets, and retries with backoff', async () => {
     const h = start();
-    FakeSocket.last().drop(4429);
+    FakeSocket.last().drop(4429, 'too many host sockets');
     expect(bar()?.textContent).toBe(RECONNECT_TEXT.tooManyTabs);
     expect(bar()?.hidden).toBe(false);
     await vi.advanceTimersByTimeAsync(1_000);
@@ -333,6 +333,26 @@ describe('startBrowserClient', () => {
     await h.started;
     expect(bar()?.hidden).toBe(true);
     expect(h.fetch).not.toHaveBeenCalledWith(ME_PATH, expect.anything());
+  });
+
+  it('says every seat has a browser host open on 4429 host-instance-cap, and retries with backoff', async () => {
+    const h = start();
+    FakeSocket.last().drop(4429, 'host-instance-cap');
+    expect(bar()?.textContent).toBe(RECONNECT_TEXT.instanceCap);
+    expect(bar()?.textContent).not.toBe(RECONNECT_TEXT.tooManyTabs);
+    expect(bar()?.hidden).toBe(false);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(FakeSocket.all).toHaveLength(2);
+    FakeSocket.last().hello();
+    await h.started;
+    expect(bar()?.hidden).toBe(true);
+    expect(h.fetch).not.toHaveBeenCalledWith(ME_PATH, expect.anything());
+  });
+
+  it('a 4429 with a reason it does not know keeps the too-many-tabs message', () => {
+    start();
+    FakeSocket.last().drop(4429, 'something else');
+    expect(bar()?.textContent).toBe(RECONNECT_TEXT.tooManyTabs);
   });
 
   it("says the server cannot open the user's data on 4503, and keeps retrying without a session check", async () => {

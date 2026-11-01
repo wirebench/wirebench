@@ -18,8 +18,11 @@
  * Self-hosted start-up deletes every lease ({@link clearLeasesAtStartUp}): it is one process (ADR-0013), so a lease
  * it finds is a crashed run's, and leaving it would keep that user out for a minute.
  *
- * The cap (Task 27) goes in the take's unit, between the expired delete and the insert: it counts the tenant's live
- * leases under the same lock.
+ * **The cap** (decision 11). A tenant holds at most its seat limit of live leases, counted across processes in the
+ * take's unit, between the expired delete and the insert, under the same lock: two takes racing for the last seat,
+ * in one process or two, run one after the other, and the second counts the first's row. At the cap the take
+ * throws `host-instance-cap`; `HostInstances` then evicts this process's idle instances of the tenant and tries
+ * again. A user's own row is not counted, so a take that renews this holder's lease is never refused.
  */
 import { WirebenchError } from '@wirebench/engine';
 import type { FastifyBaseLogger } from 'fastify';
@@ -55,6 +58,8 @@ const TAKE = `insert into host_leases (user_id, holder, acquired_at, renewed_at,
         expires_at = excluded.expires_at
     where host_leases.holder = excluded.holder or host_leases.expires_at < now()
   returning user_id`;
+/** The tenant's live leases other than the user's own (`$1`): the expired ones were deleted just before. */
+export const COUNT_LIVE = 'select count(*)::int as count from host_leases where user_id <> $1';
 const REMAINING = `select greatest(0, ceil(extract(epoch from (expires_at - now())) * 1000))::int as remaining
   from host_leases where user_id = $1`;
 export const RENEW = `update host_leases set renewed_at = now(), expires_at = now() + ${LEASE_INTERVAL}
@@ -73,9 +78,17 @@ export function leaseRetryAfter(error: unknown): number | undefined {
   return typeof value === 'number' ? value : LEASE_MS;
 }
 
+/** Whether `error` is a take refused at the tenant's instance cap. */
+export function isInstanceCap(error: unknown): boolean {
+  return error instanceof WirebenchError && error.code === 'host-instance-cap';
+}
+
 /** What `HostInstances` needs of the lease. */
 export interface InstanceLeases {
-  /** Takes `user`'s lease; throws `host-lease-held` (details `retryAfterMs`) when another process holds it. */
+  /**
+   * Takes `user`'s lease; throws `host-lease-held` (details `retryAfterMs`) when another process holds it, and
+   * `host-instance-cap` when the tenant's seats all hold one already.
+   */
   take(user: HostUserKey): Promise<void>;
   /** Gives `user`'s lease back; never throws (a failure is logged, and the row expires). */
   release(user: HostUserKey): Promise<void>;
@@ -93,6 +106,11 @@ export interface HostLeasesDeps {
   /** A monotonic clock in milliseconds (`performance.now`): only when to stop early, never an expiry. */
   readonly now?: () => number;
   readonly log: (message: string, error: unknown) => void;
+  /**
+   * The tenant's seat limit, read inside the take's unit (`LicenseService.state(scope, tx)`); `null` is no cap.
+   * Without it (a test), there is no cap.
+   */
+  readonly seatLimit?: (tx: TenantQuerier) => Promise<number | null>;
 }
 
 /** One held lease. A new take makes a new object, so an answer about an older one never touches it. */
@@ -127,11 +145,19 @@ export class HostLeases implements InstanceLeases {
     const remaining = await this.deps.db(user.tenant).transaction(async (tx) => {
       await tx.query(LEASE_LOCK, [tx.scope.tenantId]);
       await tx.query(DELETE_EXPIRED);
+      const limit = (await this.deps.seatLimit?.(tx)) ?? null;
+      if (limit !== null) {
+        const live = await tx.query<{ count: number }>(COUNT_LIVE, [user.id]);
+        if (Number(live.rows[0]?.count ?? 0) >= limit) return 'cap' as const;
+      }
       const taken = await tx.query<{ user_id: string }>(TAKE, [user.id, this.deps.holder]);
       if (taken.rows.length > 0) return undefined;
       const left = await tx.query<{ remaining: number }>(REMAINING, [user.id]);
       return Number(left.rows[0]?.remaining ?? LEASE_MS);
     });
+    if (remaining === 'cap') {
+      throw new WirebenchError('host-instance-cap', 'every seat of this team has a browser host open');
+    }
     if (remaining !== undefined) {
       throw new WirebenchError('host-lease-held', 'another server process holds this user’s browser host', {
         details: { retryAfterMs: remaining },

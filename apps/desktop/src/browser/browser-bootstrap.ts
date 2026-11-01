@@ -30,6 +30,7 @@ export const CLOSE_CODE = {
   unauthenticated: 4401,
   /** Another server process holds the user's host lease (spec §19.9). */
   leaseHeld: 4409,
+  /** Too many: the user's tabs (`too many host sockets`), or the team's seats (`host-instance-cap`, spec §19.9). */
   tooManySockets: 4429,
   unavailable: 4503,
   /** The server is up but finishing its upgrade's last step: no host opens until it has (spec §19.10). */
@@ -62,12 +63,15 @@ export function leaseRetryAfterMs(reason: string): number | undefined {
   return match === null ? undefined : Math.min(Number(match[1]), LEASE_MS);
 }
 const LEASE_MS = 60_000;
+/** The `4429` reason when every seat of the team has a browser host open; any other `4429` is the user's tabs. */
+export const INSTANCE_CAP_REASON = 'host-instance-cap';
 export const RECONNECT_BAR_ID = 'wirebench-reconnect-bar';
 
 export const RECONNECT_TEXT = {
   reconnecting: 'The connection to the server was lost. Reconnecting…',
   unreachable: 'Can’t reach your workspace; retrying…',
   tooManyTabs: 'Too many Wirebench tabs are open; close one to continue.',
+  instanceCap: 'Every seat of your team already has Wirebench open in a browser; retrying…',
   unavailable: 'The server can’t open your saved data with its current key. Ask your administrator; retrying…',
   upgrading: 'The server is finishing an upgrade; retrying…',
   leaseHeld: 'Your workspace is still open on another server; retrying…',
@@ -229,7 +233,7 @@ export async function startBrowserClient(deps: BootstrapDeps): Promise<void> {
         return retryAfterMs === undefined ? undefined : { retryAfterMs };
       }
       if (code === CLOSE_CODE.tooManySockets) {
-        bar.show(RECONNECT_TEXT.tooManyTabs);
+        bar.show(reason === INSTANCE_CAP_REASON ? RECONNECT_TEXT.instanceCap : RECONNECT_TEXT.tooManyTabs);
         return;
       }
       // The server's secrets key no longer opens the stored data key: the operator's to fix, not the session's.
