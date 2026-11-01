@@ -181,6 +181,38 @@ describe('check:tenant-scope', () => {
     expect(findUrlReads('packages/server/src/config.ts', "env: 'WIREBENCH_SERVER_PUBLIC_URL',")).toEqual([]);
   });
 
+  it('refuses the database URLs outside config.ts, src/db/, src/tenancy/ and the start-up (Part C review M4)', () => {
+    const module = 'packages/server/src/hooks/module.ts';
+    for (const read of [
+      'const url = ctx.config.databaseUrl;',
+      'const url = (ctx.config as ServerConfig).migrationDatabaseUrl;',
+      "const url = ctx.config['databaseUrl'];",
+      'const { databaseUrl } = config;',
+      'const { migrationDatabaseUrl: owner } = config;',
+      "type Urls = Pick<ServerConfig, 'databaseUrl'>;",
+    ]) {
+      expect(findUrlReads(module, read), read).toMatchObject([{ rule: 'database-url' }]);
+    }
+    const read = 'const db = createDatabase(config.databaseUrl);';
+    for (const file of [
+      'packages/server/src/config.ts',
+      'packages/server/src/serve.ts',
+      'packages/server/src/identity/cli.ts',
+      'packages/server/src/tenancy/cli.ts',
+      'packages/server/src/db/pool.ts',
+    ]) {
+      expect(findUrlReads(file, read), file).toEqual([]);
+    }
+    expect(findUrlReads(module, '// config.databaseUrl in a comment')).toEqual([]);
+  });
+
+  it('finds a planted database URL read in a tree', async () => {
+    const root = await tree({ 'packages/server/src/agent/routes.ts': 'const url = ctx.config.databaseUrl;\n' });
+    expect(await checkTenantScope(root)).toMatchObject([
+      { file: 'packages/server/src/agent/routes.ts', line: 1, rule: 'database-url' },
+    ]);
+  });
+
   it('refuses the raw pool and its types outside src/db/, src/tenancy/ and the start-up (Task 17)', () => {
     const route = 'packages/server/src/teams/routes/teams.ts';
     const spellings = [

@@ -119,9 +119,13 @@ describeDb('executeRun (scheduled-runs spec §3.2)', () => {
       },
     });
     // The alert's link is built inside its savepoint: a throw there must undo only the alert's statements.
+    // A database error's `detail` can carry the failing row (the alert's payload): it must stay out of the log line.
+    const failure = Object.assign(new Error('no link for this tenant'), {
+      detail: 'Failing row contains (secret-looking payload text)',
+    });
     const settings = testSettings({
       linkUrl: () => {
-        throw new Error('no link for this tenant');
+        throw failure;
       },
     });
     const { run } = await runOnce(
@@ -141,6 +145,12 @@ describeDb('executeRun (scheduled-runs spec §3.2)', () => {
     expect(schedule!.schedule).toMatchObject({ alertState: 'ok', failureStreak: 0 });
     expect(warns).toHaveLength(1);
     expect(warns[0]![1]).toBe('a schedule alert could not be queued; the run is stored without it');
+    expect(warns[0]![0]).toEqual({
+      reason: 'Error: no link for this tenant',
+      scheduleId: expect.any(String) as unknown,
+      runId: run.id,
+    });
+    expect(JSON.stringify(warns)).not.toContain('Failing row');
   });
 
   it('an unreachable host errors the run', async () => {

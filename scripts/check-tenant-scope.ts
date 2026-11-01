@@ -26,6 +26,9 @@
  *   exists yet, has the callers {@link URL_WITHOUT_SCOPE_ALLOWED} names. Names built at run time
  *   (`config['public' + 'Url']`) are not caught; they are not a mistake anyone makes by accident.
  *
+ * - **No read of the database URLs** (`databaseUrl`, `migrationDatabaseUrl`; Part C review M4) outside `config.ts`,
+ *   `src/db/`, `src/tenancy/` and {@link RAW_DB_ALLOWED}, the same forms as the public URL's. `ModuleConfig` drops
+ *   them from the type, but the object a module holds is the loaded config, so a cast would still reach them.
  * - **No raw database outside the files that hold the pool** (Task 17): no import of `db/pool` or `db/querier` (the
  *   raw `Querier` and `Database`), nor of the driver (`pg`, `pg-*`, `postgres`), static, dynamic or a re-export, outside `src/db/`, `src/tenancy/` and
  *   {@link RAW_DB_ALLOWED} (the start-up and the admin command line, which open the pool and hand it to the
@@ -129,6 +132,7 @@ export interface ScopeHit {
     | 'tenant-directory'
     | 'license-without-scope'
     | 'public-url'
+    | 'database-url'
     | 'operator-url'
     | 'url-without-scope'
     | 'raw-db'
@@ -137,6 +141,10 @@ export interface ScopeHit {
 }
 
 const PUBLIC_URL = 'publicUrl';
+/** The two database URLs a loaded config still carries at run time (`ModuleConfig` drops them from the type only). */
+const DATABASE_URLS: readonly string[] = ['databaseUrl', 'migrationDatabaseUrl'];
+/** Outside `src/db/` and `src/tenancy/`, the files that may read them: the config, and the two that open the pool. */
+export const DATABASE_URL_ALLOWED: readonly string[] = ['packages/server/src/config.ts', ...RAW_DB_ALLOWED];
 
 /**
  * Every read of the configured public URL in `content`, and every use of the two unscoped URL functions
@@ -152,7 +160,18 @@ export function findUrlReads(file: string, content: string): ScopeHit[] {
     hits.push({ file, line: line + 1, text: (lines[line] ?? '').trim(), rule });
   };
   const publicUrlAllowed = PUBLIC_URL_ALLOWED.includes(file);
+  const databaseUrlAllowed = DATABASE_URL_ALLOWED.includes(file) || RAW_DB_DIRS.some((dir) => file.startsWith(dir));
   const visit = (node: ts.Node): void => {
+    if (!databaseUrlAllowed) {
+      if (ts.isPropertyAccessExpression(node) && DATABASE_URLS.includes(node.name.text)) hit(node.name, 'database-url');
+      else if (ts.isStringLiteralLike(node) && DATABASE_URLS.includes(node.text)) hit(node, 'database-url');
+      else if (ts.isBindingElement(node) && ts.isObjectBindingPattern(node.parent)) {
+        const key = node.propertyName ?? node.name;
+        if ((ts.isIdentifier(key) || ts.isStringLiteralLike(key)) && DATABASE_URLS.includes(key.text)) {
+          hit(node, 'database-url');
+        }
+      }
+    }
     if (!publicUrlAllowed) {
       if (ts.isPropertyAccessExpression(node) && node.name.text === PUBLIC_URL) hit(node.name, 'public-url');
       else if (ts.isStringLiteralLike(node) && node.text === PUBLIC_URL) hit(node, 'public-url');
@@ -300,6 +319,8 @@ if (process.argv[1] !== undefined && fileURLToPath(import.meta.url) === process.
       'tenant-directory': 'TenantDirectory or TenantAdmin outside src/tenancy/',
       'license-without-scope': 'stateWithoutScope is gone; use state(request.tenant), or state(scope, tx) in a job',
       'public-url': 'a read of the configured public URL; use tenantUrl(config, request)',
+      'database-url':
+        'a read of a database URL outside config.ts, src/db/, src/tenancy/ and the start-up; use ctx.tenancy',
       'operator-url': 'operatorPublicUrl outside main.ts and serve.ts',
       'url-without-scope': 'urlWithoutScope outside its allowed callers',
       'raw-db': 'the raw pool or its Querier outside src/db/, src/tenancy/ and the start-up; use ctx.tenancy',

@@ -189,12 +189,18 @@ export async function enqueueAlertsOrWarn(
     // Called inside the caller's unit, this joins it as a savepoint: a failure undoes only its own statements.
     return await env.tenancy.db(tx.scope).transaction((inner) => enqueueAlerts(inner, env, scheduleId, run));
   } catch (error) {
+    // Its name and message only, as the audit jobs log: a database error's `detail` can carry the failing row,
+    // which here is the alert's payload (Part C review M3).
     env.log.warn(
-      { err: error, scheduleId, runId: run.id },
+      { reason: reasonOf(error), scheduleId, runId: run.id },
       'a schedule alert could not be queued; the run is stored without it',
     );
     return 0;
   }
+}
+
+function reasonOf(error: unknown): string {
+  return error instanceof Error ? `${error.name}: ${error.message}` : 'unknown error';
 }
 
 /** Sends one alert to one target; throws why it did not arrive. */

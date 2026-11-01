@@ -1790,6 +1790,16 @@ Two forward steps, each resumable; a way back, also resumable; and a stated cost
   - **per-tenant settings** (§19.1, owner ruling): slice 7 reads each module's sign-in, SCIM, forwarding, SMTP and
     retention settings through the tenant's scope. Today's environment variables become the default tenant's
     settings, and the federated routes stop answering `404` in hosted mode once a tenant has its own.
+  - **promises slice 4 made to it** (Part C review M1):
+    - the audit forwarder stops its whole pass after a failed send, which is right while one sink serves every
+      tenant; once each tenant has its own sink, a failed send must stop only that tenant's batch, so one tenant's
+      bad event or dead sink never starves the others (`audit-log/forward/forwarder.ts`);
+    - the OIDC, SAML (flows and identities) and SCIM (tokens, users, groups) two-tenant cases run at the repository
+      level today, as hosted mode serves none of those routes; they must run again through the routes once a tenant
+      has its own identity provider;
+    - a self-hosted install switched to hosted keeps its default tenant's chain sealed under the configured key, while
+      hosted mode derives every tenant's key (ADR-0036), so `verify` answers `wrong-key` for it; slice 7's import of
+      such an install must re-key or carry that chain.
 
   No signup page, subscription webhook, payment-provider code or control-plane table exists in slice 4.
 - **8 `custom-domains`:** the resolver's map, keyed by full host name.
