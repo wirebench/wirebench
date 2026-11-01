@@ -919,6 +919,30 @@ describeDb('migration 0021 on the frozen 0019 fixture: forced isolation (hosted 
         "alter table users no force row level security;\nalter table users force row level security;\nupdate users set display_name = 'x';",
       ),
     ).toEqual([99]);
+    // A data-modifying CTE is a second write the predicate does not filter (Task 19 review M4).
+    expect(
+      planted(
+        "select for_each_tenant($$with x as (update captures set rejected = true returning 1) update users set display_name = 'x' where tenant_id = nullif(current_setting('wirebench.tenant_id', true), '')::uuid$$);",
+      ),
+    ).toEqual([99]);
+    // The nearest bracket before the write is a force: the table is forced there.
+    expect(
+      planted(
+        "alter table users no force row level security;\nalter table users force row level security;\nupdate users set display_name = 'x';\nalter table users force row level security;",
+      ),
+    ).toEqual([99]);
+    // merge is a write under the policy too.
+    expect(planted('merge into users u using (select 1) s on false when not matched then do nothing;')).toEqual([99]);
+    // TRUNCATE ignores the policy, so it is refused even bracketed; a table no tenant owns may still be emptied.
+    const empty = (target: string) => `${'trun'}cate ${target};`;
+    expect(planted(empty('captures'))).toEqual([99]);
+    expect(planted(empty('table only audit_forward_queue'))).toEqual([99]);
+    expect(
+      planted(
+        `alter table captures no force row level security;\n${empty('captures')}\nalter table captures force row level security;`,
+      ),
+    ).toEqual([99]);
+    expect(planted(empty('import_staging'))).toEqual([]);
     // Only one half of the bracket is no bracket.
     expect(planted("alter table users no force row level security;\nupdate users set display_name = 'x';")).toEqual([
       99,

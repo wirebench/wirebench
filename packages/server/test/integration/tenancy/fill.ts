@@ -11,7 +11,6 @@ import { createHash, generateKeyPairSync, randomBytes, sign } from 'node:crypto'
 import type { RouteOptions } from 'fastify';
 import { expect } from 'vitest';
 import { agentModule } from '../../../src/agent/module.js';
-import * as agentRepo from '../../../src/agent/repo.js';
 import { chainKeys } from '../../../src/audit-log/chain/keys.js';
 import { AuditSealer } from '../../../src/audit-log/chain/sealer.js';
 import { auditLogModule } from '../../../src/audit-log/module.js';
@@ -94,6 +93,8 @@ export interface World {
   readonly b: Filled;
   /** Every route the server registered. */
   readonly routes: readonly RouteOptions[];
+  /** The modules the world registered, by name, in order: identity (the harness's) first. */
+  readonly modules: readonly string[];
   readonly timers: ManualTimers;
   scheduler(): Scheduler;
   outbox(): AlertOutbox;
@@ -114,6 +115,7 @@ export async function isolationWorld(options: { readonly policiesDisabled?: bool
   let scheduler: Scheduler | undefined;
   let outbox: AlertOutbox | undefined;
   const deliver: DeliverAlert = () => Promise.resolve();
+  const modules: string[] = [];
   const build: BrowserBuildFixture = await browserBuildFixture();
   const db = await testDatabase();
   if (options.policiesDisabled === true) {
@@ -131,7 +133,7 @@ export async function isolationWorld(options: { readonly policiesDisabled?: bool
     },
     modules: (clock) => {
       const now = () => clock.now;
-      return [
+      const list = [
         licensingModule({ now, publicKeys: [keys.publicKey] }),
         teamsModule({ now }),
         syncModule(),
@@ -158,6 +160,8 @@ export async function isolationWorld(options: { readonly policiesDisabled?: bool
         hostModule({ now, setTimer: timers.setTimer, browserRoot: build.root }),
         agentModule({ now, sweepIntervalMs: 0 }),
       ];
+      modules.push('identity', ...list.map((module) => module.name));
+      return list;
     },
   });
   const a = await fill(t, t.a);
@@ -167,6 +171,7 @@ export async function isolationWorld(options: { readonly policiesDisabled?: bool
     a,
     b,
     routes,
+    modules,
     timers,
     scheduler: () => scheduler!,
     outbox: () => outbox!,
@@ -516,22 +521,32 @@ export function chainKeysOf(t: TwoTenants) {
 
 // ---- fresh rows a template uses up --------------------------------------------------------------
 
+/** Notes `id` in `f.ids`, so the leak check knows a row the sweep made in A (Task 19 review M2). */
+const noted = (f: Filled, id: string): string => {
+  f.ids.add(id);
+  return id;
+};
+
 export const fresh = {
-  /** A user of `tenant`'s with a password, and a token of their own. */
-  user: (tenant: Tenant, kind?: 'browser') =>
-    tenant.user({
+  /** A user of `tenant`'s with a password, and a token of their own; its ids go into `ids` when given (A's). */
+  async user(tenant: Tenant, kind?: 'browser', ids?: Set<string>): Promise<SignedInUser> {
+    const user = await tenant.user({
       email: `u-${newId().toLowerCase()}@${tenant.slug}.example`,
       password: PASSWORD,
       ...(kind !== undefined ? { kind } : {}),
-    }),
-  /** Another device token of `user`. */
-  async token(tenant: Tenant, user: SignedInUser): Promise<string> {
-    const id = newId();
-    await identityRepo.insertToken(tenant.tdb, {
+    });
+    ids?.add(user.user.id);
+    ids?.add(user.tokenId);
+    return user;
+  },
+  /** Another device token of one of `f`'s users. */
+  async token(f: Filled, user: SignedInUser): Promise<string> {
+    const id = noted(f, newId());
+    await identityRepo.insertToken(f.tenant.tdb, {
       id,
       userId: user.user.id,
       tokenHash: mintToken().hash,
-      deviceName: `${tenant.slug} spare`,
+      deviceName: `${f.tenant.slug} spare`,
       at: new Date(),
     });
     return id;
@@ -543,18 +558,17 @@ export const fresh = {
       }),
       'fresh invitation',
     );
-    return { id: made.id, secret: new URL(made.url).pathname.split('/').pop()! };
+    return { id: noted(f, made.id), secret: new URL(made.url).pathname.split('/').pop()! };
   },
   async team(f: Filled): Promise<string> {
-    return (
-      await ok(
-        f.tenant.call<{ id: string }>(f.admin, 'POST', '/teams', { name: `${f.tenant.slug} t-${newId()}` }),
-        'fresh team',
-      )
-    ).id;
+    const made = await ok(
+      f.tenant.call<{ id: string }>(f.admin, 'POST', '/teams', { name: `${f.tenant.slug} t-${newId()}` }),
+      'fresh team',
+    );
+    return noted(f, made.id);
   },
   async member(f: Filled): Promise<SignedInUser> {
-    const user = await fresh.user(f.tenant);
+    const user = await fresh.user(f.tenant, undefined, f.ids);
     await ok(
       f.tenant.call(f.admin, 'POST', `/teams/${f.teamId}/members`, { email: user.user.email, role: 'member' }),
       'fresh member',
@@ -562,57 +576,52 @@ export const fresh = {
     return user;
   },
   async teamInvitation(f: Filled): Promise<string> {
-    return (
-      await ok(
-        f.tenant.call<{ id: string }>(f.admin, 'POST', `/teams/${f.teamId}/invitations`, {
-          email: `ti-${newId().toLowerCase()}@${f.tenant.slug}.example`,
-          role: 'member',
-        }),
-        'fresh team invitation',
-      )
-    ).id;
+    const made = await ok(
+      f.tenant.call<{ id: string }>(f.admin, 'POST', `/teams/${f.teamId}/invitations`, {
+        email: `ti-${newId().toLowerCase()}@${f.tenant.slug}.example`,
+        role: 'member',
+      }),
+      'fresh team invitation',
+    );
+    return noted(f, made.id);
   },
   async workspace(f: Filled): Promise<string> {
-    return (
-      await ok(
-        f.tenant.call<{ id: string }>(f.admin, 'POST', `/teams/${f.teamId}/workspaces`, {
-          name: `${f.tenant.slug} w-${newId()}`,
-        }),
-        'fresh workspace',
-      )
-    ).id;
+    const made = await ok(
+      f.tenant.call<{ id: string }>(f.admin, 'POST', `/teams/${f.teamId}/workspaces`, {
+        name: `${f.tenant.slug} w-${newId()}`,
+      }),
+      'fresh workspace',
+    );
+    return noted(f, made.id);
   },
   async hook(f: Filled): Promise<string> {
-    return (
-      await ok(
-        f.tenant.call<{ id: string }>(f.admin, 'POST', `/workspaces/${f.workspaceId}/hooks`, {
-          name: `${f.tenant.slug} h-${newId()}`,
-        }),
-        'fresh hook',
-      )
-    ).id;
+    const made = await ok(
+      f.tenant.call<{ id: string }>(f.admin, 'POST', `/workspaces/${f.workspaceId}/hooks`, {
+        name: `${f.tenant.slug} h-${newId()}`,
+      }),
+      'fresh hook',
+    );
+    return noted(f, made.id);
   },
   async ciToken(f: Filled): Promise<string> {
-    return (
-      await ok(
-        f.tenant.call<{ id: string }>(f.admin, 'POST', `/workspaces/${f.workspaceId}/ci-tokens`, {
-          name: `${f.tenant.slug} c-${newId()}`,
-        }),
-        'fresh ci token',
-      )
-    ).id;
+    const made = await ok(
+      f.tenant.call<{ id: string }>(f.admin, 'POST', `/workspaces/${f.workspaceId}/ci-tokens`, {
+        name: `${f.tenant.slug} c-${newId()}`,
+      }),
+      'fresh ci token',
+    );
+    return noted(f, made.id);
   },
   async schedule(f: Filled): Promise<string> {
-    return (
-      await ok(
-        f.tenant.call<{ id: string }>(f.admin, 'POST', `/workspaces/${f.workspaceId}/schedules`, {
-          name: `${f.tenant.slug} s-${newId()}`,
-          schedule: '@daily',
-          target: { project: 'Billing' },
-        }),
-        'fresh schedule',
-      )
-    ).id;
+    const made = await ok(
+      f.tenant.call<{ id: string }>(f.admin, 'POST', `/workspaces/${f.workspaceId}/schedules`, {
+        name: `${f.tenant.slug} s-${newId()}`,
+        schedule: '@daily',
+        target: { project: 'Billing' },
+      }),
+      'fresh schedule',
+    );
+    return noted(f, made.id);
   },
   async queuedRun(f: Filled): Promise<{ scheduleId: string; runId: string }> {
     const scheduleId = await fresh.schedule(f);
@@ -620,20 +629,19 @@ export const fresh = {
       f.tenant.call<{ id: string }>(f.admin, 'POST', `/workspaces/${f.workspaceId}/schedules/${scheduleId}/runs`),
       'fresh run',
     );
-    return { scheduleId, runId: run.id };
+    return { scheduleId, runId: noted(f, run.id) };
   },
   async sessionLog(f: Filled): Promise<string> {
-    return (
-      await ok(
-        f.tenant.call<{ id: string }>(
-          f.admin,
-          'POST',
-          `/workspaces/${f.workspaceId}/session-logs`,
-          sessionLogBody(f.tenant.slug),
-        ),
-        'fresh session log',
-      )
-    ).id;
+    const made = await ok(
+      f.tenant.call<{ id: string }>(
+        f.admin,
+        'POST',
+        `/workspaces/${f.workspaceId}/session-logs`,
+        sessionLogBody(f.tenant.slug),
+      ),
+      'fresh session log',
+    );
+    return noted(f, made.id);
   },
   async code(f: Filled): Promise<string> {
     const res = await f.tenant.inject({
@@ -658,7 +666,7 @@ export const fresh = {
       },
     });
     expect(res.statusCode, res.body).toBe(201);
-    return { pairingId: res.json<{ pairingId: string }>().pairingId, key };
+    return { pairingId: noted(f, res.json<{ pairingId: string }>().pairingId), key };
   },
   async nonce(f: Filled, pairingId = f.pairingId): Promise<string> {
     const res = await f.tenant.inject({
@@ -670,6 +678,4 @@ export const fresh = {
     expect(res.statusCode, res.body).toBe(201);
     return res.json<{ nonce: string }>().nonce;
   },
-  /** A pairing row of A's agent for `pairings/:id` signed requests, found again by id. */
-  pairingOf: (f: Filled, id: string) => agentRepo.pairingById(f.tenant.tdb, id),
 };

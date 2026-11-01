@@ -225,51 +225,62 @@ export async function policiesOf(db: Querier): Promise<PolicyInfo[]> {
 export const FIRST_LINTED_MIGRATION = 22;
 
 /**
- * The lint of spec §19.4: from `0022` on, a migration whose SQL inserts, updates or deletes rows of a scoped table
- * must run it per tenant (`for_each_tenant(`) or bracket it with `no force row level security` and `force row level
- * security`. Without either, under the forced policy, it touches no row and still succeeds on a non-superuser
+ * The lint of spec §19.4: from `0022` on, a migration whose SQL inserts, updates, deletes or merges rows of a scoped
+ * table must run it per tenant (`for_each_tenant(`) or bracket it with `no force row level security` and `force row
+ * level security`. Without either, under the forced policy, it touches no row and still succeeds on a non-superuser
  * owner. Comments are skipped; a write inside a `do` block or a string still counts, so the check errs on the
  * strict side.
  * - A `for_each_tenant` call counts only when its statement names the setting itself
  *   (`current_setting('wirebench.tenant_id'…)`): a migration role that bypasses the policy, as the compose superuser
- *   does, would otherwise reach every tenant's rows on each pass (Task 17 review M1). Its body is one statement:
- *   `execute` runs several, and a second would go unfiltered (Task 18 review M4).
- * - A call excuses only the statement it runs. Every other write needs a bracket on the table it writes: a
- *   `no force` of that table before it and a `force` of that table after it (Task 17 fix re-review N2, Task 18
- *   review M4).
+ *   does, would otherwise reach every tenant's rows on each pass (Task 17 review M1). Its body is one statement with
+ *   one write: `execute` runs several statements, and a data-modifying CTE is a second write the predicate does not
+ *   filter (Task 18 review M4, Task 19 review M4).
+ * - A call excuses only the statement it runs. Every other write needs a bracket on the table it writes: the nearest
+ *   `no force` / `force` of that table before the write is a `no force`, and a `force` of it follows (Task 17 fix
+ *   re-review N2, Task 18 and Task 19 review M4).
+ * - Emptying a scoped table with TRUNCATE is refused outright: it ignores row-level security and removes every
+ *   tenant's rows, on any role.
  * Returns the versions that break it.
  */
 export function unscopedDataMigrations(
   migrations: readonly { readonly version: number; readonly sql: string }[],
 ): number[] {
   const tables = SCOPED_TABLES.join('|');
-  const writes = new RegExp(
-    `\\b(?:insert\\s+into|update|delete\\s+from)\\s+(?:only\\s+)?(?:"?\\w+"?\\.)?"?(${tables})"?(?![\\w"])`,
-    'gi',
-  );
+  const table = `(?:only\\s+)?(?:"?\\w+"?\\.)?"?(${tables})"?(?![\\w"])`;
+  const writes = new RegExp(`\\b(?:insert\\s+into|update|delete\\s+from|merge\\s+into)\\s+${table}`, 'gi');
+  const emptied = new RegExp(`\\btruncate\\s+(?:table\\s+)?(?:[\\w".]+\\s*,\\s*)*${table}`, 'i');
+  /** A write inside parentheses: a data-modifying CTE (`with x as (update …)`) or a write in a sub-select. */
+  const nestedWrite = /\(\s*(?:insert|update|delete|merge)\b/i;
   const uncommented = (sql: string) => sql.replace(/--[^\n]*|\/\*[\s\S]*?\*\//g, ' ');
   return migrations
     .filter((migration) => migration.version >= FIRST_LINTED_MIGRATION)
     .filter((migration) => {
       const sql = uncommented(migration.sql);
+      if (emptied.test(sql)) return true;
       if (!new RegExp(writes.source, 'i').test(sql)) return false;
-      // Every call runs one statement that filters on the setting; a call that does not is no per-tenant statement.
+      // Every call runs one statement, with one write, that filters on the setting.
       const calls = forEachTenantArguments(sql);
-      if (!calls.every((body) => oneStatement(body) && SETTING_PREDICATE.test(body))) return true;
+      const perTenant = (body: string) =>
+        oneStatement(body) &&
+        SETTING_PREDICATE.test(body) &&
+        !nestedWrite.test(body) &&
+        [...body.matchAll(writes)].length <= 1;
+      if (!calls.every(perTenant)) return true;
       // What is left outside the calls must be bracketed, write by write, on the table each one writes.
       const rest = withoutForEachTenantArguments(sql);
       for (const write of rest.matchAll(writes)) {
-        const table = write[1]!.toLowerCase();
+        const name = write[1]!.toLowerCase();
         const at = write.index;
         const brackets = [
           ...rest.matchAll(
             new RegExp(
-              `\\balter\\s+table\\s+(?:only\\s+)?(?:"?\\w+"?\\.)?"?${table}"?\\s+(no\\s+)?force\\s+row\\s+level\\s+security\\b`,
+              `\\balter\\s+table\\s+(?:only\\s+)?(?:"?\\w+"?\\.)?"?${name}"?\\s+(no\\s+)?force\\s+row\\s+level\\s+security\\b`,
               'gi',
             ),
           ),
         ];
-        const opened = brackets.some((bracket) => bracket[1] !== undefined && bracket.index < at);
+        const before = brackets.filter((bracket) => bracket.index < at).at(-1);
+        const opened = before !== undefined && before[1] !== undefined;
         const closed = brackets.some((bracket) => bracket[1] === undefined && bracket.index > at);
         if (!opened || !closed) return true;
       }

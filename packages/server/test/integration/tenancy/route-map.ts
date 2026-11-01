@@ -10,7 +10,7 @@
  *
  * `from` is the sender's fill; ids are always A's (`a`), and a template that uses a row up makes a fresh one.
  */
-import { agentRedeemMessage, agentRequestMessage } from '@wirebench/engine';
+import { agentRedeemMessage, agentRequestMessage, LIVE_PATH, TERMINAL_SHARE_PATH } from '@wirebench/engine';
 import type { InjectOptions, LightMyRequestResponse } from 'fastify';
 import { mintSecret, newId, pkceChallenge } from '../../../src/identity/tokens.js';
 import { license } from '../../helpers/licensing.js';
@@ -46,8 +46,11 @@ export interface RouteCase {
   readonly statuses?: readonly number[];
   /** A refusal this route answers its own way (a form posted back): true when `res` refused. */
   readonly refused?: (res: LightMyRequestResponse) => boolean;
-  /** The leak check looks for A's ids only, not for A's name: B's answer may hold what B itself was sent. */
-  readonly idsOnly?: boolean;
+  /**
+   * B's answer may hold what B itself was sent (its audit log records the A emails typed into its sign-in): the leak
+   * check strips every string the sweep sent to B before it looks for A's name and ids.
+   */
+  readonly stripsSent?: boolean;
   /** Runs after each send, as the sender: puts back what the request took away. */
   readonly after?: (ctx: Ctx) => Promise<void>;
 }
@@ -119,6 +122,16 @@ function signedAgent(
   };
 }
 
+/**
+ * The socket routes, each with its case in the isolation suite's socket sweep. A socket route not named here fails the
+ * map check (Task 19 review M1).
+ */
+export const SOCKET_ROUTES = {
+  live: `GET ${LIVE_PATH}`,
+  host: 'GET /api/v1/host',
+  terminalShares: `GET ${TERMINAL_SHARE_PATH}`,
+} as const;
+
 /** Keys are `${method} ${url}` as `onRoute` reports them; a route on every method is `ALL`. */
 export const ROUTE_MAP: Readonly<Record<string, RouteCase>> = {
   // ---- the host and meta
@@ -134,7 +147,7 @@ export const ROUTE_MAP: Readonly<Record<string, RouteCase>> = {
   'GET /api/v1/me/devices': { cls: 'own', request: (ctx) => json(ctx, 'GET', api('/me/devices')) },
   'DELETE /api/v1/me/devices/:id': {
     cls: 'refused',
-    request: async (ctx) => json(ctx, 'DELETE', api(`/me/devices/${await fresh.token(ctx.a.tenant, ctx.a.admin)}`)),
+    request: async (ctx) => json(ctx, 'DELETE', api(`/me/devices/${await fresh.token(ctx.a, ctx.a.admin)}`)),
   },
   'POST /api/v1/me/password': {
     cls: 'own',
@@ -250,7 +263,12 @@ export const ROUTE_MAP: Readonly<Record<string, RouteCase>> = {
       },
     }),
   },
-  'GET /invite/:secret': { cls: 'own', request: (ctx) => ({ method: 'GET', url: `/invite/${ctx.a.inviteSecret}` }) },
+  'GET /invite/:secret': {
+    cls: 'refused',
+    // The page answers an unknown secret with its closed variant, at 200 (Task 19 review M5).
+    refused: (res) => res.statusCode === 200 && res.body.includes('This invitation has expired or was already used.'),
+    request: (ctx) => ({ method: 'GET', url: `/invite/${ctx.a.inviteSecret}` }),
+  },
   'GET /api/v1/users': { cls: 'own', request: (ctx) => json(ctx, 'GET', api('/users')) },
   'PATCH /api/v1/users/:id': {
     cls: 'refused',
@@ -302,7 +320,7 @@ export const ROUTE_MAP: Readonly<Record<string, RouteCase>> = {
     cls: 'refused',
     request: async (ctx) =>
       json(ctx, 'POST', api(`/teams/${ctx.a.teamId}/members`), {
-        email: (await fresh.user(ctx.a.tenant)).user.email,
+        email: (await fresh.user(ctx.a.tenant, undefined, ctx.a.ids)).user.email,
         role: 'member',
       }),
   },
@@ -548,9 +566,13 @@ export const ROUTE_MAP: Readonly<Record<string, RouteCase>> = {
   },
 
   // ---- the audit log
-  // B's log records what B was sent, A's emails in B's failed sign-ins among it: ids only for these two.
-  'GET /api/v1/audit': { cls: 'own', idsOnly: true, request: (ctx) => json(ctx, 'GET', api('/audit?limit=200')) },
-  'GET /api/v1/audit/export': { cls: 'own', idsOnly: true, request: (ctx) => json(ctx, 'GET', api('/audit/export')) },
+  // B's log records what B was sent, A's emails in B's failed sign-ins among it.
+  'GET /api/v1/audit': { cls: 'own', stripsSent: true, request: (ctx) => json(ctx, 'GET', api('/audit?limit=200')) },
+  'GET /api/v1/audit/export': {
+    cls: 'own',
+    stripsSent: true,
+    request: (ctx) => json(ctx, 'GET', api('/audit/export')),
+  },
   'POST /api/v1/workspaces/:workspaceId/audit/desktop-events': {
     cls: 'refused',
     request: (ctx) => json(ctx, 'POST', ws(ctx, '/audit/desktop-events'), { events: [SENT] }),
@@ -662,13 +684,18 @@ export const ROUTE_MAP: Readonly<Record<string, RouteCase>> = {
     }),
   },
 
-  // ---- sockets: the socket sweep's
-  'GET /api/v1/live': { cls: 'socket' },
-  'GET /api/v1/host': { cls: 'socket' },
-  'GET /api/v1/terminal-shares/socket': { cls: 'socket' },
+  // ---- sockets: the socket sweep's, one case each (`SOCKET_ROUTES`)
+  [SOCKET_ROUTES.live]: { cls: 'socket' },
+  [SOCKET_ROUTES.host]: { cls: 'socket' },
+  [SOCKET_ROUTES.terminalShares]: { cls: 'socket' },
 };
 
-/** The map's key for a registered route; `undefined` for the `HEAD` Fastify adds beside each `GET`. */
+/**
+ * The map's key for a registered route. A route whose only method is `HEAD` is the twin Fastify adds beside each
+ * `GET` (`exposeHeadRoutes`), and has no key: no module registers a `HEAD` route of its own today, and one that did
+ * would have to change this. Three methods or more fold into `ALL`, which only the catch-URL routes use (`root.all`).
+ * The browser build's `/assets/<file>` routes fold into one key.
+ */
 export function routeKey(route: { readonly method: string | string[]; readonly url: string }): string | undefined {
   const methods = Array.isArray(route.method) ? route.method : [route.method];
   if (methods.length === 1 && methods[0] === 'HEAD') return undefined;

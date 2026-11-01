@@ -17,6 +17,8 @@ import { keyId } from '../../../src/audit-log/chain/canonical.js';
 import { verifyChain } from '../../../src/audit-log/chain/verify.js';
 import { announce } from '../../../src/context.js';
 import { createDatabase } from '../../../src/db/pool.js';
+import type { Database } from '../../../src/db/querier.js';
+import { BUILTIN_MODULES } from '../../../src/modules.js';
 import { CaptureSweeper, SWEEP_INTERVAL_MS } from '../../../src/hooks/sweep.js';
 import { open, seal } from '../../../src/hooks/secret-box.js';
 import { userSecretsKey } from '../../../src/host/server-platform.js';
@@ -33,7 +35,7 @@ import { SCOPED_TABLES } from '../../helpers/catalog.js';
 import { describeDb, TEST_DATABASE_URL } from '../../helpers/database.js';
 import { chainKeysOf, cookie, fill as _fill, isolationWorld, sealerOf, type Filled, type World } from './fill.js';
 import { openSocket, type Tenant, type TestSocket } from './modules/two-tenants.js';
-import { ROUTE_MAP, routeKey, type Ctx } from './route-map.js';
+import { ROUTE_MAP, routeKey, SOCKET_ROUTES, type Ctx } from './route-map.js';
 
 void _fill;
 
@@ -66,7 +68,49 @@ interface RouteSweep {
   readonly violations: string[];
 }
 
-/** Every route the server registered, as A (the control) and then as B with A's ids (the probe). */
+/** Every email of A's a string holds: what the sweep typed into B's forms. */
+const ACME_EMAIL = /[\w.+-]+@acme\.example/gi;
+
+/**
+ * A's rows in every scoped table, read as the admin superuser (which the policy does not hold): a count and a digest
+ * per table. Read until two reads agree, so a write A's own control set off after its answer (the license listener's
+ * audit row) is in it.
+ */
+async function snapshotOfA(superuser: Database, w: World): Promise<string> {
+  const read = async () =>
+    JSON.stringify(
+      (
+        await superuser.query<{ t: string; n: string; h: string }>(
+          SCOPED_TABLES.map(
+            (table) =>
+              `select '${table}' as t, count(*)::text as n, coalesce(md5(string_agg(x::text, ',' order by x::text)), '') as h from ${table} x where tenant_id = $1`,
+          ).join(' union all '),
+          [w.a.tenant.scope.tenantId],
+        )
+      ).rows,
+    );
+  let last = await read();
+  for (let i = 0; i < 40; i++) {
+    await new Promise((done) => setTimeout(done, 25));
+    const next = await read();
+    if (next === last) return next;
+    last = next;
+  }
+  return last;
+}
+
+/** The admin superuser on the world's schema. */
+function superuserOf(w: World): Database {
+  const url = new URL(TEST_DATABASE_URL!);
+  url.searchParams.set('options', `-c search_path=${w.t.h.db.schema}`);
+  return createDatabase(url.toString());
+}
+
+/**
+ * Every route the server registered, as A (the control) and then as B with A's ids (the probe). A write probe must also
+ * leave A's rows exactly as they were (Task 19 review M3): a handler that changed A's row and then answered 404 would
+ * otherwise pass.
+ */
 async function routeSweep(w: World): Promise<RouteSweep> {
   const result: RouteSweep = { unmapped: [], controls: [], violations: [] };
   const urls = new Map<string, string>();
@@ -74,42 +118,62 @@ async function routeSweep(w: World): Promise<RouteSweep> {
     const key = routeKey(registered);
     if (key !== undefined && !urls.has(key)) urls.set(key, registered.url);
   }
-  for (const [key, url] of urls) {
-    const route = ROUTE_MAP[key];
-    if (route === undefined) {
-      result.unmapped.push(key);
-      continue;
+  /** Everything the sweep sent to B: its own audit log may record it. */
+  const typed = new Set<string>();
+  const superuser = superuserOf(w);
+  try {
+    for (const [key, url] of urls) {
+      const route = ROUTE_MAP[key];
+      if (route === undefined) {
+        result.unmapped.push(key);
+        continue;
+      }
+      if (route.cls === 'socket') {
+        if (!(Object.values(SOCKET_ROUTES) as string[]).includes(key))
+          result.unmapped.push(`${key}: a socket with no case`);
+        continue;
+      }
+      if (route.request === undefined) {
+        result.unmapped.push(`${key}: no template`);
+        continue;
+      }
+      const ctx = (from: Filled): Ctx => ({ w, url, from, a: w.a });
+      // The control: A's admin on A's host.
+      const control = await w.a.tenant.inject(await route.request(ctx(w.a)));
+      await route.after?.(ctx(w.a));
+      if (route.cls === 'federated') {
+        if (control.statusCode !== 404) result.controls.push(`${key}: A got ${control.statusCode}, not 404`);
+      } else if (control.statusCode >= 400) {
+        result.controls.push(`${key}: A got ${control.statusCode} ${control.body.slice(0, 300)}`);
+      }
+      // The probe: B's admin on B's host, with A's ids.
+      const request = await route.request(ctx(w.b));
+      const write = !key.startsWith('GET ');
+      const before = write ? await snapshotOfA(superuser, w) : '';
+      const res = await w.b.tenant.inject(request);
+      const after = write ? await snapshotOfA(superuser, w) : '';
+      await route.after?.(ctx(w.b));
+      const sent = `${request.url as string} ${JSON.stringify(request.payload ?? '')}`;
+      for (const email of sent.match(ACME_EMAIL) ?? []) typed.add(email.toLowerCase());
+      const status = res.statusCode;
+      const emptyList = status < 300 && res.body.trim() === '[]';
+      const refused =
+        route.refused !== undefined ? route.refused(res) : (route.statuses ?? [404]).includes(status) || emptyList;
+      if (route.cls === 'federated' && status !== 404) result.violations.push(`${key}: B got ${status}, not 404`);
+      if (route.cls === 'refused' && !refused) {
+        result.violations.push(`${key}: B got ${status} ${res.body.slice(0, 300)}`);
+      }
+      if (route.cls === 'own' && status >= 400) {
+        result.violations.push(`${key}: B's own answered ${status} ${res.body.slice(0, 300)}`);
+      }
+      if (before !== after) result.violations.push(`${key}: B's request changed A's rows`);
+      let body = res.body;
+      if (route.stripsSent === true) for (const email of typed) body = body.replaceAll(email, '');
+      const leaked = leaks(w.a, sent, body);
+      if (leaked.length > 0) result.violations.push(`${key}: B's answer holds A's ${leaked.join(', ')}`);
     }
-    if (route.cls === 'socket' || route.request === undefined) continue;
-    const send = async (from: Filled) => {
-      const ctx: Ctx = { w, url, from, a: w.a };
-      const request = await route.request!(ctx);
-      const res = await from.tenant.inject(request);
-      await route.after?.(ctx);
-      return { request, res };
-    };
-    // The control: A's admin on A's host.
-    const control = await send(w.a);
-    if (route.cls === 'federated') {
-      if (control.res.statusCode !== 404) result.controls.push(`${key}: A got ${control.res.statusCode}, not 404`);
-    } else if (control.res.statusCode >= 400) {
-      result.controls.push(`${key}: A got ${control.res.statusCode} ${control.res.body.slice(0, 300)}`);
-    }
-    // The probe: B's admin on B's host, with A's ids.
-    const { request, res } = await send(w.b);
-    const status = res.statusCode;
-    const emptyList = status < 300 && res.body.trim() === '[]';
-    const refused =
-      route.refused !== undefined ? route.refused(res) : (route.statuses ?? [404]).includes(status) || emptyList;
-    if (route.cls === 'federated' && status !== 404) result.violations.push(`${key}: B got ${status}, not 404`);
-    if (route.cls === 'refused' && !refused)
-      result.violations.push(`${key}: B got ${status} ${res.body.slice(0, 300)}`);
-    if (route.cls === 'own' && status >= 400) {
-      result.violations.push(`${key}: B's own answered ${status} ${res.body.slice(0, 300)}`);
-    }
-    const sent = `${request.url as string} ${JSON.stringify(request.payload ?? '')}`;
-    const leaked = leaks(w.a, route.idsOnly === true ? `${sent} acme` : sent, res.body);
-    if (leaked.length > 0) result.violations.push(`${key}: B's answer holds A's ${leaked.join(', ')}`);
+  } finally {
+    await superuser.close();
   }
   return result;
 }
@@ -130,9 +194,7 @@ describeDb('the cross-tenant isolation suite (spec §19.13)', () => {
     });
 
     it('the admin superuser sees both tenants in every scoped table; the app role sees only the scope it set', async () => {
-      const url = new URL(TEST_DATABASE_URL!);
-      url.searchParams.set('options', `-c search_path=${w.t.h.db.schema}`);
-      const superuser = createDatabase(url.toString());
+      const superuser = superuserOf(w);
       try {
         const both = [w.a.tenant.scope.tenantId, w.b.tenant.scope.tenantId];
         for (const table of SCOPED_TABLES) {
@@ -252,6 +314,15 @@ describeDb('the cross-tenant isolation suite (spec §19.13)', () => {
       expect(sweep.unmapped, 'routes with no class: add each to route-map.ts').toEqual([]);
       const registered = new Set(w.routes.map(routeKey));
       expect(Object.keys(ROUTE_MAP).filter((key) => !registered.has(key))).toEqual([]);
+      // Only the three socket routes are left to the socket sweep, each with its case below.
+      const sockets = Object.entries(ROUTE_MAP)
+        .filter(([, route]) => route.cls === 'socket')
+        .map(([key]) => key);
+      expect(sockets.sort()).toEqual(Object.values(SOCKET_ROUTES).sort());
+    });
+
+    it("the world registers every built-in module, in order, so a new module's routes reach the map", () => {
+      expect(w.modules).toEqual(BUILTIN_MODULES.map((module) => module.name));
     });
 
     it("every template answers 2xx as A's admin on A's host (federated ones 404)", () => {
@@ -290,7 +361,7 @@ describeDb('the cross-tenant isolation suite (spec §19.13)', () => {
       return socket;
     };
 
-    it("live: B cannot subscribe to A's workspace, and A's announcements never reach B's sockets", async () => {
+    it(`${SOCKET_ROUTES.live} — live: B cannot subscribe to A's workspace, and A's announcements never reach B's sockets`, async () => {
       const inB = await opened(w.b.tenant, LIVE_PATH);
       inB.send({ type: 'auth', token: w.b.admin.token });
       await inB.next('ready');
@@ -334,7 +405,7 @@ describeDb('the cross-tenant isolation suite (spec §19.13)', () => {
       expect(await stranger.closed).toBe(LIVE_CLOSE.unauthenticated);
     });
 
-    it("host: B's host cannot open A's workspace", async () => {
+    it(`${SOCKET_ROUTES.host} — host: B's host cannot open A's workspace`, async () => {
       const host = await opened(w.b.tenant, '/api/v1/host', cookie(w.b.tenant, w.b.browser));
       await host.next('hello');
       host.send({
@@ -348,7 +419,7 @@ describeDb('the cross-tenant isolation suite (spec §19.13)', () => {
       });
     });
 
-    it("terminal shares: B cannot join A's share, by A's workspace or its own", async () => {
+    it(`${SOCKET_ROUTES.terminalShares} — terminal shares: B cannot join A's share, by A's workspace or its own`, async () => {
       for (const [workspaceId, close] of [
         [w.b.workspaceId, TERMINAL_SHARE_CLOSE.notFound],
         [w.a.workspaceId, TERMINAL_SHARE_CLOSE.forbidden],
