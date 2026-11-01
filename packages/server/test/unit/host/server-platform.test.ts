@@ -3,14 +3,15 @@
  * the user's own directories, its secrets seal under a key only that user's host derives, and it offers
  * nothing a browser user must not reach.
  */
-import { join, relative, isAbsolute } from 'node:path';
+import { join, relative, isAbsolute, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { open, seal } from '../../../src/hooks/secret-box.js';
 import { createServerPlatform, hostDirectories, userSecretsKey } from '../../../src/host/server-platform.js';
 import { loadHostRuntime } from '../../../src/host/host-runtime.js';
 import { scopeOf } from '../../../src/tenancy/scope.js';
 
-const DATA_DIR = join('/', 'srv', 'wirebench-data');
+// Resolved, as the server resolves its data directory: on Windows this carries the drive letter.
+const DATA_DIR = resolve('/', 'srv', 'wirebench-data');
 const KEY = Buffer.alloc(32, 7);
 const TENANT = scopeOf({ id: '00000000-0000-4000-8000-000000000001', slug: 'default' });
 const OTHER = scopeOf({ id: '00000000-0000-4000-8000-000000000002', slug: 'other' });

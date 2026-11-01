@@ -455,10 +455,9 @@ describe('writeFileDurably (review I1)', () => {
       await writeFile(join(home, 'secrets.json'), text);
       expect(await rewrap(dir, KEYS, 'forward', { fs })).toMatchObject({ resealed: 1, files: 1 });
       // The file, then its directory, both before rewrap returns (so before the step records done).
-      expect(calls.filter((call) => call.startsWith('sync'))).toEqual([
-        `sync ${join(home, 'secrets.json.tmp')}`,
-        `sync ${home}`,
-      ]);
+      expect(calls.filter((call) => call.startsWith('sync'))).toEqual(
+        [`sync ${join(home, 'secrets.json.tmp')}`, `sync ${home}`].map((line) => line.replace(/\\/g, '/')),
+      );
     } finally {
       await removeTempDir(dir);
     }
