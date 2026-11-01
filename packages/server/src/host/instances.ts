@@ -255,7 +255,8 @@ export class HostInstances {
     this.instances.delete(key);
     instance.idle?.cancel();
     instance.idle = undefined;
-    // The directories are still the user id's (the per-tenant layout is Task 21's).
+    // The directories are still the user id's: one user id in two tenants would share this scratch directory, and
+    // this eviction would remove the other tenant's. Task 21 moves them, with `createServerHost`, under the tenant.
     const { temp } = hostDirectories(this.deps.dataDir, instance.user.id);
     const previous = this.evicting.get(key) ?? Promise.resolve();
     const done = previous

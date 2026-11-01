@@ -3,24 +3,43 @@
  * the tenant it names; self-hosted mode refuses it as a usage error. Hosted mode comes through `runAdmin`'s test
  * seam, since `loadConfig` refuses it (§19.1).
  */
+import { writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import type { ServerConfig } from '../../../src/config.js';
 import { runAdmin } from '../../../src/identity/cli.js';
-import { createTenancy, directoryOf } from '../../../src/tenancy/tenancy.js';
+import { newId } from '../../../src/identity/tokens.js';
+import * as schedulesRepo from '../../../src/schedules/repo.js';
+import * as teamsRepo from '../../../src/teams/repo.js';
+import type { TenantScope } from '../../../src/tenancy/scope.js';
+import { createTenancy, directoryOf, type Tenancy } from '../../../src/tenancy/tenancy.js';
 import { TenantAdmin } from '../../../src/tenancy/directory.js';
 import { describeDb, testDatabase } from '../../helpers/database.js';
+import { mkTempDir, removeTempDir } from '../../helpers/git.js';
+import { license, PAYLOAD, testKeys } from '../../helpers/licensing.js';
 
 const hosted = (config: ServerConfig): ServerConfig => ({ ...config, mode: 'hosted', appDomain: 'example.test' });
 
 describeDb('admin --tenant (spec §19.11)', () => {
   let db: Awaited<ReturnType<typeof testDatabase>>;
+  let tenancy: Tenancy;
+  let beta: TenantScope;
+  let dir: string;
+  const keys = testKeys();
   beforeAll(async () => {
     db = await testDatabase();
-    const tenancy = createTenancy(db);
+    dir = await mkTempDir();
+    tenancy = createTenancy(db);
     await directoryOf(tenancy).load();
-    await new TenantAdmin(db, directoryOf(tenancy)).create({ slug: 'acme', name: 'Acme' });
+    const admin = new TenantAdmin(db, directoryOf(tenancy));
+    await admin.create({ slug: 'acme', name: 'Acme' });
+    beta = (await admin.create({ slug: 'beta', name: 'Beta' })).scope;
   });
-  afterAll(() => db.close());
+  afterAll(async () => {
+    await db.close();
+    await removeTempDir(dir);
+  });
+  const options = { configure: hosted, publicKeys: [keys.publicKey] };
 
   const io = () => {
     const stdout: string[] = [];
@@ -83,5 +102,87 @@ describeDb('admin --tenant (spec §19.11)', () => {
     expect(refused.stderr()).toContain('--tenant applies to hosted mode only');
     const plain = io();
     expect(await runAdmin({ command: 'admin-list-invitations' }, plain.io)).toBe(0);
+  });
+
+  it('hosted: --tenant default is unknown, as the resolver serves no default tenant (Task 16 review M2)', async () => {
+    const out = io();
+    expect(
+      await runAdmin(
+        { command: 'admin-invite', email: 'lost@example.com', serverAdmin: false, tenant: 'default' },
+        out.io,
+        { configure: hosted },
+      ),
+    ).toBe(1);
+    expect(out.stderr()).toContain('tenancy-tenant-unknown');
+    expect(out.stdout()).toBe('');
+  });
+
+  it('hosted: a license installed with --tenant acme is acme’s alone (Task 16 review M3)', async () => {
+    const path = join(dir, 'team.lic');
+    await writeFile(path, `${license(keys)}\n`);
+    expect(await runAdmin({ command: 'admin-license-install', file: path, tenant: 'acme' }, io().io, options)).toBe(0);
+    const inAcme = io();
+    expect(await runAdmin({ command: 'admin-license-show', tenant: 'acme' }, inAcme.io, options)).toBe(0);
+    expect(inAcme.stdout()).toContain('Team (active)');
+    const inBeta = io();
+    expect(await runAdmin({ command: 'admin-license-show', tenant: 'beta' }, inBeta.io, options)).toBe(0);
+    expect(inBeta.stdout()).toContain('Community (none)');
+    expect(inBeta.stdout()).not.toContain(PAYLOAD.id);
+  });
+
+  it('hosted: admin schedules list --tenant lists that tenant’s schedules only (Task 16 review M3)', async () => {
+    const tdb = tenancy.db(beta);
+    const team = await teamsRepo.insertTeam(tdb, { id: newId(), name: 'Beta team', at: new Date() });
+    const workspaceId = newId();
+    await teamsRepo.insertWorkspace(tdb, {
+      id: workspaceId,
+      name: 'Beta staging',
+      teamId: team.id,
+      defaultRole: 'viewer',
+      createdBy: null,
+      at: new Date(),
+    });
+    await schedulesRepo.insertSchedule(tdb, {
+      id: newId(),
+      workspaceId,
+      name: 'Beta nightly',
+      cron: '0 2 * * *',
+      timeZone: 'UTC',
+      target: { project: 'Billing' },
+      options: { timeoutMinutes: 15, allowProtected: false, insecureTls: false, bail: false },
+      alerts: { targets: [], muteAfter: 3 },
+      enabled: true,
+      nextRunAt: null,
+      createdBy: null,
+      at: new Date(),
+    });
+    const inAcme = io();
+    expect(await runAdmin({ command: 'admin-schedules-list', tenant: 'acme' }, inAcme.io, options)).toBe(0);
+    expect(inAcme.stdout()).not.toContain('Beta nightly');
+    const inBeta = io();
+    expect(await runAdmin({ command: 'admin-schedules-list', tenant: 'beta' }, inBeta.io, options)).toBe(0);
+    expect(inBeta.stdout()).toContain('Beta nightly');
+  });
+
+  it('hosted: admin audit export --tenant exports that tenant’s events only (Task 16 review M3)', async () => {
+    expect(
+      await runAdmin(
+        { command: 'admin-invite', email: 'only-beta@example.com', serverAdmin: false, tenant: 'beta' },
+        io().io,
+        options,
+      ),
+    ).toBe(0);
+    const exported = async (tenant: string) => {
+      const out = io();
+      expect(await runAdmin({ command: 'admin-audit-export', tenant }, out.io, options), out.stderr()).toBe(0);
+      return out.stdout();
+    };
+    const fromAcme = await exported('acme');
+    const fromBeta = await exported('beta');
+    // acme's license install (the case above) is acme's event; beta's invite is beta's.
+    expect(fromAcme).toContain('license.installed');
+    expect(fromBeta).not.toContain('license.installed');
+    expect(fromBeta).toContain('user.invited');
+    expect(fromBeta.split('\n').filter((line) => line.includes('user.invited'))).toHaveLength(1);
   });
 });

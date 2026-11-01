@@ -6,7 +6,7 @@
 import type { KeyObject } from 'node:crypto';
 import { WirebenchError } from '@wirebench/engine';
 import type { ServerCommand } from '../args.js';
-import { ConfigError, forgetDatabaseUrls, loadConfig, type ServerConfig } from '../config.js';
+import { ConfigError, forgetDatabaseUrls, loadConfig, type ServerConfig, type ServerMode } from '../config.js';
 import { auditHook } from '../audit-log/hook.js';
 import { chainKeys } from '../audit-log/chain/keys.js';
 import { runAuditCommand, runVerifyCommand } from '../audit-log/cli.js';
@@ -36,14 +36,19 @@ type AdminCommand = Exclude<Extract<ServerCommand, { command: `admin-${string}` 
  * The tenant the command line works in (spec §19.11): the one `--tenant` names, or, without it, the default one,
  * which is the only one a self-hosted server has. `runAdmin` has already checked `--tenant` against the mode. The
  * one file outside `src/tenancy/` that `check:tenant-scope` lets name the default scope.
+ *
+ * In hosted mode the default tenant is no tenant of anyone's: the resolver never serves it, so `--tenant default`
+ * is unknown there, as on a host (Task 16 review M2). A suspended tenant is still found, so it can be administered.
  */
-async function cliScope(tenancy: Tenancy, slug: string | undefined): Promise<TenantScope> {
+async function cliScope(tenancy: Tenancy, slug: string | undefined, mode: ServerMode): Promise<TenantScope> {
   const directory = directoryOf(tenancy);
   if (!(await directory.load())) {
     throw new StartupError(ExitCode.Migration, 'migration 0020 is not applied: the server has no tenants');
   }
   if (slug === undefined) return directory.defaultScope();
-  const found = (await directory.list()).find((scope) => scope.slug === slug);
+  const found = (await directory.list()).find(
+    (scope) => scope.slug === slug && !(mode === 'hosted' && directory.isDefault(scope)),
+  );
   if (found === undefined) throw new WirebenchError('tenancy-tenant-unknown', `no tenant has the slug "${slug}"`);
   return found;
 }
@@ -56,9 +61,10 @@ async function cliScope(tenancy: Tenancy, slug: string | undefined): Promise<Ten
 async function auditScope(
   tenancy: Tenancy,
   slug: string | undefined,
+  mode: ServerMode,
 ): Promise<{ readonly scope: TenantScope; readonly isDefault: (scope: TenantScope) => boolean }> {
   try {
-    const scope = await cliScope(tenancy, slug);
+    const scope = await cliScope(tenancy, slug, mode);
     return { scope, isDefault: (of) => isDefaultTenant(tenancy, of) };
   } catch (error) {
     if (slug !== undefined || !(error instanceof WirebenchError) || error.code !== 'server-identity-missing')
@@ -141,7 +147,7 @@ export async function runAdmin(
     // each tenant has its own chain and key (spec §19.7).
     if (command.command === 'admin-audit-export' || command.command === 'admin-audit-verify') {
       const tenancy = createTenancy(db);
-      const { scope, isDefault } = await auditScope(tenancy, command.tenant);
+      const { scope, isDefault } = await auditScope(tenancy, command.tenant, config.mode);
       if (command.command === 'admin-audit-export') {
         return await runAuditCommand(command, { db: tenancy.db(scope), hooks, now }, io);
       }
@@ -158,7 +164,7 @@ export async function runAdmin(
     ) {
       // In the command line's tenant, as every schedules route works in the request's.
       const tenancy = createTenancy(db);
-      const scope = await cliScope(tenancy, command.tenant);
+      const scope = await cliScope(tenancy, command.tenant, config.mode);
       return await runSchedulesCommand(command, { db: tenancy.db(scope), hooks, now }, io);
     }
     // Only now: before migrations the server_identity table may not exist. A lost row is a configuration problem,
@@ -173,7 +179,7 @@ export async function runAdmin(
       throw error;
     };
     const tenancy = createTenancy(db);
-    const scope = await cliScope(tenancy, command.tenant).catch(lostIdentity);
+    const scope = await cliScope(tenancy, command.tenant, config.mode).catch(lostIdentity);
     const serverId = await readServerId(tenancy.db(scope)).catch(lostIdentity);
     const env: InvitationEnv = {
       ctx: {

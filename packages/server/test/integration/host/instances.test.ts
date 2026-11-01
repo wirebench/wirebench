@@ -111,8 +111,9 @@ describe('HostInstances', () => {
 
   it('one user id in two tenants is two users: two instances, two counts, and a session’s end in its tenant only', async () => {
     const elsewhere = { ...ALICE, serverUrl: 'https://acme.example.test', tenant: OTHER_TENANT };
+    // One token id in both tenants, two different tokens: what tells them apart is the tenant.
     const here = socket('token-1', 't1');
-    const there = socket('token-1', 't1');
+    const there = socket('token-x', 't1');
     const first = await instances.open(ALICE, here);
     const second = await instances.open(elsewhere, there);
     expect(second).not.toBe(first);
@@ -120,16 +121,42 @@ describe('HostInstances', () => {
     expect(instances.size).toBe(2);
     expect(instances.socketCount(ALICE)).toBe(1);
     expect(instances.socketCount(elsewhere)).toBe(1);
+    // A release in one tenant leaves the other's instance alone: its count, its socket and its credential.
+    instances.release(elsewhere, there);
+    expect(instances.socketCount(elsewhere)).toBe(0);
+    expect(instances.socketCount(ALICE)).toBe(1);
+    expect(here.closedWith).toEqual([]);
+    expect(made[0]!.session()?.token).toBe('token-1');
     // The same token id and user id, announced for the other tenant, closes nothing here.
+    const again = socket('token-x', 't1');
+    await instances.open(elsewhere, again);
     instances.sessionEnded({ tenantId: OTHER_TENANT.tenantId, tokenId: 't1' });
-    expect(there.closedWith).toEqual([4401]);
+    expect(again.closedWith).toEqual([4401]);
     expect(here.closedWith).toEqual([]);
     instances.sessionEnded({ tenantId: OTHER_TENANT.tenantId, userId: ALICE.id });
     expect(here.closedWith).toEqual([]);
     expect(instances.socketCount(ALICE)).toBe(1);
-    // A release in one tenant leaves the other's instance alone.
-    instances.release(elsewhere, here);
+    expect(made[0]!.session()?.token).toBe('token-1');
+  });
+
+  it('counts a waiting socket in its own tenant only (Task 16 review M3)', async () => {
+    const gate = slowEviction();
+    const elsewhere = { ...ALICE, serverUrl: 'https://acme.example.test', tenant: OTHER_TENANT };
+    await instances.open(ALICE, socket('token-1', 't1'));
+    await instances.open(elsewhere, socket('token-x', 'tx'));
+    // Alice's instance here is evicted (her session ended); her next socket waits for the eviction.
+    instances.sessionEnded({ tenantId: TENANT.tenantId, tokenId: 't1' });
+    const waiting = socket('token-2', 't2');
+    const opened = instances.open(ALICE, waiting);
+    await vi.advanceTimersByTimeAsync(0);
     expect(instances.socketCount(ALICE)).toBe(1);
+    // The same user id elsewhere still has its one open socket, and the waiting one is not counted there.
+    expect(instances.socketCount(elsewhere)).toBe(1);
+    instances.release(ALICE, waiting);
+    expect(instances.socketCount(ALICE)).toBe(0);
+    expect(instances.socketCount(elsewhere)).toBe(1);
+    gate.finish();
+    await opened;
   });
 
   it('counts a user’s sockets, open or waiting for an eviction, and only theirs', async () => {
