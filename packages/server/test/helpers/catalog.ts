@@ -2,10 +2,50 @@
  * Readers of the server schema's catalog, for the tenancy migration test (hosted edition spec §19.8, guard 3)
  * and, later, the revert's round trip, which compares a reverted schema with the fixture's (§19.13).
  */
-import type { Querier } from '../../src/context.js';
+import type { Querier } from '../../src/db/querier.js';
 
 /** The tables without `tenant_id` (spec §19.2). */
 export const UNSCOPED_TABLES: readonly string[] = ['schema_migrations', 'server_identity', 'tenants'];
+
+/** The 36 scoped tables (spec §19.3), as 0020 and 0021 name them. */
+export const SCOPED_TABLES: readonly string[] = [
+  'workspaces',
+  'users',
+  'local_credentials',
+  'oidc_identities',
+  'invitations',
+  'device_tokens',
+  'oidc_flows',
+  'browser_flows',
+  'teams',
+  'team_members',
+  'team_invitations',
+  'workspace_grants',
+  'license',
+  'ci_tokens',
+  'catch_urls',
+  'captures',
+  'schedules',
+  'schedule_runs',
+  'schedule_results',
+  'schedule_alert_outbox',
+  'audit_events',
+  'audit_forward_queue',
+  'audit_chain_anchor',
+  'saml_identities',
+  'saml_flows',
+  'scim_tokens',
+  'scim_users',
+  'scim_groups',
+  'scim_group_members',
+  'provisioned_memberships',
+  'session_logs',
+  'session_log_chunks',
+  'agent_pairings',
+  'agent_pairing_codes',
+  'agent_nonces',
+  'host_leases',
+];
 
 export type ColumnInfo = {
   readonly table: string;
@@ -136,4 +176,80 @@ export async function objectNamesOf(db: Querier): Promise<string[]> {
       order by 1`,
   );
   return rows.rows.map((row) => row.name);
+}
+
+/** What `0021` defaults every `tenant_id` to, and what its policy compares with, as `pg_get_expr` prints them. */
+export const SETTING_EXPRESSION = "(NULLIF(current_setting('wirebench.tenant_id'::text, true), ''::text))::uuid";
+export const POLICY_EXPRESSION = `(tenant_id = ${SETTING_EXPRESSION})`;
+
+export type RowSecurityInfo = {
+  readonly table: string;
+  readonly enabled: boolean;
+  readonly forced: boolean;
+};
+
+/** Each ordinary table's row-level security switches. */
+export async function rowSecurityOf(db: Querier): Promise<RowSecurityInfo[]> {
+  const rows = await db.query<RowSecurityInfo>(
+    `select relname as table, relrowsecurity as enabled, relforcerowsecurity as forced from pg_class
+      where relnamespace = to_regnamespace(current_schema()) and relkind = 'r' order by 1`,
+  );
+  return rows.rows;
+}
+
+export type PolicyInfo = {
+  readonly table: string;
+  readonly name: string;
+  readonly permissive: boolean;
+  readonly command: string;
+  /** `{0}` is public. */
+  readonly roles: string;
+  readonly using: string | null;
+  readonly check: string | null;
+};
+
+/** Every policy of the schema's tables. */
+export async function policiesOf(db: Querier): Promise<PolicyInfo[]> {
+  const rows = await db.query<PolicyInfo>(
+    `select c.relname as table, p.polname as name, p.polpermissive as permissive, p.polcmd::text as command,
+        p.polroles::text as roles, pg_get_expr(p.polqual, p.polrelid) as using,
+        pg_get_expr(p.polwithcheck, p.polrelid) as check
+      from pg_policy p join pg_class c on c.oid = p.polrelid
+      where c.relnamespace = to_regnamespace(current_schema())
+      order by 1, 2`,
+  );
+  return rows.rows;
+}
+
+/** The first migration the data-migration lint reads: `0021` ships `for_each_tenant`, so every later one. */
+export const FIRST_LINTED_MIGRATION = 22;
+
+/**
+ * The lint of spec §19.4: from `0022` on, a migration whose SQL inserts, updates or deletes rows of a scoped table
+ * must run it per tenant (`for_each_tenant(`) or bracket it with `no force row level security` and `force row level
+ * security`. Without either, under the forced policy, it touches no row and still succeeds on a non-superuser
+ * owner. Comments are skipped; a write inside a `do` block or a string still counts, so the check errs on the
+ * strict side.
+ * Returns the versions that break it.
+ */
+export function unscopedDataMigrations(
+  migrations: readonly { readonly version: number; readonly sql: string }[],
+): number[] {
+  const writes = new RegExp(
+    `\\b(?:insert\\s+into|update|delete\\s+from)\\s+(?:only\\s+)?(?:"?\\w+"?\\.)?"?(?:${SCOPED_TABLES.join('|')})"?(?![\\w"])`,
+    'i',
+  );
+  const uncommented = (sql: string) => sql.replace(/--[^\n]*|\/\*[\s\S]*?\*\//g, ' ');
+  return migrations
+    .filter((migration) => migration.version >= FIRST_LINTED_MIGRATION)
+    .filter((migration) => {
+      const sql = uncommented(migration.sql);
+      if (!writes.test(sql)) return false;
+      const each = /\bfor_each_tenant\s*\(/i.test(sql);
+      // Both halves: `no force …`, and a `force …` that is not part of one.
+      const unforced = /\bno\s+force\s+row\s+level\s+security\b/i.test(sql);
+      const forced = /\bforce\s+row\s+level\s+security\b/i.test(sql.replace(/\bno\s+force\b/gi, 'no_force'));
+      return !each && !(unforced && forced);
+    })
+    .map((migration) => migration.version);
 }

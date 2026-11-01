@@ -28,12 +28,12 @@ describeDb('the audit chain repo (audit-chain spec §3.2, §4)', () => {
   });
   afterAll(() => db.close());
   beforeEach(async () => {
-    await db.query('delete from audit_events');
-    await db.query('delete from audit_chain_anchor');
+    await tdb.query('delete from audit_events');
+    await tdb.query('delete from audit_chain_anchor');
   });
 
   const insert = (id: string, at: string, details = '{}') =>
-    db.query(
+    tdb.query(
       `insert into audit_events (id, at, actor_kind, action, target_kind, details)
        values ($1, $2, 'system', 'team.created', 'team', $3::jsonb)`,
       [id, at, details],
@@ -41,14 +41,14 @@ describeDb('the audit chain repo (audit-chain spec §3.2, §4)', () => {
 
   it('renders a real row to the canonical texts', async () => {
     // details keys in another insertion order and spacing; Postgres normalises them.
-    await db.query(
+    await tdb.query(
       `insert into audit_events (id, at, actor_kind, actor_user_id, actor_email, action, target_kind, target_id,
          workspace_id, team_id, ip, user_agent, details)
        values ($1, $2, 'user', 'U1', 'zoë@例え.jp', 'workspace.pushed', 'workspace', 'W1', 'W1', null,
          '2001:db8::7', null, $3::jsonb)`,
       [FIXED_ROW.id, '2026-10-03 11:15:42.123456+02', '{"z":[true,null],  "b":"ü","a":1}'],
     );
-    const rows = await db.query(`select ${CANONICAL_COLUMNS} from audit_events`);
+    const rows = await tdb.query(`select ${CANONICAL_COLUMNS} from audit_events`);
     expect(rows.rows).toEqual([FIXED_ROW]);
     expect(await claimUnsealed(tdb, 10)).toEqual([FIXED_ROW]);
   });
@@ -76,7 +76,7 @@ describeDb('the audit chain repo (audit-chain spec §3.2, §4)', () => {
       ['01J9ZK3V8Q00000000000000E3', '2001:db8::7/128'],
       ['01J9ZK3V8Q00000000000000E4', '2001:db8::7/64'],
     ]) {
-      await db.query(
+      await tdb.query(
         `insert into audit_events (id, actor_kind, action, target_kind, ip) values ($1, 'system', 'team.created', 'team', $2)`,
         [id, ip],
       );
@@ -92,7 +92,7 @@ describeDb('the audit chain repo (audit-chain spec §3.2, §4)', () => {
   it('claims through the audit_events_unsealed index, sorting on the table columns', async () => {
     // Explains the very statement claimUnsealed sends: a bare `order by at` would sort on the
     // CANONICAL_COLUMNS text alias, which no index serves.
-    const plan = await db.transaction(async (tx) => {
+    const plan = await tdb.transaction(async (tx) => {
       await tx.query('set local enable_seqscan = off');
       await tx.query('set local enable_sort = off');
       const explained: string[] = [];

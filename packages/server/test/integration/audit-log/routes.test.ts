@@ -32,7 +32,7 @@ describeDb('GET /audit and /audit/export (audit-log spec §3.4)', () => {
   /** The listener writes after the announce (ruling 5), so a test waits for the row rather than sleeping. */
   const rowsOf = async (action: string) =>
     (
-      await h.db.query<{ actor_email: string | null; details: Record<string, unknown> }>(
+      await h.tdb.query<{ actor_email: string | null; details: Record<string, unknown> }>(
         'select actor_email, details from audit_events where action = $1 order by at, id',
         [action],
       )
@@ -90,7 +90,7 @@ describeDb('GET /audit and /audit/export (audit-log spec §3.4)', () => {
   });
 
   it('exports oldest first as NDJSON across the 1000-row batch boundary, then records the export', async () => {
-    await h.db.query(
+    await h.tdb.query(
       `insert into audit_events (id, at, actor_kind, action, target_kind, details)
        select lpad(n::text, 26, '0'), timestamptz '2026-01-01' + n * interval '1 second', 'system', 'hook.cleared', 'hook', '{}'::jsonb
        from generate_series(1, 1005) as n`,
@@ -145,5 +145,5 @@ describeDb('GET /audit and /audit/export (audit-log spec §3.4)', () => {
     await expect.poll(async () => (await rowsOf('hook.cleared')).length).toBe(0);
   });
 
-  it('writes no secret-shaped value', () => expectNoSecretsInAudit(h.db));
+  it('writes no secret-shaped value', () => expectNoSecretsInAudit(h.tdb));
 });

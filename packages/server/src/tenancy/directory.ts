@@ -7,7 +7,7 @@
  * or module that reached for it would pass every one-tenant test.
  */
 import { WirebenchError } from '@wirebench/engine';
-import type { Querier } from '../context.js';
+import type { Querier } from '../db/querier.js';
 import { scopeOf, type TenantScope } from './scope.js';
 
 /**

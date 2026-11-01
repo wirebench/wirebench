@@ -14,7 +14,7 @@ const capabilities = async (cast: SchedulesCast): Promise<string[]> =>
 describeDb('the scheduled-runs module (scheduled-runs §4, §6)', () => {
   it('migrates its four tables', async () => {
     c = await schedulesHarness({ enterprise: false });
-    const tables = await c.h.db.query<{ table_name: string }>(
+    const tables = await c.h.tdb.query<{ table_name: string }>(
       `select table_name from information_schema.tables where table_schema = $1 and table_name like 'schedule%' order by 1`,
       [c.h.db.schema],
     );

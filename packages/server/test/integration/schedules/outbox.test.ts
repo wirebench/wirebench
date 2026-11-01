@@ -81,14 +81,14 @@ describeDb('schedule alerts: state, outbox and delivery (scheduled-runs spec §3
   };
   const rows = async (): Promise<OutboxRow[]> =>
     (
-      await c.h.db.query<OutboxRow>(
+      await c.h.tdb.query<OutboxRow>(
         `select state, attempts, next_at as "nextAt", last_error as "lastError", kind, target_index as "targetIndex",
            payload from schedule_alert_outbox order by created_at, target_index`,
       )
     ).rows;
   const alertState = async () =>
     (
-      await c.h.db.query<{ alertState: string; failureStreak: number }>(
+      await c.h.tdb.query<{ alertState: string; failureStreak: number }>(
         'select alert_state as "alertState", failure_streak as "failureStreak" from schedules where id = $1',
         [scheduleId],
       )
@@ -190,7 +190,7 @@ describeDb('schedule alerts: state, outbox and delivery (scheduled-runs spec §3
   it('a target removed since the alert was queued is not delivered to', async () => {
     await finish('failed');
     const row = await repo.scheduleById(c.h.tdb, c.workspaceId, scheduleId);
-    await c.h.db.query('update schedules set alerts = $2 where id = $1', [
+    await c.h.tdb.query('update schedules set alerts = $2 where id = $1', [
       scheduleId,
       JSON.stringify({ ...row!.alerts, targets: row!.alerts.targets.slice(0, 1) }),
     ]);

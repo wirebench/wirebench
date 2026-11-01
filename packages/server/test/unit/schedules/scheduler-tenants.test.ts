@@ -13,9 +13,21 @@ import type { TenantQuerier } from '../../../src/tenancy/tenant-db.js';
 const ONE = scopeOf({ id: '00000000-0000-4000-8000-000000000001', slug: 'one' });
 const TWO = scopeOf({ id: '00000000-0000-4000-8000-000000000002', slug: 'two' });
 
-/** A unit that answers every statement with no rows: the pass finds nothing stale and nothing due. */
-const emptyUnit = (scope: TenantScope): TenantQuerier =>
-  ({ scope, query: () => Promise.resolve({ rows: [], rowCount: 0 }) }) as unknown as TenantQuerier;
+/**
+ * A unit that finds nothing stale and nothing due, and answers whether the tenant has a run waiting from `queued`.
+ * `asked` counts the units opened.
+ */
+const unitOver =
+  (queued: Record<string, string[]>, asked: string[]) =>
+  (scope: TenantScope): TenantQuerier =>
+    ({
+      scope,
+      query: (text: string) => {
+        asked.push(scope.slug);
+        const rows = text.includes("status = 'queued'") ? [{ queued: (queued[scope.tenantId] ?? []).length > 0 }] : [];
+        return Promise.resolve({ rows, rowCount: rows.length });
+      },
+    }) as unknown as TenantQuerier;
 
 const silent = { error: () => undefined, warn: () => undefined, info: () => undefined, debug: () => undefined };
 
@@ -28,6 +40,10 @@ function cast(
   broken: readonly string[] = [],
 ) {
   const tenants = [ONE, TWO];
+  const asked: string[] = [];
+  const emptyUnit = unitOver(queued, asked);
+  /** The claims made, by tenant slug. */
+  const claims: string[] = [];
   const errors: unknown[][] = [];
   const started: { tenant: string; runId: string; release: () => void }[] = [];
   const license: LicenseService = {
@@ -59,16 +75,18 @@ function cast(
         transaction: <T>(fn: (tx: TenantQuerier) => Promise<T>) => fn(emptyUnit(scope)),
       }),
     },
-    claimQueued: (tx: TenantQuerier, limit: number) =>
-      broken.includes(tx.scope.tenantId)
+    claimQueued: (tx: TenantQuerier, limit: number) => {
+      claims.push(tx.scope.slug);
+      return broken.includes(tx.scope.tenantId)
         ? Promise.reject(new Error('this tenant’s unit cannot open'))
-        : Promise.resolve((queued[tx.scope.tenantId] ?? []).splice(0, limit)),
+        : Promise.resolve((queued[tx.scope.tenantId] ?? []).splice(0, limit));
+    },
     execute: (runId: string, _signal: AbortSignal, scope: TenantScope) =>
       new Promise<void>((release) => {
         started.push({ tenant: scope.slug, runId, release });
       }),
   } as unknown as SchedulerEnv;
-  return { scheduler: new Scheduler(env), started, errors };
+  return { scheduler: new Scheduler(env), started, errors, claims };
 }
 
 /** Releases the running run, lets the freed slot's start happen, until nothing new starts. */
@@ -119,6 +137,20 @@ describe('Scheduler across tenants', () => {
       { tenantId: ONE.tenantId, message: 'this tenant’s unit cannot open' },
       'scheduler could not claim a queued run for one tenant',
     ]);
+    await scheduler.idle();
+  });
+
+  it('claims nowhere a pass found nothing waiting, and stops claiming where a claim came back empty (Task 17)', async () => {
+    const { scheduler, started, claims } = cast({ [ONE.tenantId]: [], [TWO.tenantId]: ['b1', 'b2'] });
+    await scheduler.runOnce();
+    // ONE has nothing queued: no claim unit there, from the pass or from a finished run.
+    await drain(started);
+    expect(started.map((run) => run.runId)).toEqual(['b1', 'b2']);
+    expect(claims.filter((slug) => slug === 'one')).toEqual([]);
+    // TWO's last claim found nothing; a later finished run claims nowhere.
+    const after = claims.length;
+    await drain(started);
+    expect(claims).toHaveLength(after);
     await scheduler.idle();
   });
 });

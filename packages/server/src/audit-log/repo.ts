@@ -1,10 +1,10 @@
 /**
- * The append-only `audit_events` table (audit-log spec §4.2). Raw SQL. The insert takes any `Querier`, since its
- * fire sites pass theirs (some still the pool until Tasks 15 and 16); every read, the chain and the forward queue
- * take a `TenantQuerier`: one tenant's unit, one chain per tenant (hosted edition spec §19.7).
+ * The append-only `audit_events` table (audit-log spec §4.2). Raw SQL. Every statement takes a `TenantQuerier`:
+ * one tenant's unit, one chain per tenant (hosted edition spec §19.7). Many name no tenant (the chain, the anchor,
+ * the queue and the retention deletes): from migration 0021 the forced policy is their tenant filter.
  */
 import type { AuditDetails, AuditEvent, AuditTargetKind } from '@wirebench/engine';
-import type { AuditInput, Querier } from '../context.js';
+import type { AuditInput } from '../context.js';
 import type { TenantQuerier } from '../tenancy/tenant-db.js';
 import { anchorMac, anchorMacValid, genesisHash, keyId, link, type CanonicalRow } from './chain/canonical.js';
 import { tryLockChain } from './chain/lock.js';
@@ -32,7 +32,7 @@ const INSERT_EVENT = `insert into audit_events (id, at, actor_kind, actor_user_i
  * that is never forwarded.
  */
 export async function insertAuditEvent(
-  db: Querier,
+  db: TenantQuerier,
   row: AuditRowInput,
   options: { readonly forward: boolean } = { forward: false },
 ): Promise<void> {
@@ -66,7 +66,7 @@ export async function insertAuditEvent(
 }
 
 /** The team a workspace belongs to, or `undefined` when the workspace row is gone. */
-export async function workspaceTeamId(db: Querier, workspaceId: string): Promise<string | undefined> {
+export async function workspaceTeamId(db: TenantQuerier, workspaceId: string): Promise<string | undefined> {
   const row = (await db.query<{ team_id: string }>('select team_id from workspaces where id = $1', [workspaceId]))
     .rows[0];
   return row?.team_id;
@@ -180,28 +180,54 @@ export async function listAuditEventsAscending(
 }
 
 /** Queues an already recorded event for the forwarder (issue #209). The hook queues through {@link insertAuditEvent}. */
-export async function enqueueForward(db: Querier, eventId: string): Promise<void> {
+export async function enqueueForward(db: TenantQuerier, eventId: string): Promise<void> {
   await db.query('insert into audit_forward_queue (event_id) values ($1)', [eventId]);
 }
 
 /**
- * Claims up to `limit` queued events, oldest first by `(at, id)`, as the API returns them. The queue
- * rows stay locked (`skip locked`, so a concurrent claim takes others) until the caller's transaction
- * ends: call it inside one, and delete with {@link deleteForwarded} once the sink accepts.
+ * Leases up to `limit` free queued events, oldest first by `(at, id)`, as the API returns them, and returns them. A row
+ * is free when it has no lease or its lease has run out; the lease runs `leaseMs` on the database's clock, so servers
+ * whose clocks differ agree on it. The pick skips rows another unit holds (`skip locked`): two concurrent claims never
+ * take one row. Call it in a short unit, send outside it, then delete with {@link deleteForwarded} under the same lease.
  */
-export async function claimForwardBatch(tx: TenantQuerier, limit: number): Promise<AuditEvent[]> {
+export async function claimForwardBatch(
+  tx: TenantQuerier,
+  limit: number,
+  lease: { readonly id: string; readonly ms: number },
+): Promise<AuditEvent[]> {
   const rows = await tx.query<Raw>(
-    `select ${COLUMNS} from audit_forward_queue q join audit_events e on e.id = q.event_id
-     order by e.at, e.id limit $1 for update of q skip locked`,
-    [limit],
+    `with picked as materialized (
+       select q.event_id from audit_forward_queue q join audit_events e on e.id = q.event_id
+       where q.leased_until is null or q.leased_until <= now()
+       order by e.at, e.id limit $1 for update of q skip locked
+     ), leased as (
+       update audit_forward_queue q set lease_id = $2, leased_until = now() + make_interval(secs => $3::float8 / 1000)
+       from picked where q.event_id = picked.event_id
+       returning q.event_id
+     )
+     select ${COLUMNS} from audit_events join leased on leased.event_id = audit_events.id
+     order by audit_events.at, audit_events.id`,
+    [limit, lease.id, lease.ms],
   );
   return rows.rows.map(toEvent);
 }
 
-/** Removes forwarded events from the queue; the events themselves stay. */
-export async function deleteForwarded(tx: TenantQuerier, ids: readonly string[]): Promise<void> {
-  if (ids.length === 0) return;
-  await tx.query('delete from audit_forward_queue where event_id = any($1::text[])', [ids]);
+/**
+ * Removes forwarded events from the queue, those still under `leaseId` only: a row whose lease ran out and that
+ * another claim took is that claim's to delete. The events themselves stay.
+ */
+export async function deleteForwarded(tx: TenantQuerier, ids: readonly string[], leaseId: string): Promise<number> {
+  if (ids.length === 0) return 0;
+  const deleted = await tx.query('delete from audit_forward_queue where event_id = any($1::text[]) and lease_id = $2', [
+    ids,
+    leaseId,
+  ]);
+  return deleted.rowCount ?? 0;
+}
+
+/** Frees the rows of a lease whose send failed, so the next pass retries them at once rather than at its expiry. */
+export async function releaseForwardLease(tx: TenantQuerier, leaseId: string): Promise<void> {
+  await tx.query('update audit_forward_queue set lease_id = null, leased_until = null where lease_id = $1', [leaseId]);
 }
 
 /**
@@ -338,8 +364,8 @@ export async function chainHead(db: TenantQuerier): Promise<ChainLink | undefine
 export async function claimUnsealed(tx: TenantQuerier, limit: number): Promise<CanonicalRow[]> {
   const rows = await tx.query<CanonicalRaw>(
     // Qualified: a bare `at` in `order by` would name CANONICAL_COLUMNS' text output, which the
-    // audit_events_unsealed (tenant_id, at, id) index cannot serve. tenant_id leads the order so that the
-    // index serves it before the policy of 0021 narrows every query to one tenant.
+    // audit_events_unsealed (tenant_id, at, id) index cannot serve. The policy makes tenant_id an equality, so
+    // leading the order with it changes nothing but keeps the index's column order plain.
     `select ${CANONICAL_COLUMNS} from audit_events where chain_seq is null
      order by audit_events.tenant_id, audit_events.at, audit_events.id limit $1 for update skip locked`,
     [limit],
@@ -398,8 +424,8 @@ function expectedLink(key: string, prev: ChainLink, sealed: SealedRow): Buffer |
  * - a skipped seq (a gap) or a link that does not match: nothing past it is deleted, and `stops` logs
  *   one error for that seq, since only verify can say what happened there;
  * - a row with `at >= cutoff`;
- * - a row whose forward-queue entry another transaction holds (the forwarder, perhaps waiting on its
- *   sink), so the batch never waits on a send while it holds the chain's lock.
+ * - a row whose forward-queue entry is leased (the forwarder is sending it) or held by another transaction, so
+ *   the batch never deletes an event while it is being sent, and never waits while it holds the chain's lock.
  *
  * The anchor moves to the last deleted row's `(seq, hash)` in the same transaction, keeping its key id
  * and `head_seq`, with its new MAC. Unsealed rows are never touched: they go once sealed and past the
@@ -456,8 +482,8 @@ export async function deleteSealedBefore(
 }
 
 /**
- * Locks the prefix's forward-queue rows (`skip locked`), so the delete's cascade never waits, and ends
- * the prefix just before the first row whose queue entry another transaction holds.
+ * Locks the prefix's free forward-queue rows (`skip locked`), so the delete's cascade never waits, and ends the
+ * prefix just before the first row whose queue entry is leased or another transaction holds.
  */
 async function unheldByForwarder(tx: TenantQuerier, prefix: readonly SealedRow[]): Promise<readonly SealedRow[]> {
   const ids = prefix.flatMap((sealed) => (sealed.row.id === null ? [] : [sealed.row.id]));
@@ -469,7 +495,9 @@ async function unheldByForwarder(tx: TenantQuerier, prefix: readonly SealedRow[]
   ).rows.map((row) => row.id);
   if (queued.length === 0) return prefix;
   const locked = await tx.query<{ id: string }>(
-    'select event_id as id from audit_forward_queue where event_id = any($1::text[]) for update skip locked',
+    `select event_id as id from audit_forward_queue
+      where event_id = any($1::text[]) and (leased_until is null or leased_until <= now())
+      for update skip locked`,
     [queued],
   );
   const mine = new Set(locked.rows.map((row) => row.id));

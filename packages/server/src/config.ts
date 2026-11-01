@@ -191,6 +191,13 @@ export interface ServerConfig extends z.output<typeof inputSchema> {
   readonly appDomain?: string;
 }
 
+/**
+ * The configuration as modules see it (`ctx.config`, spec §19.5): without the configured public URL, which in hosted
+ * mode is no tenant's. A module takes the tenant's URL from `tenantUrl(config, request)`; only `tenancy/urls.ts`
+ * reads the field, and `check:tenant-scope` refuses any other read.
+ */
+export type ModuleConfig = Omit<ServerConfig, 'publicUrl'>;
+
 /** One documented environment variable. */
 export interface ConfigVariable {
   readonly env: string;

@@ -161,19 +161,22 @@ export async function runAdmin(
       const scope = await cliScope(tenancy, command.tenant);
       return await runSchedulesCommand(command, { db: tenancy.db(scope), hooks, now }, io);
     }
-    // Only now: before migrations the server_identity table may not exist.
-    const serverId = await readServerId(db).catch((error: unknown) => {
-      // A configuration problem, as `serve` reports the same lost row (exit 2), not a pending migration.
-      if (error instanceof Error && error.message === MISSING_SERVER_ID) {
+    // Only now: before migrations the server_identity table may not exist. A lost row is a configuration problem,
+    // as `serve` reports it (exit 2), not a pending migration; the directory's load and the reader both see it.
+    const lostIdentity = (error: unknown): never => {
+      if (
+        (error instanceof WirebenchError && error.code === 'server-identity-missing') ||
+        (error instanceof Error && error.message === MISSING_SERVER_ID)
+      ) {
         throw new StartupError(ExitCode.Config, MISSING_SERVER_ID);
       }
       throw error;
-    });
+    };
     const tenancy = createTenancy(db);
-    const scope = await cliScope(tenancy, command.tenant);
+    const scope = await cliScope(tenancy, command.tenant).catch(lostIdentity);
+    const serverId = await readServerId(tenancy.db(scope)).catch(lostIdentity);
     const env: InvitationEnv = {
       ctx: {
-        db,
         tenancy,
         config,
         hooks,

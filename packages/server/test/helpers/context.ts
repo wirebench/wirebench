@@ -5,14 +5,13 @@ import {
   permissiveLicense,
   serverHooks,
   type AuditInput,
-  type Database,
-  type Querier,
   type ServerContext,
   type ServerHooks,
 } from '../../src/context.js';
+import type { Database } from '../../src/db/querier.js';
+import type { TenantQuerier } from '../../src/tenancy/tenant-db.js';
 import type { RepoStore } from '../../src/repos/repo-store.js';
 import { createTenancy, directoryOf } from '../../src/tenancy/tenancy.js';
-import { recordingRaw } from './tenancy.js';
 
 /** A database whose every query succeeds with no rows; `failing` flips `select 1` to a rejection. */
 export function fakeDatabase(options: { failing?: boolean } = {}): Database {
@@ -40,17 +39,19 @@ function fakeTenantsDatabase(): Database {
   return { ...fake, query } as Database;
 }
 
+/**
+ * A context for a test. `db`, when given, is the database the context's tenancy runs over (a module sees no other);
+ * without one, a fake answers the tenant directory's start-up reads.
+ */
 export async function testContext(
-  overrides: Partial<ServerContext> & { dataDir?: string } = {},
+  overrides: Partial<ServerContext> & { dataDir?: string; db?: Database } = {},
 ): Promise<ServerContext> {
   const location = await findGit({});
   if (location === undefined) throw new Error('git is required for the server tests');
   const dataDir = overrides.dataDir ?? process.cwd();
-  const { dataDir: droppedDataDir, ...given } = overrides;
-  // A real database is recorded, so a test can tell what bypassed the tenant database (`expectNoRawStatementsOn`).
-  const raw = given.db;
-  const rest = raw === undefined ? given : { ...given, db: recordingRaw(raw).db };
-  void droppedDataDir; // not a ServerContext field; only used above to pick dataDir
+  // Neither is a ServerContext field: `dataDir` picks the data directory, `db` the tenancy's database.
+  const { dataDir: droppedDataDir, db: raw, ...rest } = overrides;
+  void droppedDataDir;
   const context: ServerContext = {
     config: loadConfig(
       {
@@ -61,7 +62,6 @@ export async function testContext(
       },
       '0.0.0-test',
     ),
-    db: fakeDatabase(),
     // `RepoStore` is a class with private fields now (Task 6); this fake only ever needs `path`
     // from tests that don't exercise the real store, so it is cast through `unknown` rather than
     // built as a real `RepoStore` instance.
@@ -90,8 +90,10 @@ const WIREBENCH_SHAPES: readonly RegExp[] = [/wbs_[A-Za-z0-9_-]{20,}/, /wbl1\.[A
  * secret-scanning spec defines) plus the two shapes above. Ids and commit hashes pass: the engine flags
  * high entropy only under a secret-sounding name, and a body name must be one of `SECRET_BODY_KEYS` exactly.
  */
-export async function expectNoSecretsInAudit(db: Querier): Promise<void> {
+export async function expectNoSecretsInAudit(db: TenantQuerier): Promise<void> {
   const rows = await db.query<Record<string, unknown>>('select actor_email, user_agent, details from audit_events');
+  // A tenant with no rows (the wrong one, or a policy that hides them) would pass for nothing.
+  if (rows.rows.length === 0) throw new Error('no audit rows to scan in this tenant');
   for (const row of rows.rows) {
     const text = JSON.stringify(row);
     // `tokenId` is the device-token row's id, never the token (§3.5: only its hash is stored); the engine's

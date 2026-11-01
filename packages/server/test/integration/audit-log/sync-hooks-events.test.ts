@@ -143,7 +143,7 @@ describeDb('sync, webhook and CI-token fire sites (audit-log spec §3.2, plan ru
 
   it("workspace events take the workspace's team, so the team admin's scoped read shows them (#208)", async () => {
     const rows = (
-      await h.db.query<{ action: string; team_id: string | null }>(
+      await h.tdb.query<{ action: string; team_id: string | null }>(
         'select action, team_id from audit_events where workspace_id = $1',
         [workspaceId],
       )
@@ -168,6 +168,6 @@ describeDb('sync, webhook and CI-token fire sites (audit-log spec §3.2, plan ru
 
   it('writes no secret-shaped value and never a pushed value', async () => {
     expect(JSON.stringify(events)).not.toContain('enc2');
-    await expectNoSecretsInAudit(h.db);
+    await expectNoSecretsInAudit(h.tdb);
   });
 });

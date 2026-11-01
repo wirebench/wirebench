@@ -7,7 +7,7 @@ export type CheckResult = 'ok' | 'failed';
 /** Each check answers pass/fail only: the endpoint is reachable by anyone who can reach the port. */
 export async function runChecks(ctx: ServerContext): Promise<Record<'database' | 'dataDir' | 'git', CheckResult>> {
   const [database, dataDir, git] = await Promise.all([
-    ctx.db.query('select 1').then(
+    ctx.tenancy.reachable().then(
       () => 'ok' as const,
       () => 'failed' as const,
     ),

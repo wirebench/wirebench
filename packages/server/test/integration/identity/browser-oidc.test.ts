@@ -80,7 +80,7 @@ describeDb('OIDC sign-in from the browser (hosted spec §17.2)', () => {
       expect(flowLine).toContain('Path=/');
       expect(flowLine).toContain('Max-Age=600');
       // Only a hash of the state is stored.
-      const rows = await h.db.query<{ state_hash: string; provider: string; nonce: string; code_verifier: string }>(
+      const rows = await h.tdb.query<{ state_hash: string; provider: string; nonce: string; code_verifier: string }>(
         'select * from browser_flows',
       );
       expect(rows.rows).toHaveLength(1);
@@ -100,7 +100,7 @@ describeDb('OIDC sign-in from the browser (hosted spec §17.2)', () => {
       expect(me.json<{ user: { id: string } }>().user.id).toBe(alice.user.id);
       expect((await repo.tokensOfUser(h.tdb, alice.user.id)).map((t) => t.kind).sort()).toEqual(['browser', 'device']);
       expect(events.filter((e) => e.action === 'auth.signed_in').map((e) => e.details?.['method'])).toEqual(['oidc']);
-      expect((await h.db.query('select 1 from browser_flows')).rowCount).toBe(0);
+      expect((await h.tdb.query('select 1 from browser_flows')).rowCount).toBe(0);
     });
 
     it('lands on a same-origin redirect_to and on / for a foreign one', async () => {
@@ -111,7 +111,7 @@ describeDb('OIDC sign-in from the browser (hosted spec §17.2)', () => {
         const address = `10.1.0.${(n += 1)}`;
         const { authorizationUrl, flowCookie } = await start(`?redirect_to=${encodeURIComponent(redirectTo)}`, address);
         // The start's single application is enough: the stored target is already safe.
-        const stored = await h.db.query<{ redirect_to: string }>('select redirect_to from browser_flows');
+        const stored = await h.tdb.query<{ redirect_to: string }>('select redirect_to from browser_flows');
         const done = await callback(await idp.authorize(authorizationUrl), flowCookie, address);
         expect(done.statusCode, done.body).toBe(303);
         return { stored: stored.rows[0]!.redirect_to, location: done.headers['location'] };
@@ -169,7 +169,7 @@ describeDb('OIDC sign-in from the browser (hosted spec §17.2)', () => {
       expect(res.headers['referrer-policy']).toBe('same-origin');
       expect(cookieValue(res, COOKIE)).toBeUndefined();
       expect(idp.tokenRequests).toBe(0);
-      expect((await h.db.query('select 1 from browser_flows')).rowCount).toBe(0);
+      expect((await h.tdb.query('select 1 from browser_flows')).rowCount).toBe(0);
     });
 
     it('refuses a callback whose browser did not start the flow (login CSRF)', async () => {

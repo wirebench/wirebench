@@ -21,12 +21,12 @@ import {
   sealRows,
   setAnchorHead,
 } from '../../../src/audit-log/repo.js';
-import type { Database, Querier } from '../../../src/context.js';
+import type { Database } from '../../../src/db/querier.js';
 import { SWEEP_INTERVAL_MS } from '../../../src/hooks/sweep.js';
 import { describeDb, testDatabase } from '../../helpers/database.js';
 import { licensingHarness, testKeys } from '../../helpers/licensing.js';
 import { manualTimers } from '../../helpers/timers.js';
-import type { TenantDb } from '../../../src/tenancy/tenant-db.js';
+import type { TenantDb, TenantQuerier } from '../../../src/tenancy/tenant-db.js';
 import { createTenancy, type Tenancy } from '../../../src/tenancy/tenancy.js';
 import { defaultTenantDb } from '../../helpers/tenancy.js';
 
@@ -119,7 +119,7 @@ describeDb('retention with a chain key (audit-chain spec §3.3)', () => {
   let stops: RetentionStopLog;
   let errors: unknown[][];
   /** Inserts a row with the given `at` and returns its id; ids sort in insert order. */
-  const insert = async (at: string, q: Querier = db) => {
+  const insert = async (at: string, q: TenantQuerier = tdb) => {
     ids += 1;
     const id = `01J9ZK3V8Q${String(ids).padStart(16, '0')}`;
     await q.query(
@@ -147,7 +147,7 @@ describeDb('retention with a chain key (audit-chain spec §3.3)', () => {
   /** Every row as `[id, seq]`, sealed rows in chain order and unsealed ones (seq null) after. */
   const rows = async () =>
     (
-      await db.query<{ id: string; seq: string | null }>(
+      await tdb.query<{ id: string; seq: string | null }>(
         'select id, chain_seq::text as seq from audit_events order by chain_seq nulls last, at, id',
       )
     ).rows.map((r) => [r.id, r.seq === null ? null : Number(r.seq)]);
@@ -155,7 +155,7 @@ describeDb('retention with a chain key (audit-chain spec §3.3)', () => {
   const hashes = async () =>
     new Map(
       (
-        await db.query<{ seq: string; hash: Buffer }>(
+        await tdb.query<{ seq: string; hash: Buffer }>(
           'select chain_seq::text as seq, chain_hash as hash from audit_events where chain_seq is not null',
         )
       ).rows.map((r) => [BigInt(r.seq), r.hash]),
@@ -183,8 +183,8 @@ describeDb('retention with a chain key (audit-chain spec §3.3)', () => {
   });
   afterAll(() => db.close());
   beforeEach(async () => {
-    await db.query('delete from audit_events');
-    await db.query('delete from audit_chain_anchor');
+    await tdb.query('delete from audit_events');
+    await tdb.query('delete from audit_chain_anchor');
     const logged = errorLog();
     stops = new RetentionStopLog(logged.log);
     errors = logged.errors;
@@ -278,12 +278,12 @@ describeDb('retention with a chain key (audit-chain spec §3.3)', () => {
   it('deletes nothing and leaves the anchor while its MAC fails the check, or was made with another key', async () => {
     for (let n = 1; n <= 4; n++) await insert(t(n));
     expect(await seal()).toBe(4);
-    await db.query('update audit_chain_anchor set head_seq = 9');
+    await tdb.query('update audit_chain_anchor set head_seq = 9');
     const tampered = await readAnchor(tdb);
     expect(await tdb.transaction((tx) => deleteSealedBefore(tx, KEY, cutoff(10), 1000, stops))).toBe(0);
     expect(await readAnchor(tdb)).toEqual(tampered);
     expect(await rows()).toHaveLength(4);
-    await db.query('update audit_chain_anchor set head_seq = 4');
+    await tdb.query('update audit_chain_anchor set head_seq = 4');
     expect(
       await tdb.transaction((tx) =>
         deleteSealedBefore(tx, 'another-chain-key-9876543210zyxwvuts', cutoff(10), 1000, stops),
@@ -340,7 +340,7 @@ describeDb('retention with a chain key (audit-chain spec §3.3)', () => {
     const pass = sealer({ db: held.db }).runOnce();
     await held.entered;
     // The pass holds the chain lock, keyed by this schema, mid-transaction.
-    const granted = await db.query(
+    const granted = await tdb.query(
       `select 1 from pg_locks where locktype = 'advisory' and granted and objsubid = 2
          and classid::bigint = $1 and objid::bigint = hashtext(current_schema() || ':' || $2::text)::oid::bigint`,
       [AUDIT_CHAIN_LOCK_CLASS, tdb.scope.tenantId],
@@ -434,7 +434,7 @@ describeDb('retention with a chain key (audit-chain spec §3.3)', () => {
     await insert(t(30));
     expect(await seal()).toBe(11);
     // Seqs 1 to 7 deleted from outside: a gap wider than the batch limit of 3, right at the anchor.
-    await db.query('delete from audit_events where chain_seq <= 7');
+    await tdb.query('delete from audit_events where chain_seq <= 7');
     const anchor = await readAnchor(tdb);
     expect(await tdb.transaction((tx) => deleteSealedBefore(tx, KEY, cutoff(20), 3, stops))).toBe(0);
     expect(await tdb.transaction((tx) => deleteSealedBefore(tx, KEY, cutoff(20), 3, stops))).toBe(0);
@@ -448,7 +448,7 @@ describeDb('retention with a chain key (audit-chain spec §3.3)', () => {
   it('a gap above old rows ends the prefix there: the rows before it go, nothing after it', async () => {
     for (let n = 1; n <= 5; n++) await insert(t(n));
     expect(await seal()).toBe(5);
-    await db.query('delete from audit_events where chain_seq = 3');
+    await tdb.query('delete from audit_events where chain_seq = 3');
     const before = await hashes();
     expect(await tdb.transaction((tx) => deleteSealedBefore(tx, KEY, cutoff(10), 1000, stops))).toBe(2);
     expect(await readAnchor(tdb)).toMatchObject({ seq: 2n, hash: before.get(2n) });
@@ -462,7 +462,7 @@ describeDb('retention with a chain key (audit-chain spec §3.3)', () => {
     await insert(t(8));
     await insert(t(9));
     expect(await seal()).toBe(5);
-    await db.query('delete from audit_events where chain_seq = 4');
+    await tdb.query('delete from audit_events where chain_seq = 4');
     const before = await hashes();
     expect(await tdb.transaction((tx) => deleteSealedBefore(tx, KEY, cutoff(5), 1000, stops))).toBe(3);
     // The anchor stops at the last old row, below the gap, so a walk still finds seq 4 missing.
@@ -476,7 +476,7 @@ describeDb('retention with a chain key (audit-chain spec §3.3)', () => {
     await insert(t(8));
     await insert(t(9));
     expect(await seal()).toBe(5);
-    await db.query(`update audit_events set at = '2000-01-01T00:00:00Z' where chain_seq >= 4`);
+    await tdb.query(`update audit_events set at = '2000-01-01T00:00:00Z' where chain_seq >= 4`);
     const before = await hashes();
     expect(await tdb.transaction((tx) => deleteSealedBefore(tx, KEY, cutoff(5), 1000, stops))).toBe(3);
     // The anchor stops at the last genuine old row; it is never re-signed past the edited ones.
@@ -491,7 +491,7 @@ describeDb('retention with a chain key (audit-chain spec §3.3)', () => {
   it('an old row edited in place stops retention at that row', async () => {
     for (let n = 1; n <= 5; n++) await insert(t(n));
     expect(await seal()).toBe(5);
-    await db.query(`update audit_events set details = '{"edited":true}'::jsonb where chain_seq = 3`);
+    await tdb.query(`update audit_events set details = '{"edited":true}'::jsonb where chain_seq = 3`);
     const before = await hashes();
     expect(await tdb.transaction((tx) => deleteSealedBefore(tx, KEY, cutoff(10), 1000, stops))).toBe(2);
     expect(await readAnchor(tdb)).toMatchObject({ seq: 2n, hash: before.get(2n) });
@@ -506,7 +506,7 @@ describeDb('retention with a chain key (audit-chain spec §3.3)', () => {
     const queued = (await rows()).map(([id]) => id as string);
     // Seqs 2 and 4 are queued; the forwarder holds seq 4's entry mid-send.
     for (const id of [queued[1]!, queued[3]!]) {
-      await db.query('insert into audit_forward_queue (event_id) values ($1)', [id]);
+      await tdb.query('insert into audit_forward_queue (event_id) values ($1)', [id]);
     }
     let release: () => void = () => undefined;
     const gate = new Promise<void>((resolve) => {
@@ -516,7 +516,7 @@ describeDb('retention with a chain key (audit-chain spec §3.3)', () => {
     const held = new Promise<void>((resolve) => {
       holding = resolve;
     });
-    const forwarder = db.transaction(async (tx) => {
+    const forwarder = tdb.transaction(async (tx) => {
       await tx.query('select 1 from audit_forward_queue where event_id = $1 for update', [queued[3]]);
       holding();
       await gate;
@@ -531,11 +531,28 @@ describeDb('retention with a chain key (audit-chain spec §3.3)', () => {
     expect((await rows()).map(([, seq]) => seq)).toEqual([4, 5]);
     expect(await readAnchor(tdb)).toMatchObject({ seq: 3n });
     // Seq 2's queue entry went with its event; seq 4's stays.
-    const left = await db.query<{ id: string }>('select event_id as id from audit_forward_queue');
+    const left = await tdb.query<{ id: string }>('select event_id as id from audit_forward_queue');
     expect(left.rows).toEqual([{ id: queued[3] }]);
     expect(errors).toEqual([]);
     // Once the forwarder lets go, the rest goes.
     expect(await tdb.transaction((tx) => deleteSealedBefore(tx, KEY, cutoff(10), 1000, stops))).toBe(2);
+  });
+
+  it('ends the prefix before a row the forwarder has leased, and goes on once the lease is gone (Task 17)', async () => {
+    for (let n = 1; n <= 3; n++) await insert(t(n));
+    expect(await seal()).toBe(3);
+    const ids = (await rows()).map(([id]) => id as string);
+    // The forwarder leased seq 2's entry and is sending it, holding no unit.
+    await tdb.query(
+      "insert into audit_forward_queue (event_id, lease_id, leased_until) values ($1, 'L-1', now() + interval '1 minute')",
+      [ids[1]],
+    );
+    expect(await tdb.transaction((tx) => deleteSealedBefore(tx, KEY, cutoff(10), 1000, stops))).toBe(1);
+    expect((await rows()).map(([, seq]) => seq)).toEqual([2, 3]);
+    // A lease that ran out holds nothing.
+    await tdb.query("update audit_forward_queue set leased_until = now() - interval '1 second'");
+    expect(await tdb.transaction((tx) => deleteSealedBefore(tx, KEY, cutoff(10), 1000, stops))).toBe(2);
+    expect(errors).toEqual([]);
   });
 
   it('without the key, deleteUnsealedBefore keeps every sealed row and deletes old unsealed ones', async () => {
@@ -571,18 +588,18 @@ describeDb('retention with a chain key in a running server (audit-chain spec §3
     return { h, timers };
   }
   /** A row far past the default retention of 365 days on the harness clock. */
-  const insertOld = (db: Querier, id: string) =>
+  const insertOld = (db: TenantQuerier, id: string) =>
     db.query(
       `insert into audit_events (id, at, actor_kind, action, target_kind, details)
        values ($1, '2024-01-01T00:00:00Z', 'system', 'team.created', 'team', '{}'::jsonb)`,
       [id],
     );
-  const idsOf = async (db: Querier) =>
+  const idsOf = async (db: TenantQuerier) =>
     (await db.query<{ id: string }>('select id from audit_events order by id')).rows.map((r) => r.id);
 
   it('with the key, the sweep deletes the old sealed row, keeps the old unsealed one and moves the anchor', async () => {
     const { h, timers } = await server({ WIREBENCH_SERVER_AUDIT_CHAIN_KEY: KEY });
-    await insertOld(h.db, '01J9ZK3V8Q0000000000000SE1');
+    await insertOld(h.tdb, '01J9ZK3V8Q0000000000000SE1');
     const outside = new AuditSealer({
       tenancy: h.ctx.tenancy,
       keys: () => KEY,
@@ -593,14 +610,14 @@ describeDb('retention with a chain key in a running server (audit-chain spec §3
     // The module's own pass at start may hold the lock; pass until this row is sealed.
     await vi.waitFor(async () => {
       await outside.runOnce();
-      const sealed = await h.db.query('select 1 from audit_events where chain_seq is not null');
+      const sealed = await h.tdb.query('select 1 from audit_events where chain_seq is not null');
       expect(sealed.rows).toHaveLength(1);
     }, WAIT);
-    await insertOld(h.db, '01J9ZK3V8Q0000000000000UN1');
+    await insertOld(h.tdb, '01J9ZK3V8Q0000000000000UN1');
     await vi.waitFor(async () => {
       // A sweep still running from start-up absorbs a tick, so fire until a pass sees the row.
       timers.fire(SWEEP_INTERVAL_MS);
-      expect(await idsOf(h.db)).toEqual(['01J9ZK3V8Q0000000000000UN1']);
+      expect(await idsOf(h.tdb)).toEqual(['01J9ZK3V8Q0000000000000UN1']);
     }, WAIT);
     expect((await readAnchor(h.tdb))?.seq).toBe(1n);
   }, 30_000);
@@ -616,11 +633,11 @@ describeDb('retention with a chain key in a running server (audit-chain spec §3
       await sealRows(tx, [{ id: row!.id!, seq: 1n, hash: link(KEY, anchor.hash, 1n, row!) }]);
       await setAnchorHead(tx, KEY, anchor, 1n);
     });
-    await insertOld(h.db, '01J9ZK3V8Q0000000000000UN3');
+    await insertOld(h.tdb, '01J9ZK3V8Q0000000000000UN3');
     await vi.waitFor(async () => {
       // A sweep still running from start-up absorbs a tick, so fire until a pass sees the row.
       timers.fire(SWEEP_INTERVAL_MS);
-      expect(await idsOf(h.db)).toEqual(['01J9ZK3V8Q0000000000000SE3']);
+      expect(await idsOf(h.tdb)).toEqual(['01J9ZK3V8Q0000000000000SE3']);
     }, WAIT);
     expect(await readAnchor(h.tdb)).toMatchObject({ seq: 0n, headSeq: 1n });
     expect(await verifyChain(h.tdb, KEY)).toMatchObject({ result: 'intact', checked: 1 });
@@ -628,11 +645,11 @@ describeDb('retention with a chain key in a running server (audit-chain spec §3
 
   it('without the key, the sweep deletes old rows by at, unsealed or not', async () => {
     const { h, timers } = await server({});
-    await insertOld(h.db, '01J9ZK3V8Q0000000000000UN2');
+    await insertOld(h.tdb, '01J9ZK3V8Q0000000000000UN2');
     await vi.waitFor(async () => {
       // A sweep still running from start-up absorbs a tick, so fire until a pass sees the row.
       timers.fire(SWEEP_INTERVAL_MS);
-      expect(await idsOf(h.db)).toEqual([]);
+      expect(await idsOf(h.tdb)).toEqual([]);
     }, WAIT);
   }, 30_000);
 });

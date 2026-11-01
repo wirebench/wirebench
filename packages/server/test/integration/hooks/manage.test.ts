@@ -111,7 +111,7 @@ describeDb('the management API: catch URLs (§3.5, §3.6)', () => {
     });
     expect(res.body.url).toMatch(/^https:\/\/wirebench\.test\/hooks\/[0-9A-HJKMNP-TV-Z]{26}$/);
     const row = (
-      await c.h.db.query<{ created_by: string }>('select created_by from catch_urls where id = $1', [res.body.id])
+      await c.h.tdb.query<{ created_by: string }>('select created_by from catch_urls where id = $1', [res.body.id])
     ).rows[0];
     expect(row?.created_by).toBe(c.editor.user.id);
     const custom = await create(c, c.admin, {

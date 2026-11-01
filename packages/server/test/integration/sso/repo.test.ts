@@ -41,7 +41,7 @@ describeDb('SAML and SCIM tables (saml-scim spec §4)', () => {
     await expect(
       repo.insertSamlIdentity(h.tdb, { entityId: 'https://idp', nameId: 'n-1', userId: ada.user.id, at: h.clock.now }),
     ).rejects.toThrow();
-    await h.db.query('delete from users where id = $1', [ada.user.id]);
+    await h.tdb.query('delete from users where id = $1', [ada.user.id]);
     expect(await repo.samlIdentityOf(h.tdb, 'https://idp', 'n-1')).toBeUndefined();
   });
 
@@ -143,7 +143,7 @@ describeDb('SAML and SCIM tables (saml-scim spec §4)', () => {
       teamId: null,
     });
     expect((await repo.listScimGroups(h.tdb)).map((g) => [g.displayName, g.memberCount])).toEqual([['Quality', 1]]);
-    await h.db.query('delete from users where id = $1', [ada.user.id]);
+    await h.tdb.query('delete from users where id = $1', [ada.user.id]);
     expect(await repo.groupMemberIds(h.tdb, group.id)).toEqual([]);
     await repo.deleteScimGroup(h.tdb, group.id);
     expect(await repo.scimGroupById(h.tdb, group.id)).toBeUndefined();
@@ -182,12 +182,12 @@ describeDb('SAML and SCIM tables (saml-scim spec §4)', () => {
   });
 
   it('the audit log accepts the scim actor', async () => {
-    await h.db.query(
+    await h.tdb.query(
       "insert into audit_events (id, actor_kind, actor_token_id, action, target_kind) values ($1, 'scim', 't', 'user.created', 'user')",
       [newId()],
     );
     await expect(
-      h.db.query(
+      h.tdb.query(
         "insert into audit_events (id, actor_kind, action, target_kind) values ($1, 'robot', 'user.created', 'user')",
         [newId()],
       ),

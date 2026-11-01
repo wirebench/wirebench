@@ -1,5 +1,5 @@
 /**
- * How long migration 0020 keeps a server down (hosted edition spec §19.10). A scaled 0019 fixture (1 million
+ * How long migrations 0020 and 0021 keep a server down (hosted edition spec §19.10). A scaled 0019 fixture (1 million
  * audit_events, 1 million captures, 2 GB of session_log_chunks heap) migrates, and the run yields the two
  * rates of the spec's estimate,
  *
@@ -26,7 +26,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { cpus } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, expect, it } from 'vitest';
-import type { Querier } from '../../src/context.js';
+import type { Querier } from '../../src/db/querier.js';
 import { migrate } from '../../src/db/migrate.js';
 import { createDatabase } from '../../src/db/pool.js';
 import { BUILTIN_MODULES } from '../../src/modules.js';
@@ -37,6 +37,10 @@ import { describeDb, testDatabase } from '../helpers/database.js';
 import { mkTempDir, removeTempDir } from '../helpers/git.js';
 
 const SKIP = process.env.WIREBENCH_SKIP_PERF === '1' || process.env.WIREBENCH_PERF_TENANCY !== '1';
+/** Straight to stderr, so the figures show in the run's output whatever the reporter keeps of the console. */
+const say = (line: string): void => {
+  process.stderr.write(`${line}\n`);
+};
 if (process.env.WIREBENCH_PERF_TENANCY !== '1') {
   console.warn(
     'server-perf skipped: set WIREBENCH_PERF_TENANCY=1, with a test database, to migrate the scaled fixture',
@@ -183,6 +187,7 @@ describeDb('migration 0020 on a scaled fixture (hosted spec §19.10)', () => {
     url.searchParams.set('options', `${url.searchParams.get('options') ?? ''} -c max_parallel_maintenance_workers=0`);
     const owner = createDatabase(url.toString());
     let migrationSeconds: number;
+    let isolationSeconds: number;
     let referenceRowsPerSecond: number;
     const indexesBefore = (
       await db.owner.query<{ oid: string }>(
@@ -203,8 +208,19 @@ describeDb('migration 0020 on a scaled fixture (hosted spec §19.10)', () => {
       referenceRowsPerSecond = samples.sort((a, b) => a - b)[1]!;
       const migrations = await allMigrations(BUILTIN_MODULES);
       const started = performance.now();
-      expect((await migrate(owner, migrations)).applied).toEqual([20]);
+      expect(
+        (
+          await migrate(
+            owner,
+            migrations.filter((m) => m.version <= 20),
+          )
+        ).applied,
+      ).toEqual([20]);
       migrationSeconds = (performance.now() - started) / 1000;
+      // 0021 changes only the catalog (defaults, policies, the `_0019` copies dropped): it reads no row.
+      const isolationStarted = performance.now();
+      expect((await migrate(owner, migrations)).applied).toEqual([21]);
+      isolationSeconds = (performance.now() - isolationStarted) / 1000;
     } finally {
       await owner.close();
     }
@@ -216,7 +232,7 @@ describeDb('migration 0020 on a scaled fixture (hosted spec §19.10)', () => {
     // A heap term at or above the whole time leaves no row term: charge the rows at least a tenth of it.
     const rowSeconds = Math.max(migrationSeconds - heapSeconds, migrationSeconds / 10);
     if (rowSeconds > migrationSeconds - heapSeconds) {
-      console.info(
+      say(
         `[perf] tenancy 0020: the heap term (${heapSeconds.toFixed(2)} s) leaves less than a tenth of ${migrationSeconds.toFixed(2)} s; the row term is floored, so R is a lower bound`,
       );
     }
@@ -234,7 +250,7 @@ describeDb('migration 0020 on a scaled fixture (hosted spec §19.10)', () => {
       minutesPerMillionRows: Number((migrationSeconds / 60 / (rows / 1e6)).toFixed(3)),
       measuredOn: new Date().toISOString().slice(0, 10),
     };
-    console.info(
+    say(
       `[perf] tenancy 0020: ${String(measured.migrationSeconds)} s for ${String(rows)} rows ` +
         `(${String(measured.minutesPerMillionRows)} min per million rows); ` +
         `R ${String(measured.rowsPerSecond)} rows/s (${String(measured.relativeRate)} × Rref), B ${(heapBytesPerSecond / 1024 ** 2).toFixed(0)} MB/s; ` +
@@ -243,6 +259,10 @@ describeDb('migration 0020 on a scaled fixture (hosted spec §19.10)', () => {
           .map((t) => `${t.table} ${String(t.passes)}`)
           .join(', ')}`,
     );
+
+    say(`[perf] tenancy 0021: ${isolationSeconds.toFixed(2)} s over the same rows (catalog only)`);
+    // Machine-relative like the gate below: on any machine, a catalog change is far quicker than the rebuild.
+    expect(isolationSeconds, '0021 against 0020').toBeLessThan(Math.max(1, migrationSeconds / 4));
 
     if (WRITE_BASELINE) {
       expect(SCALE, 'a baseline is written at full scale only').toBe(1);

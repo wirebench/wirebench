@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { checkTenantScope, findScopeMints, findUrlReads } from './check-tenant-scope.js';
+import { checkTenantScope, findRawDatabase, findScopeMints, findUrlReads } from './check-tenant-scope.js';
 
 describe('check:tenant-scope', () => {
   const roots: string[] = [];
@@ -179,5 +179,82 @@ describe('check:tenant-scope', () => {
     ])
       expect(findUrlReads('packages/server/src/hooks/module.ts', env), env).toMatchObject([{ rule: 'public-url' }]);
     expect(findUrlReads('packages/server/src/config.ts', "env: 'WIREBENCH_SERVER_PUBLIC_URL',")).toEqual([]);
+  });
+
+  it('refuses the raw pool and its types outside src/db/, src/tenancy/ and the start-up (Task 17)', () => {
+    const route = 'packages/server/src/teams/routes/teams.ts';
+    const spellings = [
+      "import { createDatabase } from '../../db/pool.js';",
+      "import type { Querier } from '../../db/querier.js';",
+      "import type { Database as Db } from '../../db/querier';",
+      "export { createDatabase } from '../../db/pool.js';",
+      "export type * from '../../db/querier.js';",
+      "const pool = await import('../../db/pool.js');",
+      "type Q = import('../../db/querier.js').Querier;",
+      "import pool = require('../../db/pool.js');",
+    ];
+    for (const text of spellings) expect(findRawDatabase(route, text), text).toMatchObject([{ rule: 'raw-db' }]);
+    const allowed = "import { createDatabase } from './db/pool.js';";
+    for (const file of [
+      'packages/server/src/serve.ts',
+      'packages/server/src/identity/cli.ts',
+      'packages/server/src/db/migrate.ts',
+      'packages/server/src/tenancy/tenancy.ts',
+    ]) {
+      expect(findRawDatabase(file, allowed), file).toEqual([]);
+    }
+    expect(findRawDatabase('packages/server/src/main.ts', allowed)).toHaveLength(1);
+    // A module of another name, and a comment, are not the pool.
+    expect(findRawDatabase(route, "import { x } from './db/pool-size.js';\n// import from '../db/pool.js'\n")).toEqual(
+      [],
+    );
+  });
+
+  it('refuses SQL that sets the tenant or reads the tenants table, outside src/tenancy/ (Task 17)', () => {
+    const route = 'packages/server/src/schedules/repo.ts';
+    const statements = [
+      'db.query("select set_config(\'wirebench.tenant_id\', $1, true)")',
+      "db.query('select current_setting($1)', ['wirebench.tenant_id'])",
+      'db.query(`select id from tenants where slug = $1`)',
+      "db.query('select s.slug from schedules x join  tenants s on s.id = x.tenant_id')",
+      'db.query(`select ${cols} from public.tenants`)',
+      'db.query(\'SELECT * FROM "tenants"\')',
+    ];
+    for (const text of statements) expect(findRawDatabase(route, text), text).toMatchObject([{ rule: 'tenant-sql' }]);
+    // Another table, a column named tenants, and a comment pass; src/tenancy/ may name them.
+    for (const text of [
+      "db.query('select * from tenants_archive')",
+      "db.query('select tenants from x')",
+      '// select set_config(...) from tenants',
+    ]) {
+      expect(findRawDatabase(route, text), text).toEqual([]);
+    }
+    expect(findRawDatabase('packages/server/src/tenancy/directory.ts', statements[2]!)).toEqual([]);
+  });
+
+  it('refuses for_each_tenant everywhere in the source, src/tenancy/ included (spec §19.4)', () => {
+    for (const file of ['packages/server/src/audit-log/repo.ts', 'packages/server/src/tenancy/jobs.ts']) {
+      expect(findRawDatabase(file, "db.query('select for_each_tenant($1)', [sql])"), file).toMatchObject([
+        { rule: 'for-each-tenant' },
+      ]);
+      expect(findRawDatabase(file, 'const for_each_tenant = 1;'), file).toMatchObject([{ rule: 'for-each-tenant' }]);
+    }
+  });
+
+  it('finds a planted file of each new kind in a tree', async () => {
+    const root = await tree({
+      'packages/server/src/agent/raw.ts': "import { createDatabase } from '../db/pool.js';\n",
+      'packages/server/src/agent/sql.ts': "export const SQL = 'select id from tenants';\n",
+      'packages/server/src/tenancy/loop.ts': "export const SQL = 'select for_each_tenant($1)';\n",
+      'packages/server/src/tenancy/ok.ts': "export const SQL = 'select id from tenants';\n",
+    });
+    expect((await checkTenantScope(root)).map((hit) => [hit.file, hit.rule])).toEqual(
+      expect.arrayContaining([
+        ['packages/server/src/agent/raw.ts', 'raw-db'],
+        ['packages/server/src/agent/sql.ts', 'tenant-sql'],
+        ['packages/server/src/tenancy/loop.ts', 'for-each-tenant'],
+      ]),
+    );
+    expect((await checkTenantScope(root)).map((hit) => hit.file)).not.toContain('packages/server/src/tenancy/ok.ts');
   });
 });

@@ -7,7 +7,7 @@
  */
 import type { KeyObject } from 'node:crypto';
 import type { LicenseState } from '@wirebench/engine';
-import type { LicenseChanged, LicenseService, Querier } from '../context.js';
+import type { LicenseChanged, LicenseService } from '../context.js';
 import type { TenantScope } from '../tenancy/scope.js';
 import type { TenantQuerier } from '../tenancy/tenant-db.js';
 import type { Tenancy } from '../tenancy/tenancy.js';
@@ -27,13 +27,13 @@ export interface LicenseEnv {
    * The id licenses are bound to (license-binding spec §3.1), read through the unit at hand: `server_identity`
    * is server-wide, so any tenant's unit reads the same row.
    */
-  readonly serverId: (db: Querier) => Promise<string>;
+  readonly serverId: (db: TenantQuerier) => Promise<string>;
   /** Hosted mode: the seat check takes no legacy server-wide lock (`seats.ts`). */
   readonly hosted?: boolean;
 }
 
 /** Reads the server id once, on first use, and keeps it; a failed read is tried again next time. */
-export function cachedServerId(): (db: Querier) => Promise<string> {
+export function cachedServerId(): (db: TenantQuerier) => Promise<string> {
   let cached: Promise<string> | undefined;
   return (db) => {
     cached ??= repo.serverId(db).catch((error: unknown) => {

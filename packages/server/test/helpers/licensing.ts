@@ -96,7 +96,7 @@ export function licensingHarness(
 export async function licenseInstallRecorded(h: IdentityHarness): Promise<void> {
   await vi.waitFor(
     async () => {
-      const row = await h.db.query(`select 1 from audit_events where action = 'license.installed'`);
+      const row = await h.tdb.query(`select 1 from audit_events where action = 'license.installed'`);
       expect(row.rows).not.toHaveLength(0);
     },
     { timeout: 5_000, interval: 20 },

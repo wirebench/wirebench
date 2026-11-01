@@ -1,11 +1,13 @@
 import { randomBytes } from 'node:crypto';
 import { describe } from 'vitest';
-import type { Database } from '../../src/context.js';
+import type { Database } from '../../src/db/querier.js';
 import { migrate, type Migration } from '../../src/db/migrate.js';
 import { createDatabase } from '../../src/db/pool.js';
 import { BUILTIN_MODULES } from '../../src/modules.js';
 import { allMigrations } from '../../src/serve.js';
 import { ensureAppRole } from '../../src/tenancy/roles.js';
+import { sqlSkeleton } from '../../src/tenancy/tenant-db.js';
+import { SCOPED_TABLES } from './catalog.js';
 
 /** The admin URL: a superuser, used only to create and drop each file's schema. */
 export const TEST_DATABASE_URL =
@@ -64,6 +66,40 @@ export const describeDb: (name: string, factory: () => void) => void = (() => {
   return describe.skip;
 })();
 
+const NAMES_SCOPED_TABLE = new RegExp(`\\b(?:${SCOPED_TABLES.join('|')})\\b`, 'i');
+const SETS_TENANT = /set_config\s*\(\s*'wirebench\.tenant_id'/i;
+
+/**
+ * The app role's pool, refusing a statement that names a scoped table outside a tenant unit (Task 17). Under the
+ * forced policy such a statement reads nothing and writes nothing, so a test that asserted on it would pass for
+ * nothing, and a server path that sent one would fail silently. A unit is a transaction whose `set_config` of
+ * `wirebench.tenant_id` came first, as `withTenant` sends it; a test writes its fixtures through one (`tdb`).
+ */
+function outsideUnitsRefused(db: Database): Database {
+  const refused = (text: string): Error | undefined =>
+    NAMES_SCOPED_TABLE.test(sqlSkeleton(text))
+      ? new Error(`a statement on a scoped table ran outside a tenant unit; send it through a TenantDb: ${text}`)
+      : undefined;
+  return {
+    query: (text: string, params?: readonly unknown[]) => {
+      const error = refused(text);
+      return error === undefined ? db.query(text, params) : Promise.reject(error);
+    },
+    transaction: (fn) =>
+      db.transaction((tx) => {
+        let inUnit = false;
+        return fn({
+          query: (text: string, params?: readonly unknown[]) => {
+            if (SETS_TENANT.test(text)) inUnit = true;
+            const error = inUnit ? undefined : refused(text);
+            return error === undefined ? tx.query(text, params) : Promise.reject(error);
+          },
+        });
+      }),
+    close: () => db.close(),
+  };
+}
+
 export interface TestDatabase extends Database {
   readonly schema: string;
   /** The app role's URL with this schema on its search path: what a server under test connects with. */
@@ -112,7 +148,7 @@ export async function testDatabase(options: { readonly migrated?: boolean } = {}
   const ownerUrl = withSchema(OWNER_URL!, schema);
   const url = withSchema(APP_URL!, schema);
   const owner = createDatabase(ownerUrl);
-  const db = createDatabase(url);
+  const db = outsideUnitsRefused(createDatabase(url));
   const grant = async (): Promise<void> => {
     await ensureAppRole(owner, url);
   };

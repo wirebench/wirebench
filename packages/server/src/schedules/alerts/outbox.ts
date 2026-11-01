@@ -328,14 +328,16 @@ export class AlertOutbox {
   private async claim(tx: TenantQuerier): Promise<Claimed[]> {
     const now = this.env.now();
     const rows = await tx.query<Claimed>(
-      `update schedule_alert_outbox o set next_at = $2
-       from schedules s
-       where s.id = o.schedule_id and o.id in (
+      // A materialised pick, as `claimQueuedRuns` explains: a `limit` sub-select in `in (…)` may run once per row.
+      `with picked as materialized (
          select id from schedule_alert_outbox
          where state = 'pending' and next_at <= $1
          order by next_at, id
          limit $3
          for update skip locked)
+       update schedule_alert_outbox o set next_at = $2
+       from picked, schedules s
+       where o.id = picked.id and s.id = o.schedule_id
        returning o.id, o.schedule_id as "scheduleId", o.target_index as "targetIndex", o.payload, o.attempts,
          s.alerts`,
       [now, new Date(now.getTime() + LEASE_MS), CLAIM_BATCH],

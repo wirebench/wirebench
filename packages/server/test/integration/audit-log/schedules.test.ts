@@ -63,8 +63,8 @@ describeDb('scheduled-runs fire sites (scheduled-runs spec §3.9)', () => {
       target: { kind: 'schedule', id: created.id },
       details: { name: 'Prod smoke' },
     });
-    await expectNoSecretsInAudit(c.h.db);
-    const rows = await c.h.db.query<{ details: unknown }>(
+    await expectNoSecretsInAudit(c.h.tdb);
+    const rows = await c.h.tdb.query<{ details: unknown }>(
       "select details from audit_events where action like 'schedule.%'",
     );
     expect(JSON.stringify(rows.rows)).not.toContain('api-key-value');
@@ -79,7 +79,7 @@ describeDb('scheduled-runs fire sites (scheduled-runs spec §3.9)', () => {
 
     c.h.hooks.audit.push(() => Promise.reject(new Error('audit store unavailable')));
     expect((await call(c.h, c.admin, 'POST', base, body)).status).toBe(500);
-    expect((await c.h.db.query('select 1 from schedules')).rowCount).toBe(0);
+    expect((await c.h.tdb.query('select 1 from schedules')).rowCount).toBe(0);
   });
 
   it('run now and a cancel are recorded with the run they name', async () => {

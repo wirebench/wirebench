@@ -88,7 +88,7 @@ describeDb('the runs API (scheduled-runs spec §3.7)', () => {
       results: [failed],
       at: c.h.clock.now,
     });
-    await c.h.db.query(
+    await c.h.tdb.query(
       `insert into schedule_alert_outbox (id, schedule_id, run_id, target_index, kind, payload, state, attempts, last_error)
        values ($1, $2, $3, 0, 'failure', '{}', 'dead', 8, 'the alert to hooks.example.test was answered 410')`,
       [newId(), scheduleId, runId],

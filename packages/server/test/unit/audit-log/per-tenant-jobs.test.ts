@@ -45,16 +45,22 @@ function fakeTenancy(handler: Handler, options: { readonly failCommit?: string }
       },
     }) as unknown as TenantQuerier;
   const tenancy: Pick<Tenancy, 'db' | 'forEachTenant'> = {
+    // A unit of `failCommit`'s tenant opened after the job loop's (the forwarder's delete) fails to commit.
     db: (scope: TenantScope) => ({
       ...unit(scope),
-      transaction: <T>(fn: (tx: TenantQuerier) => Promise<T>) => fn(unit(scope)),
+      transaction: async <T>(fn: (tx: TenantQuerier) => Promise<T>) => {
+        const result = await fn(unit(scope));
+        if (options.failCommit === scope.tenantId) throw new Error('the commit failed');
+        return result;
+      },
     }),
+    // As `tenancy/jobs.ts` runs it: the function in the tenant's unit, then its `afterUnit` outside it.
     forEachTenant: async (job, fn, log) => {
       const failed: string[] = [];
       for (const scope of SCOPES) {
         try {
-          const outcome = await fn(unit(scope), scope);
-          if (options.failCommit === scope.tenantId) throw new Error('the commit failed');
+          const committed = await fn(unit(scope), scope);
+          const outcome = typeof committed === 'object' ? await committed.afterUnit() : committed;
           if (outcome === STOP_PASS) break;
         } catch (error) {
           failed.push(scope.tenantId);

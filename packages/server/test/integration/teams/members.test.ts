@@ -26,7 +26,7 @@ describeDb('/teams/:teamId/members (§3.2)', () => {
   it('any member lists the members; an outsider gets 404; a disabled user is listed and marked', async () => {
     expect((await call(h, member, 'GET', path())).status).toBe(200);
     expect((await call<{ code: string }>(h, carol, 'GET', path())).body.code).toBe('teams-team-not-found');
-    await h.db.query('update users set disabled_at = now() where id = $1', [member.user.id]);
+    await h.tdb.query('update users set disabled_at = now() where id = $1', [member.user.id]);
     const res = await call<TeamMember[]>(h, admin, 'GET', path());
     expect(res.body.map((m) => [m.email, m.role, m.disabled])).toEqual([
       ['admin@example.com', 'admin', false],

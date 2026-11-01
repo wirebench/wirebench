@@ -155,7 +155,7 @@ describeDb('local-agent pairing (hosted edition spec §18.2)', () => {
     expect(stale.statusCode).toBe(400);
     expect(codeOf(stale)).toBe('agent-pairing-code-invalid');
     expect((await pair(second)).statusCode).toBe(201);
-    const stored = await h.db.query('select code_hash from agent_pairing_codes');
+    const stored = await h.tdb.query('select code_hash from agent_pairing_codes');
     expect(JSON.stringify(stored.rows)).not.toContain(second);
   });
 
@@ -184,7 +184,7 @@ describeDb('local-agent pairing (hosted edition spec §18.2)', () => {
 
   it('keeps the code as an HMAC, not a plain hash of it', async () => {
     const code = await newCode();
-    const stored = (await h.db.query<{ code_hash: string }>('select code_hash from agent_pairing_codes')).rows;
+    const stored = (await h.tdb.query<{ code_hash: string }>('select code_hash from agent_pairing_codes')).rows;
     expect(stored).toHaveLength(1);
     expect(stored[0]!.code_hash).toMatch(/^[0-9a-f]{64}$/);
     expect(stored[0]!.code_hash).not.toBe(sha256(code));

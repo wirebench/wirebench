@@ -68,11 +68,16 @@ All notable changes to this project are documented here. The format follows
   `server-postgres-too-old`. The compose files already run PostgreSQL 16.
 - **Server: a start-up warning when one role does everything (#798).** A server whose one database URL is a
   superuser, has `BYPASSRLS`, or owns the schema's tables still starts and upgrades as before, and logs a
-  warning that row-level security does not apply to that role, pointing at "Database roles" in the server
-  README.
+  warning that row-level security cannot be relied on for that role, pointing at "Database roles" in the
+  server README.
 - **Server: the migration to tenants (#798).** The first start migrates the database to the multi-tenant
   layout (migration `0020`): a single default tenant holds everything, and nothing users see changes. Large
   databases take longer to start once; measure it on a copy first.
+- **Server: every table but three is under forced row-level security (#798).** Migration `0021` puts each
+  tenant's rows behind a policy that the tables' owner is held by too, so a query sees only the rows of the
+  tenant it runs for. It changes no row and takes seconds. `pg_dump` as the app role, or as an owner that is no
+  superuser, now refuses those tables: back up as a superuser or a `BYPASSRLS` role, as "Database roles" in the
+  server README says. The default compose installation's owner is a superuser, so its backups keep working.
 - **Server: a lost `server_identity` row stops start-up with its advice again (#798).** Start-up fails with
   `server-identity-missing` and says to restore the row from a backup rather than insert a new one, which
   would mint a new server id that no license is bound to. `wirebench-server admin` exits with code 2 for it,

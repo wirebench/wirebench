@@ -14,7 +14,7 @@ import { buildServer } from '../../src/server.js';
 import type { TenantResolver } from '../../src/tenancy/resolve.js';
 import type { TenantDb } from '../../src/tenancy/tenant-db.js';
 import { testContext } from './context.js';
-import { loggedTenancy, scopedFor, type StatementLog } from './tenancy.js';
+import { loggedTenancy, type StatementLog } from './tenancy.js';
 import { testDatabase } from './database.js';
 import { mkTempDir, removeTempDir, testGit } from './git.js';
 
@@ -37,10 +37,7 @@ export interface IdentityHarness {
   readonly ctx: ServerContext;
   /** The default tenant's database: what a test writes fixtures through, as identity's repository needs. */
   readonly tdb: TenantDb;
-  /**
-   * Every statement sent through `ctx.tenancy`, with the tenant its unit set first (plan, Part B). Identity is
-   * registered with `scopedContext`, so its `ctx.db` throws; `expectAllScoped` reads this.
-   */
+  /** Every statement sent through `ctx.tenancy`, with the tenant its unit set first; `expectAllScoped` reads this. */
   readonly statements: StatementLog;
   close(): Promise<void>;
 }
@@ -91,8 +88,6 @@ export async function identityHarness(
     /** The hosted tenant map, for a test that changes a tenant behind the directory's back. */
     readonly onTenantResolver?: (resolver: TenantResolver) => void;
     readonly beforeBuild?: (db: Awaited<ReturnType<typeof testDatabase>>, ctx: ServerContext) => Promise<void>;
-    /** Modules moved into a tenant besides {@link MOVED_MODULES}, registered with `scopedContext` too. */
-    readonly scoped?: readonly ServerModule['name'][];
   } = {},
 ): Promise<IdentityHarness> {
   const db = options.db ?? (await testDatabase());
@@ -139,8 +134,6 @@ export async function identityHarness(
   await options.beforeBuild?.(db, ctx);
   const app = await buildServer(ctx, {
     modules,
-    // The modules moved into a tenant so far (tenancy Tasks 8 and 9) may not reach `ctx.db`.
-    contextFor: scopedFor(...MOVED_MODULES, ...(options.scoped ?? [])),
     ...(options.logStream !== undefined ? { logStream: options.logStream } : {}),
     ...(options.onTenantResolver !== undefined ? { onTenantResolver: options.onTenantResolver } : {}),
   });
@@ -162,23 +155,6 @@ export async function identityHarness(
   };
 }
 
-/** The modules moved into a tenant (tenancy plan, Part B): every harness registers them with `scopedContext`. */
-export const MOVED_MODULES: readonly ServerModule['name'][] = [
-  'identity',
-  'licensing',
-  'teams-access',
-  'server-sync',
-  'webhook-capture',
-  'ci-tokens',
-  'live-updates',
-  'terminal-shares',
-  'scheduled-runs',
-  'audit-log',
-  'sso',
-  'session-logs',
-  'agent',
-];
-
 export interface SignedInUser {
   readonly user: repo.UserRow;
   readonly token: string;
@@ -197,22 +173,24 @@ export async function signedInUser(
     readonly deviceName?: string;
     /** `browser` for a cookie session (hosted spec §17.2); a desktop device token by default. */
     readonly kind?: repo.TokenKind;
+    /** The tenant the user is in; the default tenant's by default. */
+    readonly tdb?: TenantDb;
   },
 ): Promise<SignedInUser> {
   const at = harness.clock.now;
-  const user = await repo.insertUser(harness.tdb, {
+  const tdb = input.tdb ?? harness.tdb;
+  const user = await repo.insertUser(tdb, {
     id: newId(),
     email: input.email,
     displayName: input.email.split('@')[0] ?? input.email,
     serverAdmin: input.serverAdmin ?? false,
     at,
   });
-  if (input.password !== undefined)
-    await repo.upsertCredential(harness.tdb, user.id, await hashPassword(input.password), at);
-  if (input.disabled === true) await repo.setDisabled(harness.tdb, user.id, at);
+  if (input.password !== undefined) await repo.upsertCredential(tdb, user.id, await hashPassword(input.password), at);
+  if (input.disabled === true) await repo.setDisabled(tdb, user.id, at);
   const { token, hash } = mintToken();
   const tokenId = newId();
-  await repo.insertToken(harness.tdb, {
+  await repo.insertToken(tdb, {
     id: tokenId,
     userId: user.id,
     tokenHash: hash,

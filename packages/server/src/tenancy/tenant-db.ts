@@ -1,8 +1,8 @@
 /**
  * Queries inside one tenant (hosted edition spec §19.4, §19.8 guard 2). Every unit of work is a transaction
  * that first sets `wirebench.tenant_id` with `set_config(…, true)`: transaction-local, so the pooled connection
- * goes back with no tenant on it (`set local` takes no bind parameter). From `0021` on, the policy reads that
- * setting; until then the column default does the tenant's part.
+ * goes back with no tenant on it (`set local` takes no bind parameter). The forced policy of `0021` reads that
+ * setting, and every `tenant_id` defaults to it, so outside a unit a scoped table reads as empty and refuses writes.
  *
  * The querier handed to a unit is revoked when the unit ends. A query on it afterwards, from a call nobody
  * awaited, throws `tenancy-scope-ended` rather than running in whatever transaction that pooled client is in
@@ -27,7 +27,7 @@
  */
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { WirebenchError } from '@wirebench/engine';
-import type { Database, Querier } from '../context.js';
+import type { Database, Querier } from '../db/querier.js';
 import type { TenantScope } from './scope.js';
 
 declare const querierBrand: unique symbol;

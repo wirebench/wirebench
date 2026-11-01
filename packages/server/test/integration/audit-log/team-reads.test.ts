@@ -25,7 +25,7 @@ describeDb('team-scoped audit reads (issue #208)', () => {
   const base = Date.parse('2026-10-03T12:00:00Z');
   let seeded = 0;
   const seedEvent = (id: string, action: string, team: string | null, workspace: string | null, actor: string) =>
-    h.db.query(
+    h.tdb.query(
       `insert into audit_events (id, at, actor_kind, actor_user_id, action, target_kind, team_id, workspace_id)
        values ($1, $6, 'user', $5, $2, 'team', $3, $4)`,
       [id, action, team, workspace, actor, new Date(base - ++seeded * 1000)],
@@ -129,7 +129,7 @@ describeDb('team-scoped audit reads (issue #208)', () => {
     await expect
       .poll(async () => (await get(`/audit?teamId=${teamA}&action=audit.exported`)).json<Page>().events.length)
       .toBe(1);
-    const row = await h.db.query<{ team_id: string }>(
+    const row = await h.tdb.query<{ team_id: string }>(
       `select team_id from audit_events where action = 'audit.exported'`,
     );
     expect(row.rows[0]!.team_id).toBe(teamA);
@@ -142,7 +142,7 @@ describeDb('team-scoped audit reads (issue #208)', () => {
     expect(res.statusCode).toBe(200);
     const details = async () =>
       (
-        await h.db.query<{ details: Record<string, unknown> }>(
+        await h.tdb.query<{ details: Record<string, unknown> }>(
           `select details from audit_events where action = 'audit.exported' and details->>'targetId' = 'T9'`,
         )
       ).rows[0]?.details;

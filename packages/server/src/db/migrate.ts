@@ -7,7 +7,7 @@ import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WirebenchError } from '@wirebench/engine';
-import type { Database, Querier } from '../context.js';
+import type { Database, Querier } from './querier.js';
 
 export interface Migration {
   readonly version: number;

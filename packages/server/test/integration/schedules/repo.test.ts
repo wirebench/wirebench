@@ -79,7 +79,7 @@ describeDb('the schedules repository (scheduled-runs §4)', () => {
     expect((await repo.scheduleById(c.h.tdb, c.workspaceId, input.id))?.secrets).toEqual({
       API_KEY: { sealed: 'AAAA', hint: 'abcd' },
     });
-    await c.h.db.query(
+    await c.h.tdb.query(
       `insert into schedule_runs (id, schedule_id, trigger, status) values ($1, $2, 'manual', 'queued')`,
       [newId(), input.id],
     );
@@ -89,6 +89,6 @@ describeDb('the schedules repository (scheduled-runs §4)', () => {
     });
     expect(await repo.deleteSchedule(c.h.tdb, newId(), input.id)).toBeUndefined();
     expect(await repo.deleteSchedule(c.h.tdb, c.workspaceId, input.id)).toBe('Smoke');
-    expect((await c.h.db.query('select 1 from schedule_runs')).rowCount).toBe(0);
+    expect((await c.h.tdb.query('select 1 from schedule_runs')).rowCount).toBe(0);
   });
 });

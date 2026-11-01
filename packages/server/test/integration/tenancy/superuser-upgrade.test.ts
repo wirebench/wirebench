@@ -1,7 +1,7 @@
 /**
  * The upgrade the owner ruling of 2026-10-29 protects (Part A review m6): an installation at `0019` whose one
- * URL is the database's bootstrap superuser. It keeps starting, migrates to `0020`, warns that row-level security
- * does not apply to its role, and its accounts still sign in.
+ * URL is the database's bootstrap superuser. It keeps starting, migrates to `0021`, warns that row-level security
+ * cannot be relied on for its role, and its accounts still sign in.
  */
 import { directoryOf } from '../../../src/tenancy/tenancy.js';
 import { EventEmitter } from 'node:events';
@@ -52,20 +52,20 @@ describeDb('a 0019 installation on one superuser URL (spec §19.4, owner ruling 
     await removeTempDir(dataDir);
   });
 
-  it('listens, at 0020, with the default tenant loaded', async () => {
+  it('listens, at 0021, with the default tenant loaded', async () => {
     const health = await fetch(`http://127.0.0.1:${String(server.port)}/healthz`);
     expect(health.status).toBe(200);
     const applied = await db.owner.query<{ version: number }>(
       'select max(version)::int as version from schema_migrations',
     );
-    expect(applied.rows[0]!.version).toBe(20);
+    expect(applied.rows[0]!.version).toBe(21);
     expect(directoryOf(server.ctx.tenancy).defaultScope().slug).toBe('default');
   });
 
   it('logs the warning, naming the superuser', () => {
     const warning = lines
       .map((line) => JSON.parse(line) as { level: number; msg: string; superuser?: boolean })
-      .find((line) => line.level === 40 && line.msg.includes('row-level security does not apply'));
+      .find((line) => line.level === 40 && line.msg.includes('row-level security cannot be relied on'));
     expect(warning?.msg).toMatch(/is a superuser/);
     expect(warning?.superuser).toBe(true);
   });

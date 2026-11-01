@@ -134,7 +134,7 @@ describeDb('SAML sign-in (saml-scim spec §3.2, §3.3, §6.1)', () => {
     h.app.inject({ method: 'POST', url: '/api/v1/auth/saml/complete', payload: { flowId, grant, codeVerifier } });
   const failures = async () =>
     (
-      await h.db.query<{ details: { method: string; reason: string } }>(
+      await h.tdb.query<{ details: { method: string; reason: string } }>(
         "select details from audit_events where action = 'auth.sign_in_failed' order by at, id",
       )
     ).rows.map((row) => row.details);
@@ -180,11 +180,11 @@ describeDb('SAML sign-in (saml-scim spec §3.2, §3.3, §6.1)', () => {
       expect(await repo.samlIdentityOf(h.tdb, IDP_ENTITY_ID, 'ada-persistent-id')).toMatchObject({
         userId: body.user.id,
       });
-      const signedIn = await h.db.query<{ details: { method: string } }>(
+      const signedIn = await h.tdb.query<{ details: { method: string } }>(
         "select details from audit_events where action = 'auth.signed_in'",
       );
       expect(signedIn.rows.map((row) => row.details.method)).toEqual(['saml']);
-      await expectNoSecretsInAudit(h.db);
+      await expectNoSecretsInAudit(h.tdb);
       // §6.1: neither the response nor the grant reaches the log stream.
       expect(logs.text()).not.toContain(back.searchParams.get('grant')!);
       expect(logs.text()).not.toContain('SAMLResponse=');
@@ -228,7 +228,7 @@ describeDb('SAML sign-in (saml-scim spec §3.2, §3.3, §6.1)', () => {
       expect(loopback(res).searchParams.get('error')).toBe(reason);
       expect(await repo.samlFlowById(h.tdb, flow.flowId)).toBeUndefined();
       expect(await failures()).toEqual([expect.objectContaining({ method: 'saml', reason })]);
-      await expectNoSecretsInAudit(h.db);
+      await expectNoSecretsInAudit(h.tdb);
     });
 
     it('refuses an altered assertion as saml-signature, with nothing of the XML in the audit row', async () => {
@@ -240,7 +240,7 @@ describeDb('SAML sign-in (saml-scim spec §3.2, §3.3, §6.1)', () => {
       );
       const res = await acs(encode(xml), flow.relayState);
       expect(loopback(res).searchParams.get('error')).toBe('saml-signature');
-      const rows = await h.db.query<{ details: unknown }>(
+      const rows = await h.tdb.query<{ details: unknown }>(
         "select details from audit_events where action = 'auth.sign_in_failed'",
       );
       expect(JSON.stringify(rows.rows)).not.toMatch(/Assertion|eve@example/);

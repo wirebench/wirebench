@@ -13,7 +13,6 @@ import { LiveHub } from '../../../src/live/hub.js';
 import { liveHarness, openLive, rawUpgrade, type LiveHarness } from '../../helpers/live.js';
 import { freePort } from '../../helpers/net.js';
 import { seedTeam, seedWorkspace } from '../../helpers/teams.js';
-import { defaultTenantDb } from '../../helpers/tenancy.js';
 import { directoryOf } from '../../../src/tenancy/tenancy.js';
 
 /** The server's own tenant, which its routes lock in. */
@@ -177,9 +176,9 @@ describeDb('GET /api/v1/live (live-updates §3.1, §5.1, §6)', () => {
 
 /** A team admin with one device token and one repository-backed workspace, written into a running server's tables. */
 async function seedAdmin(server: RunningServer): Promise<{ readonly token: string; readonly workspaceId: string }> {
-  const { db, repos } = server.ctx;
+  const { repos } = server.ctx;
   const at = new Date(); // startServer's identity runs on the real clock
-  const tdb = await defaultTenantDb(db);
+  const tdb = server.ctx.tenancy.db(scopeOf(server));
   const user = await identityRepo.insertUser(tdb, {
     id: newId(),
     email: 'admin@example.com',

@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, expect, it, vi } from 'vitest';
-import type { Database } from '../../../src/context.js';
+import type { Database } from '../../../src/db/querier.js';
 import { createDatabase } from '../../../src/db/pool.js';
 import { TenantAdmin } from '../../../src/tenancy/directory.js';
 import { createTenancy, directoryOf, type Tenancy } from '../../../src/tenancy/tenancy.js';

@@ -1,6 +1,6 @@
 /**
- * `ctx.tenancy` (hosted edition spec §19.8 guard 2): the tenant databases and the job loop. It sits beside
- * `ctx.db` until Task 17 takes `ctx.db` away from the modules.
+ * `ctx.tenancy` (hosted edition spec §19.8 guard 2): the tenant databases and the job loop, the modules' only way
+ * to the database.
  *
  * The tenant directory is not on it (Task 6 review m2): its `list()`, `get(id)` and `resolvable()` hand out
  * branded scopes, which a module must only ever get from a request or the job loop. `directoryOf` gives it to
@@ -9,9 +9,9 @@
  */
 import { WirebenchError } from '@wirebench/engine';
 import type { FastifyBaseLogger } from 'fastify';
-import type { Database } from '../context.js';
+import type { Database } from '../db/querier.js';
 import { TenantDirectory } from './directory.js';
-import { forEachTenant, type JobPass, type STOP_PASS } from './jobs.js';
+import { forEachTenant, type JobOutcome, type JobPass } from './jobs.js';
 import type { TenantScope } from './scope.js';
 import { tenantDbFactory, type TenancyDbOptions, type TenantDbFactory, type TenantQuerier } from './tenant-db.js';
 
@@ -20,9 +20,11 @@ export interface Tenancy {
   /** One unit per tenant; see `jobs.ts`. `log` is the job's own logger. */
   forEachTenant(
     job: string,
-    fn: (tx: TenantQuerier, scope: TenantScope) => Promise<void | typeof STOP_PASS>,
+    fn: (tx: TenantQuerier, scope: TenantScope) => Promise<JobOutcome>,
     log: Pick<FastifyBaseLogger, 'error'>,
   ): Promise<JobPass>;
+  /** `/healthz`: whether the database answers `select 1`, which reads no table and needs no tenant. */
+  reachable(): Promise<void>;
 }
 
 const directories = new WeakMap<Tenancy, TenantDirectory>();
@@ -33,6 +35,9 @@ export function createTenancy(db: Database, options: TenancyDbOptions = {}): Ten
   const tenancy: Tenancy = {
     db: factory,
     forEachTenant: (job, fn, log) => forEachTenant({ directory, db: factory, log }, job, fn),
+    reachable: async () => {
+      await db.query('select 1');
+    },
   };
   directories.set(tenancy, directory);
   return tenancy;

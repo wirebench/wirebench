@@ -57,7 +57,7 @@ describeDb('the SCIM endpoint (saml-scim spec §3.5, §6.2)', () => {
     });
   const failures = async () =>
     (
-      await h.db.query<{ details: { method: string; reason: string } }>(
+      await h.tdb.query<{ details: { method: string; reason: string } }>(
         "select details from audit_events where action = 'auth.sign_in_failed' order by at, id",
       )
     ).rows.map((row) => row.details);

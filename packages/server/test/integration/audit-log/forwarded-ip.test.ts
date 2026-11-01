@@ -21,7 +21,7 @@ describeDb('audit ip behind a trusted proxy', () => {
   afterAll(() => h.close());
 
   const ipOf = async (action: string, emailLower: string) => {
-    const rows = await h.db.query<{ ip: string | null }>(
+    const rows = await h.tdb.query<{ ip: string | null }>(
       `select host(ip) as ip from audit_events where action = $1 and details->>'emailLower' = $2`,
       [action, emailLower],
     );

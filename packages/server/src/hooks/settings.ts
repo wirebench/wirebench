@@ -1,6 +1,6 @@
 /** The webhook-capture module's configuration (spec §3.7), read once at registration. */
 import type { HooksMeta } from '@wirebench/engine';
-import type { ServerConfig } from '../config.js';
+import type { ModuleConfig } from '../config.js';
 
 const MIB = 1024 * 1024;
 
@@ -20,7 +20,7 @@ export interface HooksSettings {
   readonly secretKey?: Buffer;
 }
 
-export function hooksSettings(config: ServerConfig): HooksSettings {
+export function hooksSettings(config: ModuleConfig): HooksSettings {
   return {
     enabled: config.hooksEnabled,
     bodyLimitBytes: config.hooksBodyLimitMb * MIB,

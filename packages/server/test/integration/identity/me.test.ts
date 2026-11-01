@@ -123,7 +123,7 @@ describeDb('/me (§3.1)', () => {
     });
     expect(await repo.tokensOfUser(h.tdb, alice.user.id)).toHaveLength(0);
     expect(
-      (await h.db.query('select count(*)::int as n from device_tokens where user_id = $1', [bob.user.id])).rows[0],
+      (await h.tdb.query('select count(*)::int as n from device_tokens where user_id = $1', [bob.user.id])).rows[0],
     ).toEqual({ n: 0 });
     expect(await repo.tokensOfUser(h.tdb, carol.user.id)).toHaveLength(1);
   });

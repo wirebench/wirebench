@@ -1,8 +1,8 @@
 /**
  * Identity in a tenant (tenancy plan Task 8; spec §19.8, §19.13). Until `0021` forces the policy there is one
  * tenant, so the suite shows that every statement identity sends goes through the tenant database: the harness
- * registers identity with `scopedContext`, whose `ctx.db` throws, and the statement log shows each statement
- * after its unit's `set_config`. The sweep runs once per tenant through the job loop.
+ * has no `ctx.db` to reach around it, and the statement log shows each statement after its unit's
+ * `set_config`. The sweep runs once per tenant through the job loop.
  */
 import type { InjectOptions, LightMyRequestResponse } from 'fastify';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
@@ -17,23 +17,12 @@ import { directoryOf } from '../../../src/tenancy/tenancy.js';
 import { describeDb } from '../../helpers/database.js';
 import { startFakeOidcIssuer, type FakeOidcIssuer } from '../../helpers/fake-oidc-issuer.js';
 import { identityHarness, signedInUser, type IdentityHarness } from '../../helpers/identity.js';
-import { expectAllScoped, expectNoRawStatementsOn } from '../../helpers/tenancy.js';
+import { expectAllScoped } from '../../helpers/tenancy.js';
 
 const PUBLIC_URL = 'https://wirebench.test';
 const DAY = 86_400_000;
 const VERIFIER = 'v'.repeat(43);
 const PASSWORD = 'correct horse battery';
-
-/** Identity's own tables: no statement on them may bypass the tenant database. */
-const IDENTITY_TABLES = [
-  'users',
-  'local_credentials',
-  'oidc_identities',
-  'invitations',
-  'device_tokens',
-  'oidc_flows',
-  'browser_flows',
-];
 
 describeDb('identity in a tenant (tenancy Task 8)', () => {
   let idp: FakeOidcIssuer;
@@ -146,7 +135,6 @@ describeDb('identity in a tenant (tenancy Task 8)', () => {
     expect((await inject('POST', '/api/v1/auth/sign-out', { headers: auth })).statusCode).toBe(204);
 
     expectAllScoped(h.statements, tenantId);
-    expectNoRawStatementsOn(h.ctx, IDENTITY_TABLES);
   });
 
   it('finds a token by its hash within the request’s tenant, in a unit', async () => {

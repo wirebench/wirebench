@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, expect, it } from 'vitest';
+import { defaultTenantDb } from '../../helpers/tenancy.js';
 import { describeDb, testDatabase } from '../../helpers/database.js';
 
 // A type alias, not an interface: `query<T>` wants `T` to have an index signature.
@@ -122,16 +123,17 @@ describeDb('the test database roles (§19.4)', () => {
     expect(schema.rows[0]!.owner).toBe('wirebench_owner');
   });
 
-  it('lets the app role read and write an ordinary table, but make no DDL', async () => {
-    await db.query(
+  it('lets the app role read and write an ordinary table in a tenant unit, but make no DDL', async () => {
+    const tdb = await defaultTenantDb(db);
+    await tdb.query(
       "insert into users (id, email, email_lower, display_name) values ('U1', 'A@example.com', 'a@example.com', 'A')",
     );
-    await db.query("update users set display_name = 'Ada' where id = 'U1'");
-    expect((await db.query('select display_name from users')).rows).toEqual([{ display_name: 'Ada' }]);
-    await db.query("delete from users where id = 'U1'");
-    expect((await db.query('select id from users')).rowCount).toBe(0);
+    await tdb.query("update users set display_name = 'Ada' where id = 'U1'");
+    expect((await tdb.query('select display_name from users')).rows).toEqual([{ display_name: 'Ada' }]);
+    await tdb.query("delete from users where id = 'U1'");
+    expect((await tdb.query('select id from users')).rowCount).toBe(0);
     await expect(db.query('create table app_made (id int)')).rejects.toMatchObject({ code: '42501' });
-    await expect(db.query('alter table workspaces add column x int')).rejects.toMatchObject({ code: '42501' });
+    await expect(tdb.query('alter table workspaces add column x int')).rejects.toMatchObject({ code: '42501' });
   });
 
   it('leaves the app role a reader of schema_migrations and server_identity, but for tenancy_step', async () => {

@@ -2,6 +2,7 @@
  * Audit forwarding from a running server (issue #209): the audit-log module with a forward URL pointed
  * at a local HTTP receiver, real actions through the routes, and the forwarder's timer fired by hand.
  */
+import { defaultTenantDb } from '../../helpers/tenancy.js';
 import { writeFile } from 'node:fs/promises';
 import type { ServerResponse } from 'node:http';
 import { join } from 'node:path';
@@ -88,22 +89,22 @@ describeDb('audit forwarding from a running server (issue #209)', () => {
     // `license.installed` is recorded after the answer; wait for it, or it can be queued after a pass's
     // claim and leave the queue not yet empty when a test expects it drained.
     await vi.waitFor(async () => {
-      const row = await h.db.query(`select 1 from audit_events where action = 'license.installed'`);
+      const row = await h.tdb.query(`select 1 from audit_events where action = 'license.installed'`);
       expect(row.rows).toHaveLength(1);
     }, WAIT);
   };
   const createTeam = async (h: IdentityHarness, admin: SignedInUser, name: string) => {
     const res = await call<{ id: string }>(h, admin, 'POST', '/teams', { name });
     expect(res.status).toBe(201);
-    const row = await h.db.query<{ id: string }>(
+    const row = await h.tdb.query<{ id: string }>(
       `select id from audit_events where action = 'team.created' and target_id = $1`,
       [res.body.id],
     );
     return { teamId: res.body.id, eventId: row.rows[0]!.id };
   };
-  const queued = async (h: IdentityHarness | { db: IdentityHarness['db'] }, eventId?: string) =>
+  const queued = async (h: { readonly tdb: IdentityHarness['tdb'] }, eventId?: string) =>
     (
-      await h.db.query<{ event_id: string }>(
+      await h.tdb.query<{ event_id: string }>(
         eventId === undefined
           ? 'select event_id from audit_forward_queue'
           : 'select event_id from audit_forward_queue where event_id = $1',
@@ -215,8 +216,8 @@ describeDb('audit forwarding from a running server (issue #209)', () => {
       for (const res of pending.splice(0)) res.writeHead(204).end();
       await closing;
       // Acknowledged before the close finished, so the batch committed.
-      expect(await queued({ db }, eventId)).toBe(0);
-      expect(await queued({ db })).toBe(0);
+      expect(await queued({ tdb: await defaultTenantDb(db) }, eventId)).toBe(0);
+      expect(await queued({ tdb: await defaultTenantDb(db) })).toBe(0);
     },
     TEST_TIMEOUT_MS,
   );
@@ -243,14 +244,14 @@ describeDb('audit forwarding from a running server (issue #209)', () => {
       await held.close();
       await closing;
       // Never acknowledged, so the batch rolled back: the event is still queued, not lost.
-      expect(await queued({ db }, eventId)).toBe(1);
+      expect(await queued({ tdb: await defaultTenantDb(db) }, eventId)).toBe(1);
 
       const r = await receiver();
       const second = await server(`http://127.0.0.1:${String(r.port)}/audit`, db);
       // The license is stored, so the pass at start is licensed and sends the backlog.
       expect(await settled(second.timers)).toBe(FORWARD_BUSY_MS);
       expect(received(r).map((e) => e.id)).toContain(eventId);
-      expect(await queued({ db })).toBe(0);
+      expect(await queued({ tdb: await defaultTenantDb(db) })).toBe(0);
     },
     TEST_TIMEOUT_MS,
   );

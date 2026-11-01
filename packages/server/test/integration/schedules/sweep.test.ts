@@ -41,7 +41,7 @@ async function run(days: number, status: 'running' | 'skipped' = 'skipped'): Pro
 
 async function delivery(days: number, state: 'pending' | 'delivered' | 'dead'): Promise<string> {
   const id = newId();
-  await c.h.db.query(
+  await c.h.tdb.query(
     `insert into schedule_alert_outbox (id, schedule_id, target_index, kind, payload, state, created_at)
      values ($1, $2, 0, 'failure', '{}', $3, $4)`,
     [id, scheduleId, state, daysAgo(days)],
@@ -50,14 +50,14 @@ async function delivery(days: number, state: 'pending' | 'delivered' | 'dead'): 
 }
 
 const ids = async (table: string): Promise<string[]> =>
-  (await c.h.db.query<{ id: string }>(`select id from ${table}`)).rows.map((row) => row.id).sort();
+  (await c.h.tdb.query<{ id: string }>(`select id from ${table}`)).rows.map((row) => row.id).sort();
 
 describeDb('schedule retention (scheduled-runs spec §3.6)', () => {
   it('deletes finished runs past the maximum age, in batches, with their results; never an open run', async () => {
     const old = [await run(100), await run(95), await run(91)];
     const stuck = await run(120, 'running');
     const recent = await run(10);
-    await c.h.db.query(`insert into schedule_results (run_id, ordinal, result) values ($1, 0, '{}')`, [old[0]]);
+    await c.h.tdb.query(`insert into schedule_results (run_id, ordinal, result) values ($1, 0, '{}')`, [old[0]]);
     const sweeper = new CaptureSweeper({
       target: { tenancy: c.h.ctx.tenancy, job: 'schedule-run-retention', deleteBefore: repo.deleteRunsBefore },
       maxAgeDays: 90,
@@ -68,7 +68,7 @@ describeDb('schedule retention (scheduled-runs spec §3.6)', () => {
     });
     expect(await sweeper.runOnce()).toBe(3);
     expect(await ids('schedule_runs')).toEqual([stuck, recent].sort());
-    expect((await c.h.db.query('select 1 from schedule_results')).rowCount).toBe(0);
+    expect((await c.h.tdb.query('select 1 from schedule_results')).rowCount).toBe(0);
     await sweeper.stop();
   });
 

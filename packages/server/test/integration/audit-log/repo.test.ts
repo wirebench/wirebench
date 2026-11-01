@@ -18,7 +18,7 @@ describeDb('audit_events repo (audit-log spec §3.4, §4.2)', () => {
     db = await testDatabase();
     tdb = await defaultTenantDb(db);
     for (let i = 0; i < 7; i++) {
-      await record(db, {
+      await record(tdb, {
         actor: i % 2 === 0 ? { kind: 'user', userId: 'U1', email: 'a@example.com' } : { kind: 'system' },
         ...(i % 2 === 0 ? { ip: '203.0.113.7' } : {}),
         action: i < 4 ? 'workspace.pushed' : 'team.created',

@@ -1,4 +1,5 @@
 import { writeFile } from 'node:fs/promises';
+import { defaultTenantDb } from '../../helpers/tenancy.js';
 import { join } from 'node:path';
 import { afterEach, beforeEach, expect, it } from 'vitest';
 import { runAdmin } from '../../../src/identity/cli.js';
@@ -84,6 +85,6 @@ describeDb('wirebench-server admin audit export (audit-log spec §3.5)', () => {
 
   it('writes no secret-shaped value: the license line never reaches a row', async () => {
     await runAdmin({ command: 'admin-license-install', file: await file('team.lic', license(keys)) }, io().io, options);
-    await expectNoSecretsInAudit(db);
+    await expectNoSecretsInAudit(await defaultTenantDb(db));
   });
 });

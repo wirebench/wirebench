@@ -33,7 +33,7 @@ import { signedInUser } from '../../helpers/identity.js';
 import { workspaceSnapshot } from '../../helpers/schedule-runs.js';
 import { seedSyncWorkspace } from '../../helpers/sync.js';
 import { call, seedTeam } from '../../helpers/teams.js';
-import type { Database } from '../../../src/context.js';
+import type { Database } from '../../../src/db/querier.js';
 
 const AT = '2026-09-24T12:00:00.000Z';
 
@@ -648,7 +648,7 @@ describeDb('the host socket (hosted edition spec §17.3)', () => {
           query: async (text, params) => {
             // The identity check's lookup is the first; revoke the token before the host module's own.
             if (text.includes('from device_tokens t join users u') && ++lookups === 2) {
-              await h.db.query('update device_tokens set revoked_at = now() where id = $1', [alice.tokenId]);
+              await h.tdb.query('update device_tokens set revoked_at = now() where id = $1', [alice.tokenId]);
             }
             return await tx.query(text, params);
           },

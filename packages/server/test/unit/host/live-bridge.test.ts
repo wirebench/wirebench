@@ -4,7 +4,7 @@
  * there, without being awaited, would join the unit and roll it back with `tenancy-unawaited`.
  */
 import { describe, expect, it } from 'vitest';
-import type { Database, Querier } from '../../../src/context.js';
+import type { Database, Querier } from '../../../src/db/querier.js';
 import { liveBridge } from '../../../src/host/live-bridge.js';
 import type { LiveConnection } from '../../../src/live/socket.js';
 import { scopeOf } from '../../../src/tenancy/scope.js';

@@ -53,7 +53,7 @@ describeDb('SCIM tokens (saml-scim spec §3.4)', () => {
       expect(body.token).toMatch(SCIM_TOKEN_PATTERN);
       const row = await repo.scimTokenById(h.tdb, body.id);
       expect(row?.tokenHash).toBe(hashSecret(body.token));
-      const stored = await h.db.query<Record<string, unknown>>('select * from scim_tokens');
+      const stored = await h.tdb.query<Record<string, unknown>>('select * from scim_tokens');
       expect(JSON.stringify(stored.rows)).not.toContain(body.token);
 
       const list = await call('GET', '/scim-tokens');

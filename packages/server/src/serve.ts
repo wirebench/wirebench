@@ -16,14 +16,8 @@ import {
   migrationUrlOf,
   type ServerConfig,
 } from './config.js';
-import {
-  MetaRegistry,
-  permissiveLicense,
-  serverHooks,
-  type Database,
-  type ServerContext,
-  type ServerModule,
-} from './context.js';
+import { MetaRegistry, permissiveLicense, serverHooks, type ServerContext, type ServerModule } from './context.js';
+import type { Database } from './db/querier.js';
 import { loadMigrations, migrate, MIGRATIONS_DIR, pendingMigrations, type Migration } from './db/migrate.js';
 import { createDatabase } from './db/pool.js';
 import { checkAppRole, checkPostgresVersion } from './tenancy/checks.js';
@@ -53,6 +47,8 @@ export class StartupError extends Error {
 export interface RunningServer {
   readonly app: FastifyInstance;
   readonly ctx: ServerContext;
+  /** The server's own pool, which no module sees (spec §19.8 guard 2): for the start-up's tests. */
+  readonly db: Database;
   readonly port: number;
   /** Stops accepting, drains in-flight requests and queued repository work, closes the pool. Idempotent. */
   close(): Promise<void>;
@@ -351,7 +347,6 @@ export async function startServer(
   const repos = new RepoStore({ git, dataDir: config.dataDir });
   const ctx: ServerContext = {
     config,
-    db,
     tenancy,
     repos,
     git,
@@ -465,5 +460,5 @@ export async function startServer(
     void close();
   }
   for (const name of SIGNALS) signals.on(name, onSignal);
-  return { app, ctx: { ...ctx, log: app.log }, port, close };
+  return { app, ctx: { ...ctx, log: app.log }, db, port, close };
 }

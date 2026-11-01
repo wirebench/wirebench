@@ -1,4 +1,4 @@
-import type { ServerConfig } from '../config.js';
+import type { ModuleConfig } from '../config.js';
 import type { ServerContext } from '../context.js';
 import type { RateLimiter } from '../identity/rate-limit.js';
 import type { ScopeSource } from '../tenancy/urls.js';
@@ -33,7 +33,7 @@ export interface SamlSettings {
   readonly nameAttribute?: string;
 }
 
-export function samlSettings(config: ServerConfig): SamlSettings | undefined {
+export function samlSettings(config: ModuleConfig): SamlSettings | undefined {
   if (config.samlIdpMetadata === undefined) return undefined;
   return {
     metadataSource: config.samlIdpMetadata,

@@ -310,6 +310,14 @@ export async function claimDueSchedules(
   return rows.rows;
 }
 
+/** Whether the tenant has a run waiting to start: the scheduler claims only in tenants that do (Task 17). */
+export async function hasQueuedRun(db: TenantQuerier): Promise<boolean> {
+  const rows = await db.query<{ queued: boolean }>(
+    "select exists (select 1 from schedule_runs where status = 'queued') as queued",
+  );
+  return rows.rows[0]?.queued === true;
+}
+
 /** Whether the schedule has a run queued or running. */
 export async function hasOpenRun(db: TenantQuerier, scheduleId: string): Promise<boolean> {
   const rows = await db.query(
@@ -323,17 +331,23 @@ export async function setNextRunAt(db: TenantQuerier, id: string, at: Date | nul
   await db.query('update schedules set next_run_at = $2 where id = $1', [id, at]);
 }
 
-/** Up to `limit` queued runs, oldest first, marked running; `skip locked` leaves others' claims alone. */
+/**
+ * Up to `limit` queued runs, oldest first, marked running; `skip locked` leaves others' claims alone. The pick is a
+ * materialised CTE, not `where id in (select … limit)`: under the forced policy (0021) the planner runs that
+ * sub-select once per row it updates, each run locking and returning the next queued row, so a claim of one
+ * marked every queued run running.
+ */
 export async function claimQueuedRuns(tx: TenantQuerier, limit: number, at: Date): Promise<string[]> {
   const rows = await tx.query<{ id: string; queuedAt: Date }>(
-    `update schedule_runs set status = 'running', started_at = $2
-     where id in (
+    `with picked as materialized (
        select id from schedule_runs where status = 'queued'
        order by queued_at, id
        limit $1
        for update skip locked
      )
-     returning id, queued_at as "queuedAt"`,
+     update schedule_runs r set status = 'running', started_at = $2
+     from picked where r.id = picked.id
+     returning r.id, r.queued_at as "queuedAt"`,
     [limit, at],
   );
   // `returning` keeps no order: oldest first again.

@@ -34,7 +34,7 @@ describeDb('SCIM audit events', () => {
 
   const rows = async (action: string) =>
     (
-      await h.db.query<{ actor_kind: string; target_kind: string; target_id: string; details: unknown }>(
+      await h.tdb.query<{ actor_kind: string; target_kind: string; target_id: string; details: unknown }>(
         'select actor_kind, target_kind, target_id, details from audit_events where action = $1 order by at, id',
         [action],
       )
@@ -55,7 +55,7 @@ describeDb('SCIM audit events', () => {
     expect(await rows('scim.token_revoked')).toEqual([
       { actor_kind: 'user', target_kind: 'scim-token', target_id: id, details: { name: 'Entra ID' } },
     ]);
-    await expectNoSecretsInAudit(h.db);
+    await expectNoSecretsInAudit(h.tdb);
   });
   it('records user.updated as the SCIM token, with the changed field names only', async () => {
     const token = (
@@ -86,11 +86,11 @@ describeDb('SCIM audit events', () => {
     expect(await rows('user.updated')).toEqual([
       { actor_kind: 'scim', target_kind: 'user', target_id: id, details: { fields: ['displayName'] } },
     ]);
-    const actor = await h.db.query<{ actor_token_id: string }>(
+    const actor = await h.tdb.query<{ actor_token_id: string }>(
       "select actor_token_id from audit_events where action = 'user.updated'",
     );
     expect(actor.rows[0]!.actor_token_id).toBe(token.id);
-    await expectNoSecretsInAudit(h.db);
+    await expectNoSecretsInAudit(h.tdb);
   });
   it('records scim.group_created, scim.group_updated and scim.group_deleted against the group', async () => {
     const token = (
@@ -163,14 +163,14 @@ describeDb('SCIM audit events', () => {
       payload: { teamId: team.id },
     });
     await h.app.inject({ method: 'DELETE', url: `/api/v1/scim-groups/${id}/team`, headers: admin.headers });
-    const linked = await h.db.query<{ actor_kind: string; team_id: string; details: unknown }>(
+    const linked = await h.tdb.query<{ actor_kind: string; team_id: string; details: unknown }>(
       "select actor_kind, team_id, details from audit_events where action in ('scim.group_linked', 'scim.group_unlinked') order by at, id",
     );
     expect(linked.rows).toEqual([
       { actor_kind: 'user', team_id: team.id, details: { displayName: 'Linked' } },
       { actor_kind: 'user', team_id: team.id, details: { displayName: 'Linked' } },
     ]);
-    const actions = await h.db.query<{ action: string }>(
+    const actions = await h.tdb.query<{ action: string }>(
       "select action from audit_events where action like 'scim.group_%link%' order by at, id",
     );
     expect(actions.rows.map((row) => row.action)).toEqual(['scim.group_linked', 'scim.group_unlinked']);

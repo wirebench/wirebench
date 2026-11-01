@@ -1,5 +1,5 @@
 /** The scheduled-runs module's configuration (scheduled-runs spec §7), read once at registration. */
-import type { ServerConfig } from '../config.js';
+import type { ModuleConfig } from '../config.js';
 import type { TenantScope } from '../tenancy/scope.js';
 import { tenantUrl } from '../tenancy/urls.js';
 
@@ -21,7 +21,7 @@ export interface SchedulesSettings {
   readonly linkUrl: (scope: TenantScope) => string;
 }
 
-export function schedulesSettings(config: ServerConfig): SchedulesSettings {
+export function schedulesSettings(config: ModuleConfig): SchedulesSettings {
   return {
     enabled: config.schedulesEnabled,
     ...(config.schedulesSecretKey !== undefined ? { secretKey: Buffer.from(config.schedulesSecretKey, 'base64') } : {}),

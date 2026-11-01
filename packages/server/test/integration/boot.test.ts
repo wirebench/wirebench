@@ -58,7 +58,7 @@ describeDb('startServer', () => {
       const meta: unknown = await (await fetch(`http://127.0.0.1:${server.port}/api/v1/meta`)).json();
       expect(meta).toMatchObject({ name: 'wirebench-server', apiVersion: 1, publicUrl: 'https://wirebench.test' });
       expect((await db.query('select version from schema_migrations')).rowCount).toBe(1);
-      const me = await server.ctx.db.query<{ me: string }>('select current_user::text as me');
+      const me = await server.db.query<{ me: string }>('select current_user::text as me');
       expect(me.rows[0]!.me).toBe('wirebench_app');
     } finally {
       await server.close();
@@ -135,7 +135,7 @@ describeDb('startServer', () => {
     await server.close();
     expect(Date.now() - started).toBeLessThan(1_500);
     expect(exit).not.toHaveBeenCalled();
-    await expect(server.ctx.db.query('select 1')).rejects.toThrow(); // the pool is closed
+    await expect(server.db.query('select 1')).rejects.toThrow(); // the pool is closed
   });
 
   it('close() lets work holding a repository lock finish before the pool closes, then refuses new work', async () => {
@@ -148,14 +148,14 @@ describeDb('startServer', () => {
     // What a push does after its connection is gone: it still holds the lock and still queries.
     const holder = server.ctx.repos.withLock(LOCK_SCOPE, workspaceId, async () => {
       await gate;
-      return (await server.ctx.db.query<{ ok: number }>('select 1 as ok')).rows[0]?.ok;
+      return (await server.db.query<{ ok: number }>('select 1 as ok')).rows[0]?.ok;
     });
     const closing = server.close();
     await new Promise((resolve) => setTimeout(resolve, 50)); // app.close() has long resolved by now
     release();
     expect(await holder).toBe(1); // the pool was still open when the holder reached it
     await closing;
-    await expect(server.ctx.db.query('select 1')).rejects.toThrow(); // and closed after it
+    await expect(server.db.query('select 1')).rejects.toThrow(); // and closed after it
     await expect(server.ctx.repos.withLock(LOCK_SCOPE, workspaceId, () => Promise.resolve(1))).rejects.toMatchObject({
       code: 'server-shutting-down',
     });

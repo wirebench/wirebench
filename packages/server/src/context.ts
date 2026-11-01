@@ -12,7 +12,7 @@ import type {
   LicenseState,
   ScheduleRunStatus,
 } from '@wirebench/engine';
-import type { ServerConfig } from './config.js';
+import type { ModuleConfig } from './config.js';
 import { requireFeature } from './licensing/gate.js';
 import type { RepoStore } from './repos/repo-store.js';
 import type { TenantScope } from './tenancy/scope.js';
@@ -28,20 +28,6 @@ declare module 'fastify' {
      */
     readonly tenant: TenantScope;
   }
-}
-
-/** The slice of `pg.Pool` the modules use, so tests can pass a fake. */
-export interface Querier {
-  query<R extends Record<string, unknown> = Record<string, unknown>>(
-    text: string,
-    params?: readonly unknown[],
-  ): Promise<{ readonly rows: R[]; readonly rowCount: number | null }>;
-}
-
-/** A querier that can also run a function inside one transaction. */
-export interface Database extends Querier {
-  transaction<T>(fn: (tx: Querier) => Promise<T>): Promise<T>;
-  close(): Promise<void>;
 }
 
 /** What identity reports when an invitation becomes a user (teams-access spec §3.4). */
@@ -218,7 +204,7 @@ export interface AuditInput extends AuditSource {
 }
 
 /** Runs inside the caller's transaction and is awaited (R1): a throw fails the action. */
-export type AuditHook = (tx: Querier, event: AuditInput) => Promise<void>;
+export type AuditHook = (tx: TenantQuerier, event: AuditInput) => Promise<void>;
 
 export const SYSTEM_SOURCE: AuditSource = { actor: { kind: 'system' } };
 export const ANONYMOUS_SOURCE: AuditSource = { actor: { kind: 'anonymous' } };
@@ -278,7 +264,7 @@ export async function runInvitationAccepted(
 }
 
 /** Records one event through every audit hook, in order, inside `tx`; the first throw propagates (audit-log §3.1). */
-export async function recordAudit(hooks: ServerHooks, tx: Querier, event: AuditInput): Promise<void> {
+export async function recordAudit(hooks: ServerHooks, tx: TenantQuerier, event: AuditInput): Promise<void> {
   for (const hook of hooks.audit) await hook(tx, event);
 }
 
@@ -404,11 +390,11 @@ export class MetaRegistry {
 }
 
 export interface ServerContext {
-  readonly config: ServerConfig;
-  readonly db: Database;
+  /** Without the configured public URL (`ModuleConfig`): a module asks `tenantUrl` for its tenant's. */
+  readonly config: ModuleConfig;
   /**
-   * The tenant databases, the tenant directory and the job loop (hosted edition spec §19.8). Beside `db`
-   * until Task 17 removes `db` from what modules see.
+   * The tenant databases and the job loop (hosted edition spec §19.8 guard 2): a module has no other way to the
+   * database, so every statement it sends runs in one tenant's unit.
    */
   readonly tenancy: Tenancy;
   readonly repos: RepoStore;

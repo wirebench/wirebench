@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import type { Database, Querier } from '../../src/context.js';
+import type { Database, Querier } from '../../src/db/querier.js';
 import { loadMigrations, migrate, pendingMigrations } from '../../src/db/migrate.js';
 
 /** Records SQL and answers the ledger queries from `applied`. */

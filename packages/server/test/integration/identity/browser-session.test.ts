@@ -155,7 +155,7 @@ describeDb('cookie sessions on the identity guard (hosted spec §17.2)', () => {
     expect((await repo.tokensOfUser(h.tdb, desk.user.id))[0]!.kind).toBe('device');
 
     const flow = (id: string, expiresAt: Date) =>
-      h.db.query(
+      h.tdb.query(
         `insert into browser_flows (id, provider, state_hash, redirect_to, expires_at) values ($1, 'oidc', $2, '/', $3)`,
         [id, newId(), expiresAt],
       );
@@ -172,7 +172,7 @@ describeDb('cookie sessions on the identity guard (hosted spec §17.2)', () => {
       ),
     );
     await sweepExpired({ ctx: h.ctx, settings, now: () => h.clock.now });
-    const left = (await h.db.query('select id from browser_flows order by id')).rows.map((row) => row.id as string);
+    const left = (await h.tdb.query('select id from browser_flows order by id')).rows.map((row) => row.id as string);
     expect(left).toEqual(['live']);
   });
 });

@@ -4,11 +4,10 @@
  * module stops it from an `onClose` hook, which waits for a batch under way before the pool closes.
  *
  * Captures are swept per tenant (hosted edition spec §19.8 guard 6): each pass of the job loop deletes one
- * batch in each tenant's unit, and passes repeat while any tenant had a full batch. The schedule and audit sweeps
- * run per tenant too (Tasks 13 and 14); the session-log sweep reuses this class over the raw pool until Task 15.
+ * batch in each tenant's unit, and passes repeat while any tenant had a full batch. The audit and session-log
+ * sweeps reuse this class with their own delete.
  */
 import type { FastifyBaseLogger } from 'fastify';
-import type { Querier } from '../context.js';
 import type { TenantScope } from '../tenancy/scope.js';
 import type { TenantQuerier } from '../tenancy/tenant-db.js';
 import type { Tenancy } from '../tenancy/tenancy.js';
@@ -18,18 +17,13 @@ import { deleteCapturesBefore } from './repo.js';
 /** The capture sweep's name in the job loop's log lines. */
 export const CAPTURE_SWEEP_JOB = 'capture-retention';
 
-/** Where the sweeper deletes: one tenant at a time through the job loop, or the raw pool (modules not moved yet). */
-export type SweepTarget =
-  | {
-      readonly tenancy: Pick<Tenancy, 'forEachTenant' | 'db'>;
-      readonly job: string;
-      readonly deleteBefore: (db: TenantQuerier, cutoff: Date, limit: number) => Promise<number>;
-    }
-  | {
-      readonly db: Querier;
-      /** What to delete (audit-log plan ruling 14). */
-      readonly deleteBefore: (db: Querier, cutoff: Date, limit: number) => Promise<number>;
-    };
+/** Where the sweeper deletes: one tenant at a time, through the job loop. */
+export interface SweepTarget {
+  readonly tenancy: Pick<Tenancy, 'forEachTenant' | 'db'>;
+  readonly job: string;
+  /** What to delete (audit-log plan ruling 14). */
+  readonly deleteBefore: (db: TenantQuerier, cutoff: Date, limit: number) => Promise<number>;
+}
 
 export const SWEEP_INTERVAL_MS = 10 * 60 * 1000;
 export const SWEEP_BATCH = 1_000;
@@ -45,14 +39,6 @@ export interface SweeperDeps {
   readonly batchSize?: number;
   /** The warn line's subject; `capture sweep` by default. */
   readonly label?: string;
-}
-
-/** A sweep over the raw pool, for the modules not moved into a tenant yet (session logs, Task 15). */
-export function rawSweepTarget(
-  db: Querier,
-  deleteBefore: (db: Querier, cutoff: Date, limit: number) => Promise<number>,
-): SweepTarget {
-  return { db, deleteBefore };
 }
 
 /** The capture sweep's target: per tenant, through the job loop. */
@@ -102,15 +88,7 @@ export class CaptureSweeper {
   private async sweep(): Promise<number> {
     const cutoff = new Date(this.deps.now().getTime() - this.deps.maxAgeDays * DAY_MS);
     const batch = this.deps.batchSize ?? SWEEP_BATCH;
-    const target = this.deps.target;
-    if ('tenancy' in target) return this.sweepTenants(target, cutoff, batch);
-    let total = 0;
-    while (!this.stopped) {
-      const deleted = await target.deleteBefore(target.db, cutoff, batch);
-      total += deleted;
-      if (deleted < batch) break;
-    }
-    return total;
+    return this.sweepTenants(this.deps.target, cutoff, batch);
   }
 
   /**
@@ -118,11 +96,7 @@ export class CaptureSweeper {
    * tenants whose last batch was full and committed (Task 10 review M1, M2): a tenant whose unit failed is
    * logged by the loop and waits for the next interval, so a commit that keeps failing never spins.
    */
-  private async sweepTenants(
-    target: Extract<SweepTarget, { readonly tenancy: unknown }>,
-    cutoff: Date,
-    batch: number,
-  ): Promise<number> {
+  private async sweepTenants(target: SweepTarget, cutoff: Date, batch: number): Promise<number> {
     let total = 0;
     const counts = new Map<string, { readonly scope: TenantScope; readonly deleted: number }>();
     const pass = await target.tenancy.forEachTenant(

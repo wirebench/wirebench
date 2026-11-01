@@ -1,15 +1,17 @@
 /**
  * Forwards queued audit events to one sink (issue #209), the server's one destination until slice 7 gives each
- * tenant its own (spec §19.1). Each pass goes through the job loop (hosted edition spec §19.8 guard 6): in each
- * tenant's unit it reads that tenant's license and, with `audit-log`, claims up to a batch of its oldest queued
- * events, sends them, and deletes their queue rows. The unit commits only after the sink accepts, and a failed
- * send deletes nothing, so the rows wait for the next pass. Delivery is at least once: a crash between the sink
- * accepting and the commit resends the batch.
+ * tenant its own (spec §19.1). Each pass goes through the job loop (hosted edition spec §19.8 guard 6), and in
+ * each tenant:
+ * - one short unit reads the tenant's license and, with `audit-log`, leases up to a batch of its oldest queued
+ *   events (`claimForwardBatch`): a lease id and an expiry {@link FORWARD_LEASE_MS} away, on the database's clock;
+ * - the send runs after that unit committed, outside any unit (the job loop's `afterUnit`), so no pooled
+ *   connection waits on a slow sink;
+ * - a second unit deletes the batch's queue rows under its lease once the sink accepted.
  *
- * This is the one unit held across the network, on purpose: its row locks are what keep two servers (or two
- * passes) from sending the same event twice (`skip locked`), and the send is bounded by
- * {@link FORWARD_TIMEOUT_MS}. Nothing else waits on those rows: inserts never touch them, and retention skips a
- * row whose queue entry is held.
+ * A live lease is what keeps two servers (or two passes) from sending one event twice: a claim takes only free rows,
+ * and retention keeps a leased one. A failed send frees its lease at once, so the rows wait for the next pass, not
+ * for the expiry. Delivery is at least once: a crash between the sink accepting and the delete, or a send that
+ * outlives its lease (six times the sink's own bound, {@link FORWARD_TIMEOUT_MS}), resends the batch.
  *
  * The loop mirrors the capture sweeper: `start` passes at once and re-arms an injected timer, `stop`
  * cancels it and waits for a batch under way, and `runOnce` is one pass, which tests drive directly.
@@ -20,7 +22,8 @@ import type { LicenseService } from '../../context.js';
 import type { SetTimer } from '../../hooks/env.js';
 import { STOP_PASS } from '../../tenancy/jobs.js';
 import type { Tenancy } from '../../tenancy/tenancy.js';
-import { claimForwardBatch, deleteForwarded } from '../repo.js';
+import { newId } from '../../identity/tokens.js';
+import { claimForwardBatch, deleteForwarded, releaseForwardLease } from '../repo.js';
 
 /** The forwarder's name in the job loop's log lines. */
 export const FORWARDER_JOB = 'audit-forwarder';
@@ -37,6 +40,8 @@ export const FORWARD_BACKOFF_MAX_MS = 300_000;
 export const FORWARD_UNLICENSED_MS = 60_000;
 /** A sink's bound on a connect, a syslog batch's write, or a whole HTTPS request. */
 export const FORWARD_TIMEOUT_MS = 10_000;
+/** How long a claimed batch stays leased: well past the send's bound, so only a stalled server's batch is retaken. */
+export const FORWARD_LEASE_MS = 6 * FORWARD_TIMEOUT_MS;
 
 /** Where events go: syslog or HTTPS. `send` resolves once the destination has accepted every event. */
 export interface ForwardSink {
@@ -152,23 +157,35 @@ export class AuditForwarder {
             this.deps.log.info({ tenantId: scope.tenantId }, 'audit forwarding resumed');
           }
           licensed++;
-          const events = await claimForwardBatch(tx, this.deps.batchSize ?? FORWARD_BATCH);
+          const lease = { id: newId(), ms: FORWARD_LEASE_MS };
+          const events = await claimForwardBatch(tx, this.deps.batchSize ?? FORWARD_BATCH, lease);
           if (events.length === 0) return this.stopped ? STOP_PASS : undefined;
-          try {
-            await this.deps.sink.send(events);
-          } catch (error) {
-            // Nothing was deleted: the unit commits as it is, releasing the rows for the next pass. The sink is the
-            // server's one (until slice 7), so the tenants after this one would only wait on it too.
-            failure ??= error;
-            return STOP_PASS;
-          }
-          await deleteForwarded(
-            tx,
-            events.map((event) => event.id),
-          );
-          sentIn.set(scope.tenantId, events.length);
-          // A stop waits for this tenant's batch, not for every tenant's.
-          return this.stopped ? STOP_PASS : undefined;
+          const db = this.deps.tenancy.db(scope);
+          return {
+            // Once the lease committed, outside any unit.
+            afterUnit: async () => {
+              try {
+                await this.deps.sink.send(events);
+              } catch (error) {
+                failure ??= error;
+                // Free the rows for the next pass; should that fail too, the lease runs out on its own.
+                await db.transaction((free) => releaseForwardLease(free, lease.id)).catch(() => undefined);
+                // The sink is the server's one (until slice 7), so the tenants after this one would only wait on it
+                // too. Once each tenant has its own, a failed send must stop only its own batch.
+                return STOP_PASS;
+              }
+              await db.transaction((done) =>
+                deleteForwarded(
+                  done,
+                  events.map((event) => event.id),
+                  lease.id,
+                ),
+              );
+              sentIn.set(scope.tenantId, events.length);
+              // A stop waits for this tenant's batch, not for every tenant's.
+              return this.stopped ? STOP_PASS : undefined;
+            },
+          };
         },
         loopLog,
       );

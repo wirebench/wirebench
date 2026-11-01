@@ -77,7 +77,7 @@ describeDb('executeRun (scheduled-runs spec §3.2)', () => {
     expect(run.status).toBe('failed');
     expect(results).toEqual([expect.objectContaining({ outcome: 'failed', status: 500 })]);
     expect(JSON.stringify(results)).toContain('exchange');
-    const stored = await c.h.db.query(
+    const stored = await c.h.tdb.query(
       'select r.summary, s.result from schedule_runs r join schedule_results s on s.run_id = r.id',
     );
     expect(JSON.stringify(stored.rows)).not.toContain(API_KEY);
@@ -91,10 +91,10 @@ describeDb('executeRun (scheduled-runs spec §3.2)', () => {
     const { run } = await runOnce(await workspaceSnapshot([probe('Fail', `${server.url}/fail`)]), { alerts });
     const schedule = await repo.runWithSchedule(c.h.tdb, run.id);
     expect(schedule!.schedule).toMatchObject({ alertState: 'failing', failureStreak: 1 });
-    const queued = await c.h.db.query<{ kind: string; payload: { run: { id: string }; failures: { path: string }[] } }>(
-      'select kind, payload from schedule_alert_outbox where run_id = $1',
-      [run.id],
-    );
+    const queued = await c.h.tdb.query<{
+      kind: string;
+      payload: { run: { id: string }; failures: { path: string }[] };
+    }>('select kind, payload from schedule_alert_outbox where run_id = $1', [run.id]);
     expect(queued.rows).toEqual([
       {
         kind: 'failure',
@@ -131,11 +131,11 @@ describeDb('executeRun (scheduled-runs spec §3.2)', () => {
     );
     expect(run).toMatchObject({ status: 'failed', reason: null });
     expect(run.summary).toMatchObject({ failed: 1 });
-    const audit = await c.h.db.query<{ runId: string }>(
+    const audit = await c.h.tdb.query<{ runId: string }>(
       "select details->>'runId' as \"runId\" from audit_events where action = 'schedule.run_finished'",
     );
     expect(audit.rows.map((row) => row.runId)).toContain(run.id);
-    expect((await c.h.db.query('select 1 from schedule_alert_outbox where run_id = $1', [run.id])).rows).toEqual([]);
+    expect((await c.h.tdb.query('select 1 from schedule_alert_outbox where run_id = $1', [run.id])).rows).toEqual([]);
     // The alert state moved in the same savepoint, so it is undone with it; the next failure tries again.
     const schedule = await repo.runWithSchedule(c.h.tdb, run.id);
     expect(schedule!.schedule).toMatchObject({ alertState: 'ok', failureStreak: 0 });
@@ -221,7 +221,7 @@ describeDb('executeRun (scheduled-runs spec §3.2)', () => {
     const stop = new AbortController();
     const running = executeRun(executorEnv(c, files, tmpRoot), c.h.tdb.scope, runId, stop.signal);
     await server.hanging;
-    await c.h.db.query("update schedule_runs set status = 'cancelled', reason = 'cancelled' where id = $1", [runId]);
+    await c.h.tdb.query("update schedule_runs set status = 'cancelled', reason = 'cancelled' where id = $1", [runId]);
     stop.abort('cancelled');
     await running;
     expect((await repo.runWithSchedule(c.h.tdb, runId))!.run).toMatchObject({
@@ -254,7 +254,7 @@ describeDb('executeRun (scheduled-runs spec §3.2)', () => {
     ]);
 
     const cancelled = await seedRun(c);
-    await c.h.db.query("update schedule_runs set status = 'cancelled' where id = $1", [cancelled.runId]);
+    await c.h.tdb.query("update schedule_runs set status = 'cancelled' where id = $1", [cancelled.runId]);
     await executeRun(executorEnv(c, files, tmpRoot), c.h.tdb.scope, cancelled.runId, never);
     expect(heard).toHaveLength(1);
   });

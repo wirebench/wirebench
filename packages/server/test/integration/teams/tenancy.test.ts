@@ -1,8 +1,7 @@
 /**
  * Teams-access and licensing in a tenant (tenancy plan Task 9; spec §19.8, §19.13). Until `0021` there is one
  * tenant, so the suite shows that every statement the two modules send goes through the tenant database: the
- * harness registers both with `scopedContext`, whose `ctx.db` throws, and the statement log shows each one after
- * its unit's `set_config`. The seat lock is keyed by schema and tenant.
+ * modules have no `ctx.db`, and the statement log shows each one after its unit's `set_config`. The seat lock is keyed by schema and tenant.
  */
 import { afterEach, beforeEach, expect, it } from 'vitest';
 import type { AccessChangedEvent } from '../../../src/context.js';
@@ -13,10 +12,7 @@ import { describeDb, testDatabase } from '../../helpers/database.js';
 import { signedInUser, type IdentityHarness, type SignedInUser } from '../../helpers/identity.js';
 import { license, licensingHarness, testKeys, type TestKeys } from '../../helpers/licensing.js';
 import { call } from '../../helpers/teams.js';
-import { expectAllScoped, expectNoRawStatementsOn } from '../../helpers/tenancy.js';
-
-/** The two modules' own tables: no statement on them may bypass the tenant database. */
-const TABLES = ['teams', 'team_members', 'team_invitations', 'workspaces', 'workspace_grants', 'license'];
+import { expectAllScoped } from '../../helpers/tenancy.js';
 
 describeDb('teams-access and licensing in a tenant (tenancy Task 9)', () => {
   let keys: TestKeys;
@@ -80,7 +76,6 @@ describeDb('teams-access and licensing in a tenant (tenancy Task 9)', () => {
     await ok(204, call(h, root, 'DELETE', '/license'));
 
     expectAllScoped(h.statements, h.tdb.scope.tenantId);
-    expectNoRawStatementsOn(h.ctx, TABLES);
     // Every access announcement carries the tenant (spec §19.8 guard 5).
     expect(accessed.length).toBeGreaterThan(0);
     for (const event of accessed) {

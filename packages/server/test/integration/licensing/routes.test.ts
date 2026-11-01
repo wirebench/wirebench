@@ -47,7 +47,7 @@ async function setUp(): Promise<{
 describeDb('the license endpoints (licensing spec §3.6, §13)', () => {
   it('a fresh server is Community with five seats, and /meta says so', async () => {
     const { h, admin } = await setUp();
-    const id = await repo.serverId(h.db);
+    const id = await repo.serverId(h.tdb);
     expect((await call<LicenseState>(h, admin, 'GET', '/license')).body).toEqual({
       edition: 'community',
       status: 'none',
@@ -111,7 +111,7 @@ describeDb('the license endpoints (licensing spec §3.6, §13)', () => {
 
   it('installs a license bound to this server and refuses one bound to another, keeping the stored one', async () => {
     const { h, admin } = await setUp();
-    const id = await repo.serverId(h.db);
+    const id = await repo.serverId(h.tdb);
     const bound = await call<LicenseState>(h, admin, 'PUT', '/license', { license: license(keys, { serverId: id }) });
     expect(bound.status).toBe(200);
     expect(bound.body.status).toBe('active');

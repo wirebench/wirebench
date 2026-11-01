@@ -73,7 +73,7 @@ async function seedSchedule(name: string, dueMs = 0, timeoutMinutes = 15): Promi
 }
 
 async function runsOf(scheduleId: string) {
-  const rows = await c.h.db.query<{ status: string; reason: string | null; trigger: string }>(
+  const rows = await c.h.tdb.query<{ status: string; reason: string | null; trigger: string }>(
     'select status, reason, trigger from schedule_runs where schedule_id = $1 order by queued_at, id',
     [scheduleId],
   );
@@ -107,7 +107,7 @@ describeDb('the scheduler (scheduled-runs spec §3.1)', () => {
   it('a schedule not yet due, or switched off, does not fire', async () => {
     await seedSchedule('Later', -60_000);
     const off = await seedSchedule('Off');
-    await c.h.db.query('update schedules set enabled = false where id = $1', [off]);
+    await c.h.tdb.query('update schedules set enabled = false where id = $1', [off]);
     const s = scheduler({ execute: heldRuns().execute });
     expect(await s.runOnce()).toEqual({ fired: 0, started: 0 });
     await s.stop();
@@ -140,7 +140,7 @@ describeDb('the scheduler (scheduled-runs spec §3.1)', () => {
     expect((await runsOf(third))[0]?.status).toBe('queued');
     // Ends as the executor would, which frees its slot for the queued run.
     const done = held.started[0]!;
-    await c.h.db.query("update schedule_runs set status = 'passed' where id = $1", [done.runId]);
+    await c.h.tdb.query("update schedule_runs set status = 'passed' where id = $1", [done.runId]);
     done.release();
     while (held.started.length < 3) await turn();
     expect((await runsOf(third))[0]?.status).toBe('running');

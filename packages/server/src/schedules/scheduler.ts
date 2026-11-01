@@ -15,6 +15,10 @@
  * run alike, so one tenant's backlog cannot starve another's. Runs in flight are keyed `tenantId:runId`. A
  * finished run's start uses the licensed tenants the last pass found, so a license change shows within one pass
  * (15 s): a tenant that lost the feature may start a queued run until then, and one that gained it waits for it.
+ *
+ * A start claims only in the tenants with a run waiting (Task 17 perf): each pass asks every licensed tenant, in
+ * the unit it already has, and a claim that finds nothing takes its tenant off the list until the next pass. So a
+ * slot coming free costs no unit in the tenants that have nothing queued, however many there are.
  */
 import type { LicenseService } from '../context.js';
 import { newId } from '../identity/tokens.js';
@@ -58,6 +62,8 @@ export class Scheduler {
   private readonly starting = new Set<Promise<void>>();
   /** The tenants whose license has the feature, as the last pass found them; queued runs start from these. */
   private licensed: TenantScope[] = [];
+  /** Of those, the ones with a run waiting, as the last pass or claim found them. */
+  private readonly waiting = new Set<string>();
   /** The tenant after the one that last got a run started: where the round-robin goes on. */
   private turn: string | undefined;
   /** One start at a time, so two finished runs freeing two slots cannot claim past the cap. */
@@ -130,6 +136,7 @@ export class Scheduler {
     if (this.stopped) return { fired: 0, started: 0 };
     let fired = 0;
     const licensed: TenantScope[] = [];
+    const waiting: string[] = [];
     await this.env.tenancy.forEachTenant(
       SCHEDULER_JOB,
       async (tx, scope) => {
@@ -148,10 +155,13 @@ export class Scheduler {
           });
         }
         fired += await this.fire(tx);
+        if (await repo.hasQueuedRun(tx)) waiting.push(scope.tenantId);
       },
       this.env.log,
     );
     this.licensed = licensed;
+    this.waiting.clear();
+    for (const tenantId of waiting) this.waiting.add(tenantId);
     const started = await this.startQueued();
     return { fired, started };
   }
@@ -190,17 +200,21 @@ export class Scheduler {
    * cap is reached or no tenant has a queued run. Each claim is one unit of its tenant.
    */
   private async startRoundRobin(): Promise<number> {
-    const tenants = this.licensed;
+    // The licensed tenants from the one whose turn it is, then only those with a run waiting: the rotation keeps its
+    // order when the tenant whose turn it is has nothing queued.
+    const first = Math.max(
+      0,
+      this.licensed.findIndex((scope) => scope.tenantId === this.turn),
+    );
+    const tenants = [...this.licensed.slice(first), ...this.licensed.slice(0, first)].filter((scope) =>
+      this.waiting.has(scope.tenantId),
+    );
     if (tenants.length === 0) return 0;
     const claim = this.env.claimQueued ?? ((tx, limit, at) => repo.claimQueuedRuns(tx, limit, at));
-    const from = Math.max(
-      0,
-      tenants.findIndex((scope) => scope.tenantId === this.turn),
-    );
     let started = 0;
     let idle = 0;
     const failing = new Set<string>();
-    for (let i = from; idle < tenants.length; i = (i + 1) % tenants.length) {
+    for (let i = 0; idle < tenants.length; i = (i + 1) % tenants.length) {
       if (this.stopped || this.settingsFree() <= 0) break;
       const scope = tenants[i]!;
       if (failing.has(scope.tenantId)) {
@@ -223,6 +237,8 @@ export class Scheduler {
         continue;
       }
       if (runId === undefined) {
+        // Nothing left there: no more claims in this tenant until a pass finds a run waiting again.
+        this.waiting.delete(scope.tenantId);
         idle++;
         continue;
       }

@@ -21,14 +21,15 @@ import { verifyChain } from '../../../src/audit-log/chain/verify.js';
 import { auditHook } from '../../../src/audit-log/hook.js';
 import { auditLogModule } from '../../../src/audit-log/module.js';
 import { insertGenesis, readAnchor, sealedPage, type ChainLink } from '../../../src/audit-log/repo.js';
-import type { AuditInput, Database, Querier } from '../../../src/context.js';
+import type { AuditInput } from '../../../src/context.js';
+import type { Database, Querier } from '../../../src/db/querier.js';
 import { SWEEP_INTERVAL_MS } from '../../../src/hooks/sweep.js';
 import { describeDb, testDatabase } from '../../helpers/database.js';
 import { signedInUser } from '../../helpers/identity.js';
 import { licensingHarness, testKeys } from '../../helpers/licensing.js';
 import { call } from '../../helpers/teams.js';
 import { manualTimers, type ManualTimers } from '../../helpers/timers.js';
-import type { TenantDb } from '../../../src/tenancy/tenant-db.js';
+import type { TenantDb, TenantQuerier } from '../../../src/tenancy/tenant-db.js';
 import { createTenancy, type Tenancy } from '../../../src/tenancy/tenancy.js';
 import { defaultTenantDb } from '../../helpers/tenancy.js';
 
@@ -119,7 +120,7 @@ describeDb('the audit chain sealer (audit-chain spec §3.2)', () => {
   /** Every row as `[id, seq]`, sealed rows in chain order and unsealed ones (seq null) after. */
   const rows = async () =>
     (
-      await db.query<{ id: string; seq: string | null }>(
+      await tdb.query<{ id: string; seq: string | null }>(
         'select id, chain_seq::text as seq from audit_events order by chain_seq nulls last, at, id',
       )
     ).rows.map((r) => [r.id, r.seq === null ? null : Number(r.seq)]);
@@ -156,8 +157,8 @@ describeDb('the audit chain sealer (audit-chain spec §3.2)', () => {
   });
   afterAll(() => db.close());
   beforeEach(async () => {
-    await db.query('delete from audit_events');
-    await db.query('delete from audit_chain_anchor');
+    await tdb.query('delete from audit_events');
+    await tdb.query('delete from audit_chain_anchor');
   });
 
   it('exports the spec values', () => {
@@ -170,10 +171,10 @@ describeDb('the audit chain sealer (audit-chain spec §3.2)', () => {
 
   describe('a pass', () => {
     it('the first inserts the genesis anchor and seals existing rows with gapless seqs from 1, in (at, id) order', async () => {
-      await insert(db, '01J9ZK3V8Q00000000000000B2', '2026-10-03T00:00:02Z');
-      await insert(db, '01J9ZK3V8Q00000000000000A1', '2026-10-03T00:00:01Z');
-      await insert(db, '01J9ZK3V8Q00000000000000C2', '2026-10-03T00:00:02Z');
-      await insert(db, '01J9ZK3V8Q00000000000000A0', '2026-10-03T00:00:03Z');
+      await insert(tdb, '01J9ZK3V8Q00000000000000B2', '2026-10-03T00:00:02Z');
+      await insert(tdb, '01J9ZK3V8Q00000000000000A1', '2026-10-03T00:00:01Z');
+      await insert(tdb, '01J9ZK3V8Q00000000000000C2', '2026-10-03T00:00:02Z');
+      await insert(tdb, '01J9ZK3V8Q00000000000000A0', '2026-10-03T00:00:03Z');
       expect(await readAnchor(tdb)).toBeUndefined();
       expect(await sealer().runOnce()).toEqual({ outcome: 'sealed', sealed: 4, nextDelayMs: SEAL_BUSY_MS });
       expect(await readAnchor(tdb)).toEqual({
@@ -192,7 +193,7 @@ describeDb('the audit chain sealer (audit-chain spec §3.2)', () => {
     });
 
     it('every link recomputed with canonical.ts matches chain_hash, across batches', async () => {
-      for (let n = 1; n <= 5; n++) await record(db, event(n));
+      for (let n = 1; n <= 5; n++) await record(tdb, event(n));
       const s = sealer({ batchSize: 2 });
       // A full batch passes again at once; a partial one after 2 s.
       expect(await s.runOnce()).toEqual({ outcome: 'sealed', sealed: 2, nextDelayMs: SEAL_BACKLOG_MS });
@@ -203,11 +204,11 @@ describeDb('the audit chain sealer (audit-chain spec §3.2)', () => {
     });
 
     it('a row committed late, with an earlier at than sealed rows, gets the next seq', async () => {
-      await insert(db, '01J9ZK3V8Q00000000000000L2', '2026-10-03T00:00:02Z');
-      await insert(db, '01J9ZK3V8Q00000000000000L3', '2026-10-03T00:00:03Z');
+      await insert(tdb, '01J9ZK3V8Q00000000000000L2', '2026-10-03T00:00:02Z');
+      await insert(tdb, '01J9ZK3V8Q00000000000000L3', '2026-10-03T00:00:03Z');
       const s = sealer();
       expect((await s.runOnce()).sealed).toBe(2);
-      await insert(db, '01J9ZK3V8Q00000000000000L1', '2026-10-03T00:00:01Z');
+      await insert(tdb, '01J9ZK3V8Q00000000000000L1', '2026-10-03T00:00:01Z');
       expect((await s.runOnce()).sealed).toBe(1);
       expect(await rows()).toEqual([
         ['01J9ZK3V8Q00000000000000L2', 1],
@@ -218,9 +219,9 @@ describeDb('the audit chain sealer (audit-chain spec §3.2)', () => {
     });
 
     it('a row inside a transaction still open during a pass is not sealed; the pass after its commit seals it', async () => {
-      await insert(db, '01J9ZK3V8Q00000000000000O2', '2026-10-03T00:00:02Z');
+      await insert(tdb, '01J9ZK3V8Q00000000000000O2', '2026-10-03T00:00:02Z');
       const s = sealer();
-      await db.transaction(async (open) => {
+      await tdb.transaction(async (open) => {
         await insert(open, '01J9ZK3V8Q00000000000000O1', '2026-10-03T00:00:01Z');
         // The pass runs on another pool client while this transaction holds its uncommitted row.
         expect((await s.runOnce()).sealed).toBe(1);
@@ -242,7 +243,7 @@ describeDb('the audit chain sealer (audit-chain spec §3.2)', () => {
     });
 
     it('two sealers on one database never assign the same seq; the loser ends busy-elsewhere', async () => {
-      for (let n = 1; n <= 5; n++) await record(db, event(n));
+      for (let n = 1; n <= 5; n++) await record(tdb, event(n));
       const held = gated(db, /pg_try_advisory_xact_lock/);
       const winner = sealer({ db: held.db });
       const loser = sealer();
@@ -254,7 +255,7 @@ describeDb('the audit chain sealer (audit-chain spec §3.2)', () => {
       expect(await first).toEqual({ outcome: 'sealed', sealed: 5, nextDelayMs: SEAL_BUSY_MS });
 
       // Then both race freely, in small batches, until the backlog is gone.
-      for (let n = 6; n <= 40; n++) await record(db, event(n));
+      for (let n = 6; n <= 40; n++) await record(tdb, event(n));
       const a = sealer({ batchSize: 3 });
       const b = sealer({ batchSize: 3 });
       const outcomes: SealPass['outcome'][] = [];
@@ -273,8 +274,8 @@ describeDb('the audit chain sealer (audit-chain spec §3.2)', () => {
 
     it('an anchor with a different key id leaves every row unsealed and logs one error, without the key', async () => {
       await insertGenesis(tdb, OTHER_KEY);
-      await record(db, event(1));
-      await record(db, event(2));
+      await record(tdb, event(1));
+      await record(tdb, event(2));
       const { lines, of, log } = recordingLog();
       const s = sealer({ log });
       expect(await s.runOnce()).toEqual({ outcome: 'wrong-key', sealed: 0, nextDelayMs: SEAL_IDLE_MS });
@@ -298,10 +299,10 @@ describeDb('the audit chain sealer (audit-chain spec §3.2)', () => {
     });
 
     it('an anchor failing its MAC leaves every row unsealed and logs one error per anchor state', async () => {
-      for (let n = 1; n <= 3; n++) await record(db, event(n));
+      for (let n = 1; n <= 3; n++) await record(tdb, event(n));
       expect((await sealer().runOnce()).sealed).toBe(3);
-      await db.query('update audit_chain_anchor set head_seq = 1');
-      await record(db, event(4));
+      await tdb.query('update audit_chain_anchor set head_seq = 1');
+      await record(tdb, event(4));
       const { lines, of, log } = recordingLog();
       const s = sealer({ log });
       expect(await s.runOnce()).toEqual({ outcome: 'bad-anchor', sealed: 0, nextDelayMs: SEAL_IDLE_MS });
@@ -312,7 +313,7 @@ describeDb('the audit chain sealer (audit-chain spec §3.2)', () => {
       ]);
       expect((await s.runOnce()).outcome).toBe('bad-anchor');
       expect(of('error')).toHaveLength(1);
-      await db.query('update audit_chain_anchor set head_seq = 2');
+      await tdb.query('update audit_chain_anchor set head_seq = 2');
       expect((await s.runOnce()).outcome).toBe('bad-anchor');
       expect(of('error')).toHaveLength(2);
       expect(JSON.stringify(lines)).not.toContain(KEY);
@@ -321,24 +322,24 @@ describeDb('the audit chain sealer (audit-chain spec §3.2)', () => {
     });
 
     it('a sealing pass records head_seq in the anchor; an idle pass leaves it', async () => {
-      for (let n = 1; n <= 3; n++) await record(db, event(n));
+      for (let n = 1; n <= 3; n++) await record(tdb, event(n));
       const s = sealer();
       expect((await s.runOnce()).sealed).toBe(3);
       expect((await readAnchor(tdb))?.headSeq).toBe(3n);
       expect((await s.runOnce()).outcome).toBe('idle');
       expect((await readAnchor(tdb))?.headSeq).toBe(3n);
-      await record(db, event(4));
+      await record(tdb, event(4));
       expect((await s.runOnce()).sealed).toBe(1);
       expect((await readAnchor(tdb))?.headSeq).toBe(4n);
     });
 
     it('with every sealed row deleted from outside, the next pass seals at head_seq + 1, linked to the anchor', async () => {
-      for (let n = 1; n <= 3; n++) await record(db, event(n));
+      for (let n = 1; n <= 3; n++) await record(tdb, event(n));
       const s = sealer();
       await s.runOnce();
       // The old retention, run while the key was unset, deletes by `at` alone.
-      await db.query('delete from audit_events');
-      await record(db, event(4));
+      await tdb.query('delete from audit_events');
+      await record(tdb, event(4));
       expect((await s.runOnce()).sealed).toBe(1);
       const anchor = (await readAnchor(tdb))!;
       expect(anchor.seq).toBe(0n);
@@ -349,11 +350,11 @@ describeDb('the audit chain sealer (audit-chain spec §3.2)', () => {
     });
 
     it('with the newest sealed rows deleted from outside, sealing resumes past the gap from the highest kept row', async () => {
-      for (let n = 1; n <= 4; n++) await record(db, event(n));
+      for (let n = 1; n <= 4; n++) await record(tdb, event(n));
       const s = sealer();
       await s.runOnce();
-      await db.query('delete from audit_events where chain_seq >= 3');
-      await record(db, event(5));
+      await tdb.query('delete from audit_events where chain_seq >= 3');
+      await record(tdb, event(5));
       expect((await s.runOnce()).sealed).toBe(1);
       const page = await sealedPage(tdb, 0n, 10);
       expect(page.map((r) => r.seq)).toEqual([1n, 2n, 5n]);
@@ -362,11 +363,11 @@ describeDb('the audit chain sealer (audit-chain spec §3.2)', () => {
     });
 
     it('a batch that fails after its rows are written seals nothing and keeps head_seq; the next pass seals from the same head', async () => {
-      await record(db, event(1));
-      await record(db, event(2));
+      await record(tdb, event(1));
+      await record(tdb, event(2));
       await sealer().runOnce();
       const before = (await sealedPage(tdb, 1n, 1))[0]!;
-      for (let n = 3; n <= 5; n++) await record(db, event(n));
+      for (let n = 3; n <= 5; n++) await record(tdb, event(n));
       const statements: string[] = [];
       const failing: Database = {
         query: db.query.bind(db),
@@ -406,10 +407,10 @@ describeDb('the audit chain sealer (audit-chain spec §3.2)', () => {
     });
 
     it('never re-creates the genesis over sealed rows: with the anchor deleted, the pass refuses and seals nothing', async () => {
-      for (let n = 1; n <= 3; n++) await record(db, event(n));
+      for (let n = 1; n <= 3; n++) await record(tdb, event(n));
       expect((await sealer().runOnce()).sealed).toBe(3);
-      await db.query('delete from audit_chain_anchor');
-      await record(db, event(4));
+      await tdb.query('delete from audit_chain_anchor');
+      await record(tdb, event(4));
       const { lines, of, log } = recordingLog();
       const s = sealer({ log });
       expect(await s.runOnce()).toEqual({ outcome: 'bad-anchor', sealed: 0, nextDelayMs: SEAL_IDLE_MS });
@@ -434,8 +435,8 @@ describeDb('the audit chain sealer (audit-chain spec §3.2)', () => {
     });
 
     it('logs the head at info after a batch that sealed something, and not after an empty one', async () => {
-      await record(db, event(1));
-      await record(db, event(2));
+      await record(tdb, event(1));
+      await record(tdb, event(2));
       const { lines, of, log } = recordingLog();
       const s = sealer({ log });
       await s.runOnce();
@@ -454,7 +455,7 @@ describeDb('the audit chain sealer (audit-chain spec §3.2)', () => {
 
   describe('the loop', () => {
     it('passes at start, 2 s while busy, 5 s idle, backing off after a thrown error, then recovers', async () => {
-      await record(db, event(1));
+      await record(tdb, event(1));
       const timers = manualTimers();
       const { of, log } = recordingLog();
       let broken = false;
@@ -481,7 +482,7 @@ describeDb('the audit chain sealer (audit-chain spec §3.2)', () => {
       expect(of('warn')).toHaveLength(1);
 
       broken = false;
-      await record(db, event(2));
+      await record(tdb, event(2));
       timers.fire(10_000);
       expect((await s.runOnce()).outcome).toBe('sealed');
       expect(of('info').map((l) => l.args[1])).toContain('audit chain sealing recovered');
@@ -493,7 +494,7 @@ describeDb('the audit chain sealer (audit-chain spec §3.2)', () => {
     });
 
     it('drains a backlog: after a full batch it passes again at 0 ms, after a partial one at 2 s', async () => {
-      for (let n = 1; n <= 5; n++) await record(db, event(n));
+      for (let n = 1; n <= 5; n++) await record(tdb, event(n));
       const timers = manualTimers();
       const s = sealer({ setTimer: timers.setTimer, batchSize: 2 });
       s.start();
@@ -510,7 +511,7 @@ describeDb('the audit chain sealer (audit-chain spec §3.2)', () => {
     });
 
     it('stop waits for the pass under way, which commits, and arms nothing after', async () => {
-      await record(db, event(1));
+      await record(tdb, event(1));
       const timers = manualTimers();
       const held = gated(db, /for update skip locked/);
       const s = sealer({ db: held.db, setTimer: timers.setTimer });
@@ -522,7 +523,7 @@ describeDb('the audit chain sealer (audit-chain spec §3.2)', () => {
       });
       // A macrotask and a database round-trip: a stop that did not wait would have resolved by now.
       await new Promise(setImmediate);
-      await db.query('select 1');
+      await tdb.query('select 1');
       expect(stopped).toBe(false);
       held.release();
       await stopping;
@@ -532,13 +533,13 @@ describeDb('the audit chain sealer (audit-chain spec §3.2)', () => {
   });
 
   it('20 audited actions in parallel transactions all complete while a pass holds its lock; then all are sealed', async () => {
-    await record(db, event(0));
+    await record(tdb, event(0));
     const held = gated(db, /for update skip locked/);
     const s = sealer({ db: held.db });
     const pass = s.runOnce();
     // The pass holds the advisory lock and its claimed row, mid-transaction.
     await held.entered;
-    const actions = Array.from({ length: 20 }, (_, i) => db.transaction((tx) => record(tx, event(i + 1))));
+    const actions = Array.from({ length: 20 }, (_, i) => tdb.transaction((tx) => record(tx, event(i + 1))));
     await Promise.all(actions);
     held.release();
     expect((await pass).sealed).toBe(1);
@@ -577,14 +578,14 @@ describeDb('the audit chain sealer in a running server (audit-chain spec §3.2)'
     }, WAIT);
     return armed!;
   }
-  const chainSeqOf = async (db: Querier, eventId: string) =>
+  const chainSeqOf = async (db: TenantQuerier, eventId: string) =>
     (await db.query<{ seq: string | null }>('select chain_seq::text as seq from audit_events where id = $1', [eventId]))
       .rows[0]?.seq;
   async function createTeam(h: Awaited<ReturnType<typeof server>>['h']) {
     const admin = await signedInUser(h, { email: 'root@example.com', serverAdmin: true });
     const res = await call<{ id: string }>(h, admin, 'POST', '/teams', { name: 'Payments' });
     expect(res.status).toBe(201);
-    const row = await h.db.query<{ id: string }>(
+    const row = await h.tdb.query<{ id: string }>(
       `select id from audit_events where action = 'team.created' and target_id = $1`,
       [res.body.id],
     );
@@ -595,10 +596,10 @@ describeDb('the audit chain sealer in a running server (audit-chain spec §3.2)'
     const { h, timers } = await server({ WIREBENCH_SERVER_AUDIT_CHAIN_KEY: KEY });
     await settled(timers); // the pass at start
     const eventId = await createTeam(h);
-    expect(await chainSeqOf(h.db, eventId)).toBeNull();
+    expect(await chainSeqOf(h.tdb, eventId)).toBeNull();
     timers.fire(await settled(timers));
     expect(await settled(timers)).toBe(SEAL_BUSY_MS);
-    expect(await chainSeqOf(h.db, eventId)).not.toBeNull();
+    expect(await chainSeqOf(h.tdb, eventId)).not.toBeNull();
     expect((await readAnchor(h.tdb))?.keyId).toBe(keyId(KEY));
   }, 30_000);
 
@@ -608,9 +609,9 @@ describeDb('the audit chain sealer in a running server (audit-chain spec §3.2)'
     expect(timers.pending(SWEEP_INTERVAL_MS)).toBe(1);
     const eventId = await createTeam(h);
     expect(SEALER_DELAYS.map((ms) => timers.pending(ms))).toEqual(SEALER_DELAYS.map(() => 0));
-    expect(await chainSeqOf(h.db, eventId)).toBeNull();
+    expect(await chainSeqOf(h.tdb, eventId)).toBeNull();
     expect(await readAnchor(h.tdb)).toBeUndefined();
-    const sealed = await h.db.query('select 1 from audit_events where chain_seq is not null');
+    const sealed = await h.tdb.query('select 1 from audit_events where chain_seq is not null');
     expect(sealed.rows).toHaveLength(0);
   }, 30_000);
 });

@@ -26,7 +26,15 @@
  *   exists yet, has the callers {@link URL_WITHOUT_SCOPE_ALLOWED} names. Names built at run time
  *   (`config['public' + 'Url']`) are not caught; they are not a mistake anyone makes by accident.
  *
- * Task 17 adds the gate's other rules.
+ * - **No raw database outside the files that hold the pool** (Task 17): no import of `db/pool` or `db/querier` (the
+ *   raw `Querier` and `Database`), static, dynamic or a re-export, outside `src/db/`, `src/tenancy/` and
+ *   {@link RAW_DB_ALLOWED} (the start-up and the admin command line, which open the pool and hand it to the
+ *   tenancy). A module's only way to the database is `ctx.tenancy`.
+ * - **No tenant setting and no tenants table outside `src/tenancy/`** (Task 17): no SQL text naming `set_config`,
+ *   `wirebench.tenant_id`, `from tenants` or `join tenants`. A statement that set its own tenant, or read the
+ *   tenants list, would choose its tenant itself.
+ * - **No `for_each_tenant` anywhere in the server's source** (spec §19.4): it loops over every tenant, for
+ *   migrations; no request or job may run it.
  *
  * `node scripts/check-tenant-scope.ts` prints the result and exits non-zero, listing `file:line`, on any hit.
  * Wired into `pnpm check` as `pnpm check:tenant-scope`. ESLint's config is protected, which is why this is a
@@ -88,6 +96,23 @@ export const OPERATOR_URL_ALLOWED: readonly string[] = [
  */
 export const URL_WITHOUT_SCOPE_ALLOWED: readonly string[] = ['packages/server/src/sso/module.ts', URLS_FILE];
 
+/** Outside `src/db/` and `src/tenancy/`, the files that open the pool and hand it to the tenancy. */
+export const RAW_DB_ALLOWED: readonly string[] = [
+  'packages/server/src/serve.ts',
+  'packages/server/src/identity/cli.ts',
+];
+const RAW_DB_DIRS: readonly string[] = ['packages/server/src/db/', TENANCY_DIR];
+/** The raw pool and its types (`db/pool.ts`, `db/querier.ts`), by the end of a module specifier. */
+const RAW_DB_MODULE = /(?:^|\/)db\/(?:pool|querier)(?:\.[cm]?[jt]s)?$/;
+
+/** SQL that picks a tenant, or reads the tenants, itself. */
+const TENANT_SQL: readonly { readonly pattern: RegExp; readonly rule: ScopeHit['rule'] }[] = [
+  { pattern: /\bset_config\b/i, rule: 'tenant-sql' },
+  { pattern: /\bwirebench\.tenant_id\b/i, rule: 'tenant-sql' },
+  { pattern: /\b(?:from|join)\s+(?:only\s+)?(?:"?\w+"?\.)?"?tenants"?(?![\w"])/i, rule: 'tenant-sql' },
+  { pattern: /\bfor_each_tenant\b/i, rule: 'for-each-tenant' },
+];
+
 export interface ScopeHit {
   readonly file: string;
   readonly line: number;
@@ -101,7 +126,10 @@ export interface ScopeHit {
     | 'license-without-scope'
     | 'public-url'
     | 'operator-url'
-    | 'url-without-scope';
+    | 'url-without-scope'
+    | 'raw-db'
+    | 'tenant-sql'
+    | 'for-each-tenant';
 }
 
 const PUBLIC_URL = 'publicUrl';
@@ -182,6 +210,57 @@ export function findScopeMints(file: string, content: string): ScopeHit[] {
   return hits;
 }
 
+/**
+ * Every import of the raw pool outside the files that hold it, and every piece of SQL text that sets the tenant,
+ * names the tenants table or calls `for_each_tenant`. Strings and template text are read from the syntax tree, so
+ * a comment never counts; `for_each_tenant` counts as an identifier too, and in `src/tenancy/` as well.
+ */
+export function findRawDatabase(file: string, content: string): ScopeHit[] {
+  const source = ts.createSourceFile(file, content, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+  const hits: ScopeHit[] = [];
+  const lines = content.split('\n');
+  const hit = (node: ts.Node, rule: ScopeHit['rule']): void => {
+    const line = source.getLineAndCharacterOfPosition(node.getStart(source)).line;
+    hits.push({ file, line: line + 1, text: (lines[line] ?? '').trim(), rule });
+  };
+  const holdsPool = RAW_DB_ALLOWED.includes(file) || RAW_DB_DIRS.some((dir) => file.startsWith(dir));
+  const inTenancy = file.startsWith(TENANCY_DIR);
+  const specifier = (node: ts.Node): ts.Expression | undefined => {
+    if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) return node.moduleSpecifier;
+    if (ts.isImportEqualsDeclaration(node) && ts.isExternalModuleReference(node.moduleReference)) {
+      return node.moduleReference.expression;
+    }
+    if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword) return node.arguments[0];
+    if (ts.isImportTypeNode(node) && ts.isLiteralTypeNode(node.argument)) return node.argument.literal;
+    return undefined;
+  };
+  const visit = (node: ts.Node): void => {
+    const from = specifier(node);
+    if (!holdsPool && from !== undefined && ts.isStringLiteralLike(from) && RAW_DB_MODULE.test(from.text)) {
+      hit(node, 'raw-db');
+    }
+    const text =
+      ts.isStringLiteralLike(node) || ts.isTemplateHead(node) || ts.isTemplateMiddle(node) || ts.isTemplateTail(node)
+        ? node.text
+        : undefined;
+    if (text !== undefined) {
+      // One hit per piece of text and rule, however many of its patterns it matches.
+      const rules = new Set(
+        TENANT_SQL.filter(({ pattern, rule }) => (rule === 'for-each-tenant' || !inTenancy) && pattern.test(text)).map(
+          ({ rule }) => rule,
+        ),
+      );
+      for (const rule of rules) hit(node, rule);
+    }
+    if (ts.isIdentifier(node) && node.text === 'for_each_tenant') {
+      hit(node, 'for-each-tenant');
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return hits;
+}
+
 async function sourceFiles(root: string): Promise<string[]> {
   const entries = await readdir(root, { recursive: true, withFileTypes: true });
   return entries
@@ -194,7 +273,7 @@ export async function checkTenantScope(repoRoot: string): Promise<ScopeHit[]> {
   for (const path of await sourceFiles(join(repoRoot, SOURCE_ROOT))) {
     const file = relative(repoRoot, path).split(sep).join('/');
     const content = await readFile(path, 'utf8');
-    hits.push(...findScopeMints(file, content), ...findUrlReads(file, content));
+    hits.push(...findScopeMints(file, content), ...findUrlReads(file, content), ...findRawDatabase(file, content));
   }
   return hits;
 }
@@ -203,7 +282,7 @@ if (process.argv[1] !== undefined && fileURLToPath(import.meta.url) === process.
   const repoRoot = join(import.meta.dirname, '..');
   const hits = await checkTenantScope(repoRoot);
   if (hits.length === 0) {
-    console.log('check:tenant-scope: no scope minted and no public URL read outside their files');
+    console.log('check:tenant-scope: no scope minted, no public URL read and no raw database outside their files');
   } else {
     const WHAT = {
       'default-scope': 'defaultScope outside the files that may name it',
@@ -214,6 +293,9 @@ if (process.argv[1] !== undefined && fileURLToPath(import.meta.url) === process.
       'public-url': 'a read of the configured public URL; use tenantUrl(config, request)',
       'operator-url': 'operatorPublicUrl outside main.ts and serve.ts',
       'url-without-scope': 'urlWithoutScope outside its allowed callers',
+      'raw-db': 'the raw pool or its Querier outside src/db/, src/tenancy/ and the start-up; use ctx.tenancy',
+      'tenant-sql': 'SQL that sets the tenant or reads the tenants table outside src/tenancy/',
+      'for-each-tenant': 'for_each_tenant is for migrations only',
     } as const;
     for (const hit of hits) console.error(`${hit.file}:${String(hit.line)}: ${WHAT[hit.rule]}: ${hit.text}`);
     console.error('A module takes its scope, and its URL, from the request or the job loop (spec §19.5, §19.8).');
