@@ -369,7 +369,7 @@ export function PreferencesEditor({ initialSection }: PreferencesEditorProps) {
                                 aria-hidden="true"
                                 data-testid="settings-nav-modified"
                                 title="Has changed settings"
-                                className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent"
+                                className="h-1.5 w-1.5 shrink-0 rounded-full bg-highlight"
                               />
                             )}
                           </button>

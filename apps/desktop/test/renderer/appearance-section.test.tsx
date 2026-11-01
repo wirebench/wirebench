@@ -54,10 +54,11 @@ describe('Appearance colour theme cards', () => {
       rind: 'Rind',
       plume: 'Plume',
       kiln: 'Kiln',
+      trail: 'Trail',
     });
   });
 
-  it('lists nine cards as radios, the current one checked', () => {
+  it('lists ten cards as radios, the current one checked', () => {
     renderSection(withPalette('dusk'));
     const group = screen.getByRole('radiogroup', { name: 'Colour theme' });
     const radios = within(group).getAllByRole('radio');
@@ -71,6 +72,7 @@ describe('Appearance colour theme cards', () => {
       'Rind',
       'Plume',
       'Kiln',
+      'Trail',
     ]);
     expect(screen.getByTestId('preferences-palette-dusk').getAttribute('aria-checked')).toBe('true');
     expect(screen.getByTestId('preferences-palette-default').getAttribute('aria-checked')).toBe('false');
@@ -109,7 +111,7 @@ describe('Appearance colour theme cards', () => {
     cleanup();
     const again = renderSection(withPalette('default'));
     fireEvent.keyDown(screen.getByTestId('preferences-palette-default'), { key: 'ArrowUp' });
-    expect(again).toHaveBeenLastCalledWith({ ui: { palette: 'kiln' } });
+    expect(again).toHaveBeenLastCalledWith({ ui: { palette: 'trail' } });
   });
 
   it('only the checked card is in the tab order', () => {

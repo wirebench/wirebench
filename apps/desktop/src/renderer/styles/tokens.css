@@ -60,6 +60,9 @@
   --wb-border-default: #2a2724;
   --wb-border-strong: #696663;
   --wb-border-focus: var(--wb-accent-default);
+  /* Small marks — the active-tab bar, count pills, "changed" dots. The accent unless a theme splits them. */
+  --wb-highlight: var(--wb-accent-default);
+  --wb-fg-on-highlight: var(--wb-fg-on-accent);
   --wb-focus-ring-width: 2px;
   --wb-focus-ring-offset: -1px;
 
@@ -195,7 +198,7 @@
 }
 
 /*
- * Colour themes, in picker order: Field kit, Sandstone, Dusk, Seed, Pith, Rind, Plume, Kiln (see the header for
+ * Colour themes, in picker order: Field kit, Sandstone, Dusk, Seed, Pith, Rind, Plume, Kiln, Trail (see the header for
  * the cascade, and the spec, docs/specs/2026-10-30-colour-themes.md §3, for each palette's table).
  */
 
@@ -595,6 +598,56 @@
   --wb-border-strong: #8c8a80;
   --wb-status-danger: #b23b33;
   --wb-border-focus: var(--wb-accent-default);
+}
+
+/* Trail dark. */
+[data-palette='trail'] {
+  --wb-bg-sunken: #1a1210;
+  --wb-bg-base: #231915;
+  --wb-bg-raised: #2b201b;
+  --wb-bg-overlay: #33261f;
+  --wb-bg-hover: #34271f;
+  --wb-bg-active: #3d2e25;
+  --wb-bg-selected: #3e3d62;
+  --wb-fg-default: #f1e8df;
+  --wb-fg-muted: #c9ae9a;
+  --wb-fg-subtle: #b09582;
+  --wb-border-default: #3a2c25;
+  --wb-accent-default: #a5a5d6;
+  --wb-accent-hover: #b8b8e0;
+  --wb-accent-muted: #4a4970;
+  --wb-accent-surface: #2c2a3d;
+  --wb-fg-on-accent: #1a1210;
+  --wb-fg-faint: #a88a75;
+  --wb-border-strong: #86705f;
+  --wb-highlight: #e2734f;
+  --wb-fg-on-highlight: #1a1210;
+  --wb-status-danger: #f07a8a;
+}
+
+/* Trail light. */
+[data-palette='trail'][data-theme='light'] {
+  --wb-bg-sunken: #f2ebe3;
+  --wb-bg-base: #f5efe8;
+  --wb-bg-raised: #ffffff;
+  --wb-bg-overlay: #ffffff;
+  --wb-bg-hover: #ede4da;
+  --wb-bg-active: #e3d7ca;
+  --wb-bg-selected: #dadaec;
+  --wb-fg-default: #452c24;
+  --wb-fg-muted: #684a36;
+  --wb-fg-subtle: #7a5c48;
+  --wb-border-default: #dccdbe;
+  --wb-accent-default: #46467a;
+  --wb-accent-hover: #383866;
+  --wb-accent-muted: #c9c9e2;
+  --wb-accent-surface: #ececf5;
+  --wb-fg-on-accent: #ffffff;
+  --wb-fg-faint: #7e6250;
+  --wb-border-strong: #9a8270;
+  --wb-highlight: #b53d1d;
+  --wb-fg-on-highlight: #ffffff;
+  --wb-status-danger: #b02a3a;
 }
 
 * {

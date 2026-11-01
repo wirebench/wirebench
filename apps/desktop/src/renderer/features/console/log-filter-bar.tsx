@@ -207,7 +207,7 @@ export function LogFilterBar({ shown, total, actions }: LogFilterBarProps) {
             {active > 0 && (
               <span
                 data-testid="http-log-filters-count"
-                className="rounded-full bg-accent px-1.5 font-mono text-xs leading-4 text-fg-on-accent"
+                className="rounded-full bg-highlight px-1.5 font-mono text-xs leading-4 text-fg-on-highlight"
               >
                 {active}
               </span>

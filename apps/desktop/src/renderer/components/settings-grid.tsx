@@ -363,7 +363,7 @@ function Row({
               role="img"
               aria-label="Changed from default"
               title="Changed from default"
-              className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent"
+              className="h-1.5 w-1.5 shrink-0 rounded-full bg-highlight"
             />
           )}
           {locked && <LockedPill />}

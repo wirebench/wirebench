@@ -530,7 +530,7 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
           <span
             data-testid="catch-url-unseen"
             title="Captures not seen on this device"
-            className="shrink-0 rounded-full bg-accent px-1.5 text-xs text-fg-on-accent"
+            className="shrink-0 rounded-full bg-highlight px-1.5 text-xs text-fg-on-highlight"
           >
             {`${String(node.data.unseen)}${node.data.unseenMore === true ? '+' : ''}`}
           </span>

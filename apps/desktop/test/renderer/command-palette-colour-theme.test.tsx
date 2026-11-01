@@ -97,7 +97,7 @@ describe('Theme: choose colour theme…', () => {
     expect(openPalette).toHaveBeenCalledWith('palette');
   });
 
-  it('lists the nine colour themes, the current one marked and highlighted', () => {
+  it('lists the ten colour themes, the current one marked and highlighted', () => {
     act(() => {
       useUiStore.getState().setPalette('sandstone');
     });
@@ -113,6 +113,7 @@ describe('Theme: choose colour theme…', () => {
       'rind',
       'plume',
       'kiln',
+      'trail',
     ]);
     expect(items.map((item) => item.querySelector('span')?.textContent)).toEqual([
       'Default',
@@ -124,6 +125,7 @@ describe('Theme: choose colour theme…', () => {
       'Rind',
       'Plume',
       'Kiln',
+      'Trail',
     ]);
     const current = items.find((item) => item.dataset['current'] === 'true');
     expect(current?.dataset['colourTheme']).toBe('sandstone');
@@ -172,7 +174,7 @@ describe('Theme: choose colour theme…', () => {
   it('Escape back to Default removes the attribute', () => {
     render(<Host />);
     press('ArrowUp');
-    expect(html().dataset['palette']).toBe('kiln');
+    expect(html().dataset['palette']).toBe('trail');
     press('Escape');
     expect(html().hasAttribute('data-palette')).toBe(false);
   });
