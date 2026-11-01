@@ -37,7 +37,8 @@ import {
   UNSCOPED_TABLES,
   type KeyInfo,
 } from '../../helpers/catalog.js';
-import { describeDb, testDatabase } from '../../helpers/database.js';
+import { describeDb, TEST_DATABASE_URL, testDatabase } from '../../helpers/database.js';
+import { createDatabase } from '../../../src/db/pool.js';
 import { mkTempDir, removeTempDir } from '../../helpers/git.js';
 import { signedInUser } from '../../helpers/identity.js';
 import { asTenantQuerier, defaultTenantDb } from '../../helpers/tenancy.js';
@@ -786,6 +787,52 @@ describeDb('migration 0021 on the frozen 0019 fixture: forced isolation (hosted 
     }
   });
 
+  it('as a role that bypasses the policy, a for_each_tenant statement reaches each tenant once only with the predicate (M1)', async () => {
+    const other = await new TenantAdmin(db, directoryOf(createTenancy(db))).create({ slug: 'bypass', name: 'Bypass' });
+    const otherDb = tenantDbFactory(db)(other.scope);
+    await otherDb.query(
+      "insert into users (id, email, email_lower, display_name) values ('U-bypass', 'b@example.com', 'b@example.com', 'B')",
+    );
+    // The admin URL is a superuser, as the default compose owner is: the forced policy does not hold it.
+    const url = new URL(TEST_DATABASE_URL!);
+    url.searchParams.set('options', `-c search_path=${db.schema}`);
+    const superuser = createDatabase(url.toString());
+    /** How many times `statement` reached each user's row, in one transaction that is rolled back. */
+    const reached = async (statement: string) => {
+      let counts: Record<string, number> = {};
+      await expect(
+        superuser.transaction(async (tx) => {
+          await tx.query("update users set display_name = '0'");
+          await tx.query('select for_each_tenant($1)', [statement]);
+          const rows = await tx.query<{ id: string; n: string }>('select id, display_name as n from users');
+          counts = Object.fromEntries(rows.rows.map((row) => [row.id, Number(row.n)]));
+          throw new Error('roll back');
+        }),
+      ).rejects.toThrow('roll back');
+      return counts;
+    };
+    try {
+      const tenants = Number(
+        (await superuser.query<{ n: string }>('select count(*)::text as n from tenants')).rows[0]!.n,
+      );
+      expect(tenants).toBeGreaterThan(1);
+      const bump = 'update users set display_name = (display_name::int + 1)::text';
+      // Without the predicate every row is reached once per tenant.
+      const unfiltered = await reached(bump);
+      for (const n of Object.values(unfiltered)) expect(n).toBe(tenants);
+      // With it, each row once: in its own tenant's pass.
+      const filtered = await reached(
+        `${bump} where tenant_id = nullif(current_setting('wirebench.tenant_id', true), '')::uuid`,
+      );
+      expect(Object.keys(filtered)).toContain('U-bypass');
+      for (const n of Object.values(filtered)) expect(n).toBe(1);
+    } finally {
+      await superuser.close();
+      await otherDb.query("delete from users where id = 'U-bypass'");
+      await db.owner.query('delete from tenants where id = $1', [other.scope.tenantId]);
+    }
+  });
+
   it('a data migration bracketed with no force and force reaches the rows, and leaves the table forced', async () => {
     const forced = async (tx: Querier) =>
       (
@@ -793,17 +840,23 @@ describeDb('migration 0021 on the frozen 0019 fixture: forced isolation (hosted 
           "select relforcerowsecurity as forced from pg_class where oid = 'users'::regclass",
         )
       ).rows[0]!.forced;
-    await expect(
-      db.owner.transaction(async (tx) => {
-        // Without either, a back-fill touches no row and still succeeds (spec §19.4).
-        expect((await tx.query("update users set display_name = 'unbracketed'")).rowCount).toBe(0);
-        await tx.query('alter table users no force row level security');
-        expect((await tx.query("update users set display_name = 'bracketed'")).rowCount).toBe(countsBefore.users);
-        await tx.query('alter table users force row level security');
-        expect(await forced(tx)).toBe(true);
-        throw new Error('roll back');
-      }),
-    ).rejects.toThrow('roll back');
+    // The owner's own pool, past the test helper's refusal: this is the unbracketed back-fill the lint exists for.
+    const owner = createDatabase(db.ownerUrl);
+    try {
+      await expect(
+        owner.transaction(async (tx) => {
+          // Without either, a back-fill touches no row and still succeeds (spec §19.4).
+          expect((await tx.query("update users set display_name = 'unbracketed'")).rowCount).toBe(0);
+          await tx.query('alter table users no force row level security');
+          expect((await tx.query("update users set display_name = 'bracketed'")).rowCount).toBe(countsBefore.users);
+          await tx.query('alter table users force row level security');
+          expect(await forced(tx)).toBe(true);
+          throw new Error('roll back');
+        }),
+      ).rejects.toThrow('roll back');
+    } finally {
+      await owner.close();
+    }
     expect(await forced(db.owner)).toBe(true);
   });
 
@@ -814,7 +867,24 @@ describeDb('migration 0021 on the frozen 0019 fixture: forced isolation (hosted 
     expect(planted("update users set display_name = 'x';")).toEqual([99]);
     expect(planted("-- for_each_tenant( in a comment\ninsert into audit_events (id) values ('x');")).toEqual([99]);
     expect(planted('do $$ begin delete from captures; end $$;')).toEqual([99]);
-    expect(planted("select for_each_tenant($$update users set display_name = 'x'$$);")).toEqual([]);
+    // A per-tenant statement must name the setting itself, for a migration role the policy does not hold (M1).
+    expect(planted("select for_each_tenant($$update users set display_name = 'x'$$);")).toEqual([99]);
+    expect(
+      planted(
+        "select for_each_tenant($$update users set display_name = 'x' where tenant_id = nullif(current_setting('wirebench.tenant_id', true), '')::uuid$$);",
+      ),
+    ).toEqual([]);
+    expect(
+      planted(
+        "select for_each_tenant('update users set display_name = ''x'' where tenant_id = nullif(current_setting(''wirebench.tenant_id'', true), '''')::uuid');",
+      ),
+    ).toEqual([]);
+    // One filtered call does not cover another that is not.
+    expect(
+      planted(
+        "select for_each_tenant($$update users set display_name = 'x' where tenant_id = nullif(current_setting('wirebench.tenant_id', true), '')::uuid$$);\nselect for_each_tenant($$update captures set rejected = true$$);",
+      ),
+    ).toEqual([99]);
     expect(
       planted(
         "alter table users no force row level security;\nupdate users set display_name = 'x';\nalter table users force row level security;",

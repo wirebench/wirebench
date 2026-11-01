@@ -165,13 +165,13 @@ describeDb('admin --tenant (spec §19.11)', () => {
   });
 
   it('hosted: admin audit export --tenant exports that tenant’s events only (Task 16 review M3)', async () => {
-    expect(
-      await runAdmin(
-        { command: 'admin-invite', email: 'only-beta@example.com', serverAdmin: false, tenant: 'beta' },
-        io().io,
-        options,
-      ),
-    ).toBe(0);
+    // Its own events, whatever ran before it: an invitation in each tenant.
+    for (const [email, tenant] of [
+      ['audit-acme@example.com', 'acme'],
+      ['audit-beta@example.com', 'beta'],
+    ] as const) {
+      expect(await runAdmin({ command: 'admin-invite', email, serverAdmin: false, tenant }, io().io, options)).toBe(0);
+    }
     const exported = async (tenant: string) => {
       const out = io();
       expect(await runAdmin({ command: 'admin-audit-export', tenant }, out.io, options), out.stderr()).toBe(0);
@@ -179,10 +179,20 @@ describeDb('admin --tenant (spec §19.11)', () => {
     };
     const fromAcme = await exported('acme');
     const fromBeta = await exported('beta');
-    // acme's license install (the case above) is acme's event; beta's invite is beta's.
-    expect(fromAcme).toContain('license.installed');
-    expect(fromBeta).not.toContain('license.installed');
-    expect(fromBeta).toContain('user.invited');
-    expect(fromBeta.split('\n').filter((line) => line.includes('user.invited'))).toHaveLength(1);
+    // Each tenant's export has its own invitation's event, and never the other's.
+    const invitedIn = (exported: string) =>
+      exported
+        .split('\n')
+        .filter((line) => line.includes('user.invited'))
+        .map((line) => (JSON.parse(line) as { target: { id: string } }).target.id);
+    const acmeInvited = invitedIn(fromAcme);
+    const betaInvited = invitedIn(fromBeta);
+    expect(acmeInvited.length).toBeGreaterThan(0);
+    expect(betaInvited.length).toBeGreaterThan(0);
+    expect(acmeInvited.filter((id) => betaInvited.includes(id))).toEqual([]);
+    expect(fromAcme).toContain('audit-acme@example.com');
+    expect(fromBeta).toContain('audit-beta@example.com');
+    expect(fromAcme).not.toContain('audit-beta');
+    expect(fromBeta).not.toContain('audit-acme');
   });
 });

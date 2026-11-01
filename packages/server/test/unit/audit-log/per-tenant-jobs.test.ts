@@ -122,6 +122,8 @@ describe('the forwarder over two tenants', () => {
     readonly licensed?: readonly string[];
     readonly sink?: (events: AuditEvent[]) => Promise<void>;
     readonly failCommit?: string;
+    /** The lease release fails, as a database gone away would. */
+    readonly failRelease?: boolean;
   }) {
     const queues = new Map<string, string[]>([
       [ONE.tenantId, ['E1']],
@@ -131,6 +133,9 @@ describe('the forwarder over two tenants', () => {
       (scope, text, params) => {
         if (text.includes('from audit_forward_queue q join audit_events')) {
           return (queues.get(scope.tenantId) ?? []).map(eventRow);
+        }
+        if (options.failRelease === true && text.startsWith('update audit_forward_queue set lease_id = null')) {
+          throw new Error('connection lost');
         }
         if (text.startsWith('delete from audit_forward_queue')) {
           const ids = params[0] as string[];
@@ -209,6 +214,17 @@ describe('the forwarder over two tenants', () => {
     expect(sent).toEqual(['E1']);
     expect(made.claimsIn('two')).toBe(0);
     expect(made.queues.get(ONE.tenantId)).toEqual([]);
+  });
+
+  it('warns, naming the tenant and no event, when a failed send cannot free its lease (Task 17 review M4)', async () => {
+    const { forwarder, lines } = cast({ sink: () => Promise.reject(new Error('down')), failRelease: true });
+    expect(await forwarder.runOnce()).toMatchObject({ outcome: 'failed', sent: 0 });
+    const freed = lines.filter(
+      (line) => line.level === 'warn' && String(line.args[1]).includes('could not free a lease'),
+    );
+    expect(freed).toHaveLength(1);
+    expect(freed[0]!.args[0]).toEqual({ tenantId: ONE.tenantId, reason: 'Error: connection lost' });
+    expect(JSON.stringify(lines)).not.toContain('E1');
   });
 
   it('a batch whose unit failed to commit is not counted as sent, and the failure is logged', async () => {

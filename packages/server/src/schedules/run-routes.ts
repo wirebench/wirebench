@@ -27,9 +27,8 @@ import type { Tenancy } from '../tenancy/tenancy.js';
 
 /** What the routes ask of the scheduler on this server. */
 export interface RunControl {
-  /** Starts queued runs now, rather than at the next tick. */
-  kick(): void;
-  /** Aborts a run this server is running; false when it is not running here. */
+  /** Starts `scope`'s queued runs now, rather than at the next tick; called once its run is committed. */
+  kick(scope: TenantScope): void;
   /** Aborts a run this server is running in `scope`'s tenant. */
   cancel(scope: TenantScope, runId: string): boolean;
 }
@@ -112,7 +111,7 @@ export const scheduleRunRoutes =
             details: { name: row.name, runId: id },
           });
         });
-        env.runs.kick();
+        env.runs.kick(request.tenant);
         return reply.code(201).send(await repo.runById(tdb(request), scheduleId, id));
       },
     );

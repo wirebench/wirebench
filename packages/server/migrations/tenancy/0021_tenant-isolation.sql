@@ -49,6 +49,11 @@ $tenancy$;
 -- every tenant's rows under the forced policy (§19.4). The setting is the transaction's, as `withTenant` sets
 -- it, and goes back to what it was afterwards. For migrations only: the app role may not call it, and
 -- `check:tenant-scope` refuses it in the server's source.
+--
+-- The policy is only the filter for a role it holds. A migration role that bypasses it (a superuser, as the
+-- default compose owner is, or a BYPASSRLS role) sees every tenant's rows on every pass, so `sql` must filter on
+-- the setting itself: `where tenant_id = nullif(current_setting('wirebench.tenant_id', true), '')::uuid`. The
+-- data-migration lint refuses a call without it (test/helpers/catalog.ts).
 create function for_each_tenant(sql text) returns void language plpgsql as $each$
 declare
   tenant uuid;

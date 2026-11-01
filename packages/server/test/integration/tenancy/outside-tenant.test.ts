@@ -25,9 +25,11 @@ describeDb('scoped tables outside a tenant unit (hosted spec §19.4, plan Task 1
   let tenantId: string;
   /** The app role with nothing in front of it: the test helper's own refusal of such statements is not the policy. */
   let app: Database;
+  /** The owner likewise, past the helper's refusal of its reads once the tables are forced. */
+  let owner: Database;
   const roles = (): readonly (readonly [string, Database])[] => [
     ['the app role', app],
-    ['the owner', db.owner],
+    ['the owner', owner],
   ];
 
   /** Runs `fn` in a transaction with `tenant` set ('' for none), then rolls it back, so nothing a check wrote stays. */
@@ -65,6 +67,7 @@ describeDb('scoped tables outside a tenant unit (hosted spec §19.4, plan Task 1
     await migrate(db.owner, await allMigrations(BUILTIN_MODULES));
     await db.grant();
     app = createDatabase(db.url);
+    owner = createDatabase(db.ownerUrl);
     const tdb = await defaultTenantDb(db);
     tenantId = tdb.scope.tenantId;
     // The one table the fixture cannot fill: 0020 made it.
@@ -77,6 +80,7 @@ describeDb('scoped tables outside a tenant unit (hosted spec §19.4, plan Task 1
   });
   afterAll(async () => {
     await app.close();
+    await owner.close();
     await db.close();
     await removeTempDir(dataDir);
   });

@@ -1350,6 +1350,10 @@ tenant through its own column, not only through `users`. The same email in two t
     - The migration test therefore checks two things. Every scoped table has `relforcerowsecurity` on after the last
       migration. And, as a lint, every migration from `0022` on that holds an `insert`, `update` or `delete` on a
       scoped table also holds `for_each_tenant(` or the bracket.
+    - **The statement filters on the setting itself.** A migration role that bypasses the policy (a superuser,
+      as the compose owner is, or `BYPASSRLS`) sees every tenant's rows on each pass, so a statement run
+      through `for_each_tenant` names `tenant_id = nullif(current_setting('wirebench.tenant_id', true),
+      '')::uuid` in each table it reads or writes. The lint refuses a call without it.
     - `0021` revokes `execute` on `for_each_tenant(text)` and `tenant_scope(regclass)` from `public`, so only the
       owner can call them. `check:tenant-scope` refuses `for_each_tenant` anywhere in `src/`: it is a loop across
       every tenant, which no request may hold.

@@ -64,6 +64,8 @@ export class Scheduler {
   private licensed: TenantScope[] = [];
   /** Of those, the ones with a run waiting, as the last pass or claim found them. */
   private readonly waiting = new Set<string>();
+  /** Tenants a Run now named since the last pass took them in (Task 17 review M2). */
+  private readonly kicked = new Set<string>();
   /** The tenant after the one that last got a run started: where the round-robin goes on. */
   private turn: string | undefined;
   /** One start at a time, so two finished runs freeing two slots cannot claim past the cap. */
@@ -82,6 +84,30 @@ export class Scheduler {
       this.passing = undefined;
     });
     return this.passing;
+  }
+
+  /**
+   * A Run now committed a queued run in `scope`'s tenant: start it now, not at the next tick. A pass under way may
+   * have asked that tenant before the run was committed, so the tenant joins the waiting list once that pass ends,
+   * and a start follows it.
+   */
+  kick(scope: TenantScope): void {
+    this.kicked.add(scope.tenantId);
+    const under = this.passing;
+    void this.runOnce()
+      .then(() => {
+        if (under === undefined || this.stopped) return;
+        this.takeKicked();
+        return this.startQueued();
+      })
+      .catch((error: unknown) => {
+        this.env.log.error({ message: messageOf(error) }, 'scheduler pass failed');
+      });
+  }
+
+  private takeKicked(): void {
+    for (const tenantId of this.kicked) this.waiting.add(tenantId);
+    this.kicked.clear();
   }
 
   /** Aborts a run this server is running in `scope`'s tenant; false when it runs elsewhere or not at all. */
@@ -162,6 +188,8 @@ export class Scheduler {
     this.licensed = licensed;
     this.waiting.clear();
     for (const tenantId of waiting) this.waiting.add(tenantId);
+    // A kick this pass may not have seen; a claim that finds nothing takes it off again.
+    this.takeKicked();
     const started = await this.startQueued();
     return { fired, started };
   }

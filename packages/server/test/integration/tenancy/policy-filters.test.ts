@@ -22,6 +22,7 @@ import {
   enqueueForward,
   insertGenesis,
   readAnchor,
+  releaseForwardLease,
   setAnchorHead,
 } from '../../../src/audit-log/repo.js';
 import { permissiveLicense, type AuditInput } from '../../../src/context.js';
@@ -202,6 +203,43 @@ describeDb('statements filtered by the policy alone, in two tenants (hosted spec
       ).toBe(2);
       expect(await leasedOf(dbA)).toEqual([]);
       expect(await leasedOf(dbB)).toHaveLength(2);
+    });
+
+    it('releaseForwardLease frees only the unit tenant’s rows under a lease id both tenants hold (M4)', async () => {
+      await record(a, 1, NOW);
+      await record(b, 1, NOW);
+      const lease = { id: 'L-both', ms: 60_000 };
+      await dbA.transaction((tx) => claimForwardBatch(tx, 100, lease));
+      await dbB.transaction((tx) => claimForwardBatch(tx, 100, lease));
+      await dbA.transaction((tx) => releaseForwardLease(tx, lease.id));
+      const leaseOf = async (tdb: TenantDb) =>
+        (await tdb.query<{ lease_id: string | null }>('select lease_id from audit_forward_queue')).rows;
+      expect(await leaseOf(dbA)).toEqual([{ lease_id: null }]);
+      expect(await leaseOf(dbB)).toEqual([{ lease_id: 'L-both' }]);
+    });
+
+    it('retention stops at the unit tenant’s leased row, and B’s lease neither stops nor frees A (M4)', async () => {
+      await record(a, 3, OLD);
+      await record(b, 3, OLD);
+      await sealer(a).runOnce();
+      await sealer(b).runOnce();
+      // B's first event is leased, which retention in A must not see; A's second one is leased too.
+      const [firstB] = await ids(b);
+      const [, secondA] = await ids(a);
+      await dbB.query(
+        "update audit_forward_queue set lease_id = 'L-b', leased_until = now() + interval '1 minute' where event_id = $1",
+        [firstB],
+      );
+      await dbA.query(
+        "update audit_forward_queue set lease_id = 'L-a', leased_until = now() + interval '1 minute' where event_id = $1",
+        [secondA],
+      );
+      const stops = new RetentionStopLog(silentLog);
+      // Only A's first sealed row goes: the prefix ends before A's own leased row, whatever B holds.
+      expect(await dbA.transaction((tx) => deleteSealedBefore(tx, KEY, CUTOFF, 1000, stops))).toBe(1);
+      expect(await ids(a)).toHaveLength(2);
+      expect(await ids(b)).toHaveLength(3);
+      expect(await verifyChain(dbB, KEY)).toMatchObject({ result: 'intact', checked: 3 });
     });
   });
 

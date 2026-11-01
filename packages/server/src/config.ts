@@ -194,9 +194,10 @@ export interface ServerConfig extends z.output<typeof inputSchema> {
 /**
  * The configuration as modules see it (`ctx.config`, spec §19.5): without the configured public URL, which in hosted
  * mode is no tenant's. A module takes the tenant's URL from `tenantUrl(config, request)`; only `tenancy/urls.ts`
- * reads the field, and `check:tenant-scope` refuses any other read.
+ * reads the field, and `check:tenant-scope` refuses any other read. Nor the database URLs (Task 17 review M3): a
+ * module that opened a pool of its own, as the owner above all, would be past every policy; it has `ctx.tenancy`.
  */
-export type ModuleConfig = Omit<ServerConfig, 'publicUrl'>;
+export type ModuleConfig = Omit<ServerConfig, 'publicUrl' | 'databaseUrl' | 'migrationDatabaseUrl'>;
 
 /** One documented environment variable. */
 export interface ConfigVariable {

@@ -97,13 +97,8 @@ export function schedulesModule(options: SchedulesOptions = {}): ServerModule {
         now,
         runs: {
           // Run now starts at once rather than at the next tick.
-          kick: () => {
-            void scheduler.runOnce().catch((error: unknown) => {
-              ctx.log.error(
-                { message: error instanceof Error ? error.message : String(error) },
-                'scheduler pass failed',
-              );
-            });
+          kick: (scope) => {
+            scheduler.kick(scope);
           },
           cancel: (scope, runId) => scheduler.cancel(scope, runId),
         },

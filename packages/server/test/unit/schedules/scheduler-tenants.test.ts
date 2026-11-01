@@ -38,6 +38,8 @@ function cast(
   features: Record<string, readonly Feature[]> = {},
   /** Tenants whose claim throws. */
   broken: readonly string[] = [],
+  /** Called after each tenant's pass unit: a Run now that lands mid-pass. */
+  afterUnit: (scope: TenantScope) => void = () => undefined,
 ) {
   const tenants = [ONE, TWO];
   const asked: string[] = [];
@@ -66,7 +68,10 @@ function cast(
     license: () => license,
     tenancy: {
       forEachTenant: async (_job: string, fn: (tx: TenantQuerier, scope: TenantScope) => Promise<unknown>) => {
-        for (const scope of tenants) await fn(emptyUnit(scope), scope);
+        for (const scope of tenants) {
+          await fn(emptyUnit(scope), scope);
+          afterUnit(scope);
+        }
         return { served: tenants.length, failed: 0 };
       },
       db: (scope: TenantScope) => ({
@@ -151,6 +156,35 @@ describe('Scheduler across tenants', () => {
     const after = claims.length;
     await drain(started);
     expect(claims).toHaveLength(after);
+    await scheduler.idle();
+  });
+
+  it('a Run now landing mid-pass, after its tenant was asked, starts in that pass, not at the next tick (M2)', async () => {
+    const queued: Record<string, string[]> = { [ONE.tenantId]: [], [TWO.tenantId]: [] };
+    const ref: { scheduler?: Scheduler } = {};
+    const { scheduler, started } = cast(queued, {}, [], (scope) => {
+      // ONE was asked and had nothing; its run commits now, while the pass is in TWO.
+      if (scope.tenantId !== TWO.tenantId || queued[ONE.tenantId]!.length > 0) return;
+      queued[ONE.tenantId]!.push('manual');
+      ref.scheduler!.kick(ONE);
+    });
+    ref.scheduler = scheduler;
+    await scheduler.runOnce();
+    for (let i = 0; i < 10; i++) await turn();
+    expect(started.map((run) => run.runId)).toEqual(['manual']);
+    await drain(started);
+    await scheduler.idle();
+  });
+
+  it('a Run now with no pass under way starts at once', async () => {
+    const queued: Record<string, string[]> = { [ONE.tenantId]: [] };
+    const { scheduler, started } = cast(queued);
+    await scheduler.runOnce();
+    queued[ONE.tenantId]!.push('manual');
+    scheduler.kick(ONE);
+    for (let i = 0; i < 10; i++) await turn();
+    expect(started.map((run) => run.runId)).toEqual(['manual']);
+    await drain(started);
     await scheduler.idle();
   });
 });

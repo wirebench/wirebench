@@ -168,8 +168,16 @@ export class AuditForwarder {
                 await this.deps.sink.send(events);
               } catch (error) {
                 failure ??= error;
-                // Free the rows for the next pass; should that fail too, the lease runs out on its own.
-                await db.transaction((free) => releaseForwardLease(free, lease.id)).catch(() => undefined);
+                // Free the rows for the next pass; should that fail too, the lease runs out on its own. Logged with the
+                // tenant and the database's reason only: never an event (ADR-0004).
+                await db
+                  .transaction((free) => releaseForwardLease(free, lease.id))
+                  .catch((released: unknown) => {
+                    this.deps.log.warn(
+                      { tenantId: scope.tenantId, reason: reasonOf(released) },
+                      'audit forwarding could not free a lease after a failed send; it runs out on its own',
+                    );
+                  });
                 // The sink is the server's one (until slice 7), so the tenants after this one would only wait on it
                 // too. Once each tenant has its own, a failed send must stop only its own batch.
                 return STOP_PASS;

@@ -27,11 +27,11 @@
  *   (`config['public' + 'Url']`) are not caught; they are not a mistake anyone makes by accident.
  *
  * - **No raw database outside the files that hold the pool** (Task 17): no import of `db/pool` or `db/querier` (the
- *   raw `Querier` and `Database`), static, dynamic or a re-export, outside `src/db/`, `src/tenancy/` and
+ *   raw `Querier` and `Database`), nor of the driver (`pg`, `pg-*`, `postgres`), static, dynamic or a re-export, outside `src/db/`, `src/tenancy/` and
  *   {@link RAW_DB_ALLOWED} (the start-up and the admin command line, which open the pool and hand it to the
  *   tenancy). A module's only way to the database is `ctx.tenancy`.
  * - **No tenant setting and no tenants table outside `src/tenancy/`** (Task 17): no SQL text naming `set_config`,
- *   `wirebench.tenant_id`, `from tenants` or `join tenants`. A statement that set its own tenant, or read the
+ *   `wirebench.tenant_id`, `from tenants`, `join tenants` or `tenants` in a comma join. A statement that set its own tenant, or read the
  *   tenants list, would choose its tenant itself.
  * - **No `for_each_tenant` anywhere in the server's source** (spec §19.4): it loops over every tenant, for
  *   migrations; no request or job may run it.
@@ -104,12 +104,16 @@ export const RAW_DB_ALLOWED: readonly string[] = [
 const RAW_DB_DIRS: readonly string[] = ['packages/server/src/db/', TENANCY_DIR];
 /** The raw pool and its types (`db/pool.ts`, `db/querier.ts`), by the end of a module specifier. */
 const RAW_DB_MODULE = /(?:^|\/)db\/(?:pool|querier)(?:\.[cm]?[jt]s)?$/;
+/** The PostgreSQL driver and its kin (`pg`, `pg-pool`, `pg/lib/…`, `postgres`): a pool a module could open itself. */
+const DRIVER_MODULE = /^(?:pg(?:-[\w-]+)?|postgres)(?:\/.*)?$/;
 
 /** SQL that picks a tenant, or reads the tenants, itself. */
 const TENANT_SQL: readonly { readonly pattern: RegExp; readonly rule: ScopeHit['rule'] }[] = [
   { pattern: /\bset_config\b/i, rule: 'tenant-sql' },
   { pattern: /\bwirebench\.tenant_id\b/i, rule: 'tenant-sql' },
   { pattern: /\b(?:from|join)\s+(?:only\s+)?(?:"?\w+"?\.)?"?tenants"?(?![\w"])/i, rule: 'tenant-sql' },
+  // A comma join: `from users u, tenants t`.
+  { pattern: /\bfrom\b[^;]*?,\s*(?:only\s+)?(?:"?\w+"?\.)?"?tenants"?(?![\w"])/i, rule: 'tenant-sql' },
   { pattern: /\bfor_each_tenant\b/i, rule: 'for-each-tenant' },
 ];
 
@@ -236,7 +240,12 @@ export function findRawDatabase(file: string, content: string): ScopeHit[] {
   };
   const visit = (node: ts.Node): void => {
     const from = specifier(node);
-    if (!holdsPool && from !== undefined && ts.isStringLiteralLike(from) && RAW_DB_MODULE.test(from.text)) {
+    if (
+      !holdsPool &&
+      from !== undefined &&
+      ts.isStringLiteralLike(from) &&
+      (RAW_DB_MODULE.test(from.text) || DRIVER_MODULE.test(from.text))
+    ) {
       hit(node, 'raw-db');
     }
     const text =

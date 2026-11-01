@@ -257,4 +257,36 @@ describe('check:tenant-scope', () => {
     );
     expect((await checkTenantScope(root)).map((hit) => hit.file)).not.toContain('packages/server/src/tenancy/ok.ts');
   });
+
+  it('refuses the database driver in a module, and a comma join to tenants (Task 17 review M3)', async () => {
+    const route = 'packages/server/src/agent/routes.ts';
+    for (const text of [
+      "import pg from 'pg';",
+      "import { Pool } from 'pg-pool';",
+      "const { Client } = await import('pg');",
+      "import Cursor from 'pg-cursor';",
+      "import postgres from 'postgres';",
+    ]) {
+      expect(findRawDatabase(route, text), text).toMatchObject([{ rule: 'raw-db' }]);
+    }
+    // The pool itself may.
+    expect(findRawDatabase('packages/server/src/db/pool.ts', "import pg from 'pg';")).toEqual([]);
+    // A module of a similar name is not the driver.
+    expect(findRawDatabase(route, "import x from 'pgp-signer';")).toEqual([]);
+    for (const text of [
+      "db.query('select u.id from users u, tenants t where t.id = u.tenant_id')",
+      'db.query(`select 1 from users,tenants`)',
+    ]) {
+      expect(findRawDatabase(route, text), text).toMatchObject([{ rule: 'tenant-sql' }]);
+    }
+    expect(findRawDatabase(route, "db.query('select a, tenants from x')")).toEqual([]);
+    const root = await tree({
+      'packages/server/src/agent/driver.ts': "import pg from 'pg';\n",
+      'packages/server/src/agent/comma.ts': "export const SQL = 'select 1 from users u, tenants t';\n",
+    });
+    expect((await checkTenantScope(root)).map((hit) => [hit.file, hit.rule])).toEqual([
+      ['packages/server/src/agent/comma.ts', 'tenant-sql'],
+      ['packages/server/src/agent/driver.ts', 'raw-db'],
+    ]);
+  });
 });

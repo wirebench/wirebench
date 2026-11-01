@@ -230,6 +230,9 @@ export const FIRST_LINTED_MIGRATION = 22;
  * security`. Without either, under the forced policy, it touches no row and still succeeds on a non-superuser
  * owner. Comments are skipped; a write inside a `do` block or a string still counts, so the check errs on the
  * strict side.
+ * A `for_each_tenant` call counts only when its statement names the setting itself
+ * (`current_setting('wirebench.tenant_id'…)`): a migration role that bypasses the policy, as the compose superuser
+ * does, would otherwise reach every tenant's rows on each pass (Task 17 review M1).
  * Returns the versions that break it.
  */
 export function unscopedDataMigrations(
@@ -245,11 +248,27 @@ export function unscopedDataMigrations(
     .filter((migration) => {
       const sql = uncommented(migration.sql);
       if (!writes.test(sql)) return false;
-      const each = /\bfor_each_tenant\s*\(/i.test(sql);
+      const calls = forEachTenantArguments(sql);
+      // Every call filters on the setting; a call that does not is no per-tenant statement.
+      const each = calls.length > 0 && calls.every((statement) => SETTING_PREDICATE.test(statement));
       // Both halves: `no force …`, and a `force …` that is not part of one.
       const unforced = /\bno\s+force\s+row\s+level\s+security\b/i.test(sql);
       const forced = /\bforce\s+row\s+level\s+security\b/i.test(sql.replace(/\bno\s+force\b/gi, 'no_force'));
       return !each && !(unforced && forced);
     })
     .map((migration) => migration.version);
+}
+
+/** What a statement run through `for_each_tenant` filters on: the tenant the loop has set. */
+const SETTING_PREDICATE = /\btenant_id\s*=\s*\(?\s*nullif\s*\(\s*current_setting\s*\(\s*'wirebench\.tenant_id'/i;
+
+/** The statement text of each `for_each_tenant(…)` call: a dollar-quoted body or a quoted string. */
+export function forEachTenantArguments(sql: string): string[] {
+  const out: string[] = [];
+  const call = /\bfor_each_tenant\s*\(\s*(?:(\$[A-Za-z_]*\$)([\s\S]*?)\1|'((?:[^']|'')*)')/gi;
+  for (const match of sql.matchAll(call)) out.push(match[2] ?? (match[3] ?? '').replaceAll("''", "'"));
+  // A call whose argument is neither (a variable, a format()) has no statement to read: count it as unfiltered.
+  const total = [...sql.matchAll(/\bfor_each_tenant\s*\(/gi)].length;
+  for (let i = out.length; i < total; i++) out.push('');
+  return out;
 }
