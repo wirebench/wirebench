@@ -6,8 +6,8 @@
  */
 import { randomBytes } from 'node:crypto';
 import { EventEmitter } from 'node:events';
-import { existsSync } from 'node:fs';
-import { lstat, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { lstat, mkdir, readdir, readFile, rename, symlink, writeFile } from 'node:fs/promises';
 import { join, relative, sep } from 'node:path';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { createRestRequest, entry, type SyncPushResponse } from '@wirebench/engine';
@@ -20,7 +20,13 @@ import { mintToken, newId } from '../../../src/identity/tokens.js';
 import { main } from '../../../src/main.js';
 import { BUILTIN_MODULES } from '../../../src/modules.js';
 import { allMigrations, StartupError, startServer } from '../../../src/serve.js';
-import { readTenancyStep, runTenancySteps, type TenancyStep } from '../../../src/tenancy/file-step.js';
+import {
+  readTenancyStep,
+  realFs,
+  runTenancySteps,
+  type StepFs,
+  type TenancyStep,
+} from '../../../src/tenancy/file-step.js';
 import { RunningLock, SERVER_DRAIN_MS } from '../../../src/tenancy/running-lock.js';
 import { REVERT_WAIT_MS, revertTenancy, serverSessions, type RevertOptions } from '../../../src/tenancy/revert.js';
 import { loadFixture0019, type Fixture0019 } from '../../fixtures/tenancy/load.js';
@@ -39,6 +45,7 @@ import { mkTempDir, removeTempDir } from '../../helpers/git.js';
 import { browserUser, hostHarness, openHost, PUBLIC_URL, storedCookie } from '../../helpers/host.js';
 import type { SignedInUser } from '../../helpers/identity.js';
 import { freePort } from '../../helpers/net.js';
+import { canSymlink } from '../../helpers/symlink.js';
 import { workspaceSnapshot } from '../../helpers/schedule-runs.js';
 import { seedSyncWorkspace } from '../../helpers/sync.js';
 import { call, seedTeam } from '../../helpers/teams.js';
@@ -87,6 +94,8 @@ async function layoutOf(dir: string): Promise<string[]> {
   await walk(dir);
   return out;
 }
+
+const readFileSyncText = (path: string): string => readFileSync(path, 'utf8');
 
 const tryOpen = (key: Buffer, blob: string): string | undefined => {
   try {
@@ -197,10 +206,10 @@ describeDb('admin tenancy revert on the frozen 0019 fixture (spec §19.10, plan 
     WIREBENCH_SERVER_SECRETS_KEY: fixture.keys.secretsKey,
     WIREBENCH_SERVER_LOG_LEVEL: 'fatal',
   });
-  const cli = async (args: string[], seams: Parameters<typeof main>[3] = {}) => {
+  const cli = async (args: string[], seams: Parameters<typeof main>[3] = {}, over: Record<string, string> = {}) => {
     const stdout = { write: vi.fn() };
     const stderr = { write: vi.fn() };
-    const code = await main(args, { stdout, stderr, env: env() }, {}, seams);
+    const code = await main(args, { stdout, stderr, env: { ...env(), ...over } }, {}, seams);
     const text = (mock: typeof stdout) => mock.write.mock.calls.map((c) => String(c[0])).join('');
     return { code, out: text(stdout), err: text(stderr) };
   };
@@ -383,13 +392,15 @@ describeDb('admin tenancy revert on the frozen 0019 fixture (spec §19.10, plan 
     expect(after).toEqual(before);
   });
 
-  /** Where a kill stops the revert, and the step it leaves. */
+  /** Where a kill stops the revert, and the step it leaves; `kept ` is the fixture's deleted workspace's repository. */
   const kills: readonly (readonly [string, TenancyStep])[] = [
     ['recorded reverting-keys', 'reverting-keys'],
     ['re-wrapped a file back', 'reverting-keys'],
     ['recorded reverting-files', 'reverting-files'],
     ['moved back repos', 'reverting-files'],
+    ['kept ', 'reverting-files'],
     ['removed the tenant tmp', 'reverting-files'],
+    ['removed tenants', 'reverting-files'],
     ['recorded reverting-rows', 'reverting-rows'],
     ['rows reverted, not committed', 'reverting-rows'],
   ];
@@ -399,7 +410,7 @@ describeDb('admin tenancy revert on the frozen 0019 fixture (spec §19.10, plan 
       await expect(
         revert({
           checkpoint: (reached) => {
-            if (reached === part) throw killed;
+            if (reached === part || (part === 'kept ' && reached.startsWith(part))) throw killed;
           },
         }),
       ).rejects.toBe(killed);
@@ -487,24 +498,32 @@ describeDb('admin tenancy revert on the frozen 0019 fixture (spec §19.10, plan 
     }
   });
 
-  it('a blob that opens under neither key stops it at reverting-keys until told to go on, and keeps its bytes', async () => {
+  /** Adds a secret to Alice's checkout that no key here opens. */
+  const foreignSecret = (): string => {
     const secrets = join(newCheckout(), 'secrets.json');
-    const file = JSON.parse(await readFile(secrets, 'utf8')) as SecretsFile;
+    const file = JSON.parse(readFileSyncText(secrets)) as SecretsFile;
     const foreign = seal(randomBytes(32), 'nobody-can-open-this').toString('base64');
     file.entries['sec_foreign0000000000000000'] = { value: foreign, encrypted: true, label: 'foreign' };
-    await writeFile(secrets, JSON.stringify(file));
-    const lines: string[] = [];
-    await expect(revert({ report: (line) => lines.push(line) })).rejects.toMatchObject({
-      code: 'tenancy-revert-unopened',
-    });
-    expect(lines.join('\n')).toContain('1 opened under neither key');
-    expect(await step()).toBe('reverting-keys');
-    await expectForwardRefused('reverting-keys');
+    writeFileSync(secrets, JSON.stringify(file));
+    return foreign;
+  };
+
+  it('a blob that opens under neither key refuses in the pre-flight, changing nothing, until told to go on (review I1)', async () => {
+    const foreign = foreignSecret();
+    const secretsBefore = await readFile(join(newCheckout(), 'secrets.json'), 'utf8');
+    const error = await revert().catch((caught: unknown) => caught);
+    expect(error).toMatchObject({ code: 'tenancy-revert-unopened' });
+    expect((error as Error).message).toContain('1 values open under neither key');
+    expect((error as Error).message).toContain('Nothing was changed');
+    // The dry run wrote nothing, and the step is where it was.
+    expect(await step()).toBe('done');
+    expect(await readFile(join(newCheckout(), 'secrets.json'), 'utf8')).toBe(secretsBefore);
     // The command line says so too, and exits 2.
     const refused = await cli(['admin', 'tenancy', 'revert'], { waitMs: 0, serverSessions: () => Promise.resolve([]) });
     expect(refused.code).toBe(2);
     expect(refused.err).toContain('tenancy-revert-unopened');
     expect(refused.err).toContain('--accept-unopened');
+    expect(await step()).toBe('done');
     const accepted = await cli(['admin', 'tenancy', 'revert', '--accept-unopened'], {
       waitMs: 0,
       serverSessions: () => Promise.resolve([]),
@@ -513,6 +532,203 @@ describeDb('admin tenancy revert on the frozen 0019 fixture (spec §19.10, plan 
     const after = JSON.parse(await readFile(join(oldCheckout(), 'secrets.json'), 'utf8')) as SecretsFile;
     expect(after.entries['sec_foreign0000000000000000']?.value).toBe(foreign);
     expect(await catalog(db.owner)).toEqual(before);
+  });
+
+  it.skipIf(!canSymlink)('a link the re-seal does not follow refuses in the pre-flight too', async () => {
+    const outside = join(dataDir, 'outside.json');
+    await writeFile(outside, '{}');
+    await symlink(outside, join(newCheckout(), 'cookie-jars', 'linked.json'));
+    const error = await revert().catch((caught: unknown) => caught);
+    expect(error).toMatchObject({ code: 'tenancy-revert-unopened' });
+    expect((error as Error).message).toContain('1 links');
+    expect(await step()).toBe('done');
+  });
+
+  it('a blob new since the pre-flight stops it at reverting-keys; --abort hands it back to the upgrade', async () => {
+    await expect(
+      revert({
+        checkpoint: (reached) => {
+          if (reached === 'recorded reverting-keys') foreignSecret();
+        },
+      }),
+    ).rejects.toMatchObject({
+      code: 'tenancy-revert-unopened',
+      message: expect.stringContaining('--abort') as unknown,
+    });
+    expect(await step()).toBe('reverting-keys');
+    await expectForwardRefused('reverting-keys');
+    const aborted = await cli(['admin', 'tenancy', 'revert', '--abort'], {
+      waitMs: 0,
+      serverSessions: () => Promise.resolve([]),
+    });
+    expect(aborted.err).toBe('');
+    expect(aborted.code).toBe(0);
+    expect(aborted.out).toContain('aborted');
+    expect(await step()).toBe('files');
+    // The forward steps run again, and re-seal under the data key what `back` had moved to the old one.
+    expect(await runTenancySteps(db.owner, dataDir, { root })).toBe('done');
+    expect(
+      Object.values(await blobsOf(newCheckout(), userSecretsKey(root, alice()))).every((p) => p === undefined),
+    ).toBe(true);
+    expect((await revert({ acceptUnopened: true })).outcome).toBe('reverted');
+    expect(await catalog(db.owner)).toEqual(before);
+  });
+
+  it('--abort is refused once the files have started moving back, and has nothing to do with no revert', async () => {
+    expect((await revert({ abort: true })).outcome).toBe('not-reverting');
+    expect(await step()).toBe('done');
+    const killed = new Error('killed');
+    await expect(
+      revert({
+        checkpoint: (reached) => {
+          if (reached === 'recorded reverting-files') throw killed;
+        },
+      }),
+    ).rejects.toBe(killed);
+    await expect(revert({ abort: true })).rejects.toMatchObject({ code: 'tenancy-revert-abort-too-late' });
+    expect(await step()).toBe('reverting-files');
+    expect((await revert()).outcome).toBe('reverted');
+    await expectReverted();
+  });
+
+  it('stops the file work once its session is lost, before the next part (review m4)', async () => {
+    let pid = 0;
+    let first = true;
+    const fs: StepFs = {
+      ...realFs,
+      rename: async (from, to) => {
+        await realFs.rename(from, to);
+        if (!first) return;
+        first = false;
+        await db.owner.query('select pg_terminate_backend($1)', [pid]);
+        await vi.waitFor(
+          async () => {
+            const left = await db.owner.query('select 1 from pg_stat_activity where pid = $1', [pid]);
+            expect(left.rowCount).toBe(0);
+          },
+          { timeout: 5000, interval: 20 },
+        );
+        // The client hears of it a moment after the backend is gone.
+        await new Promise((done) => setTimeout(done, 300));
+      },
+    };
+    const error = await revert({
+      fs,
+      serverSessions: async (session) => {
+        pid = (await session.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0]!.pid;
+        return [];
+      },
+    }).catch((caught: unknown) => caught);
+    expect(error).toMatchObject({ code: 'tenancy-revert-session-lost' });
+    expect(await step()).toBe('reverting-files');
+    // `repos/` moved, `checkouts/` did not.
+    expect(existsSync(join(dataDir, 'repos'))).toBe(true);
+    expect(existsSync(newCheckout())).toBe(true);
+    expect((await revert()).outcome).toBe('reverted');
+    await expectReverted();
+  });
+
+  it('refuses a step changed under it (tenancy-revert-raced)', async () => {
+    let recorded = false;
+    let changed = false;
+    const fs: StepFs = {
+      ...realFs,
+      device: async (path) => {
+        if (recorded && !changed) {
+          changed = true;
+          await db.owner.query("update server_identity set tenancy_step = 'done'");
+        }
+        return realFs.device(path);
+      },
+    };
+    await expect(
+      revert({
+        fs,
+        checkpoint: (reached) => {
+          if (reached === 'recorded reverting-keys') recorded = true;
+        },
+      }),
+    ).rejects.toMatchObject({ code: 'tenancy-revert-raced' });
+    expect(await step()).toBe('done');
+  });
+
+  it('refuses hosted mode, and a URL that names its sessions itself, changing nothing (review m1, m3)', async () => {
+    await expect(revert({ mode: 'hosted' })).rejects.toMatchObject({ code: 'tenancy-revert-hosted' });
+    const named = new URL(db.ownerUrl);
+    named.searchParams.set('application_name', 'something-else');
+    await expect(revert({ url: named.toString() })).rejects.toMatchObject({
+      code: 'tenancy-revert-application-name',
+    });
+    // The app URL, which the servers' pools use, is read by the command line.
+    const appNamed = new URL(db.url);
+    appNamed.searchParams.set('application_name', 'something-else');
+    const refused = await cli(
+      ['admin', 'tenancy', 'revert'],
+      {},
+      { WIREBENCH_SERVER_DATABASE_URL: appNamed.toString() },
+    );
+    expect(refused.code).toBe(2);
+    expect(refused.err).toContain('tenancy-revert-application-name');
+    expect(await step()).toBe('done');
+  });
+
+  it('refuses a database not at 0021 (tenancy-revert-version), changing nothing', async () => {
+    await db.owner.query('delete from schema_migrations where version = 21');
+    await expect(revert()).rejects.toMatchObject({ code: 'tenancy-revert-version' });
+    expect(await step()).toBe('done');
+  });
+
+  it('refuses where the data directory is not mounted (tenancy-revert-no-data-dir)', async () => {
+    const refused = await cli(['admin', 'tenancy', 'revert'], {}, { WIREBENCH_SERVER_DATA_DIR: join(dataDir, 'gone') });
+    expect(refused.code).toBe(2);
+    expect(refused.err).toContain('tenancy-revert-no-data-dir');
+    expect(await step()).toBe('done');
+  });
+
+  it('refuses what the move back does not know, without the tenant id (tenancy-revert-unknown-files, review m2)', async () => {
+    await mkdir(join(dataDir, 'tenants', 'stray'));
+    const stray = await revert().catch((caught: unknown) => caught);
+    expect(stray).toMatchObject({ code: 'tenancy-revert-unknown-files' });
+    expect((stray as Error).message).toContain(join('tenants', 'stray'));
+    await rename(join(dataDir, 'tenants', 'stray'), join(dataDir, 'stray'));
+    await writeFile(join(dataDir, 'tenants', tenantId, 'notes.txt'), 'mine');
+    const extra = await revert().catch((caught: unknown) => caught);
+    expect(extra).toMatchObject({ code: 'tenancy-revert-unknown-files' });
+    expect((extra as Error).message).toContain(join('tenants', '<default tenant>', 'notes.txt'));
+    expect((extra as Error).message).not.toContain(tenantId);
+    expect(await step()).toBe('done');
+  });
+
+  it('refuses a source on another filesystem (tenancy-move-cross-device), changing nothing', async () => {
+    const repos = join(dataDir, 'tenants', tenantId, 'repos');
+    const fs: StepFs = {
+      ...realFs,
+      device: async (path) => (path === repos ? 999_999_999 : realFs.device(path)),
+    };
+    const error = await revert({ fs }).catch((caught: unknown) => caught);
+    expect(error).toMatchObject({ code: 'tenancy-move-cross-device' });
+    expect((error as Error).message).not.toContain(tenantId);
+    expect(await step()).toBe('done');
+  });
+
+  it.skipIf(!canSymlink)('refuses a source that is a link (tenancy-move-link), changing nothing', async () => {
+    const repos = join(dataDir, 'tenants', tenantId, 'repos');
+    await rename(repos, join(dataDir, 'repos-elsewhere'));
+    await symlink(join(dataDir, 'repos-elsewhere'), repos, 'junction');
+    await expect(revert()).rejects.toMatchObject({ code: 'tenancy-move-link' });
+    expect(await step()).toBe('done');
+  });
+
+  it("refuses a state file naming the tenant's checkouts path (tenancy-prefix-found), changing nothing", async () => {
+    const tenantCheckouts = join(dataDir, 'tenants', tenantId, 'checkouts');
+    await writeFile(
+      join(newCheckout(), 'workspace-state.json'),
+      JSON.stringify({ path: join(tenantCheckouts, alice(), 'linked') }),
+    );
+    const error = await revert().catch((caught: unknown) => caught);
+    expect(error).toMatchObject({ code: 'tenancy-prefix-found' });
+    expect((error as Error).message).not.toContain(tenantId);
+    expect(await step()).toBe('done');
   });
 
   it('refuses without the root while a data key exists, changing nothing', async () => {
@@ -536,6 +752,8 @@ describeDb('admin tenancy revert on the frozen 0019 fixture (spec §19.10, plan 
     const error = await revert().catch((caught: unknown) => caught);
     expect(error).toMatchObject({ code: 'tenancy-move-conflict' });
     expect((error as Error).message).toContain(join(dataDir, 'repos'));
+    expect((error as Error).message).toContain(join('tenants', '<default tenant>', 'repos'));
+    expect((error as Error).message).not.toContain(tenantId);
     expect(await step()).toBe('done');
   });
 });

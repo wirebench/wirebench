@@ -44,7 +44,7 @@ export type ServerCommand =
   | { readonly command: 'admin-tenancy-role'; readonly printSql: boolean }
   | { readonly command: 'admin-tenancy-check' }
   | { readonly command: 'admin-tenancy-status' }
-  | { readonly command: 'admin-tenancy-revert'; readonly acceptUnopened: boolean }
+  | { readonly command: 'admin-tenancy-revert'; readonly acceptUnopened: boolean; readonly abort: boolean }
   | { readonly command: 'help' }
   | { readonly command: 'version' };
 
@@ -94,11 +94,13 @@ Usage:
                                     backups, the data directory's move and the migration's estimated time
   wirebench-server admin tenancy status
                                     Where the upgrade stands: its step, the data key and the re-wrap
-  wirebench-server admin tenancy revert [--accept-unopened]
+  wirebench-server admin tenancy revert [--accept-unopened | --abort]
                                     With every server stopped, undo the upgrade to this version: the
                                     database back to schema 19 and the data directory to its old
                                     layout, so the previous version starts on them. Resumes if stopped;
-                                    --accept-unopened goes on past secrets it could not re-seal
+                                    --accept-unopened goes on past values that open under neither key
+                                    and links it does not follow; --abort, while it is still re-sealing,
+                                    gives the upgrade back to the next start
   wirebench-server --version
   wirebench-server --help
 
@@ -109,7 +111,7 @@ Configuration is read from WIREBENCH_SERVER_* environment variables; see README.
 `;
 
 const TENANCY_USAGE =
-  'usage: wirebench-server admin tenancy role [--print-sql] | check | status | revert [--accept-unopened]';
+  'usage: wirebench-server admin tenancy role [--print-sql] | check | status | revert [--accept-unopened | --abort]';
 
 const OPTIONS = {
   help: { type: 'boolean', short: 'h' },
@@ -125,6 +127,7 @@ const OPTIONS = {
   limit: { type: 'string' },
   'print-sql': { type: 'boolean' },
   'accept-unopened': { type: 'boolean' },
+  abort: { type: 'boolean' },
   tenant: { type: 'string' },
 } as const;
 
@@ -190,6 +193,14 @@ export function parseServerArgs(argv: readonly string[]): ServerCommand {
     !(word === 'admin' && second === 'tenancy' && third === 'revert')
   ) {
     throw new UsageError('--accept-unopened applies to admin tenancy revert only');
+  }
+  if (parsed.values.abort !== undefined) {
+    if (!(word === 'admin' && second === 'tenancy' && third === 'revert')) {
+      throw new UsageError('--abort applies to admin tenancy revert only');
+    }
+    if (parsed.values['accept-unopened'] !== undefined) {
+      throw new UsageError('--abort and --accept-unopened cannot be given together');
+    }
   }
   const tenant = parsed.values.tenant;
   if (tenant !== undefined) {
@@ -280,7 +291,11 @@ export function parseServerArgs(argv: readonly string[]): ServerCommand {
             case 'status':
               return { command: 'admin-tenancy-status' };
             case 'revert':
-              return { command: 'admin-tenancy-revert', acceptUnopened: parsed.values['accept-unopened'] === true };
+              return {
+                command: 'admin-tenancy-revert',
+                acceptUnopened: parsed.values['accept-unopened'] === true,
+                abort: parsed.values.abort === true,
+              };
             default:
               throw new UsageError(TENANCY_USAGE);
           }

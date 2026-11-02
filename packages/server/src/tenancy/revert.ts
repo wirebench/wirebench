@@ -3,6 +3,8 @@
  * the `0019` schema and the data directory's old layout, for a self-hosted installation of one tenant.
  *
  * **When it refuses**, before it changes anything:
+ * - the server is in hosted mode (`tenancy-revert-hosted`), or the URL names its sessions itself, which hides the
+ *   servers' sessions from the check below (`tenancy-revert-application-name`);
  * - the database has more than one tenant (`tenancy-revert-tenants`), or a migration newer than `0021` has run
  *   (`tenancy-revert-too-new`), or it is not at `0021` at all (`tenancy-revert-version`);
  * - a server holds the server-running lock: the exclusive `pg_try_advisory_lock` fails while any server holds it
@@ -15,26 +17,30 @@
  *   in both its places (`tenancy-move-conflict`), a link or another filesystem is in the way (`tenancy-move-link`,
  *   `tenancy-move-cross-device`), a state file names the tenant's checkouts path (`tenancy-prefix-found`), or the
  *   tenant's directory holds something the move does not know (`tenancy-revert-unknown-files`);
- * - the data key cannot be opened (`tenancy-no-root`, `tenancy-data-key-refused`).
+ * - the data key cannot be opened (`tenancy-no-root`, `tenancy-data-key-refused`);
+ * - `back`, run first as a dry run, would leave blobs as they are: ones that open under neither key, or links it
+ *   does not follow (`tenancy-revert-unopened`), unless it is told to go on (`acceptUnopened`).
  *
  * **What it does**, through three steps of `server_identity.tenancy_step`, each persisted before it starts, so a kill
  * anywhere resumes, and a forward start-up or `migrate` in any of them refuses (`tenancy-reverting`):
  * 1. `reverting-keys`: `rewrap(…, 'back')`, strict, re-seals every blob of the users' checkouts under slice 2's
  *    per-user key, which the previous image reads. It tries the old key first, so a resumed run never seals twice.
- *    Blobs it could not open, and links it did not follow, are counted; any at all stop the revert here unless it is
- *    told to go on (`acceptUnopened`): once `tenants` is dropped the data key is gone with it.
+ *    What it leaves as it is was refused in the pre-flight already; anything new since stops the revert here, where
+ *    `abort` can still hand the installation back to the forward steps.
  * 2. `reverting-files`: the directories are renamed back to the data directory's root, and the tenant's scratch is
  *    deleted. Every rename is due or done by what is on disk.
  * 3. `reverting-rows`: `revert-0020-0021.sql`, in one transaction, which also deletes the step column.
  *
  * Every database statement runs on the one session that holds the lock, so a lock lost with its connection fails the
- * next statement rather than letting a server start under a revert. Nothing here names a tenant or a slug in what it
- * prints; refusals name paths, as the forward step's do.
+ * next statement rather than letting a server start under a revert, and stops the file work before its next part.
+ * Nothing here names a tenant or a slug in what it prints: refusals name paths, with `tenants/<default tenant>/` in
+ * place of the tenant's id.
  */
 import { lstat, mkdir, readdir, readFile, rm, rmdir } from 'node:fs/promises';
 import { join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WirebenchError } from '@wirebench/engine';
+import type { ServerMode } from '../config.js';
 import { ADMIN_APPLICATION_NAME, APPLICATION_NAME, openSession, type Session } from '../db/pool.js';
 import type { Querier } from '../db/querier.js';
 import {
@@ -89,8 +95,12 @@ export interface RevertOptions {
   readonly dataDir: string;
   /** `WIREBENCH_SERVER_SECRETS_KEY`: needed when the default tenant has a data key. */
   readonly root?: Buffer;
-  /** Go on past blobs `back` could not open or links it did not follow (`--accept-unopened`). */
+  /** Go on past blobs `back` cannot open and links it does not follow (`--accept-unopened`). */
   readonly acceptUnopened?: boolean;
+  /** `--abort`: give a revert still at `reverting-keys` back to the forward steps. */
+  readonly abort?: boolean;
+  /** The configured mode: hosted refuses. */
+  readonly mode?: ServerMode;
   /** What the revert says as it goes: counts and steps, never a value, a tenant or a user. */
   readonly report?: (line: string) => void;
   /** How long to wait with the lock held; {@link REVERT_WAIT_MS} by default. */
@@ -105,8 +115,11 @@ export interface RevertOptions {
 }
 
 export interface RevertResult {
-  /** `nothing` when the database is already before slice 4. */
-  readonly outcome: 'reverted' | 'nothing';
+  /**
+   * `nothing` when the database is already before slice 4; with `abort`, `aborted`, or `not-reverting` when no revert
+   * was under way.
+   */
+  readonly outcome: 'reverted' | 'nothing' | 'aborted' | 'not-reverting';
   /** The `back` re-wrap's counts, when it ran in this call. */
   readonly counts?: RewrapCounts;
 }
@@ -214,7 +227,7 @@ async function unit<T>(session: Session, fn: () => Promise<T>): Promise<T> {
 }
 
 /** Records the next step, under the file step's lock, only from the step this run found. */
-async function advance(session: Session, from: TenancyStep, to: RevertStep): Promise<void> {
+async function advance(session: Session, from: TenancyStep, to: TenancyStep): Promise<void> {
   await unit(session, async () => {
     await session.query('select pg_advisory_xact_lock($1, hashtext(current_schema()))', [FILE_STEP_CLASS]);
     const moved = await session.query('update server_identity set tenancy_step = $1 where tenancy_step = $2', [
@@ -410,54 +423,130 @@ export const backLine = (counts: RewrapCounts): string =>
   `${String(counts.skipped)} links or other entries skipped (not followed)`;
 
 /**
- * Runs the revert, or resumes it, and returns once the schema is back at `0019`.
+ * The refusal for what `back` would leave or left as it was. A value that opens under neither key is unreadable
+ * already, so going on loses nothing that could be read; a link not followed may lead to values under the data key,
+ * which the revert drops.
+ */
+function leftAsIs(counts: RewrapCounts, after: string): WirebenchError {
+  return refusal(
+    'tenancy-revert-unopened',
+    `${String(counts.unopened)} values open under neither key or do not parse, and ${String(counts.skipped)} links ` +
+      'or other entries are not followed by the re-seal. The first cannot be opened today either; what a link leads ' +
+      'to may be sealed under the data key, which the revert drops, and would not open again. Look at them (admin ' +
+      'tenancy status counts them), then run the revert again with --accept-unopened to go on without them. ' +
+      after,
+  );
+}
+
+/** Shown in place of the tenant's id in what a refusal prints (ADR-0004's rule for ids in output). */
+const TENANT_SHOWN = '<default tenant>';
+
+/** A refusal as printed: the tenant's id, which a path under `tenants/` holds, replaced. */
+function withoutTenant(error: unknown, tenantId: string | undefined): unknown {
+  if (!(error instanceof WirebenchError) || tenantId === undefined || !error.message.includes(tenantId)) return error;
+  return new WirebenchError(error.code, error.message.replaceAll(tenantId, TENANT_SHOWN));
+}
+
+/**
+ * Runs the revert, or resumes it, and returns once the schema is back at `0019`; with `abort`, gives a revert still
+ * at `reverting-keys` back to the forward steps instead.
  *
  * @throws WirebenchError every refusal of the file's header; the step stays where it was.
  */
 export async function revertTenancy(options: RevertOptions): Promise<RevertResult> {
+  if (options.mode === 'hosted') {
+    throw refusal(
+      'tenancy-revert-hosted',
+      'the revert is for a self-hosted installation: in hosted mode the audit chain is sealed under a key the ' +
+        'previous version does not know. Nothing was changed',
+    );
+  }
   const report = options.report ?? (() => undefined);
   const checkpoint = options.checkpoint ?? (() => undefined);
   const fs = options.fs ?? realFs;
   const session = await openSession(options.url, { applicationName: ADMIN_APPLICATION_NAME });
+  // A lock lost with its connection: the file work stops before its next part, not only at the next statement.
+  let lost = false;
+  session.onLost(() => {
+    lost = true;
+  });
+  const guard = (): void => {
+    if (lost) {
+      throw refusal(
+        'tenancy-revert-session-lost',
+        'the database connection that holds the lock was lost; the revert stopped before its next part. Run it ' +
+          'again to resume',
+      );
+    }
+  };
+  /** After a part: a test may stop here, and a lost session stops the run before the next. */
+  const reached = (part: string): void => {
+    checkpoint(part);
+    guard();
+  };
+  let tenantId: string | undefined;
   try {
+    // The server sessions are told apart by name: a URL that names its sessions itself hides the servers' too.
+    const named = await session.query<{ name: string }>("select current_setting('application_name') as name");
+    if (named.rows[0]?.name !== ADMIN_APPLICATION_NAME) {
+      throw refusal(
+        'tenancy-revert-application-name',
+        'the database URL sets application_name, so the revert cannot tell a server’s connections from others in ' +
+          'pg_stat_activity: remove it from the URLs of the revert and of the servers, and run the revert again. ' +
+          'Nothing was changed',
+      );
+    }
     if (judge(await schemaState(session)) === 'nothing') return { outcome: 'nothing' };
     const lock = await session.query<{ ok: boolean }>(TAKE_EXCLUSIVE, [SERVER_RUNNING_CLASS]);
     if (lock.rows[0]?.ok !== true) {
       throw refusal(
         'tenancy-revert-server-running',
-        'a server is running against this database (it holds the server-running lock): stop every server process ' +
-          'and run the revert again. Nothing was changed',
+        'a server is running against this database (it holds the server-running lock): stop every server process, ' +
+          'including those of another installation in another schema of this database, and run the revert again. ' +
+          'Nothing was changed',
       );
     }
     // A server whose lock connection dropped without its knowing still serves until its heartbeat and re-take give
-    // up, and then drains; only after that does `pg_stat_activity` tell a stopped server from one still running.
+    // up, and then is gone within the drain; only after that does `pg_stat_activity` tell a stopped server from one
+    // still running. Every run waits, resumes included (owner ruling, 2026-11-02).
     const waitMs = options.waitMs ?? REVERT_WAIT_MS;
-    report(`waiting ${String(Math.ceil(waitMs / 1000))} s for any server that lost its lock to stop`);
+    const until = new Date(Date.now() + waitMs).toISOString().slice(11, 19);
+    report(
+      `waiting ${String(Math.ceil(waitMs / 1000))} s, until ${until} UTC, for any server that lost its lock to stop`,
+    );
     await (options.sleep ?? ((ms: number) => new Promise((done) => setTimeout(done, ms))))(waitMs);
     const sessions = await (options.serverSessions ?? serverSessions)(session);
     if (sessions.length > 0) {
       throw refusal(
         'tenancy-revert-server-running',
         `${String(sessions.length)} server ${sessions.length === 1 ? 'connection is' : 'connections are'} still open ` +
-          `to this database (pid ${sessions.map((s) => String(s.pid)).join(', ')}): stop every server process and run ` +
-          'the revert again. Nothing was changed',
+          `to this database (pid ${sessions.map((s) => String(s.pid)).join(', ')}): stop every server process, ` +
+          'including those of another installation in another schema of this database, and run the revert again; a ' +
+          'connection pooler may also still hold a stopped server’s connections. Nothing was changed',
       );
     }
     // Again, now that nothing else can start: the answers before the lock may be stale.
     const state = await schemaState(session);
     if (judge(state) === 'nothing') return { outcome: 'nothing' };
-    const tenantId = state.defaultTenantId!;
+    tenantId = state.defaultTenantId!;
     let step = state.step!;
     let counts: RewrapCounts | undefined;
+
+    if (options.abort === true) return { outcome: await abort(session, step) };
 
     if (step === 'files' || step === 'keys' || step === 'done') {
       // Every refusal the next two steps can make, before the first is recorded.
       const plan = await planRevertMove(options.dataDir, tenantId, fs);
       await checkDataDir(session, options.dataDir, tenantId, plan);
-      await dataKeyOf(session, tenantId, options.root);
+      const dataKey = await dataKeyOf(session, tenantId, options.root);
+      if (dataKey !== undefined && options.acceptUnopened !== true) {
+        // `back` as a dry run: what it would leave as it is refuses here, while nothing has changed (review I1).
+        const would = await rewrap(plan.checkouts, { root: options.root!, dataKey }, 'back', { dryRun: true });
+        if (would.unopened + would.skipped > 0) throw leftAsIs(would, 'Nothing was changed');
+      }
       await advance(session, step, 'reverting-keys');
       step = 'reverting-keys';
-      checkpoint('recorded reverting-keys');
+      reached('recorded reverting-keys');
     }
     if (step === 'reverting-keys') {
       const plan = await planRevertMove(options.dataDir, tenantId, fs);
@@ -468,37 +557,39 @@ export async function revertTenancy(options: RevertOptions): Promise<RevertResul
         // Strict: a file it cannot read or write stops the revert, which resumes here (carried note 2).
         counts = await rewrap(plan.checkouts, { root: options.root!, dataKey }, 'back', {
           checkpoint: () => {
-            checkpoint('re-wrapped a file back');
+            reached('re-wrapped a file back');
           },
         });
         report(backLine(counts));
+        // The backstop: something that appeared since the dry run. The step stays here; `--abort` goes forward again.
         if (counts.unopened + counts.skipped > 0 && options.acceptUnopened !== true) {
-          throw refusal(
-            'tenancy-revert-unopened',
-            `${String(counts.unopened)} blobs opened under neither key or did not parse, and ${String(counts.skipped)} ` +
-              'links or other entries were not followed; they were left as they were. Once the revert drops the data ' +
-              'key, a blob still under it cannot be opened again. Look at them (admin tenancy status counts them), ' +
-              'then run the revert again with --accept-unopened to go on without them',
+          throw leftAsIs(
+            counts,
+            'The revert stopped at reverting-keys, before the files or the database changed; or run it with --abort ' +
+              'to give the upgrade back to the next server start',
           );
         }
       }
       // `back` wrote every file durably before it returned (`writeFileDurably`), so the key may go from here on.
       await advance(session, 'reverting-keys', 'reverting-files');
       step = 'reverting-files';
-      checkpoint('recorded reverting-files');
+      reached('recorded reverting-files');
     }
     if (step === 'reverting-files') {
       const plan = await planRevertMove(options.dataDir, tenantId, fs);
       await checkDataDir(session, options.dataDir, tenantId, plan);
-      await moveBack(options.dataDir, tenantId, plan, fs, checkpoint);
+      await moveBack(options.dataDir, tenantId, plan, fs, reached);
       report('data directory: back in the layout before this version');
       await advance(session, 'reverting-files', 'reverting-rows');
       step = 'reverting-rows';
-      checkpoint('recorded reverting-rows');
+      reached('recorded reverting-rows');
     }
     if (step === 'reverting-rows') {
       const sql = await readFile(REVERT_SQL_FILE, 'utf8');
       await unit(session, async () => {
+        // The owner's own limits (a managed database often sets one) would roll the unit back every time.
+        await session.query("set local statement_timeout = '0'");
+        await session.query("set local lock_timeout = '0'");
         await session.query("set local idle_in_transaction_session_timeout = '0'");
         await session.query("set local maintenance_work_mem = '256MB'");
         await session.query('select pg_advisory_xact_lock($1, hashtext(current_schema()))', [FILE_STEP_CLASS]);
@@ -512,8 +603,31 @@ export async function revertTenancy(options: RevertOptions): Promise<RevertResul
       report(`database: back at schema version ${String(BEFORE_TENANCY)}`);
     }
     return { outcome: 'reverted', ...(counts !== undefined ? { counts } : {}) };
+  } catch (error) {
+    throw withoutTenant(error, tenantId);
   } finally {
     // Closing the session releases the lock with it.
     await session.close();
   }
+}
+
+/**
+ * `--abort`: a revert at `reverting-keys` has changed nothing but blobs, re-sealed under the old key while the data
+ * key is still there. Recording `files` hands the installation back to the forward steps, which are idempotent: the
+ * move finds everything already in place, and the keys step re-seals under the data key what `back` moved (the
+ * re-arm the forward step already allows). From `reverting-files` on, files have moved back: only finishing is safe.
+ *
+ * @throws WirebenchError `tenancy-revert-abort-too-late`
+ */
+async function abort(session: Session, step: TenancyStep): Promise<'aborted' | 'not-reverting'> {
+  if (step === 'files' || step === 'keys' || step === 'done') return 'not-reverting';
+  if (step !== 'reverting-keys') {
+    throw refusal(
+      'tenancy-revert-abort-too-late',
+      `the revert is at ${step}: the data directory has started moving back, so it can only be finished. Run the ` +
+        'revert again without --abort. Nothing was changed',
+    );
+  }
+  await advance(session, 'reverting-keys', 'files');
+  return 'aborted';
 }

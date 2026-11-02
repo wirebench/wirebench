@@ -161,15 +161,23 @@ waits, and says so: nothing was ever sealed without one. `wirebench-server admin
 upgrade stands, and counts those values.
 
 **Going back.** `wirebench-server admin tenancy revert` undoes the upgrade, so the previous version starts on the
-database and the data directory again. Stop every server process and back up first. It runs as the owner, over
-the migration URL, with the same `WIREBENCH_SERVER_SECRETS_KEY` and `WIREBENCH_SERVER_DATA_DIR` as the server.
-It refuses while a server holds the lock above, then waits three minutes, so that a server that lost its lock
-without knowing has stopped, and refuses while a server's connection is still open. It re-seals every
-browser-client secret and cookie under the old key, moves the directories back and returns the database to schema
-version 19. A value it cannot open, or a link it does not follow, stops it before the database changes: the key
-those values might be under is dropped with the rest, so it goes on only when run with `--accept-unopened`. Stopped
-part way, it resumes when run again, and until it has finished every server start and `migrate` refuses
-(`tenancy-reverting`). It refuses a database with a migration newer than this version's.
+database and the data directory again. Stop every server process (stop them: a paused container or a suspended VM
+still holds its keys) and back up first. It runs as the owner, over the migration URL, with the same
+`WIREBENCH_SERVER_SECRETS_KEY` and `WIREBENCH_SERVER_DATA_DIR` as the server, in self-hosted mode only. It refuses
+while a server holds the lock above, then waits three minutes on every run, so that a server that lost its lock
+without knowing has stopped, and refuses while a server's connection is still open. It tells servers' connections
+apart by their `application_name`, so it refuses a URL that sets one itself; it also counts the servers of another
+installation in another schema of the same database, so stop those too, and a connection pooler that still holds a
+stopped server's connections makes it refuse until they close. It re-seals every browser-client secret and cookie
+under the old key, moves the directories back and returns the database to schema version 19. Before it changes
+anything it checks the re-seal: a value that opens under neither key, or a link it does not follow, makes it refuse
+unless run with `--accept-unopened` (the first is unreadable already; what a link leads to may be under the key the
+revert drops). Stopped part way, it resumes when run again, and until it has finished every server start and
+`migrate` refuses (`tenancy-reverting`); while it is still re-sealing, `--abort` gives the installation back to the
+upgrade instead, which the next start finishes again. It refuses a database with a migration newer than this
+version's. The previous version reads `WIREBENCH_SERVER_DATABASE_URL` only: set it to the owner's direct URL, as in
+the compose file or env you had before the upgrade. The `wirebench_app` role stays, unused, after a revert; if you
+will not upgrade again, drop it as the owner with `DROP OWNED BY wirebench_app; DROP ROLE wirebench_app;`.
 
 The image carries the browser client's build. A server run from a checkout with
 `WIREBENCH_SERVER_BROWSER_CLIENT` on needs it too, or it refuses to start: run

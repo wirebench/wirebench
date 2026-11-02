@@ -61,6 +61,13 @@ const LEASE_INTERVAL = `interval '${String(LEASE_MS / 1000)} seconds'`;
  */
 export const LEASE_LOCK = `select pg_advisory_xact_lock(${String(HOST_LEASE_CLASS)}, hashtext(coalesce(${SERVER_SCHEMA}, '') || ':' || $1::text))`;
 
+/**
+ * A take's `acquired_at` as the token its release matches: epoch microseconds, exact at `timestamptz`'s resolution and
+ * the same whatever the session's `DateStyle` or `TimeZone` (task 26 fix2 review m1), so a take and its release on two
+ * pooled connections set up differently still agree.
+ */
+const ACQUIRED_TOKEN = '(extract(epoch from acquired_at) * 1000000)::bigint::text';
+
 const DELETE_EXPIRED = 'delete from host_leases where expires_at < now()';
 const TAKE = `insert into host_leases (user_id, holder, acquired_at, renewed_at, expires_at)
   values ($1, $2, now(), now(), now() + ${LEASE_INTERVAL})
@@ -68,7 +75,7 @@ const TAKE = `insert into host_leases (user_id, holder, acquired_at, renewed_at,
     set holder = excluded.holder, acquired_at = excluded.acquired_at, renewed_at = excluded.renewed_at,
         expires_at = excluded.expires_at
     where host_leases.holder = excluded.holder or host_leases.expires_at < now()
-  returning user_id, acquired_at::text as acquired`;
+  returning user_id, ${ACQUIRED_TOKEN} as acquired`;
 /** The tenant's live leases other than the user's own (`$1`): the expired ones were deleted just before. */
 export const COUNT_LIVE = 'select count(*)::int as count from host_leases where user_id <> $1';
 /** The user's live lease under another holder, at the cap (expired ones are gone): `$2` is this holder. */
@@ -79,11 +86,11 @@ const REMAINING = `select greatest(0, ceil(extract(epoch from (expires_at - now(
 export const RENEW = `update host_leases set renewed_at = now(), expires_at = now() + ${LEASE_INTERVAL}
   where holder = $1 and user_id = any($2::text[]) returning user_id`;
 /**
- * `$3` is the take's `acquired_at`, as text so no precision is lost. Every take sets it to its own transaction's
- * `now()`, and one user's takes in one process follow each other (the next starts after the last committed), so a
- * release sent before this process took the user again, and answered after, misses the new row.
+ * `$3` is the take's `acquired_at` as {@link ACQUIRED_TOKEN}, so no precision is lost. Every take sets it to its own
+ * transaction's `now()`, and one user's takes in one process follow each other (the next starts after the last
+ * committed), so a release sent before this process took the user again, and answered after, misses the new row.
  */
-const RELEASE = 'delete from host_leases where user_id = $1 and holder = $2 and acquired_at = $3::timestamptz';
+const RELEASE = `delete from host_leases where user_id = $1 and holder = $2 and ${ACQUIRED_TOKEN} = $3::text`;
 
 /** Why a held lease ended without a release: another holder has it, or this process could not renew it in time. */
 export type LeaseLoss = 'lost' | 'expired';

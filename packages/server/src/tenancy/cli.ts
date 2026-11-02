@@ -41,6 +41,18 @@ export type RevertSeams = Pick<RevertOptions, 'waitMs' | 'sleep' | 'serverSessio
 const NEEDS_TWO_ROLES =
   'admin tenancy role needs two roles: WIREBENCH_SERVER_MIGRATION_DATABASE_URL set to the owner of the schema, and WIREBENCH_SERVER_DATABASE_URL to the app role';
 
+/** What `admin tenancy revert` says it did. */
+const REVERT_OUTCOMES = {
+  nothing: 'nothing to revert: the database is at schema version 19 or before',
+  'not-reverting': 'nothing to abort: no revert is under way',
+  aborted:
+    'aborted: the next server start (or wirebench-server migrate) runs the upgrade’s steps again and re-seals ' +
+    'under the data key',
+  reverted:
+    'reverted: the previous version of the server can now start on this database and data directory. It reads ' +
+    'WIREBENCH_SERVER_DATABASE_URL only: set it to the owner’s direct URL, as before the upgrade',
+} as const;
+
 /** The loaded configuration, or the exit code after the problems are written. */
 function configOf(io: ServerIo): ServerConfig | number {
   try {
@@ -329,8 +341,8 @@ export async function runTenancyStatus(io: ServerIo): Promise<number> {
 }
 
 /**
- * `admin tenancy revert [--accept-unopened]` (spec §19.10): as the owner, over the migration URL, with every server
- * stopped. A refusal exits 2 and leaves the step where it was; a run stopped part way resumes at the next.
+ * `admin tenancy revert [--accept-unopened | --abort]` (spec §19.10): as the owner, over the migration URL, with every
+ * server stopped. A refusal exits 2 and leaves the step where it was; a run stopped part way resumes at the next.
  */
 export async function runTenancyRevert(
   command: TenancyRevertCommand,
@@ -352,6 +364,16 @@ export async function runTenancyRevert(
     );
     return ExitCode.Config;
   }
+  // The servers' pools connect over the app URL: one that names its sessions hides them from the revert's check,
+  // as the migration URL's own would (which `revertTenancy` reads on its session).
+  if (/application_name/i.test(config.databaseUrl)) {
+    io.stderr.write(
+      'tenancy-revert-application-name: WIREBENCH_SERVER_DATABASE_URL sets application_name, so the revert cannot ' +
+        "tell the servers' connections apart in pg_stat_activity: remove it from the servers' URLs and from this " +
+        'one, and run the revert again. Nothing was changed\n',
+    );
+    return ExitCode.Config;
+  }
   try {
     const result = await revertTenancy({
       ...seams,
@@ -359,13 +381,11 @@ export async function runTenancyRevert(
       dataDir: config.dataDir,
       ...(config.secretsKey !== undefined ? { root: config.secretsKey } : {}),
       acceptUnopened: command.acceptUnopened,
+      abort: command.abort,
+      mode: config.mode,
       report: (line) => io.stdout.write(`${line}\n`),
     });
-    io.stdout.write(
-      result.outcome === 'nothing'
-        ? 'nothing to revert: the database is at schema version 19 or before\n'
-        : 'reverted: the previous version of the server can now start on this database and data directory\n',
-    );
+    io.stdout.write(`${REVERT_OUTCOMES[result.outcome]}\n`);
     return ExitCode.Ok;
   } catch (error) {
     if (error instanceof WirebenchError) {

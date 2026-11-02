@@ -31,6 +31,8 @@ import { migrate } from '../../src/db/migrate.js';
 import { createDatabase } from '../../src/db/pool.js';
 import { BUILTIN_MODULES } from '../../src/modules.js';
 import { allMigrations } from '../../src/serve.js';
+import { runTenancySteps } from '../../src/tenancy/file-step.js';
+import { revertTenancy } from '../../src/tenancy/revert.js';
 import { Fixture, loadFixture0019 } from '../fixtures/tenancy/load.js';
 import { UNSCOPED_TABLES } from '../helpers/catalog.js';
 import { describeDb, testDatabase } from '../helpers/database.js';
@@ -263,6 +265,18 @@ describeDb('migration 0020 on a scaled fixture (hosted spec §19.10)', () => {
     say(`[perf] tenancy 0021: ${isolationSeconds.toFixed(2)} s over the same rows (catalog only)`);
     // Machine-relative like the gate below: on any machine, a catalog change is far quicker than the rebuild.
     expect(isolationSeconds, '0021 against 0020').toBeLessThan(Math.max(1, migrationSeconds / 4));
+
+    // The way back over the same rows (Task 28 review m5): its rows step rebuilds 0019's keys and checks every
+    // foreign key again. No root, so no data key and no re-seal; the move is the fixture's.
+    expect(await runTenancySteps(db.owner, dataDir)).toBe('keys');
+    const revertStarted = performance.now();
+    expect(
+      (await revertTenancy({ url: db.ownerUrl, dataDir, waitMs: 0, serverSessions: () => Promise.resolve([]) }))
+        .outcome,
+    ).toBe('reverted');
+    const revertSeconds = (performance.now() - revertStarted) / 1000;
+    say(`[perf] tenancy revert: ${revertSeconds.toFixed(2)} s over the same rows`);
+    expect(revertSeconds, 'the revert against 0020').toBeLessThan(Math.max(10, migrationSeconds * 3));
 
     if (WRITE_BASELINE) {
       expect(SCALE, 'a baseline is written at full scale only').toBe(1);

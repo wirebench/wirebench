@@ -1661,8 +1661,8 @@ tenant through its own column, not only through `users`. The same email in two t
     not let them in. The user's own row is never counted against them.
   - An eviction whose lease release fails or goes unanswered frees no seat (the row stays until it expires), so the
     open stops there with `4429` rather than evict the tenant's other idle instances in turn. While the database is
-    slow, a capped open therefore evicts at most one idle instance. A release that deletes no row of its take, or
-    has none to delete, has freed its seat.
+    slow, a capped open therefore evicts at most one idle instance. A release whose delete answered (even with no
+    row left to match), or that had nothing to delete, has freed its seat.
   - With seats binding users, a self-hosted server reaches the cap only after a license downgrade below its enabled
     users.
 - **Unchanged.** Idle eviction after `WIREBENCH_SERVER_HOST_IDLE_MINUTES` (default 30), and eight sockets per user.

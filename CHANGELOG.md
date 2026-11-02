@@ -74,8 +74,8 @@ All notable changes to this project are documented here. The format follows
 - **Server: `admin tenancy revert` (#798).** With every server stopped, it undoes the upgrade to this version:
   browser-client secrets and cookies re-sealed under the old key, the data directory back in its old layout and
   the database back at schema version 19, so the previous version starts on them. It refuses while a server
-  runs, resumes when run again after being stopped, and stops before the database changes when a value would be
-  left under the dropped key, unless run with `--accept-unopened`.
+  runs, resumes when run again after being stopped, and refuses before it changes anything when a value would be
+  left as it is, unless run with `--accept-unopened`; `--abort` hands a revert still re-sealing back to the upgrade.
 
 ### Changed
 - **Default's editor colours match the rest of the window (#803).** Monaco's comment, hint and

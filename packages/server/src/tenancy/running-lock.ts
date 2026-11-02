@@ -96,7 +96,11 @@ export const LOST_LOCK_STOP_MS =
   LOCK_CONNECT_TIMEOUT_MS +
   LOCK_QUERY_TIMEOUT_MS;
 
-/** The most a server's shutdown waits for in-flight requests before it drops them (`serve`'s default `drainMs`). */
+/**
+ * The most a server's shutdown waits for in-flight requests before it drops them (`serve`'s default `drainMs`), and
+ * the most a server that lost its lock for good runs on after `onLost`: it exits at this deadline whatever its
+ * modules' close still waits for, which is what {@link LOST_LOCK_STOP_MS} plus this, revert's wait, relies on.
+ */
 export const SERVER_DRAIN_MS = 10_000;
 
 export interface RunningLockOptions {
