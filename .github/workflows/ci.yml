@@ -127,7 +127,8 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @wirebench/engine build
-      - run: pnpm test --shard=${{ matrix.shard }}/${{ matrix.shards }}
+      # `pnpm run`, not `pnpm test`: pnpm's own `test` command refuses options it does not know, such as `--shard`.
+      - run: pnpm run test --shard=${{ matrix.shard }}/${{ matrix.shards }}
       - if: matrix.shard == 1
         run: pnpm test:perf
 
