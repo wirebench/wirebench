@@ -4,11 +4,25 @@ import { runAdmin } from './identity/cli.js';
 import { ExitCode, packageVersion, type ServerIo } from './io.js';
 import { BUILTIN_MODULES } from './modules.js';
 import { runMigrate, startServer, StartupError, type StartOptions } from './serve.js';
-import { runTenancyCheck, runTenancyRole, runTenancyStatus } from './tenancy/cli.js';
+import {
+  runTenancyCheck,
+  runTenancyRevert,
+  runTenancyRole,
+  runTenancyStatus,
+  type RevertSeams,
+} from './tenancy/cli.js';
 import { operatorPublicUrl } from './tenancy/urls.js';
 
-/** `serveOptions` exists for tests (signals, exit, drain time, modules); the bin passes none. */
-export async function main(argv: readonly string[], io: ServerIo, serveOptions: StartOptions = {}): Promise<number> {
+/**
+ * `serveOptions` exists for tests (signals, exit, drain time, modules), and so does `revert` (the revert's wait); the
+ * bin passes neither.
+ */
+export async function main(
+  argv: readonly string[],
+  io: ServerIo,
+  serveOptions: StartOptions = {},
+  revert: RevertSeams = {},
+): Promise<number> {
   let command;
   try {
     command = parseServerArgs(argv);
@@ -75,6 +89,8 @@ export async function main(argv: readonly string[], io: ServerIo, serveOptions: 
       return runTenancyCheck(io);
     case 'admin-tenancy-status':
       return runTenancyStatus(io);
+    case 'admin-tenancy-revert':
+      return runTenancyRevert(command, io, revert);
     case 'serve': {
       try {
         const server = await startServer(io.env, io, { modules: BUILTIN_MODULES, ...serveOptions });

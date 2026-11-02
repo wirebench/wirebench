@@ -99,7 +99,7 @@ too: the migrations run over the migration URL. With two roles, both must be `po
 their users, and the app URL must name the password the role is created with.
 
 **The migration URL must be a direct connection; the app URL may go through a pooler.** The server holds a
-session-level lock for its whole life (the `admin tenancy revert` of a later version checks it), and holds it on the migration URL, which a
+session-level lock for its whole life (`admin tenancy revert` checks it), and holds it on the migration URL, which a
 transaction pooler would break. With one URL, that URL holds it, so it must be direct too.
 
 **A database restart does not stop the server**, as long as the database is back within about two minutes:
@@ -151,7 +151,7 @@ counted. No browser tab opens until this is done, and a start or `migrate` print
 each start (and `migrate`) re-seals any of those values still under the old key, such as a user's directory restored
 from a backup made before the upgrade, and says how many. Restoring the database alone from a backup made before the
 upgrade loses every re-sealed value: restore the database and the data directory together, from the same backup
-(a command that undoes the upgrade, `wirebench-server admin tenancy revert`, comes in a later version). A
+(or undo the upgrade with `admin tenancy revert`, below). A
 `migrate` run while another server is running leaves that re-seal to the server's next start, and says so.
 `migrate --check` exits 1 until the data directory has moved: in a pipeline whose `--check` job has no data
 directory mounted (a Kubernetes job, `docker run` without the volume), it stays 1 after a successful `migrate`
@@ -159,6 +159,17 @@ until the server has started once, so run `--check` where the data directory is 
 start. Without the key it
 waits, and says so: nothing was ever sealed without one. `wirebench-server admin tenancy status` says where the
 upgrade stands, and counts those values.
+
+**Going back.** `wirebench-server admin tenancy revert` undoes the upgrade, so the previous version starts on the
+database and the data directory again. Stop every server process and back up first. It runs as the owner, over
+the migration URL, with the same `WIREBENCH_SERVER_SECRETS_KEY` and `WIREBENCH_SERVER_DATA_DIR` as the server.
+It refuses while a server holds the lock above, then waits three minutes, so that a server that lost its lock
+without knowing has stopped, and refuses while a server's connection is still open. It re-seals every
+browser-client secret and cookie under the old key, moves the directories back and returns the database to schema
+version 19. A value it cannot open, or a link it does not follow, stops it before the database changes: the key
+those values might be under is dropped with the rest, so it goes on only when run with `--accept-unopened`. Stopped
+part way, it resumes when run again, and until it has finished every server start and `migrate` refuses
+(`tenancy-reverting`). It refuses a database with a migration newer than this version's.
 
 The image carries the browser client's build. A server run from a checkout with
 `WIREBENCH_SERVER_BROWSER_CLIENT` on needs it too, or it refuses to start: run

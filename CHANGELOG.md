@@ -71,6 +71,11 @@ All notable changes to this project are documented here. The format follows
   a rename can do it, each table's size, and the expected downtime. `admin tenancy status` says where the
   upgrade stands: the step, whether the data key opens under `WIREBENCH_SERVER_SECRETS_KEY`, and the re-seal
   counts.
+- **Server: `admin tenancy revert` (#798).** With every server stopped, it undoes the upgrade to this version:
+  browser-client secrets and cookies re-sealed under the old key, the data directory back in its old layout and
+  the database back at schema version 19, so the previous version starts on them. It refuses while a server
+  runs, resumes when run again after being stopped, and stops before the database changes when a value would be
+  left under the dropped key, unless run with `--accept-unopened`.
 
 ### Changed
 - **Default's editor colours match the rest of the window (#803).** Monaco's comment, hint and

@@ -44,6 +44,7 @@ export type ServerCommand =
   | { readonly command: 'admin-tenancy-role'; readonly printSql: boolean }
   | { readonly command: 'admin-tenancy-check' }
   | { readonly command: 'admin-tenancy-status' }
+  | { readonly command: 'admin-tenancy-revert'; readonly acceptUnopened: boolean }
   | { readonly command: 'help' }
   | { readonly command: 'version' };
 
@@ -93,6 +94,11 @@ Usage:
                                     backups, the data directory's move and the migration's estimated time
   wirebench-server admin tenancy status
                                     Where the upgrade stands: its step, the data key and the re-wrap
+  wirebench-server admin tenancy revert [--accept-unopened]
+                                    With every server stopped, undo the upgrade to this version: the
+                                    database back to schema 19 and the data directory to its old
+                                    layout, so the previous version starts on them. Resumes if stopped;
+                                    --accept-unopened goes on past secrets it could not re-seal
   wirebench-server --version
   wirebench-server --help
 
@@ -102,7 +108,8 @@ a self-hosted server has one tenant and refuses it.
 Configuration is read from WIREBENCH_SERVER_* environment variables; see README.md.
 `;
 
-const TENANCY_USAGE = 'usage: wirebench-server admin tenancy role [--print-sql] | check | status';
+const TENANCY_USAGE =
+  'usage: wirebench-server admin tenancy role [--print-sql] | check | status | revert [--accept-unopened]';
 
 const OPTIONS = {
   help: { type: 'boolean', short: 'h' },
@@ -117,6 +124,7 @@ const OPTIONS = {
   json: { type: 'boolean' },
   limit: { type: 'string' },
   'print-sql': { type: 'boolean' },
+  'accept-unopened': { type: 'boolean' },
   tenant: { type: 'string' },
 } as const;
 
@@ -176,6 +184,12 @@ export function parseServerArgs(argv: readonly string[]): ServerCommand {
   }
   if (parsed.values['print-sql'] !== undefined && !(word === 'admin' && second === 'tenancy' && third === 'role')) {
     throw new UsageError('--print-sql applies to admin tenancy role only');
+  }
+  if (
+    parsed.values['accept-unopened'] !== undefined &&
+    !(word === 'admin' && second === 'tenancy' && third === 'revert')
+  ) {
+    throw new UsageError('--accept-unopened applies to admin tenancy revert only');
   }
   const tenant = parsed.values.tenant;
   if (tenant !== undefined) {
@@ -265,6 +279,8 @@ export function parseServerArgs(argv: readonly string[]): ServerCommand {
               return { command: 'admin-tenancy-check' };
             case 'status':
               return { command: 'admin-tenancy-status' };
+            case 'revert':
+              return { command: 'admin-tenancy-revert', acceptUnopened: parsed.values['accept-unopened'] === true };
             default:
               throw new UsageError(TENANCY_USAGE);
           }

@@ -19,6 +19,7 @@ import type { PendingWrites } from '../../src/pending-writes.js';
 import { syncModule } from '../../src/sync/module.js';
 import { teamsModule } from '../../src/teams/module.js';
 import { browserBuildFixture, type BrowserBuildFixture } from './browser-build.js';
+import type { TestDatabase } from './database.js';
 import { recordingAudit } from './context.js';
 import { markStepsDone } from './tenancy.js';
 import { identityHarness, signedInUser, type IdentityHarness, type SignedInUser } from './identity.js';
@@ -53,6 +54,9 @@ export async function hostHarness(
     readonly logStream?: NodeJS.WritableStream;
     /** Replaces the license the modules read (the permissive default without it): a seat limit, say. */
     readonly license?: (base: LicenseService) => LicenseService;
+    /** A database and a data directory of the test's own (a migrated fixture's), left open and in place on close. */
+    readonly db?: TestDatabase;
+    readonly dataDir?: string;
   } = {},
 ): Promise<HostHarness> {
   const timers = manualTimers();
@@ -62,6 +66,8 @@ export async function hostHarness(
   const build = await browserBuildFixture();
   const started = identityHarness({
     ...(options.logStream !== undefined ? { logStream: options.logStream } : {}),
+    ...(options.db !== undefined ? { db: options.db } : {}),
+    ...(options.dataDir !== undefined ? { dataDir: options.dataDir } : {}),
     ...(options.license !== undefined
       ? {
           beforeBuild: (_db, ctx) => {

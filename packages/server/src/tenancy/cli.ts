@@ -1,6 +1,6 @@
 /**
- * `wirebench-server admin tenancy check` and `admin tenancy status` (hosted edition spec §19.10, §19.11) are at the
- * end of this file.
+ * `wirebench-server admin tenancy check`, `admin tenancy status` and `admin tenancy revert` (hosted edition spec
+ * §19.10, §19.11) are at the end of this file.
  *
  * `wirebench-server admin tenancy role [--print-sql]` (hosted edition spec §19.4): the operator's switch to an
  * app role outside compose. It connects as the owner (`WIREBENCH_SERVER_MIGRATION_DATABASE_URL`) and runs what
@@ -8,7 +8,7 @@
  * missing, then grant it its privileges. `--print-sql` only reads, and prints the statements for a role that
  * may create roles to apply.
  */
-import { lstat, readdir } from 'node:fs/promises';
+import { access, lstat, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { WirebenchError } from '@wirebench/engine';
 import type { ServerCommand } from '../args.js';
@@ -28,10 +28,15 @@ import {
 } from './file-step.js';
 import { dataKeyState, environmentKeyRoot, storedDataKey, type DataKeyState } from './keys.js';
 import { tenantRootById } from './paths.js';
+import { revertTenancy, type RevertOptions } from './revert.js';
 import { rewrap } from './rewrap.js';
 import { appRolePlan, ensureAppRole, roleMode } from './roles.js';
 
 type TenancyRoleCommand = Extract<ServerCommand, { command: 'admin-tenancy-role' }>;
+type TenancyRevertCommand = Extract<ServerCommand, { command: 'admin-tenancy-revert' }>;
+
+/** What a test may change of the revert: its wait, the sessions it reads, and where it stops. */
+export type RevertSeams = Pick<RevertOptions, 'waitMs' | 'sleep' | 'serverSessions' | 'checkpoint' | 'fs'>;
 
 const NEEDS_TWO_ROLES =
   'admin tenancy role needs two roles: WIREBENCH_SERVER_MIGRATION_DATABASE_URL set to the owner of the schema, and WIREBENCH_SERVER_DATABASE_URL to the app role';
@@ -320,5 +325,58 @@ export async function runTenancyStatus(io: ServerIo): Promise<number> {
     return ExitCode.Migration;
   } finally {
     await db.close();
+  }
+}
+
+/**
+ * `admin tenancy revert [--accept-unopened]` (spec §19.10): as the owner, over the migration URL, with every server
+ * stopped. A refusal exits 2 and leaves the step where it was; a run stopped part way resumes at the next.
+ */
+export async function runTenancyRevert(
+  command: TenancyRevertCommand,
+  io: ServerIo,
+  seams: RevertSeams = {},
+): Promise<number> {
+  const loaded = configOf(io);
+  if (typeof loaded === 'number') return loaded;
+  const config = loaded;
+  // The files move back with the rows: a revert run where the data directory is not mounted would leave them behind.
+  const mounted = await access(config.dataDir).then(
+    () => true,
+    () => false,
+  );
+  if (!mounted) {
+    io.stderr.write(
+      `tenancy-revert-no-data-dir: the data directory ${config.dataDir} is not here; run the revert where the ` +
+        "server's data directory is mounted. Nothing was changed\n",
+    );
+    return ExitCode.Config;
+  }
+  try {
+    const result = await revertTenancy({
+      ...seams,
+      url: migrationUrlOf(config),
+      dataDir: config.dataDir,
+      ...(config.secretsKey !== undefined ? { root: config.secretsKey } : {}),
+      acceptUnopened: command.acceptUnopened,
+      report: (line) => io.stdout.write(`${line}\n`),
+    });
+    io.stdout.write(
+      result.outcome === 'nothing'
+        ? 'nothing to revert: the database is at schema version 19 or before\n'
+        : 'reverted: the previous version of the server can now start on this database and data directory\n',
+    );
+    return ExitCode.Ok;
+  } catch (error) {
+    if (error instanceof WirebenchError) {
+      io.stderr.write(`${error.code}: ${error.message}\n`);
+      return ExitCode.Config;
+    }
+    // The errno or database code only: a message can name a path under tenants/<id>/checkouts/<user>.
+    const code = (error as { code?: unknown } | null)?.code;
+    io.stderr.write(
+      `admin tenancy revert failed (${typeof code === 'string' ? code : 'an unexpected error'}); run it again to resume\n`,
+    );
+    return ExitCode.Migration;
   }
 }
