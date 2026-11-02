@@ -219,3 +219,5 @@ Issue #59. The engine half shipped in #329; the desktop half adds the explorer, 
 | **SC-M4** Sequence, random, match and script dispatch pick as specified, and scenarios move on | `packages/engine/test/unit/mock/{dispatch,script}.test.ts` |
 | **SC-M5** A mock listens on loopback unless the preference says otherwise, refuses a rebound `Host`, serves its WSDL or OpenAPI document, and masks credentials in its log | `packages/engine/test/unit/mock/server.test.ts`, `packages/engine/test/unit/soap/mock-wsdl.test.ts`, `packages/engine/test/unit/rest/mock-openapi.test.ts`, `packages/host/test/mock-runner.test.ts` |
 | **SC-M6** A mock is built, started, stopped and watched from the UI | `apps/desktop/test/renderer/mock-tab.test.tsx`, `apps/desktop/test/renderer/{tree-nodes,explorer-context-menu}.test.ts`, `e2e/specs/mocks.spec.ts` |
+
+<!-- CI probe: a documentation-only change; this pull request is closed unmerged. -->
