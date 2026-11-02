@@ -1,6 +1,11 @@
 import { resolve } from 'node:path';
 import { defineConfig } from 'vitest/config';
 
+// CI splits the coverage run across runners (`ci.yml`, the `coverage` matrix). Each shard covers only part of
+// the suite, so it skips the thresholds and the reports and writes a blob instead; the `coverage-report` job
+// merges the blobs and checks the thresholds against the whole suite.
+const coverageShard = process.env['WIREBENCH_COVERAGE_SHARD'] === '1';
+
 export default defineConfig({
   resolve: {
     alias: {
@@ -16,12 +21,16 @@ export default defineConfig({
       provider: 'v8',
       include: ['packages/core/src/**', 'packages/protocol-*/src/**', 'packages/engine/src/**'],
       exclude: ['packages/engine/src/index.ts'],
-      thresholds: {
-        lines: 85,
-        branches: 85,
-        functions: 85,
-        statements: 85,
-      },
+      ...(coverageShard
+        ? { reporter: [] }
+        : {
+            thresholds: {
+              lines: 85,
+              branches: 85,
+              functions: 85,
+              statements: 85,
+            },
+          }),
     },
     projects: [
       {

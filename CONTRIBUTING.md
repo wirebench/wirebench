@@ -13,16 +13,19 @@ maintenance tooling), `fixtures` (WSDL/XSD test material), `docs`.
 
 ## The gate
 
-`pnpm check` must be green before every commit. CI runs it on Linux; macOS and Windows run the
-OS-sensitive part, `pnpm check:tests` (typecheck + tests + perf gates):
+`pnpm check` must be green before every commit. CI splits it up: the source-tree checks
+(`pnpm check:static`: typecheck, lint and the generated-docs, contrast, doc-path, banned-term and
+licence checks) and the perf gates run once, on Linux; the test suite runs in shards on all three
+OSes, on Linux under coverage. Locally, `pnpm check:tests` (typecheck + tests + perf gates) is the
+OS-sensitive part on its own:
 
 ```
 pnpm check        # lint + typecheck + wsi:docs --check + contrast:check + check:doc-paths + test + test:perf
 ```
 
-A change that touches only Markdown skips that matrix: `.github/workflows/docs.yml` runs just the
-Markdown-facing checks instead (`pnpm check:docs`: Prettier, the generated docs, cited paths and
-images, banned terms).
+A change that touches only documentation (`docs/`, `docs-site/`, `site/`, Markdown anywhere) skips
+the test and e2e jobs; `check` still runs, and `.github/workflows/docs.yml` runs the Markdown-facing
+checks (`pnpm check:docs`: Prettier, the generated docs, cited paths and images, banned terms).
 
 The end-to-end suite is separate and needs a build first:
 

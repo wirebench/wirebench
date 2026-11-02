@@ -4,6 +4,8 @@ dist-test
 dist-browser
 out
 coverage
+# Vitest's blob reports, one per CI shard (`--reporter=blob`), merged by `--merge-reports`.
+.vitest
 .DS_Store
 *.p12
 *.pem
