@@ -260,6 +260,36 @@ describeDb('terminal shares (#429)', () => {
     expect(await viewer.next('ended')).toEqual({ type: 'ended', reason: 'ended' });
   });
 
+  // Tenancy plan Task 26 (Task 9 review M6, Part C review M2): a join costs the token's unit, then featureOn's (the
+  // license and the seat count) and canView's, one each. Two units for the two checks were measured beside the host
+  // lease's one take per host and one renew per tenant per 15 s, and left apart: a join is a person opening a share,
+  // so grouping them would save one begin, set_config and commit per join. Pinned here so a third shows.
+  it('a viewer’s join runs the token’s unit, then one unit each for featureOn and canView', async () => {
+    const shareId = await create();
+    const owner = await openShare(port, auth(ada.token, shareId));
+    await owner.next('ready');
+    h.statements.entries.length = 0;
+    const viewer = await openShare(port, auth(bo.token, shareId));
+    await viewer.next('viewer-ready');
+    const units = new Map<number, string[]>();
+    for (const entry of h.statements.entries) {
+      if (entry.kind === 'statement') units.set(entry.unit, [...(units.get(entry.unit) ?? []), entry.text]);
+    }
+    // The audit rows of earlier joins land when they land; they are not the join's.
+    const join = [...units.values()].filter((texts) => !texts.some((text) => text.includes('audit_events')));
+    // Matched by what each runs, not by position: only the count is pinned, so a fourth unit still shows.
+    expect(join).toHaveLength(3);
+    expect(join).toEqual(
+      expect.arrayContaining([
+        [expect.stringContaining('token_hash')],
+        [expect.stringContaining('from license'), expect.stringContaining('from users')],
+        [expect.stringContaining('m.role')],
+      ]),
+    );
+    owner.send({ type: 'end' });
+    await owner.closed;
+  });
+
   it('a share whose owner never connects is dropped', async () => {
     const shareId = await create();
     expect(timers.fire(30_000)).toBeGreaterThan(0);

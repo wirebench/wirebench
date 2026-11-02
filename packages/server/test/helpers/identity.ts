@@ -82,6 +82,8 @@ export async function identityHarness(
      * The harness leaves it open on `close`; its owner closes it.
      */
     readonly db?: Awaited<ReturnType<typeof testDatabase>>;
+    /** A data directory of the test's own (a migrated fixture's, say), left in place on `close`. */
+    readonly dataDir?: string;
     /** Changes the loaded configuration: a hosted one, which `loadConfig` refuses (spec §19.1). */
     readonly configure?: (config: ServerConfig) => ServerConfig;
     /** Runs after the directory loaded and before the server is built: tenants the hosted map starts with. */
@@ -93,7 +95,7 @@ export async function identityHarness(
   } = {},
 ): Promise<IdentityHarness> {
   const db = options.db ?? (await testDatabase());
-  const dataDir = await mkTempDir();
+  const dataDir = options.dataDir ?? (await mkTempDir());
   const clock: TestClock = {
     now: new Date('2026-09-24T12:00:00.000Z'),
     set(at) {
@@ -153,7 +155,7 @@ export async function identityHarness(
     close: async () => {
       await app.close();
       if (options.db === undefined) await db.close();
-      await removeTempDir(dataDir);
+      if (options.dataDir === undefined) await removeTempDir(dataDir);
     },
   };
 }

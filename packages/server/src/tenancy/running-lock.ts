@@ -78,6 +78,30 @@ export const RETAKE_WINDOW_MS = 120_000;
 /** The delay before the first re-take attempt, doubled after each failure up to {@link MAX_RETRY_DELAY_MS}. */
 export const RETRY_DELAY_MS = 1_000;
 export const MAX_RETRY_DELAY_MS = 15_000;
+/** How long one connection attempt may take, by default. */
+export const LOCK_CONNECT_TIMEOUT_MS = 10_000;
+
+/**
+ * How long after its lock connection silently drops a server can still be running (owner ruling, 2026-10-30): its
+ * heartbeat sees the drop within {@link HEARTBEAT_MS} + {@link LOCK_QUERY_TIMEOUT_MS}, then it re-takes for
+ * {@link RETAKE_WINDOW_MS}, an attempt starting after a delay of at most {@link MAX_RETRY_DELAY_MS} and lasting at most
+ * {@link LOCK_CONNECT_TIMEOUT_MS} + {@link LOCK_QUERY_TIMEOUT_MS}: 20 + 150 = 170 s. Revert waits this, and the drain,
+ * once it holds the lock exclusively (plan Task 28).
+ */
+export const LOST_LOCK_STOP_MS =
+  HEARTBEAT_MS +
+  LOCK_QUERY_TIMEOUT_MS +
+  RETAKE_WINDOW_MS +
+  MAX_RETRY_DELAY_MS +
+  LOCK_CONNECT_TIMEOUT_MS +
+  LOCK_QUERY_TIMEOUT_MS;
+
+/**
+ * The most a server's shutdown waits for in-flight requests before it drops them (`serve`'s default `drainMs`), and
+ * the most a server that lost its lock for good runs on after `onLost`: it exits at this deadline whatever its
+ * modules' close still waits for, which is what {@link LOST_LOCK_STOP_MS} plus this, revert's wait, relies on.
+ */
+export const SERVER_DRAIN_MS = 10_000;
 
 export interface RunningLockOptions {
   /** How long an unreachable database is tried again before `onLost`; {@link RETAKE_WINDOW_MS} by default. */
@@ -132,7 +156,7 @@ export class RunningLock {
   }
 
   private async take(): Promise<Session> {
-    const connectTimeoutMs = this.options.connectTimeoutMs ?? 10_000;
+    const connectTimeoutMs = this.options.connectTimeoutMs ?? LOCK_CONNECT_TIMEOUT_MS;
     const first = { text: TRY_SHARED, params: [SERVER_RUNNING_CLASS] };
     const opening = (
       this.options.open ??

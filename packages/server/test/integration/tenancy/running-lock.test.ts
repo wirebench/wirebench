@@ -59,6 +59,7 @@ describeDb('the server-running lock and the start-up checks (hosted spec §19.4,
       readonly modules?: readonly ServerModule[];
       readonly runningLock?: StartOptions['runningLock'];
       readonly exit?: (code: number) => void;
+      readonly drainMs?: number;
     } = {},
   ): Promise<RunningServer> => {
     const dataDir = await mkTempDir();
@@ -86,6 +87,7 @@ describeDb('the server-running lock and the start-up checks (hosted spec §19.4,
         logStream,
         modules: extra.modules ?? MIGRATIONS_ONLY,
         ...(extra.runningLock !== undefined ? { runningLock: extra.runningLock } : {}),
+        ...(extra.drainMs !== undefined ? { drainMs: extra.drainMs } : {}),
       },
     );
   };
@@ -266,6 +268,37 @@ describeDb('the server-running lock and the start-up checks (hosted spec §19.4,
       // Nothing is served any more.
       await expect(fetch(`http://127.0.0.1:${String(server.port)}/healthz`)).rejects.toThrow();
     } finally {
+      await server.close();
+    }
+  });
+
+  it('exits within the drain of losing its lock, even when a module never finishes closing (Task 28 review I2)', async () => {
+    const recorded = recordingOpen();
+    const exit = vi.fn();
+    let letGo: () => void = () => undefined;
+    const closing = new Promise<void>((done) => {
+      letGo = done;
+    });
+    // A host's quit or a lease release that never answers.
+    const hangs: ServerModule = {
+      name: 'host',
+      register: (app) => {
+        app.addHook('onClose', () => closing);
+        return Promise.resolve();
+      },
+    };
+    const server = await start(db.url, undefined, {
+      exit,
+      drainMs: 300,
+      modules: [...MIGRATIONS_ONLY, hangs],
+      runningLock: { open: recorded.open, retryDelayMs: 200 },
+    });
+    try {
+      await dropAndRevert(recorded.sessions.at(-1)!);
+      // onLost comes after the 200 ms re-take finds the revert; the exit comes 300 ms after that.
+      await vi.waitFor(() => expect(exit).toHaveBeenCalledWith(3), { timeout: 5000, interval: 20 });
+    } finally {
+      letGo();
       await server.close();
     }
   });

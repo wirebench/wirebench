@@ -48,11 +48,21 @@ import { ROUTE_MAP, routeKey, SOCKET_ROUTES, type Ctx } from './route-map.js';
 
 void _fill;
 
+/**
+ * "acme" as A's marker, not four letters inside an id: ULIDs are Crockford base32, which holds A, C, M and E, so one
+ * of B's own ids can spell it. Every marker the fill writes has something else before it (`@acme`, `"acme`, ` acme`).
+ */
+const ACME = /(?<![0-9a-z_-])acme/i;
+
 /** What A wrote that a body of B's must never hold, unless the request itself named it. */
 function leaks(a: Filled, sent: string, body: string): string[] {
   const found: string[] = [];
-  const text = body.toLowerCase();
-  if (!sent.toLowerCase().includes('acme') && text.includes('acme')) found.push('"acme"');
+  const match = ACME.exec(body);
+  if (!ACME.test(sent) && match !== null) {
+    // The text around it, so a hit can be judged from the output alone.
+    const around = body.slice(Math.max(0, match.index - 40), match.index + 44);
+    found.push(`"acme" in …${around}…`);
+  }
   for (const id of a.ids) if (!sent.includes(id) && body.includes(id)) found.push(id);
   return found;
 }

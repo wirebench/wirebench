@@ -653,7 +653,7 @@ self-hosted teams on their own, which is why they would come first whenever the 
 | 1 | `host-seam` | **Built** (#779 and #780, 2026-10-27; ADR-0033 accepted). `@wirebench/host` as `createHost(platform)` with `HostPlatform` and `Caller`, no module-level state and its gate; the Electron app embeds it; proven by the existing tests on a fake platform and a fake-socket test of `buildApi` (the loopback server moves to slice 3) | — | yes (no user-visible change) |
 | 2 | `browser-client` | **Built** (#785, #787 and #789, 2026-10-29, for #783; §17 records what changed from this row). The Vite browser build, `browser-bootstrap.ts`, capability discovery, the sign-in page and `browser_flows`, the cookie session, the server host with checkouts and per-user state via `inject`, live events over the host socket, user-scoped sealed secrets under one server-wide root, the §3.10 allowlist and path guard, the egress rule on every outbound connection | 1 | yes: a self-hosted team gets a browser tab |
 | 3 | `local-agent` | **Built** (#793, #795 and, for the agent hosts, #790, 2026-10-29; ADR-0035; §18 records what changed from this row). `packages/agent` as a library, the loopback socket transport, pairing with the browser subset, the send-route rule and the send bundle, `wirebench agent`, the agent's packaging | 1, 2 | yes |
-| 4 | `tenancy` | **Specified 2026-10-29** (#798; §19 records what changed from this row). `tenants`, `tenant_id` on every table, forced row-level security, tenant resolution by `Host`, per-tenant directories and data keys with the one-time re-wrap, the six guards of §5.4 including the job scope, the host-instance lease, the self-hosted migration | 2 | yes, invisibly (one tenant) |
+| 4 | `tenancy` | **Built** (#800, #805, #807, #811 and #812, 2026-11-02, for #798; §19 records what changed from this row). `tenants`, `tenant_id` on every table, forced row-level security, tenant resolution by `Host`, per-tenant directories and data keys with the one-time re-wrap, the six guards of §5.4 including the job scope, the host-instance lease, the self-hosted migration | 2 | yes, invisibly (one tenant) |
 | 5 | `operations` | `LISTEN`/`NOTIFY` hub fan-out, advisory locks, sticky host sockets, per-tenant budgets, metrics by tenant id | 4 | partly (multi-instance self-hosted) |
 | 6 | `domains` | The two registrable names, wildcard certificates, `app.` entry with emailed links, reserved slugs, public suffix submission | 4 | no |
 | 7 | `control-plane` | Signup, subscriptions, edition from subscription, suspension, export, deletion, operator commands; per-tenant settings (OIDC, SAML, SCIM, audit forwarding, SMTP sender, retention), today's environment variables becoming the default tenant's (§19.1, §19.12) | 4, 5, 6 | no |
@@ -1578,6 +1578,10 @@ tenant through its own column, not only through `users`. The same email in two t
      - the audit chain lock: `pg_try_advisory_xact_lock(AUDIT_CHAIN_LOCK_CLASS, hashtext(current_schema() || ':' ||
        tenant_id::text))`;
      - the host-lease lock of §19.9, likewise.
+
+     In code, `current_schema()` here is the server's schema, `SERVER_SCHEMA` (the schema `server_identity` lives
+     in, else `current_schema()`), and the tenant is the unit's own tenant id. The two give the same key in every
+     real deployment, and the seat, chain and host-lease locks all use that one form.
    - Seats are counted per tenant by the policy itself. The licensing service's `state(scope)` takes the tenant; in
      self-hosted mode it reads that tenant's license row, and in hosted mode, from slice 7, `tenants.edition`.
    - Scheduled runs:
@@ -1623,16 +1627,25 @@ tenant through its own column, not only through `users`. The same email in two t
   `retryAfterMs` of the lease's remaining time. The bootstrap's reconnect backoff (§17.6) waits at least that long.
 - **Keeping it.**
   - Leases last 60 s. Every 15 s the process renews them with one statement for each tenant **that has an instance
-    in this process** (`update … where holder = $holder returning user_id`), not for every tenant.
-  - A lease missing from that answer was lost: its instance closes its sockets `4409` and is disposed.
+    in this process** (`update … where holder = $holder and user_id = any($held) returning user_id`), not for every
+    tenant. Naming the held users means a row whose release failed is not renewed for the life of the process.
+  - A lease missing from that answer was lost: its instance closes its sockets `4409 host-lease-lost` and is
+    disposed.
   - A process that has not renewed for 30 s by its own monotonic clock stops its instances on its own, half a lease
     before anyone else could take them, so two processes never write one checkout (§5.5). Database time sets the
-    expiry; local time only decides when to stop early.
+    expiry; local time only decides when to stop early. Those sockets close `4409 host-lease-expired`: no other
+    process has the user, so the tab says only that the connection was lost.
+  - A renew that has had no answer for half a renew interval (a half-open connection can take minutes to fail)
+    no longer holds back the tenant's next one, so the leases taken after the database answers again are renewed.
 - **Giving it back.** Eviction deletes the lease after the host's quit path has run. Shutdown releases every lease
-  after `closeAll`.
+  after `closeAll`. Either waits at most 5 s for the delete; a lease left behind expires on its own. The delete
+  names the take's `acquired_at` (`… where user_id = $user and holder = $holder and acquired_at = $acquired`), so a
+  delete that gave up and arrives after this process took the user again leaves the new lease alone.
 - **After a crash.** A self-hosted server is one process (ADR-0013), so in self-hosted mode start-up deletes every
   lease it finds, through `forEachTenant`, since the app role outside a tenant sees no row. A crash and restart then
-  do not keep users out for a minute (my call). A hosted process leaves leases to expire. A multi-instance
+  do not keep users out for a minute (my call). A start-before-stop restart lets both processes serve a user until
+  the old process's next renew (at most 15 s, plus its hosts' quit path); a self-hosted restart stops the old
+  process first. A hosted process leaves leases to expire. A multi-instance
   self-hosted server (slice 5) must drop the start-up delete (§19.12).
 - **The cap** (decision 11).
   - A tenant holds at most its seat limit of live leases (`LicenseService.state(scope)`; none when the limit is
@@ -1643,6 +1656,13 @@ tenant through its own column, not only through `users`. The same email in two t
     the team has a browser host open (my call).
   - `4429` then has two reasons, this one and §17.3's ninth socket of one user (`too many host sockets`), so the
     bootstrap branches on the reason for its message.
+  - At the cap, a user whose own lease another process holds gets `4409 host-lease-held` with its remaining time,
+    as below the cap, and nothing is evicted for them: their host is open elsewhere, and a seat freed here would
+    not let them in. The user's own row is never counted against them.
+  - An eviction whose lease release fails or goes unanswered frees no seat (the row stays until it expires), so the
+    open stops there with `4429` rather than evict the tenant's other idle instances in turn. While the database is
+    slow, a capped open therefore evicts at most one idle instance. A release whose delete answered (even with no
+    row left to match), or that had nothing to delete, has freed its seat.
   - With seats binding users, a self-hosted server reaches the cap only after a license downgrade below its enabled
     users.
 - **Unchanged.** Idle eviction after `WIREBENCH_SERVER_HOST_IDLE_MINUTES` (default 30), and eight sockets per user.
@@ -1814,6 +1834,27 @@ Two forward steps, each resumable; a way back, also resumable; and a stated cost
        `host_leases`; restores the `0019` keys, indexes and foreign keys under their names, including the singleton
        primary keys on the kept `singleton` and `only_row` columns; drops the tenant columns (catalog-only again);
        drops `tenants` and the two `server_identity` columns; and deletes rows `20` and `21` of `schema_migrations`.
+
+    The states run one way, with one exception: `revert --abort`, only at `reverting-keys`, records `files` and
+    hands the installation back to the upgrade, whose idempotent steps find the files in place and re-seal under the
+    existing data key what the revert had moved back. At `reverting-files` or `reverting-rows` it refuses
+    (`tenancy-revert-abort-too-late`).
+  - **What it checks first, on every run** (Task 28's review, owner rulings 2026-11-02):
+    - It refuses in hosted mode (`tenancy-revert-hosted`), before it connects.
+    - It refuses a session whose `application_name` is not `wirebench-admin`, and an app URL that sets one, since
+      it tells server connections apart by that name (`tenancy-revert-application-name`).
+    - After the exclusive lock, it waits 180 s on every run, a resumed run and `--abort` included: the running
+      lock's lost-lock stop (170 s) plus the server's drain (10 s), so that a server that lost its lock without
+      knowing has exited. Then it refuses while any `wirebench-server%` session is still connected, which also
+      counts another installation's servers in another schema of the same database (stop those too) and a pooler's
+      kept connections.
+    - Before `reverting-keys` is recorded, a dry run of the re-seal back counts what would stay under the new key.
+      A value that opens under neither key, or a link it does not follow, refuses (`tenancy-revert-unopened`,
+      nothing changed) unless run with `--accept-unopened`, one flag for both; the same gate after the re-seal is a
+      backstop, whose message names `--abort`.
+  - **After it.** The previous image reads only `WIREBENCH_SERVER_DATABASE_URL`, so the operator points it at the
+    owner's direct URL again. The app role stays, unused; dropping it needs a superuser or the role's privileges
+    (`DROP OWNED BY` acts as the role).
   - **The column order is restored.** No column of `0019` is dropped forward (rule 5), and a dropped `tenant_id` only
     leaves a hidden placeholder at the end of each table. The live columns are therefore those of `0019`, in the same
     order. The round-trip test compares the catalog through the migration test's own readers (§19.13).
@@ -1829,7 +1870,7 @@ Two forward steps, each resumable; a way back, also resumable; and a stated cost
   - `admin tenancy status`: the step, the default tenant's id, whether its data key exists, the re-wrap counts and
     the backup-role advice;
   - `admin tenancy role [--print-sql]` (§19.4);
-  - `admin tenancy revert`.
+  - `admin tenancy revert [--accept-unopened | --abort]` (§19.10).
 - **`--tenant <slug>`** joins every existing admin command (`invite`, `license`, `audit verify|export`, `schedules`,
   `scim-token`, `scim-group`). Hosted mode requires it. Self-hosted mode refuses it as a usage error (my call), since
   there is one tenant and nothing should ever print or ask for its slug.

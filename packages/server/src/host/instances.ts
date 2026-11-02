@@ -15,11 +15,22 @@
  * A user is a tenant and a user id (hosted edition spec §19.8 guard 5; Task 6 review m6): instances, evictions
  * and socket counts are keyed `tenantId:userId`, and a session's end closes only the sockets of its own tenant, so
  * one user id in two tenants is two users with two hosts.
+ *
+ * With a lease (`lease.ts`, spec §19.9), a new instance takes the user's lease before its host is built, and gives
+ * it back once its eviction has run the quit path, so no two processes hold one user's host. A lease lost to
+ * another holder, or one this process could not renew in time, closes the instance's sockets `4409` and evicts it.
+ *
+ * At the tenant's instance cap (a take refused `host-instance-cap`), this process evicts its own idle instances of
+ * that tenant, longest idle first, one at a time, and takes again after each eviction has given its lease back. Idle
+ * is what the idle timer already means: no socket open, the timer running. Still at the cap with none left, or after
+ * an eviction whose release failed or went unanswered, the open rejects `host-instance-cap`, and the module closes
+ * the socket `4429`.
  */
 import { rm } from 'node:fs/promises';
 import type { SessionEndedEvent } from '../context.js';
 import { HOST_CLOSE } from './errors.js';
 import type { ServerHost } from './host-runtime.js';
+import { isInstanceCap, type InstanceLeases, type LeaseLoss } from './lease.js';
 import { hostDirectories } from './server-platform.js';
 import type { TenantScope } from '../tenancy/scope.js';
 
@@ -61,6 +72,8 @@ export interface HostInstancesDeps {
   readonly idleMs: number;
   readonly setTimer: (fn: () => void, ms: number) => { cancel(): void };
   readonly log: (message: string, error: unknown) => void;
+  /** The host-instance lease; without one (a test), instances are this process's alone. */
+  readonly leases?: InstanceLeases;
 }
 
 /** The browser session an instance is signed in with. */
@@ -86,6 +99,15 @@ interface Instance {
   /** The socket whose token the host is signed in with: the newest one opened, until its session ends. */
   credential: HostSession | undefined;
   idle: { cancel(): void } | undefined;
+  /** When the idle timer started, as a count of idle starts in this process: the lowest went idle first. */
+  idleSince: number;
+  /**
+   * The host is built, so the lease is held. Only such an instance is evicted for the cap: one still building may
+   * be waiting on a take of its own, and an eviction waits for the host, so the two could wait on each other.
+   */
+  built: boolean;
+  /** Set by the eviction: whether its lease release answered, so the seat it held is free. */
+  released: boolean | undefined;
 }
 
 export class HostInstances {
@@ -102,8 +124,14 @@ export class HostInstances {
     { readonly key: string; readonly tenantId: string; readonly userId: string; gone: boolean }
   >();
   private closed = false;
+  /** Counts the idle timers started, so the cap evicts the instance idle longest first. */
+  private idleStarts = 0;
 
-  constructor(private readonly deps: HostInstancesDeps) {}
+  constructor(private readonly deps: HostInstancesDeps) {
+    deps.leases?.onLost((user, why) => {
+      this.leaseLost(user, why);
+    });
+  }
 
   /**
    * The user's host, created on first use, with `socket` counted as open and its token as the
@@ -130,15 +158,23 @@ export class HostInstances {
       const signedIn: Pick<Instance, 'credential'> = { credential: undefined };
       const created: Instance = Object.assign(signedIn, {
         user,
-        host: this.deps.create(user, () => signedIn.credential),
+        host: this.build(user, () => signedIn.credential),
         sockets: [],
         idle: undefined,
+        idleSince: 0,
+        built: false,
+        released: undefined,
       });
       instance = created;
       this.instances.set(key, instance);
-      instance.host.catch(() => {
-        if (this.instances.get(key) === created) this.instances.delete(key);
-      });
+      instance.host.then(
+        () => {
+          created.built = true;
+        },
+        () => {
+          if (this.instances.get(key) === created) this.instances.delete(key);
+        },
+      );
     }
     instance.idle?.cancel();
     instance.idle = undefined;
@@ -201,11 +237,15 @@ export class HostInstances {
     }
   }
 
-  /** Server shutdown: every instance is evicted; resolves once each host has run its quit path. */
+  /**
+   * Server shutdown: every instance is evicted; resolves once each host has run its quit path and given its lease
+   * back, and the renewals have stopped.
+   */
   async closeAll(): Promise<void> {
     this.closed = true;
     for (const instance of [...this.instances.values()]) this.evict(instance);
     await Promise.all([...this.evicting.values()]);
+    await this.deps.leases?.close();
   }
 
   /**
@@ -227,6 +267,70 @@ export class HostInstances {
   }
 
   /**
+   * The lease first, then the host. A host that cannot be built gives the lease back before its promise rejects,
+   * and so before the instance is forgotten and another can take the lease again.
+   */
+  private async build(user: HostUser, session: () => HostSession | undefined): Promise<ServerHost> {
+    const leases = this.deps.leases;
+    if (leases !== undefined) await this.takeWithin(leases, user);
+    try {
+      return await this.deps.create(user, session);
+    } catch (error) {
+      await leases?.release(user);
+      throw error;
+    }
+  }
+
+  /**
+   * Takes the lease; at the cap, evicts this process's longest-idle instance of the tenant, waits for its lease to
+   * be given back, and takes again, until the take succeeds or no idle instance is left. Two capped opens evict one
+   * instance each: `evict` takes it out of the map at once. An eviction whose release failed or went unanswered
+   * freed no seat (the row stays until it expires), so the open stops there rather than evict every idle instance of
+   * the tenant in turn.
+   */
+  private async takeWithin(leases: InstanceLeases, user: HostUser): Promise<void> {
+    for (;;) {
+      try {
+        await leases.take(user);
+        return;
+      } catch (error) {
+        if (!isInstanceCap(error) || this.closed) throw error;
+        const idle = this.longestIdle(user.tenant.tenantId);
+        if (idle === undefined) throw error;
+        const key = keyOf(idle.user);
+        this.evict(idle);
+        await this.evicting.get(key);
+        if (idle.released !== true) throw error;
+      }
+    }
+  }
+
+  /** This process's idle instance of the tenant, idle longest, whose host was built (so it holds a lease). */
+  private longestIdle(tenantId: string): Instance | undefined {
+    let found: Instance | undefined;
+    for (const instance of this.instances.values()) {
+      const idle = instance.idle !== undefined && instance.sockets.length === 0 && instance.built;
+      if (instance.user.tenant.tenantId !== tenantId || !idle) continue;
+      if (found === undefined || instance.idleSince < found.idleSince) found = instance;
+    }
+    return found;
+  }
+
+  /**
+   * Another holder has the user's lease (`host-lease-lost`), or this process could not renew it in time
+   * (`host-lease-expired`, most likely the database was out of reach): the instance stops now.
+   */
+  private leaseLost(user: HostUserKey, why: LeaseLoss): void {
+    const instance = this.instances.get(keyOf(user));
+    if (instance === undefined) return;
+    for (const socket of [...instance.sockets]) {
+      this.forget(instance, socket);
+      socket.close(HOST_CLOSE.leaseHeld, why === 'lost' ? 'host-lease-lost' : 'host-lease-expired');
+    }
+    this.evict(instance);
+  }
+
+  /**
    * After a socket left: the credential is the newest socket still open, or, with none, the last
    * credential stays while the idle timer runs (its session has not ended).
    */
@@ -238,6 +342,7 @@ export class HostInstances {
     }
     if (instance.idle !== undefined) return;
     const key = keyOf(instance.user);
+    instance.idleSince = ++this.idleStarts;
     instance.idle = this.deps.setTimer(() => {
       instance.idle = undefined;
       if (this.instances.get(key) === instance && instance.sockets.length === 0) this.evict(instance);
@@ -276,6 +381,15 @@ export class HostInstances {
           .catch((error: unknown) => {
             this.deps.log("a host's scratch directory could not be removed", error);
           });
+        // After the quit path (spec §19.9), and before a socket waiting on this eviction takes the lease again.
+        // A host that was never built took no lease, or gave it back already.
+        if (
+          await instance.host.then(
+            () => true,
+            () => false,
+          )
+        )
+          instance.released = await this.deps.leases?.release(instance.user);
       })
       .finally(() => {
         if (this.evicting.get(key) === done) this.evicting.delete(key);

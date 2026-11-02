@@ -89,7 +89,8 @@ export interface StepFs {
 
 const isMissing = (error: unknown): boolean => (error as NodeJS.ErrnoException | null)?.code === 'ENOENT';
 
-const realFs: StepFs = {
+/** The real file system, as the step and the revert's move use it. */
+export const realFs: StepFs = {
   device: async (path) => {
     try {
       return (await lstat(path)).dev;
@@ -124,13 +125,30 @@ export async function readTenancyStep(db: Querier): Promise<TenancyStepState | u
   return { step: row.step, defaultTenantId: row.defaultTenantId };
 }
 
+/**
+ * Refuses with `tenancy-reverting` while `admin tenancy revert` has not finished: a forward start-up or `migrate` reads
+ * this before it migrates anything, so a build with a newer migration never runs it on a half-reverted database. The
+ * step itself refuses the same way, first (`runTenancySteps`).
+ *
+ * @throws WirebenchError `tenancy-reverting`
+ */
+export async function refuseWhileReverting(db: Querier): Promise<void> {
+  const state = await readTenancyStep(db);
+  if (state !== undefined && state.step.startsWith('reverting-')) {
+    throw new WirebenchError(
+      'tenancy-reverting',
+      `admin tenancy revert has not finished (step ${state.step}): run it again to finish it`,
+    );
+  }
+}
+
 /** `names`, at most {@link MAX_LISTED} of them, then how many more. */
-const listed = (names: readonly string[]): string =>
+export const listed = (names: readonly string[]): string =>
   names.length <= MAX_LISTED
     ? names.join(', ')
     : `${names.slice(0, MAX_LISTED).join(', ')} and ${String(names.length - MAX_LISTED)} more`;
 
-const conflict = (paths: readonly (readonly [string, string])[]): WirebenchError =>
+export const conflict = (paths: readonly (readonly [string, string])[]): WirebenchError =>
   new WirebenchError(
     'tenancy-move-conflict',
     `both the old and the new location exist: ${paths.map(([from, to]) => `${from} and ${to}`).join('; ')}. ` +
@@ -301,8 +319,19 @@ export async function oldPrefixFiles(
   dataDir: string,
   checkouts: string,
 ): Promise<{ readonly found: string[]; readonly skipped: string[] }> {
-  const base = resolve(dataDir);
-  const prefixes = [...new Set([base, await realpath(base).catch(() => base)])].map((dir) =>
+  return prefixFiles(checkouts, resolve(dataDir));
+}
+
+/**
+ * The users' state files ({@link STATE_FILES}) under `checkouts` that hold the absolute prefix `<home>/checkouts/`, by
+ * its path as given and as resolved, and those skipped for their size; both relative to `checkouts`. The forward step
+ * looks for the data directory's own (`oldPrefixFiles`), the revert for the tenant root's.
+ */
+export async function prefixFiles(
+  checkouts: string,
+  home: string,
+): Promise<{ readonly found: string[]; readonly skipped: string[] }> {
+  const prefixes = [...new Set([home, await realpath(home).catch(() => home)])].map((dir) =>
     join(dir, 'checkouts', ''),
   );
   const needles = [...new Set(prefixes.flatMap(spellings))].map(fold);
@@ -324,7 +353,7 @@ export async function oldPrefixFiles(
  * Whether the default tenant has workspaces or has had browser sign-ins (each of which may own a host checkout):
  * what an empty data directory contradicts.
  */
-async function databaseHasData(tx: Querier, defaultTenantId: string): Promise<boolean> {
+export async function databaseHasData(tx: Querier, defaultTenantId: string): Promise<boolean> {
   await tx.query(SET_TENANT, [defaultTenantId]);
   const rows = await tx.query<{ has: boolean }>(
     "select exists (select 1 from workspaces) or exists (select 1 from device_tokens where kind = 'browser') as has",

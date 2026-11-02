@@ -22,7 +22,7 @@ import { loadMigrations, migrate, MIGRATIONS_DIR, pendingMigrations, type Migrat
 import { createDatabase } from './db/pool.js';
 import { checkAppRole, checkPostgresVersion } from './tenancy/checks.js';
 import { TENANCY_MIGRATIONS_DIR } from './tenancy/migrations.js';
-import { RunningLock, serverRunning, type RunningLockOptions } from './tenancy/running-lock.js';
+import { RunningLock, SERVER_DRAIN_MS, serverRunning, type RunningLockOptions } from './tenancy/running-lock.js';
 import { operatorPublicUrl } from './tenancy/urls.js';
 import { environmentKeyRoot } from './tenancy/keys.js';
 import { createTenancy, directoryOf } from './tenancy/tenancy.js';
@@ -32,6 +32,7 @@ import { NO_HOOKS_DIR, RepoStore } from './repos/repo-store.js';
 import {
   checkNothingLeftBehind,
   dueStep,
+  refuseWhileReverting,
   KEYS_WAIT,
   rearmLine,
   rewrapNote,
@@ -264,6 +265,8 @@ export async function runMigrate(
     // Before anything is migrated: a data directory left behind by a move made elsewhere changes nothing here.
     let left: readonly string[];
     try {
+      // A revert not finished: nothing is migrated or moved, and `--check` counts it as pending (plan Task 28).
+      await refuseWhileReverting(db);
       left = await checkNothingLeftBehind(db, config.dataDir);
     } catch (error) {
       if (!(error instanceof WirebenchError)) throw error;
@@ -398,12 +401,16 @@ export async function startServer(
     if (migrationUrl === config.databaseUrl) {
       await checkPostgresVersion(db);
       runningLock = await RunningLock.acquire(migrationUrl, { ...lockOptions, label: 'the database connection' });
+      // A revert that was stopped part way holds no lock any more, but its step refuses a forward start-up
+      // before anything is migrated (spec §19.10, plan Task 28).
+      await refuseWhileReverting(db);
       await checkNothingLeftBehind(db, config.dataDir);
       await migrate(db, migrations);
     } else {
       owner = createDatabase(migrationUrl);
       await checkPostgresVersion(owner);
       runningLock = await RunningLock.acquire(migrationUrl, { ...lockOptions, label: 'the migration connection' });
+      await refuseWhileReverting(owner);
       // Before anything is migrated: the refusal then leaves the database as it was too.
       await checkNothingLeftBehind(owner, config.dataDir);
       if (mode === 'two-roles') await migrateAndGrant(owner, config.databaseUrl, migrations);
@@ -566,7 +573,7 @@ export async function startServer(
       // the deadline the remaining connections are dropped so app.close() resolves. The shutdown
       // stays a normal one: only a second signal ends it with 130.
       if (lost) app.server.closeAllConnections();
-      const timer = setTimeout(() => app.server.closeAllConnections(), lost ? 0 : (options.drainMs ?? 10_000));
+      const timer = setTimeout(() => app.server.closeAllConnections(), lost ? 0 : (options.drainMs ?? SERVER_DRAIN_MS));
       timer.unref();
       // Node's server.close() drops only the connections idle at that moment; a keep-alive
       // connection whose request was in flight turns idle afterwards and would hold the close
@@ -594,11 +601,18 @@ export async function startServer(
   // Without the lock a revert could start under this server, so it stops (spec §19.10).
   lockLost.stop = (error) => {
     app.log.error({ err: error }, 'the server-running lock was lost and could not be taken again; stopping');
+    // A revert waits only the drain past the lost lock (`REVERT_WAIT_MS`), so the process is gone by then, whatever a
+    // module's close (a host's quit, a lease release) still waits for (Task 28 review I2). Not unref'd: a close that
+    // hangs with nothing else alive must still end with this exit code, not 0.
+    const deadline = setTimeout(() => {
+      exit(ExitCode.Migration);
+    }, options.drainMs ?? SERVER_DRAIN_MS);
     void shutDown(true)
       .catch((closeError: unknown) => {
         app.log.error({ err: closeError }, 'the server did not close cleanly after losing its lock');
       })
       .finally(() => {
+        clearTimeout(deadline);
         exit(ExitCode.Migration);
       });
   };

@@ -10,7 +10,8 @@
  * `firstFrame` option is sent as soon as each socket opens, before the hello is awaited (the agent's auth
  * frame), and is made afresh for every attempt (a new single-use nonce each time).
  *
- * A dropped socket reopens with backoff (1 s, doubling to 30 s, back to 1 s after a hello). A reopen
+ * A dropped socket reopens with backoff (1 s, doubling to 30 s, back to 1 s after a hello), or later when the close
+ * listener asks for a longer wait (a held host lease's remaining time, spec §19.9). A reopen
  * re-sends nothing: a call pending at the drop, or made while the socket is down, is answered
  * `host-disconnected` as an ordinary failed `IpcResult`, so the renderer shows it as it shows any other
  * failed call. Event listeners belong to the transport, not to one socket, so they outlive reconnects.
@@ -33,7 +34,7 @@ export interface SocketLike {
   readonly readyState: number;
   onopen: ((event: unknown) => void) | null;
   onmessage: ((event: { readonly data: unknown }) => void) | null;
-  onclose: ((event: { readonly code: number }) => void) | null;
+  onclose: ((event: { readonly code: number; readonly reason?: string }) => void) | null;
   onerror: ((event: unknown) => void) | null;
   send(data: string): void;
   close(code?: number, reason?: string): void;
@@ -45,10 +46,11 @@ export interface SocketTransportOptions {
   /** Each hello, the first one included (it also resolves `ready`). */
   readonly onHello?: (hello: Hello) => void;
   /**
-   * Each time a socket closes other than by {@link SocketTransport.close}: its close code, and whether a
-   * hello arrived on it. The next attempt is already scheduled unless the listener calls `close()`.
+   * Each time a socket closes other than by {@link SocketTransport.close}: its close code, whether a hello arrived
+   * on it, and the close's reason. The next attempt is already scheduled unless the listener calls `close()`; a
+   * `retryAfterMs` it returns puts that attempt off to at least that long after the close.
    */
-  readonly onClosed?: (code: number, helloSeen: boolean) => void;
+  readonly onClosed?: (code: number, helloSeen: boolean, reason: string) => void | { readonly retryAfterMs?: number };
   /**
    * Each time opening a socket throws (a URL the page may not connect to, say). The next attempt is
    * already scheduled, on the same backoff as after a close.
@@ -136,6 +138,8 @@ export function createSocketTransport(url: string, options: SocketTransportOptio
   let stopped = false;
   let delay: number = RECONNECT_DELAY.firstMs;
   let timer: ReturnType<typeof setTimeout> | undefined;
+  /** The wait the scheduled attempt was given. */
+  let scheduledMs = 0;
   let resolveReady: (hello: Hello) => void = () => undefined;
   let readyResolved = false;
   const ready = new Promise<Hello>((resolve) => {
@@ -184,7 +188,16 @@ export function createSocketTransport(url: string, options: SocketTransportOptio
   /** Schedules the next attempt and doubles the wait for the one after, up to the ceiling. */
   const retry = (): void => {
     timer = setTimeout(connect, delay);
+    scheduledMs = delay;
     delay = Math.min(delay * 2, RECONNECT_DELAY.maxMs);
+  };
+
+  /** Puts the scheduled attempt off to `ms` from now, when that is later than it was due. */
+  const putOff = (ms: number): void => {
+    if (timer === undefined || stopped || !(ms > scheduledMs)) return;
+    clearTimeout(timer);
+    timer = setTimeout(connect, ms);
+    scheduledMs = ms;
   };
 
   const connect = (): void => {
@@ -245,7 +258,8 @@ export function createSocketTransport(url: string, options: SocketTransportOptio
       failPending();
       // Scheduled before the listener runs, so a listener that gives up can still cancel it with close().
       retry();
-      options.onClosed?.(event.code, helloSeen);
+      const asked = options.onClosed?.(event.code, helloSeen, event.reason ?? '');
+      if (asked?.retryAfterMs !== undefined) putOff(asked.retryAfterMs);
     };
     // A failed socket also closes; the close handler does the work.
     current.onerror = () => undefined;

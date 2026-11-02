@@ -34,13 +34,15 @@ compose file runs that image beside PostgreSQL 16.
    curl -fsSLO https://raw.githubusercontent.com/wirebench/wirebench/main/docker-compose.yml
    ```
 
-2. Write the two required settings to a `.env` file beside it. The password only travels between the
-   two containers:
+2. Write the three required settings to a `.env` file beside it. The passwords only travel between the
+   two containers: the first is the database owner's, which runs the migrations, and the second is the app
+   role's, which the server creates at its first start and runs every query as:
 
    ```sh
    cat > .env <<EOF
    WIREBENCH_PUBLIC_URL=https://wirebench.example.internal
    POSTGRES_PASSWORD=$(openssl rand -hex 24)
+   WIREBENCH_APP_DB_PASSWORD=$(openssl rand -hex 24)
    EOF
    ```
 
@@ -60,12 +62,13 @@ compose file runs that image beside PostgreSQL 16.
 
 ## The settings
 
-The compose file reads these from `.env`. Only the first two are required.
+The compose file reads these from `.env`. Only the first three are required.
 
 | Variable | Default | What it sets |
 | --- | --- | --- |
 | `WIREBENCH_PUBLIC_URL` | — | The `https://` address people reach the server at, with no path. |
-| `POSTGRES_PASSWORD` | — | The database password, used by both containers. Letters and digits only. |
+| `POSTGRES_PASSWORD` | — | The password of `wirebench`, the database role that owns the schema and runs the migrations. Letters and digits only. |
+| `WIREBENCH_APP_DB_PASSWORD` | — | The password of `wirebench_app`, the role every query runs as, under row-level security. The server creates the role with it. Letters and digits only, and not the same as `POSTGRES_PASSWORD`. |
 | `WIREBENCH_VERSION` | `latest` | The image tag: `latest`, a release such as `6.1.0`, or `6.1` for its patches. |
 | `WIREBENCH_HTTP_PORT` | `8080` | The host port the server listens on. |
 | `WIREBENCH_BIND` | `127.0.0.1` | The host address that port is bound to. Use `0.0.0.0` when the proxy runs on another machine. |
@@ -84,6 +87,10 @@ or missing, and never prints a value. The full list is in
 - `WIREBENCH_SERVER_LOCAL_AUTH=false`, to turn passwords off once that works.
 - `WIREBENCH_SERVER_HOOKS_SECRET_KEY`, from `openssl rand -base64 32`, to let catch URLs check
   webhook signatures.
+- `WIREBENCH_SERVER_BROWSER_CLIENT=true` with `WIREBENCH_SERVER_SECRETS_KEY`, from `openssl rand -base64 32`, to
+  serve the browser client. Keep the key in `server.env`, the same value for good and across every upgrade, and
+  back it up apart from the database: the server seals browser users' secrets under it, and without it an upgrade
+  waits at its keys step and no browser tab opens.
 
 ## TLS in front
 
@@ -165,12 +172,82 @@ from the next request, with no restart.
 ## Upgrades and backups
 
 - **Upgrade.** Set `WIREBENCH_VERSION` to the new release, or keep `latest`, then run
-  `docker compose pull && docker compose up -d`. The server migrates its database as it starts.
+  `docker compose pull && docker compose up -d`. The server migrates its database as it starts. `up`
+  stops the old container before it starts the new one, which is the order the server needs: two at once
+  would both serve a user's browser tab for up to 15 seconds.
+- **Upgrading from 6.1 or earlier.** Download the compose file again (step 1 above), and add the third line to
+  your `.env`, or compose refuses to start:
+
+  ```sh
+  echo "WIREBENCH_APP_DB_PASSWORD=$(openssl rand -hex 24)" >> .env
+  ```
+
+  The new file needs the server image of the same release or later: if `.env` pins `WIREBENCH_VERSION` to 6.1 or
+  earlier, bump it with the file, or the old image signs in as `wirebench_app`, which does not exist yet, and
+  restarts over and over. With the browser client on, keep `WIREBENCH_SERVER_SECRETS_KEY` in `server.env` with
+  the same value as before: without it the upgrade waits at its keys step and no browser tab opens.
+
+  This upgrade moves the data in your volumes, so after `docker compose pull`, first run
+  `docker compose run --rm server admin tenancy check` with the new image (it changes nothing and says how long the
+  migration will take; its `app role:` line says `wirebench_app` does not exist yet, which the first start
+  creates), then stop the server with `docker compose stop server` and back up both volumes, as below.
+  [Upgrading](/wirebench/docs/guides/wirebench-server/#upgrading) has the details, and [Going back](#going-back)
+  the way back.
+- **A database restart** does not stop the server, as long as the database is back within about two minutes: the
+  server reconnects on its own. After that it exits with code 3, and compose's `restart: unless-stopped` starts it
+  again.
 - **Back up** both volumes: the database with
   `docker compose exec db pg_dump -U wirebench wirebench > wirebench.sql`, and the `wirebench-data`
-  volume, which holds the shared workspaces' repositories.
+  volume, which holds the shared workspaces' repositories. Back up as `wirebench`, a superuser, never as
+  `wirebench_app`: under row-level security, a dump made as the app role refuses the tables.
 - **Run one server.** Live updates and the push lock live inside the process, so a second replica would
   miss the first one's events.
+
+## Going back
+
+To undo the upgrade from 6.1, revert with the new image first, then start the release you came from by its own
+tag. Never leave `WIREBENCH_VERSION` unset or at `latest` for that start: `latest` is still the new release, which
+would migrate again and undo the revert.
+
+<Steps>
+
+1. Stop the server, and keep it stopped until the last step:
+
+   ```sh
+   docker compose stop server
+   ```
+
+2. Back up both volumes, as in [Upgrades and backups](#upgrades-and-backups).
+
+3. Revert with the new image, still on the new compose file and `.env`. It waits three minutes first, then
+   re-seals, moves the data directory back and returns the database to the old schema; run it again if it stops
+   part way:
+
+   ```sh
+   docker compose run --rm server admin tenancy revert
+   ```
+
+4. Pin the release you came from, for example 6.1.0, and fetch its compose file, which gives the server the
+   owner's single URL again:
+
+   ```sh
+   echo "WIREBENCH_VERSION=6.1.0" >> .env
+   curl -fsSLo docker-compose.yml https://raw.githubusercontent.com/wirebench/wirebench/v6.1.0/docker-compose.yml
+   ```
+
+   That file does not read `WIREBENCH_APP_DB_PASSWORD`; the line can stay in `.env`. If `.env` already sets
+   `WIREBENCH_VERSION`, change that line instead of adding one.
+
+5. Pull and start:
+
+   ```sh
+   docker compose pull && docker compose up -d
+   ```
+
+</Steps>
+
+The `wirebench_app` role stays, unused; the
+[server guide](/wirebench/docs/guides/wirebench-server/#upgrading) says how to drop it.
 
 ## Try it on one machine first
 
@@ -180,6 +257,7 @@ To look around before the proxy exists, use an `http://` address on your own mac
 cat > .env <<EOF
 WIREBENCH_PUBLIC_URL=http://localhost:8080
 POSTGRES_PASSWORD=$(openssl rand -hex 24)
+WIREBENCH_APP_DB_PASSWORD=$(openssl rand -hex 24)
 WIREBENCH_ALLOW_HTTP=true
 EOF
 docker compose up -d

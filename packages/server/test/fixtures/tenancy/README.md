@@ -12,6 +12,7 @@ that commit's own code, never by a seed run through today's repositories, which 
 | `fixture-0019.json`       | The ids, the sealed chain's range, the keys every sealed value is under, the plaintexts behind them, and the checksums of migrations `0001` to `0019`. `load.ts` exports it as `Fixture`.                        |
 | `load.ts`                 | `loadFixture0019(owner, dataDir)`: migrations `0001` to `0019` as the owner, the rows, then the data directory.                                                                                                  |
 | `generate-0019.ts`        | The generator. It runs only inside a worktree of `e9bdc5af1`.                                                                                                                                                    |
+| `volume.ts`               | `loadIntoCompose(…)`: the same rows and directory in a compose installation's `db` service and `/data` volume, for the browser e2e on a migrated server and the compose upgrade test. Plain Node runs it too.                         |
 | `make-fixture-0019.ts`    | Makes that worktree, runs the generator there, copies the three outputs here, and removes the worktree.                                                                                                          |
 
 The git configs in the tarball name the generator's data directory as `@WIREBENCH_FIXTURE_DATA_DIR@`, and the

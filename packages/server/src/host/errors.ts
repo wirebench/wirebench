@@ -21,7 +21,17 @@ export const HOST_CLOSE = {
   unauthenticated: 4401,
   /** Another site's page, or a caller that is not a browser session. */
   forbidden: 4403,
-  /** The user already has {@link HOST_LIMITS.maxSocketsPerUser} host sockets open (HTTP's 429). */
+  /**
+   * Another server process holds the user's host lease (HTTP's 409; spec §19.9): the reason is `host-lease-held`
+   * with a `retryAfterMs`, `host-lease-lost` when this process's lease went to another holder, or `host-lease-expired`
+   * when this process could not renew it in time (the database was out of reach).
+   */
+  leaseHeld: 4409,
+  /**
+   * Too many (HTTP's 429), with one of two reasons: `too many host sockets` when the user already has
+   * {@link HOST_LIMITS.maxSocketsPerUser} open, or `host-instance-cap` when every seat of the tenant has a live host
+   * (spec §19.9).
+   */
   tooManySockets: 4429,
   /**
    * The embedder cannot build this user's host for a reason only its operator can fix (HTTP's 503): the server's

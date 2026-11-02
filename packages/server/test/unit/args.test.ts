@@ -162,7 +162,7 @@ describe('admin tenancy role (hosted spec §19.4)', () => {
   });
   it('refuses another tenancy sub-command, and --print-sql anywhere else', () => {
     expect(() => parseServerArgs(['admin', 'tenancy'])).toThrow(/usage: wirebench-server admin tenancy role/);
-    expect(() => parseServerArgs(['admin', 'tenancy', 'revert'])).toThrow(/usage: wirebench-server admin tenancy role/);
+    expect(() => parseServerArgs(['admin', 'tenancy', 'undo'])).toThrow(/usage: wirebench-server admin tenancy role/);
     expect(() => parseServerArgs(['migrate', '--print-sql'])).toThrow(/--print-sql applies to admin tenancy role only/);
   });
 });
@@ -179,6 +179,49 @@ describe('admin tenancy check and status (hosted spec §19.10, §19.11)', () => 
   it('lists both in the help', () => {
     expect(HELP_TEXT).toContain('wirebench-server admin tenancy check');
     expect(HELP_TEXT).toContain('wirebench-server admin tenancy status');
+  });
+});
+
+describe('admin tenancy revert (hosted spec §19.10, plan Task 28)', () => {
+  it('parses it, with --accept-unopened and nothing else', () => {
+    expect(parseServerArgs(['admin', 'tenancy', 'revert'])).toEqual({
+      command: 'admin-tenancy-revert',
+      acceptUnopened: false,
+      abort: false,
+    });
+    expect(parseServerArgs(['admin', 'tenancy', 'revert', '--accept-unopened'])).toEqual({
+      command: 'admin-tenancy-revert',
+      acceptUnopened: true,
+      abort: false,
+    });
+    expect(parseServerArgs(['admin', 'tenancy', 'revert', '--abort'])).toEqual({
+      command: 'admin-tenancy-revert',
+      acceptUnopened: false,
+      abort: true,
+    });
+    expect(() => parseServerArgs(['admin', 'tenancy', 'revert', '--abort', '--accept-unopened'])).toThrow(
+      /cannot be given together/,
+    );
+    expect(() => parseServerArgs(['admin', 'tenancy', 'revert', 'now'])).toThrow(
+      /usage: wirebench-server admin tenancy/,
+    );
+    expect(() => parseServerArgs(['admin', 'tenancy', 'revert', '--tenant', 'acme'])).toThrow(/--tenant/);
+  });
+  it('refuses --accept-unopened anywhere else', () => {
+    expect(() => parseServerArgs(['migrate', '--accept-unopened'])).toThrow(
+      /--accept-unopened applies to admin tenancy revert only/,
+    );
+    expect(() => parseServerArgs(['admin', 'tenancy', 'status', '--accept-unopened'])).toThrow(
+      /--accept-unopened applies to admin tenancy revert only/,
+    );
+  });
+  it('refuses --abort anywhere else', () => {
+    expect(() => parseServerArgs(['admin', 'tenancy', 'status', '--abort'])).toThrow(
+      /--abort applies to admin tenancy revert only/,
+    );
+  });
+  it('lists it in the help', () => {
+    expect(HELP_TEXT).toContain('wirebench-server admin tenancy revert [--accept-unopened | --abort]');
   });
 });
 

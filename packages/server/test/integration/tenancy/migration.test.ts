@@ -376,13 +376,16 @@ describeDb('migration 0020 on the frozen 0019 fixture (hosted spec §19.3, §19.
     await ciTokenByHash(asTenantQuerier(explaining), 'no-such-hash');
     await scimTokenByHash(asTenantQuerier(explaining), 'no-such-hash');
     const [token, email, head, listing, retention, secret, ciToken, scimToken] = plans;
-    expect(token).toContain('device_tokens_token_hash_key_0019');
-    expect(email).toContain('users_email_lower_key_0019');
-    expect(head).toContain('audit_events_chain_seq_0019');
-    expect(listing).toMatch(/audit_events_\w+_0019/);
-    expect(retention).toMatch(/captures_\w+_0019/);
     // On the fixture's few rows the planner may scan the composite index on its second column as cheaply as the
-    // copy; either way it is an index, which is what the hot path needs until 0021.
+    // copy (PostgreSQL 18's skip scan makes that the usual choice); either way it is an index, which is what the hot
+    // path needs until 0021.
+    const index = (name: string) =>
+      new RegExp(`(Index|Index Only) Scan(?: Backward)? using ${name} |Bitmap Index Scan on ${name} `);
+    expect(token).toMatch(index('device_tokens_token_hash_key(?:_0019)?'));
+    expect(email).toMatch(index('users_email_lower_key(?:_0019)?'));
+    expect(head).toMatch(index('audit_events_\\w+'));
+    expect(listing).toMatch(index('audit_events_\\w+'));
+    expect(retention).toMatch(index('captures_\\w+'));
     expect(secret).toMatch(/Index Scan using catch_urls_secret(_0019)? /);
     expect(ciToken).toMatch(/Index Scan using ci_tokens_token_hash_key(_0019)? /);
     expect(scimToken).toMatch(/Index Scan using scim_tokens_token_hash_key(_0019)? /);

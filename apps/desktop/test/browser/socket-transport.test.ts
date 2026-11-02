@@ -149,18 +149,34 @@ describe('createSocketTransport', () => {
     expect(FakeSocket.all).toHaveLength(9);
   });
 
-  it('tells onClosed the code and whether a hello came on that socket', async () => {
+  it('tells onClosed the code, whether a hello came on that socket, and the reason', async () => {
     const onClosed = vi.fn();
     transport({ onClosed });
-    FakeSocket.last().drop(4429);
+    FakeSocket.last().drop(4429, 'too many host sockets');
     await vi.advanceTimersByTimeAsync(1_000);
     FakeSocket.last().hello();
     FakeSocket.last().drop(1001);
 
     expect(onClosed.mock.calls).toEqual([
-      [4429, false],
-      [1001, true],
+      [4429, false, 'too many host sockets'],
+      [1001, true, ''],
     ]);
+  });
+
+  it('puts the next attempt off when onClosed asks for a longer wait, never sooner', async () => {
+    let wait: number | undefined = 5_000;
+    transport({ onClosed: () => (wait === undefined ? undefined : { retryAfterMs: wait }) });
+    FakeSocket.last().drop();
+    await vi.advanceTimersByTimeAsync(4_999);
+    expect(FakeSocket.all).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(FakeSocket.all).toHaveLength(2);
+    wait = 1;
+    FakeSocket.last().drop();
+    await vi.advanceTimersByTimeAsync(1_999);
+    expect(FakeSocket.all).toHaveLength(2);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(FakeSocket.all).toHaveLength(3);
   });
 
   it('reports each hello to onHello, the first included', async () => {
@@ -226,7 +242,7 @@ describe('createSocketTransport', () => {
     FakeSocket.last().drop(1006);
     await vi.advanceTimersByTimeAsync(0);
     expect(onHello).not.toHaveBeenCalled();
-    expect(onClosed).toHaveBeenCalledWith(1006, false);
+    expect(onClosed).toHaveBeenCalledWith(1006, false, '');
   });
 
   it('retries with the same backoff when opening a socket throws, and tells onOpenFailed', async () => {

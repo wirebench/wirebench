@@ -8,7 +8,7 @@ import { randomBytes } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { connect, type Socket } from 'node:net';
 import { join } from 'node:path';
-import type { AuditInput } from '../../src/context.js';
+import type { AuditInput, LicenseService } from '../../src/context.js';
 import { seal } from '../../src/hooks/secret-box.js';
 import { HostInstances } from '../../src/host/instances.js';
 import { hostModule } from '../../src/host/module.js';
@@ -19,6 +19,7 @@ import type { PendingWrites } from '../../src/pending-writes.js';
 import { syncModule } from '../../src/sync/module.js';
 import { teamsModule } from '../../src/teams/module.js';
 import { browserBuildFixture, type BrowserBuildFixture } from './browser-build.js';
+import type { TestDatabase } from './database.js';
 import { recordingAudit } from './context.js';
 import { markStepsDone } from './tenancy.js';
 import { identityHarness, signedInUser, type IdentityHarness, type SignedInUser } from './identity.js';
@@ -51,6 +52,11 @@ export async function hostHarness(
     readonly onSecretWrites?: (writes: PendingWrites) => void;
     /** Where the server logs, at the level `env` sets. */
     readonly logStream?: NodeJS.WritableStream;
+    /** Replaces the license the modules read (the permissive default without it): a seat limit, say. */
+    readonly license?: (base: LicenseService) => LicenseService;
+    /** A database and a data directory of the test's own (a migrated fixture's), left open and in place on close. */
+    readonly db?: TestDatabase;
+    readonly dataDir?: string;
   } = {},
 ): Promise<HostHarness> {
   const timers = manualTimers();
@@ -60,6 +66,16 @@ export async function hostHarness(
   const build = await browserBuildFixture();
   const started = identityHarness({
     ...(options.logStream !== undefined ? { logStream: options.logStream } : {}),
+    ...(options.db !== undefined ? { db: options.db } : {}),
+    ...(options.dataDir !== undefined ? { dataDir: options.dataDir } : {}),
+    ...(options.license !== undefined
+      ? {
+          beforeBuild: (_db, ctx) => {
+            ctx.license = options.license!(ctx.license);
+            return Promise.resolve();
+          },
+        }
+      : {}),
     env: {
       WIREBENCH_SERVER_BROWSER_CLIENT: 'true',
       WIREBENCH_SERVER_SECRETS_KEY: randomBytes(32).toString('base64'),
@@ -135,6 +151,8 @@ export interface HostTestClient {
   sendRaw(data: string | Buffer): void;
   close(): void;
   readonly closed: Promise<{ readonly code: number }>;
+  /** The same close, with its reason. */
+  readonly closedWith: Promise<{ readonly code: number; readonly reason: string }>;
 }
 
 let nextId = 1;
@@ -158,10 +176,11 @@ export async function openHost(
   const socket = new Socket(`ws://127.0.0.1:${h.port}/api/v1/host`, { headers: sent });
   const frames: HostFrame[] = [];
   const waiters = new Set<{ accepts: (frame: HostFrame) => boolean; resolve: (frame: HostFrame) => void }>();
-  let resolveClosed: (value: { code: number }) => void = () => undefined;
-  const closed = new Promise<{ code: number }>((resolve) => {
+  let resolveClosed: (value: { code: number; reason: string }) => void = () => undefined;
+  const closedWith = new Promise<{ code: number; reason: string }>((resolve) => {
     resolveClosed = resolve;
   });
+  const closed = closedWith.then(({ code }) => ({ code }));
   let isClosed = false;
   socket.addEventListener('message', (event: MessageEvent) => {
     const frame = JSON.parse(String(event.data)) as HostFrame;
@@ -175,7 +194,7 @@ export async function openHost(
   });
   socket.addEventListener('close', (event: CloseEvent) => {
     isClosed = true;
-    resolveClosed({ code: event.code });
+    resolveClosed({ code: event.code, reason: event.reason });
   });
   await new Promise<void>((resolve) => {
     socket.addEventListener('open', () => resolve(), { once: true });
@@ -222,6 +241,7 @@ export async function openHost(
       if (!isClosed) socket.close(1000);
     },
     closed,
+    closedWith,
   };
 }
 

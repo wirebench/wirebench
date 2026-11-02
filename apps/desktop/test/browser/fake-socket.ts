@@ -75,8 +75,8 @@ export class FakeSocket implements SocketLike {
   }
 
   /** The socket closes from the far side (`1006`: it never opened, or the network went). */
-  drop(code = 1006): void {
+  drop(code = 1006, reason = ''): void {
     this.readyState = 3;
-    this.onclose?.({ code });
+    this.onclose?.({ code, reason });
   }
 }

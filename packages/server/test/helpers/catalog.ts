@@ -178,6 +178,30 @@ export async function objectNamesOf(db: Querier): Promise<string[]> {
   return rows.rows.map((row) => row.name);
 }
 
+/** Every constraint that is no key: checks and exclusions, by table and name, with its definition (the revert). */
+export async function otherConstraintsOf(db: Querier): Promise<{ table: string; name: string; definition: string }[]> {
+  const rows = await db.query<{ table: string; name: string; definition: string }>(
+    `select conrelid::regclass::text as table, conname as name, pg_get_constraintdef(oid) as definition
+      from pg_constraint
+      where connamespace = to_regnamespace(current_schema()) and contype not in ('p', 'u', 'f')
+      order by 1, 2`,
+  );
+  return rows.rows;
+}
+
+/** The schema's functions, procedures and triggers, by name and signature (the revert drops slice 4's two). */
+export async function routinesOf(db: Querier): Promise<string[]> {
+  const rows = await db.query<{ name: string }>(
+    `select p.proname || '(' || pg_get_function_identity_arguments(p.oid) || ')' as name from pg_proc p
+      where p.pronamespace = to_regnamespace(current_schema())
+     union all
+     select 'trigger ' || t.tgname from pg_trigger t join pg_class c on c.oid = t.tgrelid
+      where c.relnamespace = to_regnamespace(current_schema()) and not t.tgisinternal
+     order by 1`,
+  );
+  return rows.rows.map((row) => row.name);
+}
+
 /** What `0021` defaults every `tenant_id` to, and what its policy compares with, as `pg_get_expr` prints them. */
 export const SETTING_EXPRESSION = "(NULLIF(current_setting('wirebench.tenant_id'::text, true), ''::text))::uuid";
 export const POLICY_EXPRESSION = `(tenant_id = ${SETTING_EXPRESSION})`;

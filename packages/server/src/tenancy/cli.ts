@@ -1,6 +1,6 @@
 /**
- * `wirebench-server admin tenancy check` and `admin tenancy status` (hosted edition spec §19.10, §19.11) are at the
- * end of this file.
+ * `wirebench-server admin tenancy check`, `admin tenancy status` and `admin tenancy revert` (hosted edition spec
+ * §19.10, §19.11) are at the end of this file.
  *
  * `wirebench-server admin tenancy role [--print-sql]` (hosted edition spec §19.4): the operator's switch to an
  * app role outside compose. It connects as the owner (`WIREBENCH_SERVER_MIGRATION_DATABASE_URL`) and runs what
@@ -8,7 +8,7 @@
  * missing, then grant it its privileges. `--print-sql` only reads, and prints the statements for a role that
  * may create roles to apply.
  */
-import { lstat, readdir } from 'node:fs/promises';
+import { access, lstat, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { WirebenchError } from '@wirebench/engine';
 import type { ServerCommand } from '../args.js';
@@ -28,13 +28,31 @@ import {
 } from './file-step.js';
 import { dataKeyState, environmentKeyRoot, storedDataKey, type DataKeyState } from './keys.js';
 import { tenantRootById } from './paths.js';
+import { revertTenancy, type RevertOptions } from './revert.js';
 import { rewrap } from './rewrap.js';
-import { appRolePlan, ensureAppRole, roleMode } from './roles.js';
+import { appRolePlan, ensureAppRole, roleMode, roleNameOf } from './roles.js';
 
 type TenancyRoleCommand = Extract<ServerCommand, { command: 'admin-tenancy-role' }>;
+type TenancyRevertCommand = Extract<ServerCommand, { command: 'admin-tenancy-revert' }>;
+
+/** What a test may change of the revert: its wait, the sessions it reads, and where it stops. */
+export type RevertSeams = Pick<RevertOptions, 'waitMs' | 'sleep' | 'serverSessions' | 'checkpoint' | 'fs'>;
 
 const NEEDS_TWO_ROLES =
   'admin tenancy role needs two roles: WIREBENCH_SERVER_MIGRATION_DATABASE_URL set to the owner of the schema, and WIREBENCH_SERVER_DATABASE_URL to the app role';
+
+/** What `admin tenancy revert` says it did. */
+const REVERT_OUTCOMES = {
+  nothing: 'nothing to revert: the database is at schema version 19 or before',
+  'not-reverting': 'nothing to abort: no revert is under way',
+  aborted:
+    'aborted: the next server start (or wirebench-server migrate) runs the upgrade’s steps again and re-seals ' +
+    'under the data key',
+  reverted:
+    'reverted: the previous version of the server can now start on this database and data directory. It reads ' +
+    'WIREBENCH_SERVER_DATABASE_URL only: set it to the owner’s direct URL, as before the upgrade. Start it by its ' +
+    'own image tag, never latest, or this version starts and upgrades again',
+} as const;
 
 /** The loaded configuration, or the exit code after the problems are written. */
 function configOf(io: ServerIo): ServerConfig | number {
@@ -200,7 +218,7 @@ export async function runTenancyCheck(io: ServerIo): Promise<number> {
     const versionOk = Number(facts.version.num) >= MIN_POSTGRES_VERSION_NUM;
     out(`PostgreSQL: ${facts.version.text}${versionOk ? '' : ' (too old: the upgrade needs PostgreSQL 15 or later)'}`);
     out(`schema version: ${facts.schema === null ? 'none' : String(facts.schema)}`);
-    out(`app role: ${await appRoleLine(config)}`);
+    out(`app role: ${await appRoleLine(config, db)}`);
     out(`backups: ${BACKUP_ADVICE}`);
     for (const line of await dataDirReport(config.dataDir)) out(line);
     out('tables (rows, heap, total, passes):');
@@ -229,8 +247,12 @@ export async function runTenancyCheck(io: ServerIo): Promise<number> {
   }
 }
 
-/** Whether the server's own role isolates (§19.4), read over its URL; never the URL itself. */
-async function appRoleLine(config: ServerConfig): Promise<string> {
+/**
+ * Whether the server's own role isolates (§19.4), read over its URL; never the URL itself. When it cannot sign in,
+ * the owner's connection says whether the role exists yet: before an upgrade's first start it does not, and that
+ * start creates it.
+ */
+async function appRoleLine(config: ServerConfig, owner: Querier): Promise<string> {
   const app = createDatabase(config.databaseUrl, { applicationName: ADMIN_APPLICATION_NAME, max: 1 });
   try {
     const report = await appRoleReport(app);
@@ -240,9 +262,23 @@ async function appRoleLine(config: ServerConfig): Promise<string> {
       : `${report.role} ${reasons.join(', ')}, so row-level security cannot be relied on for it`;
   } catch (error) {
     const code = (error as { code?: unknown }).code;
+    const role = roleNameOf(config.databaseUrl);
+    if (role !== undefined && !(await roleExists(owner, role))) {
+      return `${role} does not exist yet: the server creates it at its first start`;
+    }
     return `cannot sign in${typeof code === 'string' ? ` (${code})` : ''}`;
   } finally {
     await app.close();
+  }
+}
+
+/** Whether a role of that name exists in the cluster; when even that cannot be read, it is taken to exist. */
+async function roleExists(owner: Querier, role: string): Promise<boolean> {
+  try {
+    const found = await owner.query('select 1 from pg_roles where rolname = $1', [role]);
+    return found.rows.length > 0;
+  } catch {
+    return true;
   }
 }
 
@@ -320,5 +356,66 @@ export async function runTenancyStatus(io: ServerIo): Promise<number> {
     return ExitCode.Migration;
   } finally {
     await db.close();
+  }
+}
+
+/**
+ * `admin tenancy revert [--accept-unopened | --abort]` (spec §19.10): as the owner, over the migration URL, with every
+ * server stopped. A refusal exits 2 and leaves the step where it was; a run stopped part way resumes at the next.
+ */
+export async function runTenancyRevert(
+  command: TenancyRevertCommand,
+  io: ServerIo,
+  seams: RevertSeams = {},
+): Promise<number> {
+  const loaded = configOf(io);
+  if (typeof loaded === 'number') return loaded;
+  const config = loaded;
+  // The files move back with the rows: a revert run where the data directory is not mounted would leave them behind.
+  const mounted = await access(config.dataDir).then(
+    () => true,
+    () => false,
+  );
+  if (!mounted) {
+    io.stderr.write(
+      `tenancy-revert-no-data-dir: the data directory ${config.dataDir} is not here; run the revert where the ` +
+        "server's data directory is mounted. Nothing was changed\n",
+    );
+    return ExitCode.Config;
+  }
+  // The servers' pools connect over the app URL: one that names its sessions hides them from the revert's check,
+  // as the migration URL's own would (which `revertTenancy` reads on its session).
+  if (/application_name/i.test(config.databaseUrl)) {
+    io.stderr.write(
+      'tenancy-revert-application-name: WIREBENCH_SERVER_DATABASE_URL sets application_name, so the revert cannot ' +
+        "tell the servers' connections apart in pg_stat_activity: remove it from the servers' URLs and from this " +
+        'one, and run the revert again. Nothing was changed\n',
+    );
+    return ExitCode.Config;
+  }
+  try {
+    const result = await revertTenancy({
+      ...seams,
+      url: migrationUrlOf(config),
+      dataDir: config.dataDir,
+      ...(config.secretsKey !== undefined ? { root: config.secretsKey } : {}),
+      acceptUnopened: command.acceptUnopened,
+      abort: command.abort,
+      mode: config.mode,
+      report: (line) => io.stdout.write(`${line}\n`),
+    });
+    io.stdout.write(`${REVERT_OUTCOMES[result.outcome]}\n`);
+    return ExitCode.Ok;
+  } catch (error) {
+    if (error instanceof WirebenchError) {
+      io.stderr.write(`${error.code}: ${error.message}\n`);
+      return ExitCode.Config;
+    }
+    // The errno or database code only: a message can name a path under tenants/<id>/checkouts/<user>.
+    const code = (error as { code?: unknown } | null)?.code;
+    io.stderr.write(
+      `admin tenancy revert failed (${typeof code === 'string' ? code : 'an unexpected error'}); run it again to resume\n`,
+    );
+    return ExitCode.Migration;
   }
 }
