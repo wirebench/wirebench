@@ -23,7 +23,8 @@
  * At the tenant's instance cap (a take refused `host-instance-cap`), this process evicts its own idle instances of
  * that tenant, longest idle first, one at a time, and takes again after each eviction has given its lease back. Idle
  * is what the idle timer already means: no socket open, the timer running. Still at the cap with none left, or after
- * an eviction whose release failed, the open rejects `host-instance-cap`, and the module closes the socket `4429`.
+ * an eviction whose release failed or went unanswered, the open rejects `host-instance-cap`, and the module closes
+ * the socket `4429`.
  */
 import { rm } from 'node:fs/promises';
 import type { SessionEndedEvent } from '../context.js';
@@ -283,8 +284,9 @@ export class HostInstances {
   /**
    * Takes the lease; at the cap, evicts this process's longest-idle instance of the tenant, waits for its lease to
    * be given back, and takes again, until the take succeeds or no idle instance is left. Two capped opens evict one
-   * instance each: `evict` takes it out of the map at once. An eviction whose release failed freed no seat (the row
-   * stays until it expires), so the open stops there rather than evict every idle instance of the tenant in turn.
+   * instance each: `evict` takes it out of the map at once. An eviction whose release failed or went unanswered
+   * freed no seat (the row stays until it expires), so the open stops there rather than evict every idle instance of
+   * the tenant in turn.
    */
   private async takeWithin(leases: InstanceLeases, user: HostUser): Promise<void> {
     for (;;) {

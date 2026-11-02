@@ -467,6 +467,57 @@ describeDb('the host-instance lease (spec §19.9)', () => {
     await held[0]!.answer();
   });
 
+  it('a release that gave up and lands after the user was taken again leaves the new lease alone', async () => {
+    const { factory, held } = gated((text) => text.startsWith('delete from host_leases where user_id'));
+    const one = serverProcess('holder-one', factory);
+    const lost: string[] = [];
+    one.leases.onLost((user) => lost.push(user.id));
+    const tab = socket('a1');
+    await one.instances.open(alice, tab);
+    one.instances.release(alice, tab);
+    expect(one.timers.fire(IDLE_MS)).toBe(1);
+    await expect.poll(() => held.length).toBe(1);
+    // The release gives up; the eviction ends and Alice's tab opens her again on this process.
+    expect(one.timers.fire(RELEASE_WAIT_MS)).toBe(1);
+    const again = socket('a2');
+    expect(await one.instances.open(alice, again)).toBeDefined();
+    // Now the old delete reaches the database.
+    await held[0]!.answer();
+    expect(await leaseRows(home)).toEqual([{ user_id: alice.id, holder: 'holder-one' }]);
+    await one.leases.renewNow();
+    await settled();
+    expect(lost).toEqual([]);
+    expect(again.closed).toEqual([]);
+    expect(one.leases.size).toBe(1);
+    // Shutdown's release is gated too: let it through, and it deletes the new lease.
+    const closing = one.instances.closeAll();
+    await expect.poll(() => held.length).toBe(2);
+    await held[1]!.answer();
+    await closing;
+    expect(await leaseRows(home)).toEqual([]);
+  });
+
+  it('a release frees the seat when no row of its take is left: nothing held, or a delete that matched no row', async () => {
+    const order: string[] = [];
+    const leases = new HostLeases({
+      db: watching(order),
+      holder: 'holder-one',
+      setTimer: manualTimers().setTimer,
+      log: () => undefined,
+    });
+    // Never taken here: no delete is sent, and no seat of ours is left.
+    expect(await leases.release(bob)).toBe(true);
+    expect(order).toEqual([]);
+    // Taken, then the row is no longer this take's (as if taken again): the delete matches nothing, and says so.
+    await leases.take(alice);
+    await tenancy
+      .db(home)
+      .query("update host_leases set acquired_at = acquired_at + interval '1 second' where user_id = $1", [alice.id]);
+    expect(await leases.release(alice)).toBe(true);
+    expect(order).toEqual([`released ${alice.id}`]);
+    expect(await leaseRows(home)).toEqual([{ user_id: alice.id, holder: 'holder-one' }]);
+  });
+
   it('a renewed lease is not stopped: the watchdog follows the last confirmation', async () => {
     const one = serverProcess('holder-one');
     const tab = socket('a1');
@@ -629,6 +680,19 @@ describeDb('the host-instance lease (spec §19.9)', () => {
       expect(hostOf(one, dave)?.disposed).toBe(0);
     });
 
+    it('at the cap with nothing idle here, a user held by another process is told to wait, not capped', async () => {
+      seatLimits.set(home.tenantId, 1);
+      await leaseFor(home, bob.id, 'holder-two');
+      await leaseFor(home, alice.id, 'holder-two');
+      const one = serverProcess('holder-one');
+      const error = (await one.instances.open(alice, socket('a1')).catch((e: unknown) => e)) as {
+        code?: string;
+        details?: { retryAfterMs?: number };
+      };
+      expect(error.code).toBe('host-lease-held');
+      expect(error.details?.retryAfterMs).toBeGreaterThan(LEASE_MS - 10_000);
+    });
+
     it('expired leases do not count', async () => {
       seatLimits.set(home.tenantId, 1);
       await leaseFor(home, bob.id, 'holder-two');
@@ -682,13 +746,17 @@ describeDb('the host-instance lease (spec §19.9)', () => {
         (error: unknown) => (error as { code?: string }).code,
       );
       // Refused without waiting on Erin's build (an eviction of her would wait for it until the build ends).
+      let wait: ReturnType<typeof setTimeout> | undefined;
       try {
         const first = await Promise.race([
           daveOpen,
-          new Promise((resolve) => setTimeout(() => resolve('waiting'), 5_000)),
+          new Promise((resolve) => {
+            wait = setTimeout(() => resolve('waiting'), 5_000);
+          }),
         ]);
         expect(first).toBe('host-instance-cap');
       } finally {
+        clearTimeout(wait);
         finish();
       }
       expect(await erinOpen).toBeDefined();

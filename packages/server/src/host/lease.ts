@@ -13,7 +13,8 @@
  *   half a lease before anyone else could take it: the database could not be reached, so the instance stops on its
  *   own. Both reach the listener of {@link HostLeases.onLost}, which closes the instance's sockets and disposes it.
  * - **Giving it back.** {@link HostLeases.release} deletes the row, once the host's quit path has run; it deletes
- *   only this holder's row, so a lease lost to another process is never taken from it.
+ *   only this holder's row of the take it gives back (its `acquired_at`), so neither a lease lost to another
+ *   process nor this process's next take of the user is ever deleted by it, however late the delete arrives.
  *
  * Self-hosted start-up deletes every lease ({@link clearLeasesAtStartUp}): it is one process (ADR-0013), so a lease
  * it finds is a crashed run's, and leaving it would keep that user out for a minute.
@@ -67,7 +68,7 @@ const TAKE = `insert into host_leases (user_id, holder, acquired_at, renewed_at,
     set holder = excluded.holder, acquired_at = excluded.acquired_at, renewed_at = excluded.renewed_at,
         expires_at = excluded.expires_at
     where host_leases.holder = excluded.holder or host_leases.expires_at < now()
-  returning user_id`;
+  returning user_id, acquired_at::text as acquired`;
 /** The tenant's live leases other than the user's own (`$1`): the expired ones were deleted just before. */
 export const COUNT_LIVE = 'select count(*)::int as count from host_leases where user_id <> $1';
 /** The user's live lease under another holder, at the cap (expired ones are gone): `$2` is this holder. */
@@ -77,7 +78,12 @@ const REMAINING = `select greatest(0, ceil(extract(epoch from (expires_at - now(
   from host_leases where user_id = $1`;
 export const RENEW = `update host_leases set renewed_at = now(), expires_at = now() + ${LEASE_INTERVAL}
   where holder = $1 and user_id = any($2::text[]) returning user_id`;
-const RELEASE = 'delete from host_leases where user_id = $1 and holder = $2';
+/**
+ * `$3` is the take's `acquired_at`, as text so no precision is lost. Every take sets it to its own transaction's
+ * `now()`, and one user's takes in one process follow each other (the next starts after the last committed), so a
+ * release sent before this process took the user again, and answered after, misses the new row.
+ */
+const RELEASE = 'delete from host_leases where user_id = $1 and holder = $2 and acquired_at = $3::timestamptz';
 
 /** Why a held lease ended without a release: another holder has it, or this process could not renew it in time. */
 export type LeaseLoss = 'lost' | 'expired';
@@ -107,8 +113,9 @@ export interface InstanceLeases {
    */
   take(user: HostUserKey): Promise<void>;
   /**
-   * Gives `user`'s lease back; never throws (a failure is logged, and the row expires). Resolves `true` once the
-   * delete has answered, `false` when it failed or went unanswered, so the row may still hold a seat.
+   * Gives `user`'s lease back; never throws (a failure is logged, and the row expires). Resolves `true` when no row
+   * of this take is left (the delete answered, even with no row, or nothing was held), `false` when the delete
+   * failed or went unanswered, so the row may still hold a seat.
    */
   release(user: HostUserKey): Promise<boolean>;
   /** Told of each lease lost to another holder (`lost`) or gone stale (`expired`); its instance must stop. */
@@ -135,18 +142,27 @@ export interface HostLeasesDeps {
 /** One held lease. A new take makes a new object, so an answer about an older one never touches it. */
 interface Held {
   readonly user: HostUserKey;
+  /** The take's `acquired_at`: the release deletes only this take's row. */
+  readonly acquired: string;
   /** When, by {@link HostLeasesDeps.now}, the statement that last confirmed it was sent. */
   confirmedAt: number;
+}
+
+function keyOf(user: HostUserKey): string {
+  return `${user.tenant.tenantId}:${user.id}`;
 }
 
 export class HostLeases implements InstanceLeases {
   /** By tenant id, then user id. A tenant appears only while it has a lease here. */
   private readonly held = new Map<string, Map<string, Held>>();
   /**
-   * Tenants with a renew still out, and when it was sent: the next tick skips them rather than queue a second one,
-   * until it has been out {@link RENEW_GIVE_UP_MS}.
+   * Tenants with a renew still out, and when it was sent. A renew asked for again within {@link RENEW_GIVE_UP_MS}
+   * skips them; only `renewNow` can ask that soon, since the timer's ticks are {@link RENEW_MS} apart. The mark is
+   * mostly for `finally`, which clears only its own.
    */
   private readonly renewing = new Map<string, { readonly sentAt: number }>();
+  /** The `acquired_at` of leases lost or stopped here, by user key, for the release that follows. */
+  private readonly ended = new Map<string, string>();
   private readonly listeners: ((user: HostUserKey, why: LeaseLoss) => void)[] = [];
   private renewTimer: { cancel(): void } | undefined;
   private watchdog: { cancel(): void } | undefined;
@@ -176,8 +192,8 @@ export class HostLeases implements InstanceLeases {
           return row === undefined ? ('cap' as const) : Number(row.remaining);
         }
       }
-      const taken = await tx.query<{ user_id: string }>(TAKE, [user.id, this.deps.holder]);
-      if (taken.rows.length > 0) return undefined;
+      const taken = await tx.query<{ user_id: string; acquired: string }>(TAKE, [user.id, this.deps.holder]);
+      if (taken.rows[0] !== undefined) return { acquired: taken.rows[0].acquired };
       const left = await tx.query<{ remaining: number }>(REMAINING, [user.id]);
       // No row: the holder released it after the insert was refused (a release takes no lock), so it is free now.
       return Number(left.rows[0]?.remaining ?? 0);
@@ -185,7 +201,7 @@ export class HostLeases implements InstanceLeases {
     if (remaining === 'cap') {
       throw new WirebenchError('host-instance-cap', 'every seat of this team has a browser host open');
     }
-    if (remaining !== undefined) {
+    if (typeof remaining === 'number') {
       throw new WirebenchError('host-lease-held', 'another server process holds this user’s browser host', {
         details: { retryAfterMs: remaining },
       });
@@ -195,16 +211,22 @@ export class HostLeases implements InstanceLeases {
       tenant = new Map();
       this.held.set(user.tenant.tenantId, tenant);
     }
-    tenant.set(user.id, { user, confirmedAt: sent });
+    this.ended.delete(keyOf(user));
+    tenant.set(user.id, { user, acquired: remaining.acquired, confirmedAt: sent });
     this.arm();
   }
 
   /** Waits at most {@link RELEASE_WAIT_MS} for the delete, so an unreachable database never stalls an eviction. */
   async release(user: HostUserKey): Promise<boolean> {
+    const key = keyOf(user);
+    const acquired = this.held.get(user.tenant.tenantId)?.get(user.id)?.acquired ?? this.ended.get(key);
+    this.ended.delete(key);
     this.forget(user);
+    // Nothing taken here, or given back already: no row of ours holds a seat, so there is nothing to delete.
+    if (acquired === undefined) return true;
     const deleted = this.deps
       .db(user.tenant)
-      .query(RELEASE, [user.id, this.deps.holder])
+      .query(RELEASE, [user.id, this.deps.holder, acquired])
       .then(
         () => true,
         (error: unknown) => {
@@ -307,6 +329,8 @@ export class HostLeases implements InstanceLeases {
   }
 
   private lose(user: HostUserKey, why: LeaseLoss, message: string): void {
+    const acquired = this.held.get(user.tenant.tenantId)?.get(user.id)?.acquired;
+    if (acquired !== undefined) this.ended.set(keyOf(user), acquired);
     this.forget(user);
     this.deps.log(message, undefined);
     for (const listener of this.listeners) {

@@ -1638,7 +1638,9 @@ tenant through its own column, not only through `users`. The same email in two t
   - A renew that has had no answer for half a renew interval (a half-open connection can take minutes to fail)
     no longer holds back the tenant's next one, so the leases taken after the database answers again are renewed.
 - **Giving it back.** Eviction deletes the lease after the host's quit path has run. Shutdown releases every lease
-  after `closeAll`. Either waits at most 5 s for the delete; a lease left behind expires on its own.
+  after `closeAll`. Either waits at most 5 s for the delete; a lease left behind expires on its own. The delete
+  names the take's `acquired_at` (`… where user_id = $user and holder = $holder and acquired_at = $acquired`), so a
+  delete that gave up and arrives after this process took the user again leaves the new lease alone.
 - **After a crash.** A self-hosted server is one process (ADR-0013), so in self-hosted mode start-up deletes every
   lease it finds, through `forEachTenant`, since the app role outside a tenant sees no row. A crash and restart then
   do not keep users out for a minute (my call). A start-before-stop restart lets both processes serve a user until
@@ -1657,8 +1659,10 @@ tenant through its own column, not only through `users`. The same email in two t
   - At the cap, a user whose own lease another process holds gets `4409 host-lease-held` with its remaining time,
     as below the cap, and nothing is evicted for them: their host is open elsewhere, and a seat freed here would
     not let them in. The user's own row is never counted against them.
-  - An eviction whose lease release fails frees no seat (the row stays until it expires), so the open stops there
-    with `4429` rather than evict the tenant's other idle instances in turn.
+  - An eviction whose lease release fails or goes unanswered frees no seat (the row stays until it expires), so the
+    open stops there with `4429` rather than evict the tenant's other idle instances in turn. While the database is
+    slow, a capped open therefore evicts at most one idle instance. A release that deletes no row of its take, or
+    has none to delete, has freed its seat.
   - With seats binding users, a self-hosted server reaches the cap only after a license downgrade below its enabled
     users.
 - **Unchanged.** Idle eviction after `WIREBENCH_SERVER_HOST_IDLE_MINUTES` (default 30), and eight sockets per user.
