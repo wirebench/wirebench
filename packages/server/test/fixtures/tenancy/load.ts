@@ -3,20 +3,18 @@
  * them at commit `e9bdc5af1`, the last schema at `0019`. `make-fixture-0019.ts` wrote the three files next to
  * this one from that commit's own code; nothing here runs today's repositories, which later tasks rewrite.
  */
-import { execFileSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
 import { readdirSync, readFileSync } from 'node:fs';
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { Database } from '../../../src/db/querier.js';
 import { migrate } from '../../../src/db/migrate.js';
 import { BUILTIN_MODULES } from '../../../src/modules.js';
 import { allMigrations } from '../../../src/serve.js';
+import { FIXTURE_VERSION, migrationDrift, unpackDataDir } from './volume.js';
+
+export { FIXTURE_VERSION, migrationDrift };
 
 const HERE = import.meta.dirname;
-
-/** The schema version the fixture is at. */
-export const FIXTURE_VERSION = 19;
 
 export interface Fixture0019 {
   readonly commit: string;
@@ -80,48 +78,6 @@ export async function loadFixture0019(owner: Database, dataDir: string): Promise
     await tx.query('delete from server_identity');
     await tx.query(seed);
   });
-  execFileSync('tar', ['-xzf', join(HERE, 'data-dir-0019.tar.gz'), '-C', dataDir]);
-  for (const file of Fixture.dataDirPlaceholder.files) {
-    const path = join(dataDir, file);
-    // Bytes, not text: the files are UTF-8 but the rest of them need not be, and dataDir may be anything.
-    await writeFile(
-      path,
-      replaceBytes(await readFile(path), Buffer.from(Fixture.dataDirPlaceholder.token), Buffer.from(dataDir, 'utf8')),
-    );
-  }
+  unpackDataDir(dataDir);
   return Fixture;
-}
-
-/** Replaces every `from` with `to` in `bytes`. */
-function replaceBytes(bytes: Buffer, from: Buffer, to: Buffer): Buffer {
-  const parts: Buffer[] = [];
-  let start = 0;
-  for (let at = bytes.indexOf(from); at !== -1; at = bytes.indexOf(from, start)) {
-    parts.push(bytes.subarray(start, at), to);
-    start = at + from.length;
-  }
-  parts.push(bytes.subarray(start));
-  return Buffer.concat(parts);
-}
-
-/**
- * The migrations whose version, name or SHA-256 differ from `recorded`, or that only one side has, as
- * `<version>_<name>`; empty when they match exactly.
- */
-export function migrationDrift(
-  today: readonly { readonly version: number; readonly name: string; readonly sql: string }[],
-  recorded: Fixture0019['migrations'],
-): string[] {
-  const hashed = today.map((m) => ({
-    version: m.version,
-    name: m.name,
-    sha256: createHash('sha256').update(m.sql).digest('hex'),
-  }));
-  const key = (m: { readonly version: number; readonly name: string; readonly sha256: string }) =>
-    `${String(m.version)}_${m.name}:${m.sha256}`;
-  const mine = new Set(hashed.map(key));
-  const theirs = new Set(recorded.map(key));
-  return [...hashed.filter((m) => !theirs.has(key(m))), ...recorded.filter((m) => !mine.has(key(m)))].map(
-    (m) => `${String(m.version)}_${m.name}`,
-  );
 }

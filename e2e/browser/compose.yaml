@@ -7,6 +7,11 @@
 # `pnpm test:e2e:browser` starts it this way itself, with a fresh key, when nothing answers on the port.
 # The key is never committed: it encrypts nothing that outlives `down -v`.
 #
+# CI also runs the suite on a migrated server: it starts `db` alone, loads the frozen `0019` fixture into it and
+# into the `data` volume (`node packages/server/test/fixtures/tenancy/volume.ts --free-seat -- -f <this file>`),
+# then starts the rest with the fixture's secrets key, so the server's first start upgrades a team install's
+# database and data directory before the suite seeds anything.
+#
 # The project is named after the port, so `WIREBENCH_E2E_PORT` alone runs a second stack beside this one:
 # nothing here has a fixed container name or a second published port.
 name: wirebench-browser-e2e-${WIREBENCH_E2E_PORT:-18080}
@@ -22,7 +27,10 @@ services:
       echo:
         condition: service_healthy
     environment:
-      WIREBENCH_SERVER_DATABASE_URL: postgres://wirebench:wirebench@db:5432/wirebench
+      # Two roles, as a team install has them (server README, "Database roles"): migrations as wirebench, the
+      # owner, and every query as wirebench_app, which the server creates at its first start.
+      WIREBENCH_SERVER_MIGRATION_DATABASE_URL: postgres://wirebench:wirebench@db:5432/wirebench
+      WIREBENCH_SERVER_DATABASE_URL: postgres://wirebench_app:wirebench_app@db:5432/wirebench
       WIREBENCH_SERVER_DATA_DIR: /data
       # The browser must load the page from exactly this origin: the sign-in form and sign-out check
       # Origin against it, and on http the cookie is `wb_session` without `Secure`.
@@ -32,6 +40,9 @@ services:
       WIREBENCH_SERVER_SECRETS_KEY: ${WIREBENCH_E2E_SECRETS_KEY:-}
     ports:
       - '127.0.0.1:${WIREBENCH_E2E_PORT:-18080}:8080'
+    # Named, so the fixture can be loaded into it before the server's first start; `down -v` removes it.
+    volumes:
+      - data:/data
     # The image's own check runs every 30 s; `up --wait` should not sit out that long.
     healthcheck:
       test:
@@ -77,3 +88,5 @@ services:
       interval: 2s
       timeout: 3s
       retries: 30
+volumes:
+  data:

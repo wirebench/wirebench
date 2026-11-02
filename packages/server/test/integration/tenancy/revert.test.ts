@@ -13,6 +13,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { createRestRequest, entry, type SyncPushResponse } from '@wirebench/engine';
 import { migrate } from '../../../src/db/migrate.js';
 import { openSession } from '../../../src/db/pool.js';
+import type { Querier } from '../../../src/db/querier.js';
 import { open, seal } from '../../../src/hooks/secret-box.js';
 import { userSecretsKey } from '../../../src/host/server-platform.js';
 import { insertToken } from '../../../src/identity/repo.js';
@@ -592,7 +593,7 @@ describeDb('admin tenancy revert on the frozen 0019 fixture (spec §19.10, plan 
   });
 
   it('stops the file work once its session is lost, before the next part (review m4)', async () => {
-    let pid = 0;
+    let held: Querier | undefined;
     let first = true;
     const fs: StepFs = {
       ...realFs,
@@ -600,23 +601,24 @@ describeDb('admin tenancy revert on the frozen 0019 fixture (spec §19.10, plan 
         await realFs.rename(from, to);
         if (!first) return;
         first = false;
+        const pid = (await held!.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0]!.pid;
         await db.owner.query('select pg_terminate_backend($1)', [pid]);
+        // A query can fail first on the backend's own error message, before the client hears the connection end.
+        // The client marks itself unqueryable in the same step that reports the loss, so once a query is refused
+        // as "not queryable", the revert has heard of it too.
         await vi.waitFor(
           async () => {
-            const left = await db.owner.query('select 1 from pg_stat_activity where pid = $1', [pid]);
-            expect(left.rowCount).toBe(0);
+            await expect(held!.query('select 1')).rejects.toThrow(/not queryable/);
           },
           { timeout: 5000, interval: 20 },
         );
-        // The client hears of it a moment after the backend is gone.
-        await new Promise((done) => setTimeout(done, 300));
       },
     };
     const error = await revert({
       fs,
-      serverSessions: async (session) => {
-        pid = (await session.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0]!.pid;
-        return [];
+      serverSessions: (session) => {
+        held = session;
+        return Promise.resolve([]);
       },
     }).catch((caught: unknown) => caught);
     expect(error).toMatchObject({ code: 'tenancy-revert-session-lost' });

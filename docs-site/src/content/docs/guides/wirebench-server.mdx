@@ -95,9 +95,9 @@ with the variable's name and the rule it broke, never the value.
 {/* config:start */}
 | Variable | Required | Default | Meaning |
 | --- | --- | --- | --- |
-| `WIREBENCH_SERVER_MODE` | no | `self-hosted` | How the server runs. Only `self-hosted` is accepted: one organisation, reached by whatever names point at it. From the next release; 6.1.0 ignores it. |
+| `WIREBENCH_SERVER_MODE` | no | `self-hosted` | How the server runs. Only `self-hosted` is accepted: one organisation, reached by whatever names point at it. |
 | `WIREBENCH_SERVER_DATABASE_URL` | yes | — | PostgreSQL connection string. Every query runs as its role. With a migration URL set beside it, it may go through a pooler. Never logged. |
-| `WIREBENCH_SERVER_MIGRATION_DATABASE_URL` | no | `WIREBENCH_SERVER_DATABASE_URL` | PostgreSQL connection string for the role that owns the schema; a direct connection, never a pooler. Migrations, `admin tenancy role` and the server-running lock use it. When it names a role other than the database URL’s, the server creates that app role if it is missing and the owner may create roles, and grants it its privileges at every start. From the next release; 6.1.0 ignores it. Never logged. |
+| `WIREBENCH_SERVER_MIGRATION_DATABASE_URL` | no | `WIREBENCH_SERVER_DATABASE_URL` | PostgreSQL connection string for the role that owns the schema; a direct connection, never a pooler. Migrations, `admin tenancy role` and the server-running lock use it. When it names a role other than the database URL’s, the server creates that app role if it is missing and the owner may create roles, and grants it its privileges at every start. Never logged. |
 | `WIREBENCH_SERVER_PUBLIC_URL` | yes | — | The `https://…` origin clients use; no path, query or trailing slash. |
 | `WIREBENCH_SERVER_DATA_DIR` | no | `/data` | Repositories and temporary files. |
 | `WIREBENCH_SERVER_HOST` | no | `0.0.0.0` | Listen address. |
@@ -294,15 +294,45 @@ directory: two would interleave pushes and miss each other's events.
 The server applies pending migrations when it starts. To apply them ahead of a restart, run its
 `migrate` command. `migrate --check` exits 1 while any are pending.
 
-The next release also moves the data directory's repositories and checkouts into a new subdirectory, at the
-first start or in `migrate`. Before you upgrade, run `admin tenancy check` from the new image: it changes
-nothing, and reports what the upgrade will do and how long it should take. Stop the server, back up the
-database and the data directory, then start the new version. `admin tenancy status` says where the upgrade
-stands, and `migrate --check` exits 1 until the move is done: run it where the data directory is mounted, or
-after the first start. Keep the same `WIREBENCH_SERVER_SECRETS_KEY` across the upgrade. To go back, stop every
-server and run `admin tenancy revert`, which returns the database and the data directory to the previous version's
-form, or restore both together from the same backup. The previous version reads `WIREBENCH_SERVER_DATABASE_URL`
-only, so point it at the owner's direct URL again, as before the upgrade.
+The first release after 6.1 also moves the data directory's repositories and checkouts into a new subdirectory, at the first start
+or in `migrate`, and moves queries to a second database role. Before you upgrade, run `admin tenancy check` from
+the new image: it changes nothing, and reports what the upgrade will do and how long it should take (about 2 to 10
+seconds per million rows). Stop every server process, back up the database as a superuser or a role with
+`BYPASSRLS` (never the app role: under row-level security its dump refuses the tables) and the data directory, then start
+the new version. `admin tenancy status` says where the upgrade stands, and `migrate --check` exits 1 until the move
+is done: run it where the data directory is mounted, or after the first start. Keep the same
+`WIREBENCH_SERVER_SECRETS_KEY` across the upgrade.
+
+The commands for this upgrade, each run as `wirebench-server admin tenancy …` (in the image, `node /app/dist/bin.js
+admin tenancy …`) with the server's own environment:
+
+| Command | What it does |
+| --- | --- |
+| `check` | Reports the PostgreSQL version, the app role, how to back up, what the move will do and how long the migration should take. Changes nothing. |
+| `status` | Says where the upgrade stands, and whether the stored data key opens under `WIREBENCH_SERVER_SECRETS_KEY`. |
+| `role [--print-sql]` | Creates the app role and grants it its privileges, or prints the statements for an owner that may not create roles. |
+| `revert [--accept-unopened \| --abort]` | Undoes the upgrade, below. |
+
+On the team install's `docker-compose.yml`, download the file again and add
+`WIREBENCH_APP_DB_PASSWORD=$(openssl rand -hex 24)` to its `.env`; compose refuses to start without it. The file then
+gives the server two URLs: `WIREBENCH_SERVER_MIGRATION_DATABASE_URL` as `wirebench`, the owner, and
+`WIREBENCH_SERVER_DATABASE_URL` as `wirebench_app`, which the server creates at its first start. An installation
+that keeps one URL still starts, and logs that row-level security cannot be relied on for its role; `admin tenancy
+role` switches it to two (see the server's README, "Database roles").
+
+To go back, stop every server and run `admin tenancy revert`, which returns the database and the data directory to
+the previous version's form, or restore both together from the same backup. It waits three minutes on every run,
+resumed runs and `--abort` included, and refuses while any server's connection is open, those of another
+installation in another schema of the same database included: stop those too. `--accept-unopened` lets it go on
+past values that open under neither key and links it does not follow. The previous version reads
+`WIREBENCH_SERVER_DATABASE_URL` only, so point it at the owner's direct URL again, as before the upgrade (on the
+team install, the previous release's compose file and `.env`). The `wirebench_app` role stays, unused: if you will
+not upgrade again, drop it as a superuser with `DROP OWNED BY wirebench_app; DROP ROLE wirebench_app;`.
+
+Restart the server by stopping the old process before starting the new one. A start clears every user's
+browser-host lease, so two processes at once would both serve a user's tab for up to 15 seconds. A database restart
+does not stop the server, as long as the database is back within about two minutes; after that the server exits
+with code 3, for its supervisor to start it again.
 
 On shutdown, the server finishes the repository work already queued before it closes the database, and
 closes every live socket. The app reconnects when the server is back.

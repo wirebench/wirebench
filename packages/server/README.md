@@ -10,9 +10,9 @@ database, one data directory; run it behind TLS. Design: `docs/specs/2026-09-24-
 <!-- config:start -->
 | Variable | Required | Default | Meaning |
 | --- | --- | --- | --- |
-| `WIREBENCH_SERVER_MODE` | no | `self-hosted` | How the server runs. Only `self-hosted` is accepted: one organisation, reached by whatever names point at it. From the next release; 6.1.0 ignores it. |
+| `WIREBENCH_SERVER_MODE` | no | `self-hosted` | How the server runs. Only `self-hosted` is accepted: one organisation, reached by whatever names point at it. |
 | `WIREBENCH_SERVER_DATABASE_URL` | yes | — | PostgreSQL connection string. Every query runs as its role. With a migration URL set beside it, it may go through a pooler. Never logged. |
-| `WIREBENCH_SERVER_MIGRATION_DATABASE_URL` | no | `WIREBENCH_SERVER_DATABASE_URL` | PostgreSQL connection string for the role that owns the schema; a direct connection, never a pooler. Migrations, `admin tenancy role` and the server-running lock use it. When it names a role other than the database URL’s, the server creates that app role if it is missing and the owner may create roles, and grants it its privileges at every start. From the next release; 6.1.0 ignores it. Never logged. |
+| `WIREBENCH_SERVER_MIGRATION_DATABASE_URL` | no | `WIREBENCH_SERVER_DATABASE_URL` | PostgreSQL connection string for the role that owns the schema; a direct connection, never a pooler. Migrations, `admin tenancy role` and the server-running lock use it. When it names a role other than the database URL’s, the server creates that app role if it is missing and the owner may create roles, and grants it its privileges at every start. Never logged. |
 | `WIREBENCH_SERVER_PUBLIC_URL` | yes | — | The `https://…` origin clients use; no path, query or trailing slash. |
 | `WIREBENCH_SERVER_DATA_DIR` | no | `/data` | Repositories and temporary files. |
 | `WIREBENCH_SERVER_HOST` | no | `0.0.0.0` | Listen address. |
@@ -89,8 +89,10 @@ The server can use two PostgreSQL roles. The role in `WIREBENCH_SERVER_MIGRATION
 schema and runs the migrations; the role in `WIREBENCH_SERVER_DATABASE_URL`, the app role, runs every
 query and owns nothing. With two URLs, the server connects as the owner at every start, creates the app
 role when it is missing and the owner may create roles (`login nosuperuser nobypassrls noinherit`, its
-password stored as a SCRAM-SHA-256 verifier), and grants it its privileges. `compose.yaml` does this with
-`wirebench` as the owner and `wirebench_app` as the app role, so an existing volume starts as well.
+password stored as a SCRAM-SHA-256 verifier), and grants it its privileges. `compose.yaml`, and the team
+install's root `docker-compose.yml`, do this with `wirebench` as the owner and `wirebench_app` as the app role, so
+an existing volume starts as well. The root file takes the app role's password from `WIREBENCH_APP_DB_PASSWORD` in
+its `.env` (`openssl rand -hex 24`), never from `POSTGRES_PASSWORD`: one secret per role.
 
 With only `WIREBENCH_SERVER_DATABASE_URL` set, that one role migrates and queries, as before, and start-up
 logs a warning that row-level security cannot be relied on for it: a superuser skips it, and the owner of the
@@ -106,6 +108,17 @@ transaction pooler would break. With one URL, that URL holds it, so it must be d
 the lock is taken again, with a growing delay, while the database refuses connections. After that the server
 exits with code 3, and a supervisor such as compose's `restart:` starts it again. It exits at once only when
 that revert holds the lock.
+
+**A server that lost its lock stops within 10 seconds**, even part way through a repository write. As with a
+`docker stop` past its grace period, git can then leave a lock file (`index.lock`, `packed-refs.lock` or a
+`refs/heads/….lock`) in that workspace's repository, and the workspace's next write fails until it is removed. With
+every server stopped, list them with `find /data -path '*/repos/*' -name '*.lock'` (the data directory's path) and
+delete the ones older than the stop.
+
+**Restarting the server: stop the old process before starting the new one.** A self-hosted start clears every
+user's browser-host lease (see [Browser client](#browser-client)), so in a restart that starts the new process
+first, both serve a user until the old one's next renew, at most 15 seconds plus the time its hosts take to quit.
+compose's `up` and a Kubernetes `Recreate` strategy stop first; a rolling update does not.
 
 To switch an installation outside compose, run `wirebench-server admin tenancy role` with both URLs set, then
 restart. When the owner may not create roles, `admin tenancy role --print-sql` prints the statements instead:
@@ -126,7 +139,22 @@ security. `pg_dump` as the app role, or as an owner that is no superuser, refuse
 On the default compose installation the owner, `wirebench`, is a superuser, so existing backup scripts keep
 working.
 
-**Upgrading to this version.** It moves the data directory's `repos/` and `checkouts/` into a new
+**Upgrading to this version.** In short:
+
+1. Run `wirebench-server admin tenancy check` from the new image against the old database. It changes nothing.
+2. Stop every server process.
+3. Back up the database as the backup role (a superuser or a role with `BYPASSRLS`, never the app role: see
+   **Backups**), and the data directory.
+4. On the team install's root `docker-compose.yml`, add `WIREBENCH_APP_DB_PASSWORD=$(openssl rand -hex 24)` to
+   its `.env`: without the line compose refuses to start. The contributors' `compose.yaml` needs nothing.
+5. Start the new version.
+
+The migration takes about 2 seconds per million rows on a warm machine (most tables take four or five passes:
+the copy, each rebuilt index and each composite key), and up to about 10 seconds per million rows at the
+conservative rate of a cold disk; `admin tenancy check` prints both figures for your own tables, and the server
+is down for that long. The revert below takes about a quarter of the time.
+
+In detail: it moves the data directory's `repos/` and `checkouts/` into a new
 subdirectory, keeps the deleted workspaces' repositories from `tmp/` and deletes the rest of `tmp/`, which is
 scratch. Before the upgrade, run `wirebench-server admin tenancy check` from the new image against the old
 database: it changes nothing, and reports the PostgreSQL version, whether the app role is under row-level
@@ -164,7 +192,8 @@ upgrade stands, and counts those values.
 database and the data directory again. Stop every server process (stop them: a paused container or a suspended VM
 still holds its keys) and back up first. It runs as the owner, over the migration URL, with the same
 `WIREBENCH_SERVER_SECRETS_KEY` and `WIREBENCH_SERVER_DATA_DIR` as the server, in self-hosted mode only. It refuses
-while a server holds the lock above, then waits three minutes on every run, so that a server that lost its lock
+while a server holds the lock above, then waits three minutes on every run (a resumed run and `--abort`
+included), so that a server that lost its lock
 without knowing has stopped, and refuses while a server's connection is still open. It tells servers' connections
 apart by their `application_name`, so it refuses a URL that sets one itself; it also counts the servers of another
 installation in another schema of the same database, so stop those too, and a connection pooler that still holds a
@@ -176,8 +205,15 @@ revert drops). Stopped part way, it resumes when run again, and until it has fin
 `migrate` refuses (`tenancy-reverting`); while it is still re-sealing, `--abort` gives the installation back to the
 upgrade instead, which the next start finishes again. It refuses a database with a migration newer than this
 version's. The previous version reads `WIREBENCH_SERVER_DATABASE_URL` only: set it to the owner's direct URL, as in
-the compose file or env you had before the upgrade. The `wirebench_app` role stays, unused, after a revert; if you
-will not upgrade again, drop it as the owner with `DROP OWNED BY wirebench_app; DROP ROLE wirebench_app;`.
+the compose file or env you had before the upgrade (on the team install, the root `docker-compose.yml` of that
+release, whose `.env` needs no `WIREBENCH_APP_DB_PASSWORD`).
+
+The app role (`wirebench_app` in the compose files; otherwise the user of your app URL) stays, unused, after a
+revert. If you will not upgrade again, drop it with `DROP OWNED BY wirebench_app; DROP ROLE wirebench_app;`, run
+in each database it has privileges in. `DROP OWNED BY` needs the role's own privileges, so run it as a superuser:
+on a compose install the owner, `wirebench`, is one. An owner that is not a superuser, as on a managed database,
+first takes them with `GRANT wirebench_app TO <owner>;`, which a role that created the app role with `CREATEROLE`
+may do on PostgreSQL 16 and later; otherwise a superuser, or the role that created it, runs both statements.
 
 The image carries the browser client's build. A server run from a checkout with
 `WIREBENCH_SERVER_BROWSER_CLIENT` on needs it too, or it refuses to start: run
@@ -399,8 +435,22 @@ server-side send path until an operator asks for them.
   instead (or fails with `send-needs-agent`); the rule stays the server's own backstop.
 - **Memory and disk.** A user's host starts with their first tab and stops
   `WIREBENCH_SERVER_HOST_IDLE_MINUTES` (default 30) after their last tab closes; the working copies and
-  state in the user's own checkout in the data directory stay. One user holds at most 8 tab sockets (the ninth closes
-  `4429`), and a socket frame is at most 32 MiB.
+  state in the user's own checkout in the data directory stay. A socket frame is at most 32 MiB.
+- **Close codes.** The tab's socket closes with a code and a reason; the tab shows its text in a bar and retries,
+  except for the first:
+  - `4429 too many host sockets`: the user's ninth tab (8 at most). "Too many Wirebench tabs are open; close one to
+    continue."
+  - `4429 host-instance-cap`: every seat has a browser host open, and this server has none without a tab that it
+    could stop to make room. "Every seat of your team already has Wirebench open in a browser; retrying…". A server whose
+    license is invalid (a missed key rotation) or expired past its grace falls back to the 5 community seats, so
+    from this version on its users get at most 5 browser hosts at once, and the sixth tab shows this message.
+    Accounts are not disabled, and a valid license lifts the cap.
+  - `4409 host-lease-held retryAfterMs=<ms>`: another server process on the same database holds the user's host
+    (its lease). "Your workspace is still open on another server; retrying…", after the time the reason gives.
+  - `4409 host-lease-lost`: this process's lease went to another one, as the old process's do in a restart that
+    started the new one first, so it stopped the user's host. Same text.
+  - `4409 host-lease-expired`: this process could not renew the lease in time, most likely because the database
+    was out of reach, so it stopped the host. "The connection to the server was lost. Reconnecting…".
 - **Reverse proxy.** Forward the whole origin, not only `/api/v1/`: the page at `/`, `/assets/`,
   `/sign-in`, `/sign-out`, and the WebSocket upgrade for `/api/v1/host` with `Upgrade` and `Connection`,
   as for `/api/v1/live`. The socket refuses an `Origin` other than the public URL.

@@ -653,7 +653,7 @@ self-hosted teams on their own, which is why they would come first whenever the 
 | 1 | `host-seam` | **Built** (#779 and #780, 2026-10-27; ADR-0033 accepted). `@wirebench/host` as `createHost(platform)` with `HostPlatform` and `Caller`, no module-level state and its gate; the Electron app embeds it; proven by the existing tests on a fake platform and a fake-socket test of `buildApi` (the loopback server moves to slice 3) | — | yes (no user-visible change) |
 | 2 | `browser-client` | **Built** (#785, #787 and #789, 2026-10-29, for #783; §17 records what changed from this row). The Vite browser build, `browser-bootstrap.ts`, capability discovery, the sign-in page and `browser_flows`, the cookie session, the server host with checkouts and per-user state via `inject`, live events over the host socket, user-scoped sealed secrets under one server-wide root, the §3.10 allowlist and path guard, the egress rule on every outbound connection | 1 | yes: a self-hosted team gets a browser tab |
 | 3 | `local-agent` | **Built** (#793, #795 and, for the agent hosts, #790, 2026-10-29; ADR-0035; §18 records what changed from this row). `packages/agent` as a library, the loopback socket transport, pairing with the browser subset, the send-route rule and the send bundle, `wirebench agent`, the agent's packaging | 1, 2 | yes |
-| 4 | `tenancy` | **Specified 2026-10-29** (#798; §19 records what changed from this row). `tenants`, `tenant_id` on every table, forced row-level security, tenant resolution by `Host`, per-tenant directories and data keys with the one-time re-wrap, the six guards of §5.4 including the job scope, the host-instance lease, the self-hosted migration | 2 | yes, invisibly (one tenant) |
+| 4 | `tenancy` | **Built** (#800, #805, #807, #811 and the Part E pull request, 2026-11-02, for #798; §19 records what changed from this row). `tenants`, `tenant_id` on every table, forced row-level security, tenant resolution by `Host`, per-tenant directories and data keys with the one-time re-wrap, the six guards of §5.4 including the job scope, the host-instance lease, the self-hosted migration | 2 | yes, invisibly (one tenant) |
 | 5 | `operations` | `LISTEN`/`NOTIFY` hub fan-out, advisory locks, sticky host sockets, per-tenant budgets, metrics by tenant id | 4 | partly (multi-instance self-hosted) |
 | 6 | `domains` | The two registrable names, wildcard certificates, `app.` entry with emailed links, reserved slugs, public suffix submission | 4 | no |
 | 7 | `control-plane` | Signup, subscriptions, edition from subscription, suspension, export, deletion, operator commands; per-tenant settings (OIDC, SAML, SCIM, audit forwarding, SMTP sender, retention), today's environment variables becoming the default tenant's (§19.1, §19.12) | 4, 5, 6 | no |
@@ -1834,6 +1834,27 @@ Two forward steps, each resumable; a way back, also resumable; and a stated cost
        `host_leases`; restores the `0019` keys, indexes and foreign keys under their names, including the singleton
        primary keys on the kept `singleton` and `only_row` columns; drops the tenant columns (catalog-only again);
        drops `tenants` and the two `server_identity` columns; and deletes rows `20` and `21` of `schema_migrations`.
+
+    The states run one way, with one exception: `revert --abort`, only at `reverting-keys`, records `files` and
+    hands the installation back to the upgrade, whose idempotent steps find the files in place and re-seal under the
+    existing data key what the revert had moved back. At `reverting-files` or `reverting-rows` it refuses
+    (`tenancy-revert-abort-too-late`).
+  - **What it checks first, on every run** (Task 28's review, owner rulings 2026-11-02):
+    - It refuses in hosted mode (`tenancy-revert-hosted`), before it connects.
+    - It refuses a session whose `application_name` is not `wirebench-admin`, and an app URL that sets one, since
+      it tells server connections apart by that name (`tenancy-revert-application-name`).
+    - After the exclusive lock, it waits 180 s on every run, a resumed run and `--abort` included: the running
+      lock's lost-lock stop (170 s) plus the server's drain (10 s), so that a server that lost its lock without
+      knowing has exited. Then it refuses while any `wirebench-server%` session is still connected, which also
+      counts another installation's servers in another schema of the same database (stop those too) and a pooler's
+      kept connections.
+    - Before `reverting-keys` is recorded, a dry run of the re-seal back counts what would stay under the new key.
+      A value that opens under neither key, or a link it does not follow, refuses (`tenancy-revert-unopened`,
+      nothing changed) unless run with `--accept-unopened`, one flag for both; the same gate after the re-seal is a
+      backstop, whose message names `--abort`.
+  - **After it.** The previous image reads only `WIREBENCH_SERVER_DATABASE_URL`, so the operator points it at the
+    owner's direct URL again. The app role stays, unused; dropping it needs a superuser or the role's privileges
+    (`DROP OWNED BY` acts as the role).
   - **The column order is restored.** No column of `0019` is dropped forward (rule 5), and a dropped `tenant_id` only
     leaves a hidden placeholder at the end of each table. The live columns are therefore those of `0019`, in the same
     order. The round-trip test compares the catalog through the migration test's own readers (§19.13).
@@ -1849,7 +1870,7 @@ Two forward steps, each resumable; a way back, also resumable; and a stated cost
   - `admin tenancy status`: the step, the default tenant's id, whether its data key exists, the re-wrap counts and
     the backup-role advice;
   - `admin tenancy role [--print-sql]` (§19.4);
-  - `admin tenancy revert`.
+  - `admin tenancy revert [--accept-unopened | --abort]` (§19.10).
 - **`--tenant <slug>`** joins every existing admin command (`invite`, `license`, `audit verify|export`, `schedules`,
   `scim-token`, `scim-group`). Hosted mode requires it. Self-hosted mode refuses it as a usage error (my call), since
   there is one tenant and nothing should ever print or ask for its slug.

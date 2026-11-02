@@ -1,7 +1,7 @@
 name: CI
 
 # A change that touches only Markdown skips this workflow: no build, test or package reads a tracked
-# `.md`/`.mdx` file, so the 18 jobs below would only re-prove the code that was already green.
+# `.md`/`.mdx` file, so the jobs below would only re-prove the code that was already green.
 # What Markdown can break — formatting, the generated docs, cited paths, images, banned terms — is
 # checked by `docs.yml`. A change that mixes Markdown with anything else still runs everything.
 on:
@@ -233,7 +233,15 @@ jobs:
   # the Playwright suite in headless Chromium. It is also where CI builds the server image at all; until
   # now only release.yml did. The image goes through buildx with the Actions cache, then compose starts
   # the loaded tag without building again.
+  #
+  # It runs twice: on an empty database (`fresh`), and on a migrated server (`migrated`, spec §19.13), where the
+  # frozen 0019 fixture is loaded into the database and the data volume first, so the server's first start
+  # upgrades a team install (0020, 0021, the data directory's move, the re-seal) before the same suite runs.
   browser-e2e:
+    strategy:
+      fail-fast: false
+      matrix:
+        start: [fresh, migrated]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -263,14 +271,33 @@ jobs:
           tags: wirebench-server:browser-e2e
           cache-from: type=gha,scope=server-image
           cache-to: type=gha,scope=server-image,mode=max
-      # A secrets key made for this run only: it encrypts nothing that outlives `down -v`.
+      # Fresh: a secrets key made for this run only, which encrypts nothing that outlives `down -v`. Migrated: the
+      # fixture's own test key, which its sealed values are under. `--free-seat` disables one fixture account: the
+      # fixture's test-signed license is invalid under the image's production keys, so the server has the five
+      # community seats, which the fixture's accounts fill, and the suite invites one more.
       - name: Start the stack
+        env:
+          START: ${{ matrix.start }}
         run: |
-          WIREBENCH_E2E_SECRETS_KEY="$(openssl rand -base64 32)"
+          compose=(docker compose -f e2e/browser/compose.yaml)
+          if [ "$START" = migrated ]; then
+            WIREBENCH_E2E_SECRETS_KEY="$(node -p "require('./packages/server/test/fixtures/tenancy/fixture-0019.json').keys.secretsKey")"
+            "${compose[@]}" up -d --no-build --wait db echo
+            node packages/server/test/fixtures/tenancy/volume.ts --free-seat -- -f e2e/browser/compose.yaml
+          else
+            WIREBENCH_E2E_SECRETS_KEY="$(openssl rand -base64 32)"
+          fi
           echo "::add-mask::$WIREBENCH_E2E_SECRETS_KEY"
           echo "WIREBENCH_E2E_SECRETS_KEY=$WIREBENCH_E2E_SECRETS_KEY" >> "$GITHUB_ENV"
           export WIREBENCH_E2E_SECRETS_KEY
-          docker compose -f e2e/browser/compose.yaml up -d --no-build --wait
+          "${compose[@]}" up -d --no-build --wait
+          if [ "$START" = migrated ]; then
+            # The upgrade finished: schema 21, the move and the re-seal done, and queries as wirebench_app.
+            sql() { "${compose[@]}" exec -T db psql -U wirebench -d wirebench -tAc "$1"; }
+            test "$(sql 'select max(version) from schema_migrations')" = 21
+            test "$(sql 'select tenancy_step from server_identity')" = 'done'
+            test "$(sql "select count(*) from pg_stat_activity where usename = 'wirebench_app'")" -gt 0
+          fi
       - run: pnpm --filter @wirebench/e2e exec playwright install chromium --with-deps
       - run: pnpm test:e2e:browser
       - name: Stack logs
@@ -280,13 +307,122 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: playwright-report-browser
+          name: playwright-report-browser-${{ matrix.start }}
           path: |
             e2e/browser/playwright-report
             e2e/browser/test-results
       - name: Stop the stack
         if: always()
         run: docker compose -f e2e/browser/compose.yaml down -v
+
+  # Upgrading a compose installation at 0019 under this build (plan Task 29): the contributors' compose file with its
+  # two URLs, the old single URL, and the team install's root docker-compose.yml with its new `.env` line, each on the
+  # frozen fixture (upgrade-compose.test.ts). Then the way back: the image built at 0019's commit starts on what
+  # `admin tenancy revert` leaves (revert-0019-image.test.ts). Both skip everywhere else, for want of the images.
+  server-upgrade:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: wirebench
+          POSTGRES_PASSWORD: wirebench
+          POSTGRES_DB: wirebench_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U wirebench" --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      WIREBENCH_REQUIRE_GIT: '1'
+      WIREBENCH_SERVER_TEST_DATABASE_URL: postgres://wirebench:wirebench@127.0.0.1:5432/wirebench_test
+      WIREBENCH_SERVER_REQUIRE_DB: '1'
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      # The last commit at schema 0019, which the frozen fixture was generated at (test/fixtures/tenancy/).
+      - uses: actions/checkout@v7
+        with:
+          ref: e9bdc5af1b7af8ecf2e47aed0d6a919040a6497b
+          path: old-0019
+          persist-credentials: false
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Create the test database roles
+        run: docker exec -i ${{ job.services.postgres.id }} psql -v ON_ERROR_STOP=1 -U wirebench -d wirebench_test < scripts/ci/server-test-roles.sql
+      - run: pnpm install --frozen-lockfile
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      - run: pnpm --filter @wirebench/engine... build
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: packages/server/Dockerfile
+          load: true
+          push: false
+          platforms: linux/amd64
+          tags: wirebench-server:upgrade
+          cache-from: type=gha,scope=server-image
+          cache-to: type=gha,scope=server-image,mode=max
+      - uses: docker/build-push-action@v6
+        with:
+          context: old-0019
+          file: old-0019/packages/server/Dockerfile
+          load: true
+          push: false
+          platforms: linux/amd64
+          tags: wirebench-server:0019
+          cache-from: type=gha,scope=server-image-0019
+          cache-to: type=gha,scope=server-image-0019,mode=max
+      - run: pnpm vitest run --project server-integration packages/server/test/integration/tenancy/upgrade-compose.test.ts packages/server/test/integration/tenancy/revert-0019-image.test.ts
+        env:
+          WIREBENCH_SERVER_UPGRADE_IMAGE: wirebench-server:upgrade
+          WIREBENCH_SERVER_0019_IMAGE: wirebench-server:0019
+          # The default bridge's gateway: the service's published port, as a container on this runner reaches it.
+          WIREBENCH_SERVER_0019_IMAGE_DB_HOST: 172.17.0.1
+
+  # The tenancy suites, revert round trip included, on the other supported PostgreSQL majors (Task 28 review m7):
+  # 15 is the oldest the server accepts, and server-integration above runs everything on 16.
+  tenancy-postgres:
+    strategy:
+      fail-fast: false
+      matrix:
+        postgres: ['15', '17', '18']
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:${{ matrix.postgres }}
+        env:
+          POSTGRES_USER: wirebench
+          POSTGRES_PASSWORD: wirebench
+          POSTGRES_DB: wirebench_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U wirebench" --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      WIREBENCH_REQUIRE_GIT: '1'
+      WIREBENCH_SERVER_TEST_DATABASE_URL: postgres://wirebench:wirebench@127.0.0.1:5432/wirebench_test
+      WIREBENCH_SERVER_REQUIRE_DB: '1'
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Create the test database roles
+        run: docker exec -i ${{ job.services.postgres.id }} psql -v ON_ERROR_STOP=1 -U wirebench -d wirebench_test < scripts/ci/server-test-roles.sql
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @wirebench/engine... build
+      - run: pnpm vitest run --project server-integration packages/server/test/integration/tenancy/
 
   # Builds the container image the way a release tag will and proves it actually runs a
   # project: `docker run --version` sanity-checks the entrypoint, then `cli:smoke --via docker`

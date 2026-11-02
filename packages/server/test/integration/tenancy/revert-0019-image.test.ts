@@ -89,6 +89,11 @@ describeDb('the 0019 image on a reverted database (plan Task 28)', () => {
     'WIREBENCH_SERVER_HOST=0.0.0.0',
     '-v',
     `${dataDir}:/data`,
+    // On Linux the bind mount keeps this machine's owners, so the image runs as this user to write what the
+    // revert moved back; Docker Desktop maps the owners itself.
+    ...(process.platform === 'linux' && process.getuid !== undefined && process.getgid !== undefined
+      ? ['--user', `${String(process.getuid())}:${String(process.getgid())}`, '-e', 'HOME=/tmp']
+      : []),
   ];
 
   it.skipIf(IMAGE === '')(

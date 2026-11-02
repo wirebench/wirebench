@@ -76,6 +76,8 @@ All notable changes to this project are documented here. The format follows
   the database back at schema version 19, so the previous version starts on them. It refuses while a server
   runs, resumes when run again after being stopped, and refuses before it changes anything when a value would be
   left as it is, unless run with `--accept-unopened`; `--abort` hands a revert still re-sealing back to the upgrade.
+  Every run waits three minutes first. Afterwards the previous version needs its old single URL, the owner's,
+  again, and the unused `wirebench_app` role can be dropped as the README says.
 
 ### Changed
 - **Default's editor colours match the rest of the window (#803).** Monaco's comment, hint and
@@ -111,6 +113,23 @@ All notable changes to this project are documented here. The format follows
   start re-seals any still under the old key: keep the same `WIREBENCH_SERVER_SECRETS_KEY`, and back up and
   restore the database and the data directory together. Browser tabs wait, saying the server is finishing an
   upgrade, until this is done, and `migrate --check` counts the move as pending.
+- **Server: the team install's `docker-compose.yml` uses two database roles (#798).** Migrations run as
+  `wirebench` with `POSTGRES_PASSWORD`, and every query as `wirebench_app`, which the server creates at its first
+  start with a password of its own, `WIREBENCH_APP_DB_PASSWORD`. **An existing team install must add that line to
+  its `.env`** (`echo "WIREBENCH_APP_DB_PASSWORD=$(openssl rand -hex 24)" >> .env`) when it downloads the new
+  file, or compose refuses to start. An installation that keeps its one URL still starts, with the warning above.
+- **Server: one browser host per user across server processes, and no more than the seats (#798).** A user's
+  browser host runs in one process at a time: a tab that reaches another process while one still holds it closes
+  `4409` and retries, saying the workspace is still open on another server. Concurrent browser hosts are capped at
+  the license's seats, idle ones stopping first; past the cap a tab closes `4429 host-instance-cap` and retries.
+  A server whose license is invalid (for example after a missed key rotation) or expired past its grace falls
+  back to the 5 community seats, so from this version on its browser users get at most 5 browser hosts at once,
+  and the sixth tab shows the cap message. Accounts are not disabled, and a valid license lifts the cap. Restart
+  the server by stopping the old process first: a start clears every user's lease, so two processes would both
+  serve a user for up to 15 seconds.
+- **Server: a server that lost its database lock stops within 10 seconds (#798),** even mid-way through a
+  repository write. As after a `docker stop` past its grace period, git may leave a `.lock` file in that
+  workspace's repository; the server README says how to clear it.
 - **The open editor tab stands out.** It carries an accent bar along its bottom edge, and the editor
   tab strip is taller, so the tab you are on is easy to pick out at a glance.
 - **Project and API pages use tabs.** The project page (General, Settings, Properties) and every API

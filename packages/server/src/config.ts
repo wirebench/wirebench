@@ -219,7 +219,7 @@ export const CONFIG_VARIABLES: readonly ConfigVariable[] = [
     defaultText: 'self-hosted',
     secret: false,
     description:
-      'How the server runs. Only `self-hosted` is accepted: one organisation, reached by whatever names point at it. From the next release; 6.1.0 ignores it.',
+      'How the server runs. Only `self-hosted` is accepted: one organisation, reached by whatever names point at it.',
   },
   {
     env: 'WIREBENCH_SERVER_DATABASE_URL',
@@ -236,7 +236,7 @@ export const CONFIG_VARIABLES: readonly ConfigVariable[] = [
     defaultText: 'WIREBENCH_SERVER_DATABASE_URL',
     secret: true,
     description:
-      'PostgreSQL connection string for the role that owns the schema; a direct connection, never a pooler. Migrations, `admin tenancy role` and the server-running lock use it. When it names a role other than the database URL’s, the server creates that app role if it is missing and the owner may create roles, and grants it its privileges at every start. From the next release; 6.1.0 ignores it.',
+      'PostgreSQL connection string for the role that owns the schema; a direct connection, never a pooler. Migrations, `admin tenancy role` and the server-running lock use it. When it names a role other than the database URL’s, the server creates that app role if it is missing and the owner may create roles, and grants it its privileges at every start.',
   },
   {
     env: 'WIREBENCH_SERVER_PUBLIC_URL',
