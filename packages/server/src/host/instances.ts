@@ -29,7 +29,7 @@ import { rm } from 'node:fs/promises';
 import type { SessionEndedEvent } from '../context.js';
 import { HOST_CLOSE } from './errors.js';
 import type { ServerHost } from './host-runtime.js';
-import { isInstanceCap, type InstanceLeases } from './lease.js';
+import { isInstanceCap, type InstanceLeases, type LeaseLoss } from './lease.js';
 import { hostDirectories } from './server-platform.js';
 import type { TenantScope } from '../tenancy/scope.js';
 
@@ -125,8 +125,8 @@ export class HostInstances {
   private idleStarts = 0;
 
   constructor(private readonly deps: HostInstancesDeps) {
-    deps.leases?.onLost((user) => {
-      this.leaseLost(user);
+    deps.leases?.onLost((user, why) => {
+      this.leaseLost(user, why);
     });
   }
 
@@ -309,13 +309,16 @@ export class HostInstances {
     return found;
   }
 
-  /** Another holder has the user's lease, or this process could not keep it: the instance stops now. */
-  private leaseLost(user: HostUserKey): void {
+  /**
+   * Another holder has the user's lease (`host-lease-lost`), or this process could not renew it in time
+   * (`host-lease-expired`, most likely the database was out of reach): the instance stops now.
+   */
+  private leaseLost(user: HostUserKey, why: LeaseLoss): void {
     const instance = this.instances.get(keyOf(user));
     if (instance === undefined) return;
     for (const socket of [...instance.sockets]) {
       this.forget(instance, socket);
-      socket.close(HOST_CLOSE.leaseHeld, 'host-lease-lost');
+      socket.close(HOST_CLOSE.leaseHeld, why === 'lost' ? 'host-lease-lost' : 'host-lease-expired');
     }
     this.evict(instance);
   }

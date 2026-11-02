@@ -1578,6 +1578,10 @@ tenant through its own column, not only through `users`. The same email in two t
      - the audit chain lock: `pg_try_advisory_xact_lock(AUDIT_CHAIN_LOCK_CLASS, hashtext(current_schema() || ':' ||
        tenant_id::text))`;
      - the host-lease lock of §19.9, likewise.
+
+     In code, `current_schema()` here is the server's schema, `SERVER_SCHEMA` (the schema `server_identity` lives
+     in, else `current_schema()`), and the tenant is the unit's own tenant id. The two give the same key in every
+     real deployment, and the seat, chain and host-lease locks all use that one form.
    - Seats are counted per tenant by the policy itself. The licensing service's `state(scope)` takes the tenant; in
      self-hosted mode it reads that tenant's license row, and in hosted mode, from slice 7, `tenants.edition`.
    - Scheduled runs:
@@ -1623,16 +1627,23 @@ tenant through its own column, not only through `users`. The same email in two t
   `retryAfterMs` of the lease's remaining time. The bootstrap's reconnect backoff (§17.6) waits at least that long.
 - **Keeping it.**
   - Leases last 60 s. Every 15 s the process renews them with one statement for each tenant **that has an instance
-    in this process** (`update … where holder = $holder returning user_id`), not for every tenant.
-  - A lease missing from that answer was lost: its instance closes its sockets `4409` and is disposed.
+    in this process** (`update … where holder = $holder and user_id = any($held) returning user_id`), not for every
+    tenant. Naming the held users means a row whose release failed is not renewed for the life of the process.
+  - A lease missing from that answer was lost: its instance closes its sockets `4409 host-lease-lost` and is
+    disposed.
   - A process that has not renewed for 30 s by its own monotonic clock stops its instances on its own, half a lease
     before anyone else could take them, so two processes never write one checkout (§5.5). Database time sets the
-    expiry; local time only decides when to stop early.
+    expiry; local time only decides when to stop early. Those sockets close `4409 host-lease-expired`: no other
+    process has the user, so the tab says only that the connection was lost.
+  - A renew that has had no answer for half a renew interval (a half-open connection can take minutes to fail)
+    no longer holds back the tenant's next one, so the leases taken after the database answers again are renewed.
 - **Giving it back.** Eviction deletes the lease after the host's quit path has run. Shutdown releases every lease
-  after `closeAll`.
+  after `closeAll`. Either waits at most 5 s for the delete; a lease left behind expires on its own.
 - **After a crash.** A self-hosted server is one process (ADR-0013), so in self-hosted mode start-up deletes every
   lease it finds, through `forEachTenant`, since the app role outside a tenant sees no row. A crash and restart then
-  do not keep users out for a minute (my call). A hosted process leaves leases to expire. A multi-instance
+  do not keep users out for a minute (my call). A start-before-stop restart lets both processes serve a user until
+  the old process's next renew (at most 15 s, plus its hosts' quit path); a self-hosted restart stops the old
+  process first. A hosted process leaves leases to expire. A multi-instance
   self-hosted server (slice 5) must drop the start-up delete (§19.12).
 - **The cap** (decision 11).
   - A tenant holds at most its seat limit of live leases (`LicenseService.state(scope)`; none when the limit is

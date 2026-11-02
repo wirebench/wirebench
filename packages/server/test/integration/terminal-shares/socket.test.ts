@@ -277,10 +277,15 @@ describeDb('terminal shares (#429)', () => {
     }
     // The audit rows of earlier joins land when they land; they are not the join's.
     const join = [...units.values()].filter((texts) => !texts.some((text) => text.includes('audit_events')));
+    // Matched by what each runs, not by position: only the count is pinned, so a fourth unit still shows.
     expect(join).toHaveLength(3);
-    expect(join[0]).toEqual([expect.stringContaining('token_hash')]);
-    expect(join[1]).toEqual([expect.stringContaining('from license'), expect.stringContaining('from users')]);
-    expect(join[2]).toEqual([expect.stringContaining('m.role')]);
+    expect(join).toEqual(
+      expect.arrayContaining([
+        [expect.stringContaining('token_hash')],
+        [expect.stringContaining('from license'), expect.stringContaining('from users')],
+        [expect.stringContaining('m.role')],
+      ]),
+    );
     owner.send({ type: 'end' });
     await owner.closed;
   });

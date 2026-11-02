@@ -413,6 +413,16 @@ describe('startBrowserClient', () => {
     expect(FakeSocket.all).toHaveLength(2);
   });
 
+  it('a lease the server could not renew (4409 host-lease-expired) says the connection was lost, not another server', async () => {
+    const h = start();
+    FakeSocket.last().hello();
+    await h.started;
+    FakeSocket.last().drop(4409, 'host-lease-expired');
+    expect(bar()?.textContent).toBe(RECONNECT_TEXT.reconnecting);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(FakeSocket.all).toHaveLength(2);
+  });
+
   it('reloads the page when a later hello brings other capabilities', async () => {
     const h = start();
     FakeSocket.last().hello(['send:public', 'send:private']);

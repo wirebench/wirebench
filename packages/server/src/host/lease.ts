@@ -41,6 +41,14 @@ export const LEASE_MS = 60_000;
 export const RENEW_MS = 15_000;
 /** How long, by this process's clock, a lease may go unconfirmed before its instance stops: half a lease. */
 export const STALE_MS = 30_000;
+/**
+ * A renew out this long no longer holds back the tenant's next one. A renew sent on a half-open connection can wait
+ * many minutes for an error; until then every new lease of the tenant would go unrenewed and stop at {@link STALE_MS}.
+ * Half an interval, so the next tick always sends; its late answer is harmless (see `renew`).
+ */
+export const RENEW_GIVE_UP_MS = RENEW_MS / 2;
+/** How long an eviction or shutdown waits for a release to answer; the row expires on its own after that. */
+export const RELEASE_WAIT_MS = 5_000;
 
 const LEASE_INTERVAL = `interval '${String(LEASE_MS / 1000)} seconds'`;
 
@@ -65,6 +73,9 @@ const REMAINING = `select greatest(0, ceil(extract(epoch from (expires_at - now(
 export const RENEW = `update host_leases set renewed_at = now(), expires_at = now() + ${LEASE_INTERVAL}
   where holder = $1 and user_id = any($2::text[]) returning user_id`;
 const RELEASE = 'delete from host_leases where user_id = $1 and holder = $2';
+
+/** Why a held lease ended without a release: another holder has it, or this process could not renew it in time. */
+export type LeaseLoss = 'lost' | 'expired';
 
 /** The reason a refused socket closes `4409` with: the code, then how long to wait (spec §19.9). */
 export function leaseHeldReason(retryAfterMs: number): string {
@@ -92,8 +103,8 @@ export interface InstanceLeases {
   take(user: HostUserKey): Promise<void>;
   /** Gives `user`'s lease back; never throws (a failure is logged, and the row expires). */
   release(user: HostUserKey): Promise<void>;
-  /** Told of each lease lost to another holder or gone stale; its instance must stop. */
-  onLost(listener: (user: HostUserKey) => void): void;
+  /** Told of each lease lost to another holder (`lost`) or gone stale (`expired`); its instance must stop. */
+  onLost(listener: (user: HostUserKey, why: LeaseLoss) => void): void;
   /** Stops the renewals and gives back whatever is still held. */
   close(): Promise<void>;
 }
@@ -123,9 +134,12 @@ interface Held {
 export class HostLeases implements InstanceLeases {
   /** By tenant id, then user id. A tenant appears only while it has a lease here. */
   private readonly held = new Map<string, Map<string, Held>>();
-  /** Tenants with a renew still out: the next tick skips them rather than queue a second one. */
-  private readonly renewing = new Set<string>();
-  private readonly listeners: ((user: HostUserKey) => void)[] = [];
+  /**
+   * Tenants with a renew still out, and when it was sent: the next tick skips them rather than queue a second one,
+   * until it has been out {@link RENEW_GIVE_UP_MS}.
+   */
+  private readonly renewing = new Map<string, { readonly sentAt: number }>();
+  private readonly listeners: ((user: HostUserKey, why: LeaseLoss) => void)[] = [];
   private renewTimer: { cancel(): void } | undefined;
   private watchdog: { cancel(): void } | undefined;
   private readonly now: () => number;
@@ -135,7 +149,7 @@ export class HostLeases implements InstanceLeases {
     this.now = deps.now ?? (() => performance.now());
   }
 
-  onLost(listener: (user: HostUserKey) => void): void {
+  onLost(listener: (user: HostUserKey, why: LeaseLoss) => void): void {
     this.listeners.push(listener);
   }
 
@@ -153,7 +167,8 @@ export class HostLeases implements InstanceLeases {
       const taken = await tx.query<{ user_id: string }>(TAKE, [user.id, this.deps.holder]);
       if (taken.rows.length > 0) return undefined;
       const left = await tx.query<{ remaining: number }>(REMAINING, [user.id]);
-      return Number(left.rows[0]?.remaining ?? LEASE_MS);
+      // No row: the holder released it after the insert was refused (a release takes no lock), so it is free now.
+      return Number(left.rows[0]?.remaining ?? 0);
     });
     if (remaining === 'cap') {
       throw new WirebenchError('host-instance-cap', 'every seat of this team has a browser host open');
@@ -172,13 +187,28 @@ export class HostLeases implements InstanceLeases {
     this.arm();
   }
 
+  /** Waits at most {@link RELEASE_WAIT_MS} for the delete, so an unreachable database never stalls an eviction. */
   async release(user: HostUserKey): Promise<void> {
     this.forget(user);
-    try {
-      await this.deps.db(user.tenant).query(RELEASE, [user.id, this.deps.holder]);
-    } catch (error) {
-      this.deps.log('a host lease could not be released; it expires on its own', error);
-    }
+    const deleted = this.deps
+      .db(user.tenant)
+      .query(RELEASE, [user.id, this.deps.holder])
+      .then(
+        () => true,
+        (error: unknown) => {
+          this.deps.log('a host lease could not be released; it expires on its own', error);
+          return true;
+        },
+      );
+    let timer: { cancel(): void } | undefined;
+    const waited = new Promise<false>((resolve) => {
+      timer = this.deps.setTimer(() => {
+        resolve(false);
+      }, RELEASE_WAIT_MS);
+    });
+    const answered = await Promise.race([deleted, waited]);
+    timer?.cancel();
+    if (!answered) this.deps.log('a host lease release went unanswered; it expires on its own', undefined);
   }
 
   async close(): Promise<void> {
@@ -219,7 +249,9 @@ export class HostLeases implements InstanceLeases {
     if (this.renewTimer !== undefined || this.closed || this.held.size === 0) return;
     this.renewTimer = this.deps.setTimer(() => {
       this.renewTimer = undefined;
-      void this.renew();
+      void this.renew().catch((error: unknown) => {
+        this.deps.log('host leases could not be renewed', error);
+      });
       this.armRenew();
     }, RENEW_MS);
   }
@@ -256,31 +288,38 @@ export class HostLeases implements InstanceLeases {
     for (const tenant of this.held.values()) {
       for (const one of tenant.values()) if (at - one.confirmedAt >= STALE_MS) stale.push(one.user);
     }
-    for (const user of stale) this.lose(user, 'a host lease went unrenewed past half its time; its host stops');
+    for (const user of stale)
+      this.lose(user, 'expired', 'a host lease went unrenewed past half its time; its host stops');
     this.armWatchdog();
   }
 
-  private lose(user: HostUserKey, why: string): void {
+  private lose(user: HostUserKey, why: LeaseLoss, message: string): void {
     this.forget(user);
-    this.deps.log(why, undefined);
+    this.deps.log(message, undefined);
     for (const listener of this.listeners) {
       try {
-        listener(user);
+        listener(user, why);
       } catch (error) {
         this.deps.log('a host lease listener failed', error);
       }
     }
   }
 
-  /** One statement per tenant this process holds a lease in, each in its own unit; one tenant's failure is its own. */
+  /**
+   * One statement per tenant this process holds a lease in, each in its own unit; one tenant's failure is its own.
+   * An answer that comes after the next renew was sent is still harmless: it judges only the very leases it was sent
+   * for, and a confirmation never moves back.
+   */
   private async renew(): Promise<void> {
     const sends: Promise<void>[] = [];
     for (const [tenantId, tenant] of this.held) {
-      if (this.renewing.has(tenantId)) continue;
+      const at = this.now();
+      const out = this.renewing.get(tenantId);
+      if (out !== undefined && at - out.sentAt < RENEW_GIVE_UP_MS) continue;
       const sent = [...tenant.values()];
       const scope: TenantScope = sent[0]!.user.tenant;
-      const at = this.now();
-      this.renewing.add(tenantId);
+      const mark = { sentAt: at };
+      this.renewing.set(tenantId, mark);
       sends.push(
         this.deps
           .db(scope)
@@ -292,7 +331,7 @@ export class HostLeases implements InstanceLeases {
                 // Released, or released and taken again, while the renew was out: not this answer's to judge.
                 if (this.held.get(tenantId)?.get(one.user.id) !== one) continue;
                 if (kept.has(one.user.id)) one.confirmedAt = Math.max(one.confirmedAt, at);
-                else this.lose(one.user, 'a host lease was lost to another server process; its host stops');
+                else this.lose(one.user, 'lost', 'a host lease was lost to another server process; its host stops');
               }
               this.armWatchdog();
             },
@@ -301,7 +340,7 @@ export class HostLeases implements InstanceLeases {
             },
           )
           .finally(() => {
-            this.renewing.delete(tenantId);
+            if (this.renewing.get(tenantId) === mark) this.renewing.delete(tenantId);
           }),
       );
     }

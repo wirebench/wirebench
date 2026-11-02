@@ -23,7 +23,8 @@ export const HOST_CLOSE = {
   forbidden: 4403,
   /**
    * Another server process holds the user's host lease (HTTP's 409; spec §19.9): the reason is `host-lease-held`
-   * with a `retryAfterMs`, or `host-lease-lost` when this process's lease went to another holder or ran out.
+   * with a `retryAfterMs`, `host-lease-lost` when this process's lease went to another holder, or `host-lease-expired`
+   * when this process could not renew it in time (the database was out of reach).
    */
   leaseHeld: 4409,
   /**

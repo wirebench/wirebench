@@ -18,6 +18,7 @@ import {
   HostLeases,
   LEASE_LOCK,
   LEASE_MS,
+  RELEASE_WAIT_MS,
   RENEW,
   RENEW_MS,
   STALE_MS,
@@ -157,6 +158,51 @@ describeDb('the host-instance lease (spec §19.9)', () => {
       .db(scope)
       .query("update host_leases set expires_at = now() - interval '1 second' where user_id = $1", [userId]);
   };
+  /** The real database, with each release noted in `order`, in the order sent, beside the hosts' disposals. */
+  const watching =
+    (order: string[]): TenantDbFactory =>
+    (scope) => {
+      const real = tenancy.db(scope);
+      return {
+        ...real,
+        query: (text: string, params?: readonly unknown[]) => {
+          if (text.startsWith('delete from host_leases where user_id')) order.push(`released ${String(params?.[0])}`);
+          return real.query(text, params);
+        },
+      } as unknown as ReturnType<TenantDbFactory>;
+    };
+  /**
+   * The real database, but the statements `pick` names wait for the test: each one held is in `held`, to answer
+   * (with the real query, or with a result the test makes up) or to leave unanswered.
+   */
+  const gated = (pick: (text: string) => boolean) => {
+    const held: {
+      text: string;
+      params: readonly unknown[] | undefined;
+      /** Resolves once the statement has its answer. */
+      answer: (rows?: { user_id: string }[]) => Promise<void>;
+    }[] = [];
+    const factory: TenantDbFactory = (scope) => {
+      const real = tenancy.db(scope);
+      return {
+        ...real,
+        query: (text: string, params?: readonly unknown[]) => {
+          if (!pick(text)) return real.query(text, params);
+          return new Promise((resolve, reject) => {
+            held.push({
+              text,
+              params,
+              answer: async (rows) => {
+                if (rows !== undefined) resolve({ rows, rowCount: rows.length });
+                else await real.query(text, params).then(resolve, reject);
+              },
+            });
+          });
+        },
+      } as unknown as ReturnType<TenantDbFactory>;
+    };
+    return { factory, held };
+  };
   /** Lets the evictions and renews already started run to their end (fake hosts, so a few turns of the loop). */
   const settled = async (): Promise<void> => {
     for (let i = 0; i < 20; i++) await new Promise((resolve) => setImmediate(resolve));
@@ -174,8 +220,41 @@ describeDb('the host-instance lease (spec §19.9)', () => {
     expect(hostOf(two, alice)).toBeUndefined();
     expect(two.instances.size).toBe(0);
     expect(await leaseRows(home)).toEqual([{ user_id: alice.id, holder: 'holder-one' }]);
-    // The same holder takes its own lease again, and another user is free.
+    // The holder takes its own lease again (a second take of the same user is not refused).
+    await one.leases.take(alice);
+    expect(await leaseRows(home)).toEqual([{ user_id: alice.id, holder: 'holder-one' }]);
+    // Another user is free for the second process.
     expect(await two.instances.open(bob, socket('b1'))).toBeDefined();
+  });
+
+  it('a refused take whose holder released in between is told to wait nothing, not a full lease', async () => {
+    const one = serverProcess('holder-one');
+    // The holder's release lands between the refused insert and the remaining-time select: that select finds no row.
+    const vanished: TenantDbFactory = (scope) => {
+      const real = tenancy.db(scope);
+      return {
+        ...real,
+        transaction: (fn: Parameters<typeof real.transaction>[0]) =>
+          real.transaction((tx) =>
+            fn(
+              Object.assign(Object.create(tx) as typeof tx, {
+                query: (text: string, params?: readonly unknown[]) =>
+                  text.startsWith('select greatest')
+                    ? Promise.resolve({ rows: [], rowCount: 0 })
+                    : tx.query(text, params),
+              }),
+            ),
+          ),
+      } as unknown as ReturnType<TenantDbFactory>;
+    };
+    const two = serverProcess('holder-two', vanished);
+    await one.instances.open(alice, socket('a1'));
+    const error = (await two.instances.open(alice, socket('a2')).catch((e: unknown) => e)) as {
+      code?: string;
+      details?: { retryAfterMs?: number };
+    };
+    expect(error.code).toBe('host-lease-held');
+    expect(error.details?.retryAfterMs).toBe(0);
   });
 
   it('after expiry the second process takes over', async () => {
@@ -189,7 +268,8 @@ describeDb('the host-instance lease (spec §19.9)', () => {
   });
 
   it('a lease lost to another holder closes its sockets 4409 and disposes the instance', async () => {
-    const one = serverProcess('holder-one');
+    const order: string[] = [];
+    const one = serverProcess('holder-one', watching(order), order);
     const two = serverProcess('holder-two');
     const first = socket('a1');
     const second = socket('a2');
@@ -206,7 +286,8 @@ describeDb('the host-instance lease (spec §19.9)', () => {
     // Bob's lease was renewed in the same statement and his instance stays.
     expect(hostOf(one, bob)?.disposed).toBe(0);
     expect(one.instances.size).toBe(1);
-    // The loser's release after dispose never deletes the winner's row.
+    // The loser's release after dispose has run, and it never deleted the winner's row.
+    await expect.poll(() => order).toEqual([`disposed ${alice.id}`, `released ${alice.id}`]);
     expect(await leaseRows(home)).toEqual([
       { user_id: alice.id, holder: 'holder-two' },
       { user_id: bob.id, holder: 'holder-one' },
@@ -236,11 +317,138 @@ describeDb('the host-instance lease (spec §19.9)', () => {
     one.clock = STALE_MS;
     expect(one.timers.fire(STALE_MS)).toBeGreaterThan(0);
     await settled();
-    expect(tab.closed).toEqual([{ code: 4409, reason: 'host-lease-lost' }]);
+    // Not "lost": no other process has it, this one could not keep it.
+    expect(tab.closed).toEqual([{ code: 4409, reason: 'host-lease-expired' }]);
     expect(hostOf(one, alice)?.disposed).toBe(1);
-    expect(one.clock).toBeLessThan(LEASE_MS);
     expect(one.leases.size).toBe(0);
     reachable = true;
+  });
+
+  it('an unconfirmed lease is not stopped a moment before half a lease', async () => {
+    let reachable = true;
+    const broken: TenantDbFactory = (scope) => {
+      const real = tenancy.db(scope);
+      return {
+        ...real,
+        query: (text: string, params?: readonly unknown[]) =>
+          reachable ? real.query(text, params) : Promise.reject(new Error('connect ECONNREFUSED')),
+      } as unknown as ReturnType<TenantDbFactory>;
+    };
+    const one = serverProcess('holder-one', broken);
+    const tab = socket('a1');
+    await one.instances.open(alice, tab);
+    reachable = false;
+    one.clock = RENEW_MS;
+    one.timers.fire(RENEW_MS);
+    await settled();
+    // The watchdog fires early (a timer may), finds the lease 1 ms short of stale, and waits that 1 ms more.
+    one.clock = STALE_MS - 1;
+    expect(one.timers.fire(STALE_MS)).toBe(1);
+    await settled();
+    expect(tab.closed).toEqual([]);
+    expect(one.leases.size).toBe(1);
+    one.clock = STALE_MS;
+    expect(one.timers.fire(1)).toBe(1);
+    await settled();
+    expect(tab.closed).toEqual([{ code: 4409, reason: 'host-lease-expired' }]);
+    reachable = true;
+  });
+
+  it('a renew that never answers holds back the tenant’s renews for half an interval, not until it errors', async () => {
+    // The first renew is sent on a connection that never answers (half-open); the test answers the later ones.
+    const { factory, held } = gated((text) => text === RENEW);
+    const one = serverProcess('holder-one', factory);
+    await one.instances.open(alice, socket('a1'));
+    one.clock = RENEW_MS;
+    one.timers.fire(RENEW_MS);
+    expect(held).toHaveLength(1);
+    // Unconfirmed for half a lease, Alice's instance stops, as it must.
+    one.clock = STALE_MS;
+    one.timers.fire(STALE_MS);
+    await settled();
+    expect(one.leases.size).toBe(0);
+    // The database answers again: Bob's new lease is taken, and renewed at the next tick despite the renew still out.
+    const tab = socket('b1');
+    await one.instances.open(bob, tab);
+    one.clock = STALE_MS + RENEW_MS;
+    one.timers.fire(RENEW_MS);
+    expect(held).toHaveLength(2);
+    expect(held[1]!.params?.[1]).toEqual([bob.id]);
+    await held[1]!.answer();
+    await settled();
+    // So the 30 s stop does not take Bob, who was confirmed at the renew.
+    one.clock = STALE_MS * 2;
+    one.timers.fire(STALE_MS);
+    await settled();
+    expect(tab.closed).toEqual([]);
+    expect(one.leases.size).toBe(1);
+    // The stuck renew's late answer (Alice "missing") judges only the lease it was sent for, long gone.
+    await held[0]!.answer([]);
+    await settled();
+    expect(tab.closed).toEqual([]);
+    expect(one.leases.size).toBe(1);
+  });
+
+  it('a renew answered after its lease was released and taken again leaves the new lease alone', async () => {
+    const { factory, held } = gated((text) => text === RENEW);
+    const lost: string[] = [];
+    const leases = new HostLeases({
+      db: factory,
+      holder: 'holder-one',
+      setTimer: manualTimers().setTimer,
+      log: () => undefined,
+    });
+    leases.onLost((user) => lost.push(user.id));
+    await leases.take(alice);
+    const renewing = leases.renewNow();
+    expect(held).toHaveLength(1);
+    await leases.release(alice);
+    await leases.take(alice);
+    // The answer says Alice was not kept: about the old lease, not this one.
+    await held[0]!.answer([]);
+    await renewing;
+    expect(lost).toEqual([]);
+    expect(leases.size).toBe(1);
+    await leases.close();
+  });
+
+  it('a renew extends only the users this process holds, not an orphaned row of its own', async () => {
+    const one = serverProcess('holder-one');
+    // A row of this holder for Dave, whose release failed: this process holds no lease for him.
+    await tenancy
+      .db(home)
+      .query(
+        "insert into host_leases (user_id, holder, acquired_at, renewed_at, expires_at) values ($1, 'holder-one', now(), now(), now() + interval '20 seconds')",
+        [dave.id],
+      );
+    await one.instances.open(alice, socket('a1'));
+    await one.leases.renewNow();
+    const rows = await tenancy.db(home).query<{
+      user_id: string;
+      short: boolean;
+    }>("select user_id, expires_at < now() + interval '30 seconds' as short from host_leases order by user_id");
+    expect(rows.rows).toEqual([
+      { user_id: alice.id, short: false },
+      { user_id: dave.id, short: true },
+    ]);
+  });
+
+  it('a release that never answers holds up eviction and shutdown for a few seconds only', async () => {
+    const { factory, held } = gated((text) => text.startsWith('delete from host_leases where user_id'));
+    const one = serverProcess('holder-one', factory);
+    await one.instances.open(alice, socket('a1'));
+    let closed = false;
+    const closing = one.instances.closeAll().then(() => {
+      closed = true;
+    });
+    await expect.poll(() => held.length).toBe(1);
+    await settled();
+    expect(closed).toBe(false);
+    expect(one.timers.fire(RELEASE_WAIT_MS)).toBe(1);
+    await closing;
+    expect(closed).toBe(true);
+    // Its row expires on its own; here the delete is let through.
+    await held[0]!.answer();
   });
 
   it('a renewed lease is not stopped: the watchdog follows the last confirmation', async () => {
@@ -294,18 +502,7 @@ describeDb('the host-instance lease (spec §19.9)', () => {
 
   it('eviction releases the lease after the host’s quit path, and shutdown releases every lease', async () => {
     const order: string[] = [];
-    // Each release, in the order sent, beside the hosts' disposals.
-    const watched: TenantDbFactory = (scope) => {
-      const real = tenancy.db(scope);
-      return {
-        ...real,
-        query: (text: string, params?: readonly unknown[]) => {
-          if (text.startsWith('delete from host_leases where user_id')) order.push(`released ${String(params?.[0])}`);
-          return real.query(text, params);
-        },
-      } as unknown as ReturnType<TenantDbFactory>;
-    };
-    const one = serverProcess('holder-one', watched, order);
+    const one = serverProcess('holder-one', watching(order), order);
     const tab = socket('a1');
     await one.instances.open(alice, tab);
     await one.instances.open(bob, socket('b1'));
@@ -507,7 +704,7 @@ describeDb('the host-instance lease (spec §19.9)', () => {
       await clearLeasesAtStartUp('self-hosted', tenancy, quiet);
       expect(await leaseRows(home)).toEqual([]);
       expect(await leaseRows(acme)).toEqual([]);
-      // The app role outside a tenant sees no lease at all, which is why it goes tenant by tenant.
+      // Cleared tenant by tenant, so a take after it is free.
       expect(await serverProcess('holder-one').instances.open(alice, socket('a1'))).toBeDefined();
     });
 
