@@ -1654,6 +1654,11 @@ tenant through its own column, not only through `users`. The same email in two t
     the team has a browser host open (my call).
   - `4429` then has two reasons, this one and §17.3's ninth socket of one user (`too many host sockets`), so the
     bootstrap branches on the reason for its message.
+  - At the cap, a user whose own lease another process holds gets `4409 host-lease-held` with its remaining time,
+    as below the cap, and nothing is evicted for them: their host is open elsewhere, and a seat freed here would
+    not let them in. The user's own row is never counted against them.
+  - An eviction whose lease release fails frees no seat (the row stays until it expires), so the open stops there
+    with `4429` rather than evict the tenant's other idle instances in turn.
   - With seats binding users, a self-hosted server reaches the cap only after a license downgrade below its enabled
     users.
 - **Unchanged.** Idle eviction after `WIREBENCH_SERVER_HOST_IDLE_MINUTES` (default 30), and eight sockets per user.

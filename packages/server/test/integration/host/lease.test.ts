@@ -118,7 +118,13 @@ describeDb('the host-instance lease (spec §19.9)', () => {
     for (const scope of [home, acme]) await tenancy.db(scope).query('delete from host_leases');
   });
 
-  const serverProcess = (holder: string, db: TenantDbFactory = tenancy.db, order: string[] = []): Process => {
+  /** `building`, when given, is awaited before a host is made: a test holds a build there. */
+  const serverProcess = (
+    holder: string,
+    db: TenantDbFactory = tenancy.db,
+    order: string[] = [],
+    building?: (user: HostUser) => Promise<void>,
+  ): Process => {
     const timers = manualTimers();
     const hosts = new Map<string, ServerHost & { disposed: number }>();
     const proc: Process = { timers, hosts, order, clock: 0 } as Process;
@@ -136,10 +142,11 @@ describeDb('the host-instance lease (spec §19.9)', () => {
       setTimer: timers.setTimer,
       log: () => undefined,
       leases,
-      create: (user) => {
+      create: async (user) => {
+        await building?.(user);
         const host = fakeHost(order, user.id);
         hosts.set(`${user.tenant.tenantId}:${user.id}`, host);
-        return Promise.resolve(host);
+        return host;
       },
     });
     Object.assign(proc, { leases, instances });
@@ -153,6 +160,15 @@ describeDb('the host-instance lease (spec §19.9)', () => {
         .db(scope)
         .query<{ user_id: string; holder: string }>('select user_id, holder from host_leases order by user_id')
     ).rows;
+  /** A live lease row for `userId` under `holder`, as another process (or this one before a restart) left it. */
+  const leaseFor = async (scope: TenantScope, userId: string, holder: string): Promise<void> => {
+    await tenancy
+      .db(scope)
+      .query(
+        "insert into host_leases (user_id, holder, acquired_at, renewed_at, expires_at) values ($1, $2, now(), now(), now() + interval '60 seconds')",
+        [userId, holder],
+      );
+  };
   const expire = async (scope: TenantScope, userId: string): Promise<void> => {
     await tenancy
       .db(scope)
@@ -583,8 +599,100 @@ describeDb('the host-instance lease (spec §19.9)', () => {
       expect(hostOf(two, dave)).toBeUndefined();
       expect(one.instances.size).toBe(2);
       expect((await leaseRows(home)).map((row) => row.user_id)).toEqual([alice.id, bob.id]);
-      // A live user's own next socket is not a new seat.
+      // A live user's next socket joins their instance and takes nothing.
       expect(await one.instances.open(alice, socket('a2'))).toBeDefined();
+    });
+
+    it('a user’s own live row is not counted against them: a take of it at a limit of 1 is admitted', async () => {
+      seatLimits.set(home.tenantId, 1);
+      // This holder's row from before (a release that failed, or a re-take right after an eviction).
+      await leaseFor(home, alice.id, 'holder-one');
+      const one = serverProcess('holder-one');
+      expect(await one.instances.open(alice, socket('a1'))).toBeDefined();
+      expect(await leaseRows(home)).toEqual([{ user_id: alice.id, holder: 'holder-one' }]);
+    });
+
+    it('at the cap, a user held by another process is told to wait for it, and nothing idle is evicted', async () => {
+      const one = serverProcess('holder-one');
+      const d1 = socket('d1');
+      await one.instances.open(dave, d1);
+      one.instances.release(dave, d1);
+      // A downgrade to 1 seat, with Alice's host open on another process.
+      seatLimits.set(home.tenantId, 1);
+      await leaseFor(home, alice.id, 'holder-two');
+      const error = (await one.instances.open(alice, socket('a1')).catch((e: unknown) => e)) as {
+        code?: string;
+        details?: { retryAfterMs?: number };
+      };
+      expect(error.code).toBe('host-lease-held');
+      expect(error.details?.retryAfterMs).toBeGreaterThan(LEASE_MS - 10_000);
+      expect(hostOf(one, dave)?.disposed).toBe(0);
+    });
+
+    it('expired leases do not count', async () => {
+      seatLimits.set(home.tenantId, 1);
+      await leaseFor(home, bob.id, 'holder-two');
+      await expire(home, bob.id);
+      const one = serverProcess('holder-one');
+      expect(await one.instances.open(alice, socket('a1'))).toBeDefined();
+      expect(await leaseRows(home)).toEqual([{ user_id: alice.id, holder: 'holder-one' }]);
+    });
+
+    it('an eviction whose release fails frees no seat, so the open stops there', async () => {
+      seatLimits.set(home.tenantId, 2);
+      const failing: TenantDbFactory = (scope) => {
+        const real = tenancy.db(scope);
+        return {
+          ...real,
+          query: (text: string, params?: readonly unknown[]) =>
+            text.startsWith('delete from host_leases where user_id')
+              ? Promise.reject(new Error('the database went away'))
+              : real.query(text, params),
+        } as unknown as ReturnType<TenantDbFactory>;
+      };
+      const one = serverProcess('holder-one', failing);
+      const a1 = socket('a1');
+      const b1 = socket('b1');
+      await one.instances.open(alice, a1);
+      await one.instances.open(bob, b1);
+      one.instances.release(bob, b1);
+      one.instances.release(alice, a1);
+      await expect(one.instances.open(dave, socket('d1'))).rejects.toMatchObject(capped);
+      // Bob went, but his row stayed, so Alice was not evicted for nothing.
+      expect(hostOf(one, bob)?.disposed).toBe(1);
+      expect(hostOf(one, alice)?.disposed).toBe(0);
+    });
+
+    it('an instance still building is never evicted for the cap, though its socket has gone', async () => {
+      seatLimits.set(home.tenantId, 1);
+      let finish!: () => void;
+      const held = new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+      const one = serverProcess('holder-one', tenancy.db, [], (user) =>
+        user.id === erin.id ? held : Promise.resolve(),
+      );
+      const e1 = socket('e1');
+      const erinOpen = one.instances.open(erin, e1);
+      // Erin's take is in and her host is building; her tab closes, so the instance is idle but not built.
+      await expect.poll(async () => (await leaseRows(home)).map((row) => row.user_id)).toEqual([erin.id]);
+      one.instances.release(erin, e1);
+      const daveOpen = one.instances.open(dave, socket('d1')).then(
+        () => 'admitted',
+        (error: unknown) => (error as { code?: string }).code,
+      );
+      // Refused without waiting on Erin's build (an eviction of her would wait for it until the build ends).
+      try {
+        const first = await Promise.race([
+          daveOpen,
+          new Promise((resolve) => setTimeout(() => resolve('waiting'), 5_000)),
+        ]);
+        expect(first).toBe('host-instance-cap');
+      } finally {
+        finish();
+      }
+      expect(await erinOpen).toBeDefined();
+      expect(hostOf(one, erin)?.disposed).toBe(0);
     });
 
     it('at the cap, this process evicts its oldest idle instance of the tenant and admits the new user', async () => {
@@ -625,7 +733,7 @@ describeDb('the host-instance lease (spec §19.9)', () => {
       expect(two.instances.size).toBe(1);
     });
 
-    it('an unlimited license has no cap', async () => {
+    it('an unlimited license has no cap, and sends no count', async () => {
       const one = serverProcess('holder-one');
       for (const [user, name] of [
         [alice, 'a1'],
@@ -635,6 +743,7 @@ describeDb('the host-instance lease (spec §19.9)', () => {
       ] as const)
         expect(await one.instances.open(user, socket(name))).toBeDefined();
       expect(one.leases.size).toBe(4);
+      expect(log.entries.some((entry) => entry.kind === 'statement' && entry.text === COUNT_LIVE)).toBe(false);
     });
 
     it('another tenant’s leases do not count', async () => {
@@ -645,8 +754,18 @@ describeDb('the host-instance lease (spec §19.9)', () => {
       await two.instances.open(carol, socket('c1'));
       expect(await one.instances.open(alice, socket('a1'))).toBeDefined();
       await expect(one.instances.open(bob, socket('b1'))).rejects.toMatchObject(capped);
-      // And an idle instance of the full tenant is never evicted for another tenant's user.
-      expect(hostOf(two, carol)?.disposed).toBe(0);
+    });
+
+    it('a capped open never evicts another tenant’s idle instance in this process', async () => {
+      seatLimits.set(home.tenantId, 1);
+      const one = serverProcess('holder-one');
+      const c1 = socket('c1');
+      await one.instances.open(carol, c1);
+      one.instances.release(carol, c1);
+      await one.instances.open(alice, socket('a1'));
+      await expect(one.instances.open(bob, socket('b1'))).rejects.toMatchObject(capped);
+      expect(hostOf(one, carol)?.disposed).toBe(0);
+      expect(one.instances.size).toBe(2);
     });
 
     it('two processes racing for the last seat: the lease lock lets only one in', async () => {

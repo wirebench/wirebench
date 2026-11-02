@@ -22,7 +22,9 @@
  * take's unit, between the expired delete and the insert, under the same lock: two takes racing for the last seat,
  * in one process or two, run one after the other, and the second counts the first's row. At the cap the take
  * throws `host-instance-cap`; `HostInstances` then evicts this process's idle instances of the tenant and tries
- * again. A user's own row is not counted, so a take that renews this holder's lease is never refused.
+ * again. A user's own row is not counted, so a take that renews this holder's lease is never refused. At the cap, a
+ * user whose lease another process holds is told `host-lease-held` with its remaining time, as below the cap: that
+ * user's host is open elsewhere, and freeing a seat here would not let them in.
  */
 import { WirebenchError } from '@wirebench/engine';
 import type { FastifyBaseLogger } from 'fastify';
@@ -68,6 +70,9 @@ const TAKE = `insert into host_leases (user_id, holder, acquired_at, renewed_at,
   returning user_id`;
 /** The tenant's live leases other than the user's own (`$1`): the expired ones were deleted just before. */
 export const COUNT_LIVE = 'select count(*)::int as count from host_leases where user_id <> $1';
+/** The user's live lease under another holder, at the cap (expired ones are gone): `$2` is this holder. */
+const HELD_ELSEWHERE = `select greatest(0, ceil(extract(epoch from (expires_at - now())) * 1000))::int as remaining
+  from host_leases where user_id = $1 and holder <> $2`;
 const REMAINING = `select greatest(0, ceil(extract(epoch from (expires_at - now())) * 1000))::int as remaining
   from host_leases where user_id = $1`;
 export const RENEW = `update host_leases set renewed_at = now(), expires_at = now() + ${LEASE_INTERVAL}
@@ -101,8 +106,11 @@ export interface InstanceLeases {
    * `host-instance-cap` when the tenant's seats all hold one already.
    */
   take(user: HostUserKey): Promise<void>;
-  /** Gives `user`'s lease back; never throws (a failure is logged, and the row expires). */
-  release(user: HostUserKey): Promise<void>;
+  /**
+   * Gives `user`'s lease back; never throws (a failure is logged, and the row expires). Resolves `true` once the
+   * delete has answered, `false` when it failed or went unanswered, so the row may still hold a seat.
+   */
+  release(user: HostUserKey): Promise<boolean>;
   /** Told of each lease lost to another holder (`lost`) or gone stale (`expired`); its instance must stop. */
   onLost(listener: (user: HostUserKey, why: LeaseLoss) => void): void;
   /** Stops the renewals and gives back whatever is still held. */
@@ -162,7 +170,11 @@ export class HostLeases implements InstanceLeases {
       const limit = (await this.deps.seatLimit?.(tx)) ?? null;
       if (limit !== null) {
         const live = await tx.query<{ count: number }>(COUNT_LIVE, [user.id]);
-        if (Number(live.rows[0]?.count ?? 0) >= limit) return 'cap' as const;
+        if (Number(live.rows[0]?.count ?? 0) >= limit) {
+          const elsewhere = await tx.query<{ remaining: number }>(HELD_ELSEWHERE, [user.id, this.deps.holder]);
+          const row = elsewhere.rows[0];
+          return row === undefined ? ('cap' as const) : Number(row.remaining);
+        }
       }
       const taken = await tx.query<{ user_id: string }>(TAKE, [user.id, this.deps.holder]);
       if (taken.rows.length > 0) return undefined;
@@ -188,7 +200,7 @@ export class HostLeases implements InstanceLeases {
   }
 
   /** Waits at most {@link RELEASE_WAIT_MS} for the delete, so an unreachable database never stalls an eviction. */
-  async release(user: HostUserKey): Promise<void> {
+  async release(user: HostUserKey): Promise<boolean> {
     this.forget(user);
     const deleted = this.deps
       .db(user.tenant)
@@ -197,7 +209,7 @@ export class HostLeases implements InstanceLeases {
         () => true,
         (error: unknown) => {
           this.deps.log('a host lease could not be released; it expires on its own', error);
-          return true;
+          return 'failed' as const;
         },
       );
     let timer: { cancel(): void } | undefined;
@@ -209,6 +221,7 @@ export class HostLeases implements InstanceLeases {
     const answered = await Promise.race([deleted, waited]);
     timer?.cancel();
     if (!answered) this.deps.log('a host lease release went unanswered; it expires on its own', undefined);
+    return answered === true;
   }
 
   async close(): Promise<void> {
