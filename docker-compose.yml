@@ -11,7 +11,10 @@
 # The server uses two database roles: `wirebench` owns the schema and runs the migrations, and `wirebench_app`,
 # which the server creates at its first start with WIREBENCH_APP_DB_PASSWORD, runs every query under row-level
 # security. Two passwords, one per role. An install from before this file had the third line must add it: compose
-# refuses to start without it.
+# refuses to start without it. This file needs the server image of this release or later: an install that pins
+# WIREBENCH_VERSION to 6.1 or earlier bumps it with the file, or the old image signs in as `wirebench_app`, which
+# does not exist yet, and restarts over and over. To go back to 6.1, revert first and then use that release's own
+# file with WIREBENCH_VERSION pinned (the guide's "Going back").
 #
 # Any other server setting (sign-in with OIDC, SMTP, retention, …) goes in an optional `server.env`
 # beside this file, one WIREBENCH_SERVER_* variable per line.

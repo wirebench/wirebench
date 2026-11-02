@@ -325,9 +325,17 @@ the previous version's form, or restore both together from the same backup. It w
 resumed runs and `--abort` included, and refuses while any server's connection is open, those of another
 installation in another schema of the same database included: stop those too. `--accept-unopened` lets it go on
 past values that open under neither key and links it does not follow. The previous version reads
-`WIREBENCH_SERVER_DATABASE_URL` only, so point it at the owner's direct URL again, as before the upgrade (on the
-team install, the previous release's compose file and `.env`). The `wirebench_app` role stays, unused: if you will
-not upgrade again, drop it as a superuser with `DROP OWNED BY wirebench_app; DROP ROLE wirebench_app;`.
+`WIREBENCH_SERVER_DATABASE_URL` only, so point it at the owner's direct URL again, as before the upgrade. Start it
+by its own image tag, the release you came from (for example `6.1.0`), never `latest` or `6`: those name the new
+version, which would start, migrate and undo the revert. The team install's sequence is in
+[Going back](/wirebench/docs/getting-started/team-server/#going-back) on the team server page.
+
+The `wirebench_app` role stays, unused. If you will not upgrade again, drop it with
+`DROP OWNED BY wirebench_app; DROP ROLE wirebench_app;`, run in each database it has privileges in. `DROP OWNED BY`
+needs the role's own privileges, so run it as a superuser; on a managed database, where the owner is not one, the
+owner first runs `GRANT wirebench_app TO <owner>;` (allowed on PostgreSQL 16 and later to the role that created
+the app role), and otherwise a superuser or that role runs both. The server's README, "Going back", has the
+details.
 
 Restart the server by stopping the old process before starting the new one. A start clears every user's
 browser-host lease, so two processes at once would both serve a user's tab for up to 15 seconds. A database restart

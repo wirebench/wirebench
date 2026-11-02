@@ -30,7 +30,7 @@ import { dataKeyState, environmentKeyRoot, storedDataKey, type DataKeyState } fr
 import { tenantRootById } from './paths.js';
 import { revertTenancy, type RevertOptions } from './revert.js';
 import { rewrap } from './rewrap.js';
-import { appRolePlan, ensureAppRole, roleMode } from './roles.js';
+import { appRolePlan, ensureAppRole, roleMode, roleNameOf } from './roles.js';
 
 type TenancyRoleCommand = Extract<ServerCommand, { command: 'admin-tenancy-role' }>;
 type TenancyRevertCommand = Extract<ServerCommand, { command: 'admin-tenancy-revert' }>;
@@ -50,7 +50,8 @@ const REVERT_OUTCOMES = {
     'under the data key',
   reverted:
     'reverted: the previous version of the server can now start on this database and data directory. It reads ' +
-    'WIREBENCH_SERVER_DATABASE_URL only: set it to the owner’s direct URL, as before the upgrade',
+    'WIREBENCH_SERVER_DATABASE_URL only: set it to the owner’s direct URL, as before the upgrade. Start it by its ' +
+    'own image tag, never latest, or this version starts and upgrades again',
 } as const;
 
 /** The loaded configuration, or the exit code after the problems are written. */
@@ -217,7 +218,7 @@ export async function runTenancyCheck(io: ServerIo): Promise<number> {
     const versionOk = Number(facts.version.num) >= MIN_POSTGRES_VERSION_NUM;
     out(`PostgreSQL: ${facts.version.text}${versionOk ? '' : ' (too old: the upgrade needs PostgreSQL 15 or later)'}`);
     out(`schema version: ${facts.schema === null ? 'none' : String(facts.schema)}`);
-    out(`app role: ${await appRoleLine(config)}`);
+    out(`app role: ${await appRoleLine(config, db)}`);
     out(`backups: ${BACKUP_ADVICE}`);
     for (const line of await dataDirReport(config.dataDir)) out(line);
     out('tables (rows, heap, total, passes):');
@@ -246,8 +247,12 @@ export async function runTenancyCheck(io: ServerIo): Promise<number> {
   }
 }
 
-/** Whether the server's own role isolates (§19.4), read over its URL; never the URL itself. */
-async function appRoleLine(config: ServerConfig): Promise<string> {
+/**
+ * Whether the server's own role isolates (§19.4), read over its URL; never the URL itself. When it cannot sign in,
+ * the owner's connection says whether the role exists yet: before an upgrade's first start it does not, and that
+ * start creates it.
+ */
+async function appRoleLine(config: ServerConfig, owner: Querier): Promise<string> {
   const app = createDatabase(config.databaseUrl, { applicationName: ADMIN_APPLICATION_NAME, max: 1 });
   try {
     const report = await appRoleReport(app);
@@ -257,9 +262,23 @@ async function appRoleLine(config: ServerConfig): Promise<string> {
       : `${report.role} ${reasons.join(', ')}, so row-level security cannot be relied on for it`;
   } catch (error) {
     const code = (error as { code?: unknown }).code;
+    const role = roleNameOf(config.databaseUrl);
+    if (role !== undefined && !(await roleExists(owner, role))) {
+      return `${role} does not exist yet: the server creates it at its first start`;
+    }
     return `cannot sign in${typeof code === 'string' ? ` (${code})` : ''}`;
   } finally {
     await app.close();
+  }
+}
+
+/** Whether a role of that name exists in the cluster; when even that cannot be read, it is taken to exist. */
+async function roleExists(owner: Querier, role: string): Promise<boolean> {
+  try {
+    const found = await owner.query('select 1 from pg_roles where rolname = $1', [role]);
+    return found.rows.length > 0;
+  } catch {
+    return true;
   }
 }
 

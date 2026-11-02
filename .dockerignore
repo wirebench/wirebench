@@ -10,6 +10,8 @@ apps
 docs-site
 e2e
 git-worktrees
+# The 0019 checkout CI's server-upgrade job builds its old image from.
+old-0019
 **/dist
 **/tsconfig.tsbuildinfo
 .git

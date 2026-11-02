@@ -87,6 +87,10 @@ or missing, and never prints a value. The full list is in
 - `WIREBENCH_SERVER_LOCAL_AUTH=false`, to turn passwords off once that works.
 - `WIREBENCH_SERVER_HOOKS_SECRET_KEY`, from `openssl rand -base64 32`, to let catch URLs check
   webhook signatures.
+- `WIREBENCH_SERVER_BROWSER_CLIENT=true` with `WIREBENCH_SERVER_SECRETS_KEY`, from `openssl rand -base64 32`, to
+  serve the browser client. Keep the key in `server.env`, the same value for good and across every upgrade, and
+  back it up apart from the database: the server seals browser users' secrets under it, and without it an upgrade
+  waits at its keys step and no browser tab opens.
 
 ## TLS in front
 
@@ -178,10 +182,17 @@ from the next request, with no restart.
   echo "WIREBENCH_APP_DB_PASSWORD=$(openssl rand -hex 24)" >> .env
   ```
 
+  The new file needs the server image of the same release or later: if `.env` pins `WIREBENCH_VERSION` to 6.1 or
+  earlier, bump it with the file, or the old image signs in as `wirebench_app`, which does not exist yet, and
+  restarts over and over. With the browser client on, keep `WIREBENCH_SERVER_SECRETS_KEY` in `server.env` with
+  the same value as before: without it the upgrade waits at its keys step and no browser tab opens.
+
   This upgrade moves the data in your volumes, so after `docker compose pull`, first run
   `docker compose run --rm server admin tenancy check` with the new image (it changes nothing and says how long the
-  migration will take), then stop the server with `docker compose stop server` and back up both volumes, as below.
-  [Upgrading](/wirebench/docs/guides/wirebench-server/#upgrading) has the details and the way back.
+  migration will take; its `app role:` line says `wirebench_app` does not exist yet, which the first start
+  creates), then stop the server with `docker compose stop server` and back up both volumes, as below.
+  [Upgrading](/wirebench/docs/guides/wirebench-server/#upgrading) has the details, and [Going back](#going-back)
+  the way back.
 - **A database restart** does not stop the server, as long as the database is back within about two minutes: the
   server reconnects on its own. After that it exits with code 3, and compose's `restart: unless-stopped` starts it
   again.
@@ -191,6 +202,52 @@ from the next request, with no restart.
   `wirebench_app`: under row-level security, a dump made as the app role refuses the tables.
 - **Run one server.** Live updates and the push lock live inside the process, so a second replica would
   miss the first one's events.
+
+## Going back
+
+To undo the upgrade from 6.1, revert with the new image first, then start the release you came from by its own
+tag. Never leave `WIREBENCH_VERSION` unset or at `latest` for that start: `latest` is still the new release, which
+would migrate again and undo the revert.
+
+<Steps>
+
+1. Stop the server, and keep it stopped until the last step:
+
+   ```sh
+   docker compose stop server
+   ```
+
+2. Back up both volumes, as in [Upgrades and backups](#upgrades-and-backups).
+
+3. Revert with the new image, still on the new compose file and `.env`. It waits three minutes first, then
+   re-seals, moves the data directory back and returns the database to the old schema; run it again if it stops
+   part way:
+
+   ```sh
+   docker compose run --rm server admin tenancy revert
+   ```
+
+4. Pin the release you came from, for example 6.1.0, and fetch its compose file, which gives the server the
+   owner's single URL again:
+
+   ```sh
+   echo "WIREBENCH_VERSION=6.1.0" >> .env
+   curl -fsSLo docker-compose.yml https://raw.githubusercontent.com/wirebench/wirebench/v6.1.0/docker-compose.yml
+   ```
+
+   That file does not read `WIREBENCH_APP_DB_PASSWORD`; the line can stay in `.env`. If `.env` already sets
+   `WIREBENCH_VERSION`, change that line instead of adding one.
+
+5. Pull and start:
+
+   ```sh
+   docker compose pull && docker compose up -d
+   ```
+
+</Steps>
+
+The `wirebench_app` role stays, unused; the
+[server guide](/wirebench/docs/guides/wirebench-server/#upgrading) says how to drop it.
 
 ## Try it on one machine first
 

@@ -146,7 +146,10 @@ working.
 3. Back up the database as the backup role (a superuser or a role with `BYPASSRLS`, never the app role: see
    **Backups**), and the data directory.
 4. On the team install's root `docker-compose.yml`, add `WIREBENCH_APP_DB_PASSWORD=$(openssl rand -hex 24)` to
-   its `.env`: without the line compose refuses to start. The contributors' `compose.yaml` needs nothing.
+   its `.env`: without the line compose refuses to start. That file needs this version's image or later, so bump a
+   pinned `WIREBENCH_VERSION` with it: an older image signs in as `wirebench_app` before anything has created it.
+   An install with the browser client keeps `WIREBENCH_SERVER_SECRETS_KEY`, unchanged, in `server.env`. The
+   contributors' `compose.yaml` needs nothing.
 5. Start the new version.
 
 The migration takes about 2 seconds per million rows on a warm machine (most tables take four or five passes:
@@ -204,9 +207,19 @@ unless run with `--accept-unopened` (the first is unreadable already; what a lin
 revert drops). Stopped part way, it resumes when run again, and until it has finished every server start and
 `migrate` refuses (`tenancy-reverting`); while it is still re-sealing, `--abort` gives the installation back to the
 upgrade instead, which the next start finishes again. It refuses a database with a migration newer than this
-version's. The previous version reads `WIREBENCH_SERVER_DATABASE_URL` only: set it to the owner's direct URL, as in
-the compose file or env you had before the upgrade (on the team install, the root `docker-compose.yml` of that
-release, whose `.env` needs no `WIREBENCH_APP_DB_PASSWORD`).
+version's.
+
+Then start the previous version by its own image tag, the release you came from (for example 6.1.0), never
+`latest` or a major tag such as `6`: those still name this version, which would start, migrate and move the data
+directory forward again, undoing the revert. The previous version reads `WIREBENCH_SERVER_DATABASE_URL` only: set it
+to the owner's direct URL, as in the compose file or env you had before the upgrade. On the team install's root
+`docker-compose.yml`:
+
+1. Set `WIREBENCH_VERSION=6.1.0` (the release you came from) in `.env`.
+2. Fetch that release's compose file, which has the single owner URL:
+   `curl -fsSLo docker-compose.yml https://raw.githubusercontent.com/wirebench/wirebench/v6.1.0/docker-compose.yml`.
+   Its `.env` needs no `WIREBENCH_APP_DB_PASSWORD`; the line can stay or go.
+3. `docker compose pull && docker compose up -d`.
 
 The app role (`wirebench_app` in the compose files; otherwise the user of your app URL) stays, unused, after a
 revert. If you will not upgrade again, drop it with `DROP OWNED BY wirebench_app; DROP ROLE wirebench_app;`, run
@@ -436,8 +449,8 @@ server-side send path until an operator asks for them.
 - **Memory and disk.** A user's host starts with their first tab and stops
   `WIREBENCH_SERVER_HOST_IDLE_MINUTES` (default 30) after their last tab closes; the working copies and
   state in the user's own checkout in the data directory stay. A socket frame is at most 32 MiB.
-- **Close codes.** The tab's socket closes with a code and a reason; the tab shows its text in a bar and retries,
-  except for the first:
+- **Close codes.** The tab's socket closes with a code and a reason; the tab shows its text in a bar and retries
+  (for the first, the text asks the user to close a tab):
   - `4429 too many host sockets`: the user's ninth tab (8 at most). "Too many Wirebench tabs are open; close one to
     continue."
   - `4429 host-instance-cap`: every seat has a browser host open, and this server has none without a tab that it

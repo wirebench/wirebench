@@ -76,8 +76,10 @@ All notable changes to this project are documented here. The format follows
   the database back at schema version 19, so the previous version starts on them. It refuses while a server
   runs, resumes when run again after being stopped, and refuses before it changes anything when a value would be
   left as it is, unless run with `--accept-unopened`; `--abort` hands a revert still re-sealing back to the upgrade.
-  Every run waits three minutes first. Afterwards the previous version needs its old single URL, the owner's,
-  again, and the unused `wirebench_app` role can be dropped as the README says.
+  Every run waits three minutes first. Afterwards start the previous version by its own image tag (on the team
+  install, set `WIREBENCH_VERSION` to the release you came from, such as `6.1.0`, and fetch that release's
+  `docker-compose.yml`), never `latest`, which would start this version and upgrade again; it needs its old
+  single URL, the owner's, again, and the unused `wirebench_app` role can be dropped as the README says.
 
 ### Changed
 - **Default's editor colours match the rest of the window (#803).** Monaco's comment, hint and
@@ -127,7 +129,7 @@ All notable changes to this project are documented here. The format follows
   and the sixth tab shows the cap message. Accounts are not disabled, and a valid license lifts the cap. Restart
   the server by stopping the old process first: a start clears every user's lease, so two processes would both
   serve a user for up to 15 seconds.
-- **Server: a server that lost its database lock stops within 10 seconds (#798),** even mid-way through a
+- **Server: a server that lost its database lock and could not take it back stops within 10 seconds (#798),** even mid-way through a
   repository write. As after a `docker stop` past its grace period, git may leave a `.lock` file in that
   workspace's repository; the server README says how to clear it.
 - **The open editor tab stands out.** It carries an accent bar along its bottom edge, and the editor

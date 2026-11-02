@@ -97,6 +97,22 @@ describeDb('admin tenancy check and status', () => {
     expect(out).not.toMatch(/\bslug\b/);
   });
 
+  it('says an app role that does not exist yet is made at the first start; a wrong password still cannot sign in', async () => {
+    await loadFixture0019(db.owner, dataDir);
+    const missing = new URL(db.url);
+    missing.username = `wirebench_app_missing_${randomBytes(4).toString('hex')}`;
+    const before = await run(['admin', 'tenancy', 'check'], { WIREBENCH_SERVER_DATABASE_URL: missing.href });
+    expect(before.code, before.err).toBe(0);
+    expect(before.out).toContain(
+      `app role: ${missing.username} does not exist yet: the server creates it at its first start\n`,
+    );
+    const wrong = new URL(db.url);
+    wrong.password = 'not-its-password';
+    const refused = await run(['admin', 'tenancy', 'check'], { WIREBENCH_SERVER_DATABASE_URL: wrong.href });
+    expect(refused.out).toMatch(/^app role: cannot sign in \(28P01\)$/m);
+    expect(refused.out).not.toContain('not-its-password');
+  });
+
   it('names a path at the data directory root that the move does not know', async () => {
     await loadFixture0019(db.owner, dataDir);
     const { mkdir } = await import('node:fs/promises');

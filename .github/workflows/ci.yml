@@ -230,9 +230,9 @@ jobs:
 
   # The browser client end to end (hosted edition spec §17.7): builds the server image, which carries the
   # browser build, starts it beside PostgreSQL and an echo service (e2e/browser/compose.yaml), and runs
-  # the Playwright suite in headless Chromium. It is also where CI builds the server image at all; until
-  # now only release.yml did. The image goes through buildx with the Actions cache, then compose starts
-  # the loaded tag without building again.
+  # the Playwright suite in headless Chromium. The image goes through buildx with the Actions cache (the
+  # `server-image` scope, which server-upgrade shares from the same context), then compose starts the
+  # loaded tag without building again.
   #
   # It runs twice: on an empty database (`fresh`), and on a migrated server (`migrated`, spec §19.13), where the
   # frozen 0019 fixture is loaded into the database and the data volume first, so the server's first start
@@ -341,12 +341,6 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@v7
-      # The last commit at schema 0019, which the frozen fixture was generated at (test/fixtures/tenancy/).
-      - uses: actions/checkout@v7
-        with:
-          ref: e9bdc5af1b7af8ecf2e47aed0d6a919040a6497b
-          path: old-0019
-          persist-credentials: false
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
@@ -369,6 +363,14 @@ jobs:
           tags: wirebench-server:upgrade
           cache-from: type=gha,scope=server-image
           cache-to: type=gha,scope=server-image,mode=max
+      # The last commit at schema 0019, which the frozen fixture was generated at (test/fixtures/tenancy/). Checked
+      # out after this build's image, so the build context above is the same as browser-e2e's and their shared
+      # cache scope holds one `COPY . .` layer; .dockerignore leaves it out as well.
+      - uses: actions/checkout@v7
+        with:
+          ref: e9bdc5af1b7af8ecf2e47aed0d6a919040a6497b
+          path: old-0019
+          persist-credentials: false
       - uses: docker/build-push-action@v6
         with:
           context: old-0019
@@ -394,6 +396,8 @@ jobs:
       matrix:
         postgres: ['15', '17', '18']
     runs-on: ubuntu-latest
+    # The suite takes minutes; a lock wait or a revert waiting on sessions that hangs fails here, not at 6 h.
+    timeout-minutes: 30
     services:
       postgres:
         image: postgres:${{ matrix.postgres }}
