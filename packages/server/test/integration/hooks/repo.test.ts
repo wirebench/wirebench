@@ -39,6 +39,7 @@ describeDb('webhook-capture repository (§3.2, §3.4)', () => {
       'terminal-shares',
       'host',
       'agent',
+      'entry',
     ]);
   });
 
