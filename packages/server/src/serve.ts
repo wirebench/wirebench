@@ -21,6 +21,7 @@ import type { Database } from './db/querier.js';
 import { loadMigrations, migrate, MIGRATIONS_DIR, pendingMigrations, type Migration } from './db/migrate.js';
 import { createDatabase } from './db/pool.js';
 import { checkAppRole, checkPostgresVersion } from './tenancy/checks.js';
+import { OPERATIONS_MIGRATIONS_DIR } from './operations/migrations.js';
 import { TENANCY_MIGRATIONS_DIR } from './tenancy/migrations.js';
 import { RunningLock, SERVER_DRAIN_MS, serverRunning, type RunningLockOptions } from './tenancy/running-lock.js';
 import { operatorPublicUrl } from './tenancy/urls.js';
@@ -169,21 +170,25 @@ function migrationFailure(error: unknown): string {
 /**
  * The host's migrations and each module's, merged in version order. No single folder has to be
  * contiguous — once identity takes 0002, a later host migration is 0005 — so contiguity from 0001
- * (and uniqueness) is checked on the combined, sorted list. `hostDir` and `tenancyDir` exist for tests.
+ * (and uniqueness) is checked on the combined, sorted list. `hostDir`, `tenancyDir` and `operationsDir` exist for
+ * tests.
  */
 export async function allMigrations(
   modules: readonly ServerModule[],
   hostDir: string = MIGRATIONS_DIR,
   tenancyDir: string = TENANCY_MIGRATIONS_DIR,
+  operationsDir: string = OPERATIONS_MIGRATIONS_DIR,
 ): Promise<readonly Migration[]> {
   const moduleDirs = modules.flatMap((m) =>
     m.migrationsDir === undefined ? [] : typeof m.migrationsDir === 'string' ? [m.migrationsDir] : [...m.migrationsDir],
   );
   let perFolder: (readonly Migration[])[];
   let tenancy: readonly Migration[];
+  let operations: readonly Migration[];
   try {
-    [tenancy, ...perFolder] = await Promise.all([
+    [tenancy, operations, ...perFolder] = await Promise.all([
       loadMigrations(tenancyDir, { contiguous: false }),
+      loadMigrations(operationsDir, { contiguous: false }),
       loadMigrations(hostDir, { contiguous: false }),
       ...moduleDirs.map((dir) => loadMigrations(dir, { contiguous: false })),
     ]);
@@ -191,10 +196,11 @@ export async function allMigrations(
     throw new StartupError(ExitCode.Migration, error instanceof Error ? error.message : String(error));
   }
   // The tenancy migrations scope every module's tables, so they join only a list that reaches the version
-  // before them: every production list does, and a test's partial module set stops short of them.
+  // before them: every production list does, and a test's partial module set stops short of them. Slice 5's
+  // `0022` scopes its tables with the tenancy's `tenant_scope()`, so it joins with them.
   const modular = perFolder.flat();
   const before = (tenancy[0]?.version ?? 1) - 1;
-  const combined = [...modular, ...(modular.some((m) => m.version === before) ? tenancy : [])].sort(
+  const combined = [...modular, ...(modular.some((m) => m.version === before) ? [...tenancy, ...operations] : [])].sort(
     (a, b) => a.version - b.version,
   );
   for (const [index, migration] of combined.entries()) {

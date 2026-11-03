@@ -49,7 +49,8 @@ describeDb('the 0019 image on a reverted database (plan Task 28)', () => {
     db = await testDatabase({ migrated: false });
     dataDir = await mkTempDir('wbs-revert-image-');
     await loadFixture0019(db.owner, dataDir);
-    await db.migrate(await allMigrations(BUILTIN_MODULES));
+    // Through 0021: a slice 4 server's database, the revert's only starting point.
+    await db.migrate((await allMigrations(BUILTIN_MODULES)).filter((m) => m.version <= 21));
     const root = Buffer.from(Fixture.keys.secretsKey, 'base64');
     expect(await runTenancySteps(db.owner, dataDir, { root })).toBe('done');
     await revertTenancy({

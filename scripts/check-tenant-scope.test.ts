@@ -274,6 +274,30 @@ describe('check:tenant-scope', () => {
     }
   });
 
+  it('keeps server_instances to src/operations/, src/tenancy/ included (slice 5, spec §20.2)', async () => {
+    for (const file of ['packages/server/src/host/lease.ts', 'packages/server/src/tenancy/directory.ts']) {
+      for (const text of [
+        "db.query('select holder, url from server_instances')",
+        'db.query(`update "server_instances" set renewed_at = now()`)',
+        "db.query('INSERT INTO public.server_instances (holder) values ($1)')",
+      ]) {
+        expect(findRawDatabase(file, text), `${file}: ${text}`).toMatchObject([{ rule: 'instances-sql' }]);
+      }
+      // Another name, and a comment, pass.
+      expect(findRawDatabase(file, "db.query('select * from server_instances_old')\n// server_instances")).toEqual([]);
+    }
+    expect(
+      findRawDatabase('packages/server/src/operations/instances.ts', "db.query('select * from server_instances')"),
+    ).toEqual([]);
+    const root = await tree({
+      'packages/server/src/live/hub.ts': "export const SQL = 'select url from server_instances';\n",
+      'packages/server/src/operations/instances.ts': "export const SQL = 'select url from server_instances';\n",
+    });
+    expect((await checkTenantScope(root)).map((hit) => [hit.file, hit.rule])).toEqual([
+      ['packages/server/src/live/hub.ts', 'instances-sql'],
+    ]);
+  });
+
   it('finds a planted file of each new kind in a tree', async () => {
     const root = await tree({
       'packages/server/src/agent/raw.ts': "import { createDatabase } from '../db/pool.js';\n",

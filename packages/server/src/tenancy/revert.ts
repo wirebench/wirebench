@@ -6,7 +6,9 @@
  * - the server is in hosted mode (`tenancy-revert-hosted`), or the URL names its sessions itself, which hides the
  *   servers' sessions from the check below (`tenancy-revert-application-name`);
  * - the database has more than one tenant (`tenancy-revert-tenants`), or a migration newer than `0021` has run
- *   (`tenancy-revert-too-new`), or it is not at `0021` at all (`tenancy-revert-version`);
+ *   (`tenancy-revert-too-new`), or it is not at `0021` at all (`tenancy-revert-version`). Slice 5's `0022` is the
+ *   first such migration: a server that has run it is past the way back (spec §19.10, "the command goes away with
+ *   the first release that adds migration `0022`"), so the refusal names it;
  * - a server holds the server-running lock: the exclusive `pg_try_advisory_lock` fails while any server holds it
  *   shared (`tenancy-revert-server-running`). It is taken on the migration URL, a direct connection, as every server
  *   holds its share there (owner ruling, 2026-10-30), and held until the revert ends;
@@ -193,7 +195,8 @@ function judge(state: SchemaState): 'nothing' | 'go' {
     throw refusal(
       'tenancy-revert-too-new',
       `the database is at schema version ${String(state.version)}, newer than ${String(LAST_TENANCY_MIGRATION)}: ` +
-        'this command undoes migrations 0020 and 0021 only, and a later migration has run since. Nothing was changed',
+        'this command undoes migrations 0020 and 0021 only, and migration 0022 (several server instances) has run ' +
+        'since, so this database cannot go back to the previous version. Nothing was changed',
     );
   }
   if (state.step === undefined && state.version <= BEFORE_TENANCY) return 'nothing';

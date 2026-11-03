@@ -8,7 +8,7 @@
  * the positive control and the probe never share it.
  */
 import { markStepsDone } from '../../helpers/tenancy.js';
-import { createHash, generateKeyPairSync, randomBytes, sign } from 'node:crypto';
+import { createHash, generateKeyPairSync, randomBytes, randomUUID, sign } from 'node:crypto';
 import type { RouteOptions } from 'fastify';
 import { expect } from 'vitest';
 import { agentModule } from '../../../src/agent/module.js';
@@ -482,6 +482,23 @@ export async function fill(t: TwoTenants, tenant: Tenant): Promise<Filled> {
     `insert into host_leases (user_id, holder, acquired_at, renewed_at, expires_at) values ($1, $2, $3, $3, $4)`,
     [browser.user.id, `${slug}-holder`, at, new Date(at.getTime() + 60_000)],
   );
+
+  // ---- 0022's tables (slice 5), used from its later tasks: a row each by hand. A bucket key carries the slug,
+  // as the limiter's keys carry what they count.
+  const holder = randomUUID();
+  await tenant.tdb.query('insert into limiter_buckets (key, tokens, updated_at) values ($1, 5, $2)', [
+    `sign-in:${slug}@${slug}.example`,
+    at,
+  ]);
+  await tenant.tdb.query('insert into send_slots (slot, holder, expires_at) values (0, $1, $2)', [
+    holder,
+    new Date(at.getTime() + 60_000),
+  ]);
+  await tenant.tdb.query('insert into terminal_share_locations (share_id, holder, created_at) values ($1, $2, $3)', [
+    share.shareId,
+    holder,
+    at,
+  ]);
 
   // ---- the audit log: forward one recorded event (no sink is configured), so the queue holds a row too
   // Named by tenant: the negative run's schema has the policy off.

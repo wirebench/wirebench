@@ -221,7 +221,14 @@ describeDb('migration 0020 on a scaled fixture (hosted spec §19.10)', () => {
       migrationSeconds = (performance.now() - started) / 1000;
       // 0021 changes only the catalog (defaults, policies, the `_0019` copies dropped): it reads no row.
       const isolationStarted = performance.now();
-      expect((await migrate(owner, migrations)).applied).toEqual([21]);
+      expect(
+        (
+          await migrate(
+            owner,
+            migrations.filter((m) => m.version <= 21),
+          )
+        ).applied,
+      ).toEqual([21]);
       isolationSeconds = (performance.now() - isolationStarted) / 1000;
     } finally {
       await owner.close();
