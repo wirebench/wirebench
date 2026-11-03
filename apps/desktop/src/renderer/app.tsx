@@ -4,3 +4,5 @@ import { AppShell } from './shell/app-shell.js';
 export function App() {
   return <AppShell />;
 }
+
+// CI probe: this pull request is closed unmerged.
