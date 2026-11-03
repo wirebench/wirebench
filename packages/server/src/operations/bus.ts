@@ -98,12 +98,22 @@ export class NotificationBus {
     this.#deps = deps;
   }
 
-  /** Listens, and from then on carries every announcement of `hooks`. A failure to listen the first time throws. */
+  /**
+   * Listens, and from then on carries every announcement of `hooks`. A failure to listen the first time throws. The
+   * lists are connected first, so what an `onListen` listener announces on the first listen is carried too.
+   */
   async start(): Promise<void> {
-    await this.#listen(false);
     this.#disconnect = connectBus(this.#deps.hooks, (kind, event) => {
       this.send(kind, event);
     });
+    try {
+      await this.#listen(false);
+    } catch (error) {
+      this.#disconnect();
+      this.#disconnect = undefined;
+      this.#queue.length = 0;
+      throw error;
+    }
   }
 
   /** Runs `listener` after every listen, the first one included. */
@@ -285,4 +295,51 @@ export class NotificationBus {
     if (this.#stopped) return;
     deliverRemote(this.#deps.hooks[message.kind] as Announcements<unknown>, event, this.#deps.log);
   }
+}
+
+/**
+ * What a module sees of the bus (`ctx.bus`): when it listens and when it is lost (spec §20.3). Modules register
+ * before the start-up makes the bus, so they register here, and the start-up {@link attach}es the bus once it has
+ * one. A context without a bus (a test's, the admin command line's) has signals that never fire.
+ */
+export interface BusEvents {
+  /** After every listen, the first one included (`reconnected: false`). */
+  onListen(listener: (listened: Listened) => void): void;
+  onLost(listener: (error: Error) => void): void;
+}
+
+export class BusSignals implements BusEvents {
+  readonly #listened: ((listened: Listened) => void)[] = [];
+  readonly #lost: ((error: Error) => void)[] = [];
+
+  onListen(listener: (listened: Listened) => void): void {
+    this.#listened.push(listener);
+  }
+
+  onLost(listener: (error: Error) => void): void {
+    this.#lost.push(listener);
+  }
+
+  /** Forwards `bus`'s listens and losses to every listener registered here, before or after; the bus logs a throw. */
+  attach(bus: NotificationBus): void {
+    bus.onListen((listened) => {
+      everyOne(this.#listened, listened);
+    });
+    bus.onLost((error) => {
+      everyOne(this.#lost, error);
+    });
+  }
+}
+
+/** Runs every listener; one that throws does not stop the rest, and the first throw is rethrown at the end. */
+function everyOne<T>(listeners: readonly ((value: T) => void)[], value: T): void {
+  let first: { error: unknown } | undefined;
+  for (const listener of listeners) {
+    try {
+      listener(value);
+    } catch (error) {
+      first ??= { error };
+    }
+  }
+  if (first !== undefined) throw first.error;
 }

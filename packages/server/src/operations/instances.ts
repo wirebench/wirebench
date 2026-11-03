@@ -65,6 +65,8 @@ export interface ServerInstance {
   readonly mode: InstanceMode;
   /** Runs `listener` on every heartbeat; a failure is logged and is the listener's own. */
   onBeat(listener: () => Promise<void>): void;
+  /** Every instance renewed within {@link DEAD_MS}, this one included: the live hub drops a dead holder's presence. */
+  live(): Promise<InstanceRow[]>;
 }
 
 export interface InstanceRegistryDeps {

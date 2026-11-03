@@ -30,7 +30,7 @@ import {
 import type { Database } from './db/querier.js';
 import { loadMigrations, migrate, MIGRATIONS_DIR, pendingMigrations, type Migration } from './db/migrate.js';
 import { APPLICATION_NAME, createDatabase, openSession } from './db/pool.js';
-import { NotificationBus } from './operations/bus.js';
+import { BusSignals, NotificationBus } from './operations/bus.js';
 import { checkAppRole, checkPostgresVersion } from './tenancy/checks.js';
 import { allowsMultipleInstances, InstanceRegistry, licenseLapseWatch } from './operations/instances.js';
 import { OPERATIONS_MIGRATIONS_DIR } from './operations/migrations.js';
@@ -578,6 +578,8 @@ export async function startServer(
     // A test's start-up without 0020 has no 0022 either, so no table to write.
     record: tenantsLoaded,
   });
+  // The modules register on these before the bus exists; the bus is attached to them once made.
+  const busSignals = new BusSignals();
   const ctx: ServerContext = {
     config,
     tenancy,
@@ -588,6 +590,7 @@ export async function startServer(
     egress: egressPolicyOf(config),
     hooks: serverHooks(),
     instance: registry,
+    bus: busSignals,
     license: permissiveLicense(),
   };
   let app: FastifyInstance;
@@ -659,6 +662,7 @@ export async function startServer(
     scopeFor: async (tenantId) => (await directoryOf(tenancy).get(tenantId))?.scope,
     log: app.log,
   });
+  busSignals.attach(bus);
   try {
     await bus.start();
   } catch (error) {

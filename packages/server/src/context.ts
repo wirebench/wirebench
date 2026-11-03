@@ -14,6 +14,7 @@ import type {
 } from '@wirebench/engine';
 import type { ModuleConfig } from './config.js';
 import { requireFeature } from './licensing/gate.js';
+import type { BusEvents } from './operations/bus.js';
 import type { ServerInstance } from './operations/instances.js';
 import type { RepoStore } from './repos/repo-store.js';
 import type { TenantScope } from './tenancy/scope.js';
@@ -580,6 +581,11 @@ export interface ServerContext {
    * renews on, which the host leases renew on too.
    */
   readonly instance: ServerInstance;
+  /**
+   * When the notification bus listens, the first time and after each loss (spec §20.3): the live hub resyncs its
+   * rooms there. Announcing goes through `hooks`, never here.
+   */
+  readonly bus: BusEvents;
   /** Replaced by the licensing module in `register()`; the one field a module may assign (licensing spec §5.1). */
   license: LicenseService;
 }

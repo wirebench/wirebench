@@ -104,6 +104,19 @@ export async function findUserById(db: TenantQuerier, id: string): Promise<UserR
   return first((await db.query(`select ${USER_COLUMNS} from users where id = $1`, [id])).rows, USER_DATES);
 }
 
+/**
+ * The display names of `ids` that are users here, by id: what live presence shows for another instance's users,
+ * whose ids alone cross the bus (hosted edition spec §20.3). Never the email.
+ */
+export async function displayNamesOf(db: TenantQuerier, ids: readonly string[]): Promise<Map<string, string>> {
+  if (ids.length === 0) return new Map();
+  const rows = await db.query<{ id: string; name: string }>(
+    'select id, display_name as name from users where id = any($1::text[])',
+    [[...ids]],
+  );
+  return new Map(rows.rows.map((row) => [row.id, row.name]));
+}
+
 export async function insertUser(
   db: TenantQuerier,
   input: {

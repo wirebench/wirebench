@@ -10,6 +10,7 @@ import {
   type ServerHooks,
 } from '../../src/context.js';
 import type { Database } from '../../src/db/querier.js';
+import { BusSignals } from '../../src/operations/bus.js';
 import type { ServerInstance } from '../../src/operations/instances.js';
 import type { TenantQuerier } from '../../src/tenancy/tenant-db.js';
 import type { RepoStore } from '../../src/repos/repo-store.js';
@@ -43,6 +44,7 @@ export function testInstance(
     beat: async () => {
       await Promise.all(listeners.map((listener) => listener()));
     },
+    live: () => Promise.resolve([]),
   };
 }
 
@@ -100,6 +102,7 @@ export async function testContext(
     egress: { denyPrivate: false },
     hooks: serverHooks(),
     instance: testInstance(),
+    bus: new BusSignals(),
     license: permissiveLicense(),
     ...rest,
     tenancy:
