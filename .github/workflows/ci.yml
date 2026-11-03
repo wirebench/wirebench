@@ -18,8 +18,11 @@ concurrency:
 # a shard. The organisation's plan runs at most 20 jobs at once, five of them on macOS, so more shards stop
 # paying once the runners queue. macOS is the tight one, which is why its Vitest run waits for `main` (`test`).
 #
-# None of the jobs waits for another except on `changes` (and `coverage-report` on `coverage`): each fails
-# on its own, and serialising them only stretched the wall-clock.
+# No job waits for another's result: each fails on its own. Most start as soon as `changes` has run; the
+# short ones (a few minutes each) start once `check` has finished, red or green, so that the long shards get
+# the first of the 20 runners and the short jobs fill the slots that `check` and the first shards give back.
+# Started all at once, the runners went to whichever jobs GitHub picked first, and a long shard that waited
+# for one finished last. `coverage-report` waits for `coverage`, whose blobs it merges.
 
 jobs:
   # Which kind of change this is. A change that touches only documentation — `docs/`, the documentation and
@@ -245,8 +248,9 @@ jobs:
   # runs the same file with WIREBENCH_KERBEROS_TESTS unset (it skips, saying so); this job builds a
   # throwaway realm and runs it for real, once, on Linux.
   kerberos-integration:
-    needs: changes
-    if: needs.changes.outputs.code == 'true'
+    # A short job: it starts after `check` (see `jobs`).
+    needs: [changes, check]
+    if: ${{ !cancelled() && needs.changes.outputs.code == 'true' }}
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -264,8 +268,9 @@ jobs:
       - run: WIREBENCH_KERBEROS_TESTS=1 pnpm vitest run --project engine-integration packages/engine/test/integration/auth/kerberos-real.test.ts
 
   wss-xmlsec:
-    needs: changes
-    if: needs.changes.outputs.code == 'true'
+    # A short job: it starts after `check` (see `jobs`).
+    needs: [changes, check]
+    if: ${{ !cancelled() && needs.changes.outputs.code == 'true' }}
     strategy:
       # One OS's toolchain failing must not hide the other's result.
       fail-fast: false
@@ -380,8 +385,9 @@ jobs:
   # frozen 0019 fixture is loaded into the database and the data volume first, so the server's first start
   # upgrades a team install (0020, 0021, the data directory's move, the re-seal) before the same suite runs.
   browser-e2e:
-    needs: changes
-    if: needs.changes.outputs.code == 'true'
+    # A short job: it starts after `check` (see `jobs`).
+    needs: [changes, check]
+    if: ${{ !cancelled() && needs.changes.outputs.code == 'true' }}
     strategy:
       fail-fast: false
       matrix:
@@ -464,8 +470,9 @@ jobs:
   # frozen fixture (upgrade-compose.test.ts). Then the way back: the image built at 0019's commit starts on what
   # `admin tenancy revert` leaves (revert-0019-image.test.ts). Both skip everywhere else, for want of the images.
   server-upgrade:
-    needs: changes
-    if: needs.changes.outputs.code == 'true'
+    # A short job: it starts after `check` (see `jobs`).
+    needs: [changes, check]
+    if: ${{ !cancelled() && needs.changes.outputs.code == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     services:
@@ -537,8 +544,9 @@ jobs:
   # The tenancy suites, revert round trip included, on the other supported PostgreSQL majors (Task 28 review m7):
   # 15 is the oldest the server accepts, and server-integration above runs everything on 16.
   tenancy-postgres:
-    needs: changes
-    if: needs.changes.outputs.code == 'true'
+    # A short job: it starts after `check` (see `jobs`).
+    needs: [changes, check]
+    if: ${{ !cancelled() && needs.changes.outputs.code == 'true' }}
     strategy:
       fail-fast: false
       matrix:
@@ -581,8 +589,9 @@ jobs:
   # runs the same four checks the other recipes run (packages/cli/Dockerfile, task 3 of #31);
   # `--mock` then serves a mock from the image and stops it with `docker stop` (#61).
   image-smoke:
-    needs: changes
-    if: needs.changes.outputs.code == 'true'
+    # A short job: it starts after `check` (see `jobs`).
+    needs: [changes, check]
+    if: ${{ !cancelled() && needs.changes.outputs.code == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
