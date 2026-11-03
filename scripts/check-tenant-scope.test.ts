@@ -301,6 +301,30 @@ describe('check:tenant-scope', () => {
     ]);
   });
 
+  it('keeps pg_notify and LISTEN to src/operations/ (slice 5, spec §20.3)', () => {
+    for (const file of ['packages/server/src/live/hub.ts', 'packages/server/src/tenancy/tenancy.ts']) {
+      for (const text of [
+        "db.query('select pg_notify($1, $2)', [channel, payload])",
+        "db.query('SELECT PG_NOTIFY ($1, $2)')",
+        'session.query(`LISTEN "${channel}"`)',
+        "session.query('listen wirebench_bus_1a2b')",
+        "session.query('UNLISTEN *;')",
+      ]) {
+        expect(findRawDatabase(file, text), `${file}: ${text}`).toMatchObject([{ rule: 'notify-sql' }]);
+      }
+      // Prose that starts with the word, and a comment, pass.
+      expect(
+        findRawDatabase(file, "const a = 'Listen address.';\nconst b = 'cannot listen on 8080';\n// pg_notify(x)"),
+      ).toEqual([]);
+    }
+    expect(
+      findRawDatabase(
+        'packages/server/src/operations/bus.ts',
+        "db.query('select pg_notify($1, $2)'); q('LISTEN \"x\"')",
+      ),
+    ).toEqual([]);
+  });
+
   it('finds a planted file of each new kind in a tree', async () => {
     const root = await tree({
       'packages/server/src/agent/raw.ts': "import { createDatabase } from '../db/pool.js';\n",

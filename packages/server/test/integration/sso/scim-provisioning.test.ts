@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, it } from 'vitest';
 import { auditLogModule } from '../../../src/audit-log/module.js';
-import type { AuditInput } from '../../../src/context.js';
+import { local, type AuditInput } from '../../../src/context.js';
 import { ssoModule } from '../../../src/sso/module.js';
 import * as repo from '../../../src/sso/repo.js';
 import * as teamsRepo from '../../../src/teams/repo.js';
@@ -50,10 +50,12 @@ describeDb('group → team links and provisioned memberships (saml-scim spec §3
     bob = await signedInUser(h, { email: 'bob@example.com' });
     events = recordingAudit(h.hooks);
     access = [];
-    h.hooks.accessChanged.push((event) => {
-      if (event.teamId !== undefined && event.userId !== undefined)
-        access.push({ teamId: event.teamId, userId: event.userId });
-    });
+    h.hooks.accessChanged.push(
+      local((event) => {
+        if (event.teamId !== undefined && event.userId !== undefined)
+          access.push({ teamId: event.teamId, userId: event.userId });
+      }),
+    );
   });
   afterEach(async () => {
     await h.close();

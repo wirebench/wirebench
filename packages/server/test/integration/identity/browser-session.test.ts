@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, it } from 'vitest';
-import type { ServerModule, SessionEnded } from '../../../src/context.js';
+import { local, type ServerModule, type SessionEnded } from '../../../src/context.js';
 import { identitySettings } from '../../../src/identity/env.js';
 import { requireUser } from '../../../src/identity/guard.js';
 import * as repo from '../../../src/identity/repo.js';
@@ -101,9 +101,11 @@ describeDb('cookie sessions on the identity guard (hosted spec §17.2)', () => {
 
   it('signs a cookie caller out: revokes the row, clears the cookie, announces sessionEnded', async () => {
     const ended: SessionEnded[] = [];
-    h.hooks.sessionEnded.push((event) => {
-      ended.push(event);
-    });
+    h.hooks.sessionEnded.push(
+      local((event) => {
+        ended.push(event);
+      }),
+    );
     const alice = await signedInUser(h, { email: 'alice@example.com', kind: 'browser' });
     const res = await h.app.inject({
       method: 'POST',

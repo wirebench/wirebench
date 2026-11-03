@@ -19,7 +19,7 @@ import {
   type TerminalShareInfo,
 } from '@wirebench/engine';
 import type { FastifyInstance, FastifyRequest, preHandlerAsyncHookHandler } from 'fastify';
-import { auditIp, auditSource, recordAudit, type ServerContext, type ServerModule } from '../context.js';
+import { auditIp, cluster, auditSource, recordAudit, type ServerContext, type ServerModule } from '../context.js';
 import { pendingWrites, type PendingWrites } from '../pending-writes.js';
 import { identitySettings } from '../identity/env.js';
 import { callerForToken } from '../identity/guard.js';
@@ -196,14 +196,19 @@ export function terminalSharesModule(options: TerminalSharesOptions = {}): Serve
       };
       heartbeat = setTimer(beat, TERMINAL_SHARE_LIMITS.heartbeatMs);
 
-      ctx.hooks.accessChanged.push((event) => {
-        registry.recheck(event.tenantId).catch((error: unknown) => {
-          ctx.log.warn({ err: error }, 'terminal share access re-check failed');
-        });
-      });
-      ctx.hooks.sessionEnded.push((event) => {
-        registry.sessionEnded(event);
-      });
+      // `cluster`: an access change or a session ended on any instance reaches the shares held here (spec §20.3).
+      ctx.hooks.accessChanged.push(
+        cluster((event) => {
+          registry.recheck(event.tenantId).catch((error: unknown) => {
+            ctx.log.warn({ err: error }, 'terminal share access re-check failed');
+          });
+        }),
+      );
+      ctx.hooks.sessionEnded.push(
+        cluster((event) => {
+          registry.sessionEnded(event);
+        }),
+      );
       app.addHook('onClose', async () => {
         heartbeat?.cancel();
         registry.closeAll();

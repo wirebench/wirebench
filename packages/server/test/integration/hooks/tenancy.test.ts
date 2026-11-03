@@ -5,7 +5,7 @@
  */
 import { afterEach, beforeEach, expect, it } from 'vitest';
 import type { SyncChange, SyncPushCommit } from '@wirebench/engine';
-import type { CaptureReceivedEvent, HeadMovedEvent, HooksChangedEvent } from '../../../src/context.js';
+import { local, type CaptureReceivedEvent, type HeadMovedEvent, type HooksChangedEvent } from '../../../src/context.js';
 import { ciTokensModule } from '../../../src/ci-tokens/module.js';
 import { hooksModule } from '../../../src/hooks/module.js';
 import { syncModule } from '../../../src/sync/module.js';
@@ -43,9 +43,9 @@ describeDb('server-sync, webhook capture and CI tokens in a tenant (tenancy Task
     const heads: HeadMovedEvent[] = [];
     const captures: CaptureReceivedEvent[] = [];
     const changed: HooksChangedEvent[] = [];
-    h.hooks.headMoved.push((event) => heads.push(event));
-    h.hooks.captureReceived.push((event) => captures.push(event));
-    h.hooks.hooksChanged.push((event) => changed.push(event));
+    h.hooks.headMoved.push(local((event) => heads.push(event)));
+    h.hooks.captureReceived.push(local((event) => captures.push(event)));
+    h.hooks.hooksChanged.push(local((event) => changed.push(event)));
     h.statements.entries.length = 0;
     const ok = async <T>(status: number, request: Promise<{ readonly status: number; readonly body: T }>) => {
       const res = await request;

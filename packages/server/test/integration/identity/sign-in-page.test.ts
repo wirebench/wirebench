@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import type { SessionEnded } from '../../../src/context.js';
+import { local, type SessionEnded } from '../../../src/context.js';
 import type { OidcProvider } from '../../../src/identity/oidc.js';
 import * as repo from '../../../src/identity/repo.js';
 import { recordingAudit } from '../../helpers/context.js';
@@ -142,9 +142,11 @@ describeDb('the sign-in page and local form sign-in (hosted spec §17.2)', () =>
       const bob = await signedInUser(h, { email: 'bob@example.com', kind: 'browser' });
       const aliceBrowser = await signedInUser(h, { email: 'alice2@example.com', kind: 'browser' });
       const ended: SessionEnded[] = [];
-      h.hooks.sessionEnded.push((event) => {
-        ended.push(event);
-      });
+      h.hooks.sessionEnded.push(
+        local((event) => {
+          ended.push(event);
+        }),
+      );
       const events = recordingAudit(h.hooks);
       const formWithCookie = (token: string) =>
         h.app.inject({

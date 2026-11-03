@@ -1,6 +1,6 @@
 import { afterEach, expect, it } from 'vitest';
 import type { Capture, CaptureSummary, CatchUrl } from '@wirebench/engine';
-import type { HooksChanged } from '../../../src/context.js';
+import { local, type HooksChanged } from '../../../src/context.js';
 import { newId } from '../../../src/identity/tokens.js';
 import * as teamsRepo from '../../../src/teams/repo.js';
 import { describeDb } from '../../helpers/database.js';
@@ -32,9 +32,11 @@ async function setUp(env: Record<string, string> = {}): Promise<Cast> {
     await teamsRepo.upsertGrant(h.tdb, { workspaceId: id, userId: editor.user.id, role: 'editor', at: h.clock.now });
   }
   const heard: HooksChanged[] = [];
-  h.hooks.hooksChanged.push((event) => {
-    heard.push(event);
-  });
+  h.hooks.hooksChanged.push(
+    local((event) => {
+      heard.push(event);
+    }),
+  );
   return { h, admin, editor, viewer, stranger, workspaceId, otherWorkspaceId, heard };
 }
 

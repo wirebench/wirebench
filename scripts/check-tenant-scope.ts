@@ -41,6 +41,8 @@
  * - **No `server_instances` outside `src/operations/`** (spec §20.2), `src/tenancy/` included: the one unscoped
  *   table a running server writes, which names processes, so only the instance registry and its readers there
  *   touch it.
+ * - **No `pg_notify` and no `LISTEN` outside `src/operations/`** (spec §20.3): the notification bus is the one
+ *   sender and listener, so every payload goes through its codec, which carries ids only.
  *
  * `node scripts/check-tenant-scope.ts` prints the result and exits non-zero, listing `file:line`, on any hit.
  * Wired into `pnpm check` as `pnpm check:tenant-scope`. ESLint's config is protected, which is why this is a
@@ -85,6 +87,11 @@ export const TENANCY_DIR = 'packages/server/src/tenancy/';
 export const OPERATIONS_DIR = 'packages/server/src/operations/';
 /** The instance table, by name, in SQL text. */
 const INSTANCES_SQL = /(?<![\w"])"?server_instances"?(?![\w"])/i;
+/**
+ * The notification bus's SQL (spec §20.3): `pg_notify(` anywhere, and a whole `LISTEN`/`UNLISTEN` statement, so a
+ * sentence that starts with "Listen" is not one.
+ */
+const NOTIFY_SQL: readonly RegExp[] = [/\bpg_notify\s*\(/i, /^\s*(?:un)?listen\s+(?:"[^"]*"?|\w+|\*)\s*;?\s*$/i];
 
 /** Where the configured URL may be read: the config itself, and the tenant URL functions. */
 export const PUBLIC_URL_ALLOWED: readonly string[] = ['packages/server/src/config.ts', URLS_FILE];
@@ -147,7 +154,8 @@ export interface ScopeHit {
     | 'raw-db'
     | 'tenant-sql'
     | 'for-each-tenant'
-    | 'instances-sql';
+    | 'instances-sql'
+    | 'notify-sql';
 }
 
 const PUBLIC_URL = 'publicUrl';
@@ -291,6 +299,7 @@ export function findRawDatabase(file: string, content: string): ScopeHit[] {
       );
       for (const rule of rules) hit(node, rule);
       if (!inOperations && INSTANCES_SQL.test(text)) hit(node, 'instances-sql');
+      if (!inOperations && NOTIFY_SQL.some((pattern) => pattern.test(text))) hit(node, 'notify-sql');
     }
     if (ts.isIdentifier(node) && node.text === 'for_each_tenant') {
       hit(node, 'for-each-tenant');
@@ -339,6 +348,7 @@ if (process.argv[1] !== undefined && fileURLToPath(import.meta.url) === process.
       'tenant-sql': 'SQL that sets the tenant or reads the tenants table outside src/tenancy/',
       'for-each-tenant': 'for_each_tenant is for migrations only',
       'instances-sql': 'server_instances outside src/operations/',
+      'notify-sql': 'pg_notify or LISTEN outside src/operations/',
     } as const;
     for (const hit of hits) console.error(`${hit.file}:${String(hit.line)}: ${WHAT[hit.rule]}: ${hit.text}`);
     console.error('A module takes its scope, and its URL, from the request or the job loop (spec §19.5, §19.8).');

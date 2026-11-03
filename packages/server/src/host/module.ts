@@ -29,7 +29,7 @@ import { isWirebenchError, WirebenchError } from '@wirebench/engine';
 import type { FastifyInstance } from 'fastify';
 import type { WebSocket } from 'ws';
 import { instanceModeOf } from '../config.js';
-import { auditIp, recordAudit, type AuditInput, type ServerContext, type ServerModule } from '../context.js';
+import { auditIp, cluster, recordAudit, type AuditInput, type ServerContext, type ServerModule } from '../context.js';
 import { sessionToken } from '../identity/cookies.js';
 import { identitySettings } from '../identity/env.js';
 import { tokenByHash } from '../identity/repo.js';
@@ -356,9 +356,12 @@ export function hostModule(options: HostModuleOptions = {}): ServerModule {
         });
       });
 
-      ctx.hooks.sessionEnded.push((event) => {
-        instances.sessionEnded(event);
-      });
+      // `cluster`: a session ended on any instance closes the host instances held here (spec §20.3).
+      ctx.hooks.sessionEnded.push(
+        cluster((event) => {
+          instances.sessionEnded(event);
+        }),
+      );
       app.addHook('onClose', async () => {
         await instances.closeAll();
         // The pool closes after the app, so every secret audit row is written first.

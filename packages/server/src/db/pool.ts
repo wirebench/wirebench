@@ -113,6 +113,8 @@ export interface Session extends Querier {
   readonly first?: Readonly<Record<string, unknown>>;
   /** Called once when the connection ends or fails, not after `close()`. */
   onLost(listener: (error: Error) => void): void;
+  /** Called with every `NOTIFY` this session hears once it has run `LISTEN` (the notification bus, spec §20.3). */
+  onNotification(listener: (channel: string, payload: string) => void): void;
   close(): Promise<void>;
 }
 
@@ -163,12 +165,19 @@ export async function openSession(connectionString: string, options: SessionOpti
   };
   client.on('error', (error) => fire(error));
   client.on('end', () => fire(new Error('the connection ended')));
+  let heard: ((channel: string, payload: string) => void) | undefined;
+  client.on('notification', (message) => {
+    if (!closed) heard?.(message.channel, message.payload ?? '');
+  });
   return {
     ...querierOf(client),
     pid: pidRow.rows[0]!.pid,
     ...(options.first !== undefined ? { first: pidRow.rows[0]! } : {}),
     onLost(listener) {
       lost = listener;
+    },
+    onNotification(listener) {
+      heard = listener;
     },
     async close() {
       closed = true;

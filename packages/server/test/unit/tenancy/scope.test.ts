@@ -5,7 +5,7 @@ import { checkAppRole, checkPostgresVersion } from '../../../src/tenancy/checks.
 import { forEachTenant, STOP_PASS } from '../../../src/tenancy/jobs.js';
 import { scopeOf, type TenantScope } from '../../../src/tenancy/scope.js';
 import { SET_TENANT, tenantDbFactory } from '../../../src/tenancy/tenant-db.js';
-import { announce } from '../../../src/context.js';
+import { announce, Announcements, local } from '../../../src/context.js';
 import { TenantDirectory } from '../../../src/tenancy/directory.js';
 import { directoryOf } from '../../../src/tenancy/tenancy.js';
 import { testContext } from '../../helpers/context.js';
@@ -467,7 +467,9 @@ describe('announcements run outside the tenant unit (Task 6 re-review R4)', () =
     const warn = vi.fn();
     await tenancy(A).transaction(async (tx) => {
       await tx.query('select 0');
-      announce([querying(tenancy)], {}, { warn } as unknown as FastifyBaseLogger);
+      const listeners = new Announcements<object>('tenantsChanged');
+      listeners.push(local(querying(tenancy)));
+      announce(listeners, {}, { warn } as unknown as FastifyBaseLogger);
     });
     await vi.waitFor(() => {
       expect(log.entries.filter((entry) => entry.text === 'select 1')).toHaveLength(1);

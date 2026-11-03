@@ -29,7 +29,8 @@ import {
 } from './context.js';
 import type { Database } from './db/querier.js';
 import { loadMigrations, migrate, MIGRATIONS_DIR, pendingMigrations, type Migration } from './db/migrate.js';
-import { createDatabase } from './db/pool.js';
+import { APPLICATION_NAME, createDatabase, openSession } from './db/pool.js';
+import { NotificationBus } from './operations/bus.js';
 import { checkAppRole, checkPostgresVersion } from './tenancy/checks.js';
 import { allowsMultipleInstances, InstanceRegistry, licenseLapseWatch } from './operations/instances.js';
 import { OPERATIONS_MIGRATIONS_DIR } from './operations/migrations.js';
@@ -76,6 +77,8 @@ export interface RunningServer {
   /** The server's own pool, which no module sees (spec §19.8 guard 2): for the start-up's tests. */
   readonly db: Database;
   readonly port: number;
+  /** The notification bus (spec §20.3): for the start-up's tests and the metrics. */
+  readonly bus: NotificationBus;
   /** Stops accepting, drains in-flight requests and queued repository work, closes the pool. Idempotent. */
   close(): Promise<void>;
 }
@@ -402,6 +405,9 @@ export async function runMigrate(
   }
 }
 
+/** What the bus's listening connection is called in `pg_stat_activity`: a server's, so a revert waits for it. */
+const BUS_APPLICATION_NAME = `${APPLICATION_NAME}-bus`;
+
 export async function startServer(
   env: NodeJS.ProcessEnv,
   io: ServerIo,
@@ -644,10 +650,28 @@ export async function startServer(
       }),
     );
   }
+  // The notification bus (spec §20.3): on the running lock's URL, a direct connection that can hold `LISTEN`.
+  const bus = new NotificationBus({
+    db,
+    holder: registry.holder,
+    hooks: ctx.hooks,
+    open: () => openSession(migrationUrl, { applicationName: BUS_APPLICATION_NAME }),
+    scopeFor: async (tenantId) => (await directoryOf(tenancy).get(tenantId))?.scope,
+    log: app.log,
+  });
+  try {
+    await bus.start();
+  } catch (error) {
+    await app.close();
+    await heldLock.release();
+    await db.close();
+    throw new StartupError(ExitCode.Migration, `the notification bus could not listen: ${migrationFailure(error)}`);
+  }
   try {
     await registry.start();
   } catch (error) {
     await app.close();
+    await bus.stop(0);
     await heldLock.release();
     await db.close();
     throw new StartupError(ExitCode.Migration, `the instance row could not be written: ${migrationFailure(error)}`);
@@ -657,6 +681,7 @@ export async function startServer(
     await app.listen({ host: config.host, port: config.port });
   } catch (error) {
     await app.close();
+    await bus.stop(0);
     await registry.stop();
     await heldLock.release();
     await db.close();
@@ -698,6 +723,8 @@ export async function startServer(
       // work (a push looks up its author and writes commits), so the pool outlives that work. From
       // here on, new repository work is refused with server-shutting-down.
       if (!lost) await repos.drain();
+      // After the modules closed and the repository work ended, whose announcements it still carries (best effort).
+      await bus.stop(lost ? 0 : undefined);
       // A clean stop deletes its own row; a crash leaves it to the next renew's sweep.
       await registry.stop();
       await heldLock.release();
@@ -739,5 +766,5 @@ export async function startServer(
     void close();
   }
   for (const name of SIGNALS) signals.on(name, onSignal);
-  return { app, ctx: { ...ctx, log: app.log }, db, port, close };
+  return { app, ctx: { ...ctx, log: app.log }, db, port, bus, close };
 }

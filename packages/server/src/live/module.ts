@@ -12,7 +12,7 @@
 import fastifyWebsocket from '@fastify/websocket';
 import { LIVE_CAPABILITY, LIVE_CLOSE, LIVE_LIMITS } from '@wirebench/engine';
 import type { FastifyInstance, onRequestHookHandler } from 'fastify';
-import type { ServerContext, ServerModule } from '../context.js';
+import { cluster, type ServerContext, type ServerModule } from '../context.js';
 import { tenantUrl, type UrlConfig } from '../tenancy/urls.js';
 import { identitySettings } from '../identity/env.js';
 import { callerForToken } from '../identity/guard.js';
@@ -160,24 +160,37 @@ export function liveModule(options: LiveOptions = {}): ServerModule {
         runLiveSocket(socket, loopFor(request.tenant));
       });
 
-      ctx.hooks.headMoved.push((event) => {
-        hub.headMoved(event);
-      });
-      ctx.hooks.accessChanged.push((event) => {
-        hub.accessChanged(event);
-      });
-      ctx.hooks.sessionEnded.push((event) => {
-        hub.sessionEnded(event);
-      });
-      ctx.hooks.captureReceived.push((event) => {
-        hub.captureReceived(event);
-      });
-      ctx.hooks.hooksChanged.push((event) => {
-        hub.hooksChanged(event);
-      });
-      ctx.hooks.scheduleRunFinished.push((event) => {
-        hub.scheduleRunFinished(event);
-      });
+      // `cluster`: every instance's events reach this process's sockets (spec §20.3).
+      ctx.hooks.headMoved.push(
+        cluster((event) => {
+          hub.headMoved(event);
+        }),
+      );
+      ctx.hooks.accessChanged.push(
+        cluster((event) => {
+          hub.accessChanged(event);
+        }),
+      );
+      ctx.hooks.sessionEnded.push(
+        cluster((event) => {
+          hub.sessionEnded(event);
+        }),
+      );
+      ctx.hooks.captureReceived.push(
+        cluster((event) => {
+          hub.captureReceived(event);
+        }),
+      );
+      ctx.hooks.hooksChanged.push(
+        cluster((event) => {
+          hub.hooksChanged(event);
+        }),
+      );
+      ctx.hooks.scheduleRunFinished.push(
+        cluster((event) => {
+          hub.scheduleRunFinished(event);
+        }),
+      );
       ctx.meta.addCapability(LIVE_CAPABILITY);
       heartbeat = setTimer(beat, LIVE_LIMITS.heartbeatMs);
     },

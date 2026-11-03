@@ -130,6 +130,73 @@ export interface AgentUnpaired {
 /** An after-commit listener: synchronous, never awaited, and its throw never reaches the caller (R3). */
 export type Announcement<E> = (event: E) => void;
 
+/**
+ * Where a listener hears an announcement (hosted edition spec §20.3):
+ *
+ * - **`cluster`**: from this process and, through the notification bus, from every other instance. For a listener
+ *   that keeps in-memory state in step: the live hub, the host instances, the terminal-share registry, the tenant
+ *   map and the data-key cache.
+ * - **`local`**: from this process only. For an effect that must happen once in the fleet, like the audit module's
+ *   `licenseChanged` row.
+ */
+export type ListenerKind = 'cluster' | 'local';
+
+declare const listenerBrand: unique symbol;
+
+/** A listener with its kind: made only by {@link cluster} or {@link local}, so a bare function is a type error. */
+export interface Listener<E> {
+  readonly kind: ListenerKind;
+  readonly fn: Announcement<E>;
+  readonly [listenerBrand]: true;
+}
+
+/** A listener that hears this process's announcements and every other instance's. */
+export function cluster<E>(fn: Announcement<E>): Listener<E> {
+  return Object.freeze({ kind: 'cluster', fn }) as Listener<E>;
+}
+
+/** A listener that hears this process's announcements only. */
+export function local<E>(fn: Announcement<E>): Listener<E> {
+  return Object.freeze({ kind: 'local', fn }) as Listener<E>;
+}
+
+/**
+ * The tenant directory changed: a tenant created, renamed or its status moved (spec §20.3). `tenantId` is the one
+ * that changed, when the writer knows it; the listeners reload the whole map either way.
+ */
+export interface TenantsChangedEvent {
+  readonly tenantId?: string;
+}
+
+/** A tenant's data key was written, or every tenant's (a re-wrap) when `tenantId` is absent (spec §20.3). */
+export interface TenantKeysChangedEvent {
+  readonly tenantId?: string;
+}
+
+/**
+ * One instance's users in one room (spec §20.3): `users` are user ids only, never names (ADR-0013); a receiving hub
+ * looks the display names up in the tenant. `holder` is the announcing process's id.
+ */
+export interface PresenceChangedEvent {
+  readonly tenantId: string;
+  readonly workspaceId: string;
+  readonly holder: string;
+  readonly users: readonly string[];
+}
+
+/** Drop every room's users `holder` announced (spec §20.3): it lost its bus, or it is stopping. */
+export interface PresenceResetEvent {
+  readonly holder: string;
+}
+
+/**
+ * Something about the tenant changed that the bus could not carry (an event over the payload limit): each hub
+ * resyncs that tenant's rooms (spec §20.3). Made by the bus, never by a module.
+ */
+export interface ResyncEvent {
+  readonly tenantId: string;
+}
+
 /** A license was installed or removed (licensing spec §3.9); fired after the statement that stored or deleted it. */
 export interface LicenseChanged {
   readonly action: 'installed' | 'removed';
@@ -221,37 +288,119 @@ export const ANONYMOUS_SOURCE: AuditSource = { actor: { kind: 'anonymous' } };
  *   `scheduleRunFinished`; scheduled-runs spec §3.5; `agentUnpaired`; hosted edition spec §18.2) run through {@link announce} after
  *   the caller's statement or transaction has resolved, on the success path. They are never awaited
  *   and never run inside a transaction, and a throw is logged and swallowed. A rolled-back
- *   transaction never reaches the line that announces.
+ *   transaction never reaches the line that announces. Slice 5 adds `tenantsChanged`, `tenantKeysChanged`,
+ *   `presenceChanged`, `presenceReset` and the bus's own `resync` (spec §20.3). Each listener is registered as
+ *   {@link cluster} or {@link local}, and the bus carries every announcement to the other instances' `cluster` ones.
  */
-export interface ServerHooks {
+export interface ServerHooks extends AnnouncementLists {
   readonly invitationAccepted: InvitationAcceptedHook[];
   readonly audit: AuditHook[];
-  readonly headMoved: Announcement<HeadMovedEvent>[];
-  readonly accessChanged: Announcement<AccessChangedEvent>[];
-  readonly sessionEnded: Announcement<SessionEndedEvent>[];
-  readonly captureReceived: Announcement<CaptureReceivedEvent>[];
-  readonly hooksChanged: Announcement<HooksChangedEvent>[];
-  readonly licenseChanged: Announcement<LicenseChangedEvent>[];
-  readonly scheduleRunFinished: Announcement<ScheduleRunFinishedEvent>[];
-  readonly agentUnpaired: Announcement<AgentUnpaired>[];
+}
+
+/** Every announcement's event, by the name its list has in {@link ServerHooks} and its `kind` on the bus. */
+export interface AnnouncementEvents {
+  readonly headMoved: HeadMovedEvent;
+  readonly accessChanged: AccessChangedEvent;
+  readonly sessionEnded: SessionEndedEvent;
+  readonly captureReceived: CaptureReceivedEvent;
+  readonly hooksChanged: HooksChangedEvent;
+  readonly licenseChanged: LicenseChangedEvent;
+  readonly scheduleRunFinished: ScheduleRunFinishedEvent;
+  readonly agentUnpaired: AgentUnpaired;
+  readonly tenantsChanged: TenantsChangedEvent;
+  readonly tenantKeysChanged: TenantKeysChangedEvent;
+  readonly presenceChanged: PresenceChangedEvent;
+  readonly presenceReset: PresenceResetEvent;
+  readonly resync: ResyncEvent;
+}
+
+export type AnnouncementKind = keyof AnnouncementEvents;
+
+export const ANNOUNCEMENT_KINDS: readonly AnnouncementKind[] = [
+  'headMoved',
+  'accessChanged',
+  'sessionEnded',
+  'captureReceived',
+  'hooksChanged',
+  'licenseChanged',
+  'scheduleRunFinished',
+  'agentUnpaired',
+  'tenantsChanged',
+  'tenantKeysChanged',
+  'presenceChanged',
+  'presenceReset',
+  'resync',
+];
+
+export type AnnouncementLists = { readonly [K in AnnouncementKind]: Announcements<AnnouncementEvents[K]> };
+
+/** Where a list's announcements go after the local listeners: the notification bus, once one is connected. */
+interface Outlet {
+  send?: (kind: AnnouncementKind, event: unknown) => void;
 }
 
 /**
+ * One announcement's listeners, in registration order, each `cluster` or `local` (spec §20.3). Every list of one
+ * {@link serverHooks} shares one outlet, which {@link connectBus} points at the bus.
+ */
+export class Announcements<E> {
+  readonly #listeners: Listener<E>[] = [];
+  readonly #outlet: Outlet;
+  readonly kind: AnnouncementKind;
+
+  constructor(kind: AnnouncementKind, outlet: Outlet = {}) {
+    this.kind = kind;
+    this.#outlet = outlet;
+  }
+
+  push(...listeners: Listener<E>[]): number {
+    return this.#listeners.push(...listeners);
+  }
+
+  get length(): number {
+    return this.#listeners.length;
+  }
+
+  /** Every listener, `local` and `cluster`: what an announcement in this process reaches. */
+  all(): readonly Listener<E>[] {
+    return this.#listeners;
+  }
+
+  /** The `cluster` listeners: what another instance's announcement reaches. */
+  clustered(): readonly Listener<E>[] {
+    return this.#listeners.filter((listener) => listener.kind === 'cluster');
+  }
+
+  /** Hands the event to the bus, if one is connected. Never throws. */
+  forward(event: E): void {
+    this.#outlet.send?.(this.kind, event);
+  }
+}
+
+const OUTLETS = new WeakMap<ServerHooks, Outlet>();
+
+/**
  * Every list empty. The admin CLI (`identity/cli.ts`) builds its own and registers no hub, so an
- * announcement there reaches nobody (live-updates spec §14).
+ * announcement there reaches nobody (live-updates spec §14), and connects no bus.
  */
 export function serverHooks(): ServerHooks {
-  return {
-    invitationAccepted: [],
-    audit: [],
-    headMoved: [],
-    accessChanged: [],
-    sessionEnded: [],
-    captureReceived: [],
-    hooksChanged: [],
-    licenseChanged: [],
-    scheduleRunFinished: [],
-    agentUnpaired: [],
+  const outlet: Outlet = {};
+  const lists = Object.fromEntries(ANNOUNCEMENT_KINDS.map((kind) => [kind, new Announcements(kind, outlet)]));
+  const hooks = { invitationAccepted: [], audit: [], ...lists } as unknown as ServerHooks;
+  OUTLETS.set(hooks, outlet);
+  return hooks;
+}
+
+/**
+ * Points every list of `hooks` at `send` (the bus's queue), or back at nothing. Returns the disconnect. A
+ * `ServerHooks` not made by {@link serverHooks} has no outlet and is left alone.
+ */
+export function connectBus(hooks: ServerHooks, send: (kind: AnnouncementKind, event: unknown) => void): () => void {
+  const outlet = OUTLETS.get(hooks);
+  if (outlet === undefined) return () => undefined;
+  outlet.send = send;
+  return () => {
+    if (outlet.send === send) delete outlet.send;
   };
 }
 
@@ -315,20 +464,38 @@ const ANNOUNCEMENT_FAILED = 'an announcement listener failed';
  * has its rejection caught the same way, so it can never become an unhandled rejection. Never throws
  * and never awaits: a push or an access change must not fail or wait because of the hub (§12).
  *
+ * Then the event goes to the notification bus's queue (spec §20.3), which carries it to the other instances'
+ * `cluster` listeners. This process's own listeners, of both kinds, have heard it already.
+ *
  * The listeners run outside any tenant unit (Task 6 re-review R4): nobody awaits them, so a listener that
  * queried through `ctx.tenancy.db` from inside a running unit would join it and make the unit fail with
  * `tenancy-unawaited`.
  */
-export function announce<E>(listeners: readonly Announcement<E>[], event: E, log: FastifyBaseLogger): void {
+export function announce<E>(listeners: Announcements<E>, event: E, log: FastifyBaseLogger): void {
   outsideTenantUnit(() => {
-    callListeners(listeners, event, log);
+    callListeners(listeners.all(), event, log);
+    try {
+      listeners.forward(event);
+    } catch (error) {
+      log.warn({ err: error }, 'an announcement could not be queued for the other instances');
+    }
   });
 }
 
-function callListeners<E>(listeners: readonly Announcement<E>[], event: E, log: FastifyBaseLogger): void {
-  for (const listener of listeners) {
+/**
+ * Another instance's announcement, from the bus (spec §20.3): the `cluster` listeners only, on the same terms as
+ * {@link announce}, and never forwarded again.
+ */
+export function deliverRemote<E>(listeners: Announcements<E>, event: E, log: FastifyBaseLogger): void {
+  outsideTenantUnit(() => {
+    callListeners(listeners.clustered(), event, log);
+  });
+}
+
+function callListeners<E>(listeners: readonly Listener<E>[], event: E, log: FastifyBaseLogger): void {
+  for (const { fn } of listeners) {
     try {
-      const returned: unknown = listener(event);
+      const returned: unknown = fn(event);
       if (returned instanceof Promise) {
         returned.catch((error: unknown) => log.warn({ err: error }, ANNOUNCEMENT_FAILED));
       }

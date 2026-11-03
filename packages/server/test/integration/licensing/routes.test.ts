@@ -1,7 +1,7 @@
 // packages/server/test/integration/licensing/routes.test.ts
 import type { LicenseState } from '@wirebench/engine';
 import { afterEach, expect, it } from 'vitest';
-import type { LicenseChangedEvent, ServerModule } from '../../../src/context.js';
+import { local, type LicenseChangedEvent, type ServerModule } from '../../../src/context.js';
 import { requireServerAdmin } from '../../../src/identity/guard.js';
 import * as repo from '../../../src/licensing/repo.js';
 import { describeDb } from '../../helpers/database.js';
@@ -40,7 +40,7 @@ async function setUp(): Promise<{
   const admin = await signedInUser(h, { email: 'admin@example.com', serverAdmin: true });
   const member = await signedInUser(h, { email: 'member@example.com' });
   const events: LicenseChangedEvent[] = [];
-  h.hooks.licenseChanged.push((event) => events.push(event));
+  h.hooks.licenseChanged.push(local((event) => events.push(event)));
   return { h, admin, member, events };
 }
 
