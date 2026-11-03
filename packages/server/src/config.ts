@@ -15,6 +15,10 @@ const LOG_LEVELS = ['fatal', 'error', 'warn', 'info', 'debug', 'trace'] as const
 export const SERVER_MODES = ['self-hosted', 'hosted'] as const;
 export type ServerMode = (typeof SERVER_MODES)[number];
 
+/** One process, or several on one database and one data volume (spec §20.1); hosted mode is always `multi`. */
+export const INSTANCE_MODES = ['single', 'multi'] as const;
+export type InstanceMode = (typeof INSTANCE_MODES)[number];
+
 /** Why `loadConfig` refuses `hosted` (spec §19.1). */
 export const HOSTED_REFUSED = 'hosted mode arrives with the control plane';
 
@@ -51,6 +55,26 @@ const keyText = z
     (value) => isCanonicalBase64(value) && Buffer.from(value, 'base64').length === 32,
     'must be 32 bytes, base64-encoded',
   );
+
+/**
+ * This instance's private address (spec §20.6): `http(s)://host:port`, an origin with its port spelled out, since the
+ * port is the internal listener's.
+ */
+const instanceUrlText = z.string().superRefine((value, ctx) => {
+  const fail = (message: string) => {
+    ctx.addIssue({ code: 'custom', message });
+  };
+  if (!URL.canParse(value)) return fail('must be a URL such as http://host:8091');
+  const url = new URL(value);
+  if (url.protocol !== 'http:' && url.protocol !== 'https:')
+    return fail('must be http://host:port or https://host:port');
+  if (url.hostname === '') return fail('must name a host');
+  if (url.username !== '' || url.password !== '') return fail('must not carry credentials');
+  if (url.port === '') return fail('must name a port: the internal listener’s, such as http://host:8091');
+  if (url.pathname !== '/' || url.search !== '' || url.hash !== '' || value.endsWith('/'))
+    return fail('must be an origin such as http://host:8091, with no path, query or trailing slash');
+  return undefined;
+});
 
 /** `localhost`, `127.0.0.0/8` or `::1`: where a plain-http collector may listen (issue #209). */
 export function isLoopback(hostname: string): boolean {
@@ -177,6 +201,8 @@ const inputSchema = z.object({
   secretsKey: keyText.transform((value) => Buffer.from(value, 'base64')).optional(),
   egressDenyPrivate: booleanText('false'),
   hostIdleMinutes: integerText(1, 1440, '30'),
+  instances: z.enum(INSTANCE_MODES).default('single'),
+  instanceUrl: instanceUrlText.optional(),
 });
 
 type ConfigKey = keyof z.input<typeof inputSchema>;
@@ -627,6 +653,23 @@ export const CONFIG_VARIABLES: readonly ConfigVariable[] = [
     description:
       'Minutes after a user’s last browser connection closes before the server stops that user’s host and frees its memory (1–1440). The user’s files stay.',
   },
+  {
+    env: 'WIREBENCH_SERVER_INSTANCES',
+    key: 'instances',
+    required: false,
+    defaultText: 'single',
+    secret: false,
+    description:
+      '`single`: one server process. `multi`: several instances against one database and one data volume, which needs an Enterprise license that is valid or in grace (the start is refused otherwise) and WIREBENCH_SERVER_INSTANCE_URL.',
+  },
+  {
+    env: 'WIREBENCH_SERVER_INSTANCE_URL',
+    key: 'instanceUrl',
+    required: false,
+    secret: false,
+    description:
+      'This instance’s private address, which the other instances reach it at: `http://host:port`, such as `http://10.0.0.5:8091`; the port is its internal listener’s. Required with `WIREBENCH_SERVER_INSTANCES=multi`.',
+  },
 ];
 
 /** One thing wrong with the environment, phrased without the offending value. */
@@ -765,6 +808,13 @@ export function loadConfig(env: NodeJS.ProcessEnv, version: string): ServerConfi
       message: 'is required when WIREBENCH_SERVER_BROWSER_CLIENT is on; set the key or turn the browser client off',
     });
   }
+  if (config.instances === 'multi' && config.instanceUrl === undefined) {
+    problems.push({
+      variable: 'WIREBENCH_SERVER_INSTANCE_URL',
+      message:
+        'is required when WIREBENCH_SERVER_INSTANCES is multi: the address the other instances reach this one at',
+    });
+  }
   if (!config.localAuth && config.oidcIssuer === undefined && config.samlIdpMetadata === undefined) {
     problems.push({
       variable: 'WIREBENCH_SERVER_LOCAL_AUTH',
@@ -799,6 +849,15 @@ export function forgetDatabaseUrls(): void {
 export function egressPolicyOf(config: Pick<ServerConfig, 'mode' | 'egressDenyPrivate'>): EgressPolicy {
   return { denyPrivate: config.mode === 'hosted' || config.egressDenyPrivate };
 }
+
+/** One instance or several (spec §20.1): hosted mode is always `multi`, whatever `WIREBENCH_SERVER_INSTANCES` says. */
+export function instanceModeOf(config: Pick<ServerConfig, 'mode' | 'instances'>): InstanceMode {
+  return config.mode === 'hosted' ? 'multi' : config.instances;
+}
+
+/** What `config check` and `serve` say about `multi` on a self-hosted server (spec §20.1, ruling 3). */
+export const MULTI_NEEDS_ENTERPRISE =
+  'WIREBENCH_SERVER_INSTANCES=multi needs an Enterprise license that is valid or in grace';
 
 /** The URL migrations run as: the owner's when it is set, else the one database URL. */
 export function migrationUrlOf(config: Pick<ServerConfig, 'databaseUrl' | 'migrationDatabaseUrl'>): string {

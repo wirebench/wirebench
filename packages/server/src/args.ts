@@ -41,6 +41,7 @@ export type ServerCommand =
    * checks it against the configuration, which the parser does not read).
    */
   | (TenantAdminCommand & { readonly tenant?: string })
+  | { readonly command: 'admin-instances' }
   | { readonly command: 'admin-tenancy-role'; readonly printSql: boolean }
   | { readonly command: 'admin-tenancy-check' }
   | { readonly command: 'admin-tenancy-status' }
@@ -84,6 +85,8 @@ Usage:
   wirebench-server admin schedules disable <id>
   wirebench-server admin schedules runs <id> [--limit <n>]
                                     A schedule's runs as NDJSON, newest first (default 50, at most 200)
+  wirebench-server admin instances  The server instances running on this database: holder, address,
+                                    version, age and last renew
   wirebench-server admin tenancy role [--print-sql]
                                     As the owner (WIREBENCH_SERVER_MIGRATION_DATABASE_URL), create the
                                     app role of WIREBENCH_SERVER_DATABASE_URL if missing and grant it its
@@ -104,7 +107,7 @@ Usage:
   wirebench-server --version
   wirebench-server --help
 
-Every admin command but admin tenancy takes --tenant <slug>: the tenant it works in. Hosted mode requires it;
+Every admin command but admin instances and admin tenancy takes --tenant <slug>: the tenant it works in. Hosted mode requires it;
 a self-hosted server has one tenant and refuses it.
 
 Configuration is read from WIREBENCH_SERVER_* environment variables; see README.md.
@@ -204,8 +207,8 @@ export function parseServerArgs(argv: readonly string[]): ServerCommand {
   }
   const tenant = parsed.values.tenant;
   if (tenant !== undefined) {
-    if (word !== 'admin' || second === 'tenancy') {
-      throw new UsageError('--tenant applies to the admin commands, not to admin tenancy');
+    if (word !== 'admin' || second === 'tenancy' || second === 'instances') {
+      throw new UsageError('--tenant applies to the admin commands, not to admin tenancy or admin instances');
     }
     if (!TENANT_SLUG.test(tenant))
       throw new UsageError('--tenant must be a tenant slug: lower-case letters, digits and -');
@@ -281,6 +284,9 @@ export function parseServerArgs(argv: readonly string[]): ServerCommand {
             default:
               throw new UsageError(SCHEDULES_USAGE);
           }
+        case 'instances':
+          if (third !== undefined) throw new UsageError('usage: wirebench-server admin instances');
+          return { command: 'admin-instances' };
         case 'tenancy':
           if (fourth !== undefined) throw new UsageError(TENANCY_USAGE);
           switch (third) {

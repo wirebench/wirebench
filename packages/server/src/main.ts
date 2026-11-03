@@ -1,8 +1,9 @@
 import { HELP_TEXT, parseServerArgs, UsageError } from './args.js';
-import { ConfigError, describeConfig, loadConfig } from './config.js';
+import { ConfigError, describeConfig, instanceModeOf, loadConfig, MULTI_NEEDS_ENTERPRISE } from './config.js';
 import { runAdmin } from './identity/cli.js';
 import { ExitCode, packageVersion, type ServerIo } from './io.js';
 import { BUILTIN_MODULES } from './modules.js';
+import { runInstances } from './operations/cli.js';
 import { runMigrate, startServer, StartupError, type StartOptions } from './serve.js';
 import {
   runTenancyCheck,
@@ -43,6 +44,12 @@ export async function main(
       }
       try {
         const config = loadConfig(io.env, packageVersion());
+        // Spec §20.1: the license is in the database, which `config check` does not read, so it says the rule.
+        if (instanceModeOf(config) === 'multi' && config.mode === 'self-hosted') {
+          io.stdout.write(
+            `instances: multi; ${MULTI_NEEDS_ENTERPRISE}: serve refuses with server-instances-need-enterprise otherwise\n`,
+          );
+        }
         if (config.oidcIssuer !== undefined) {
           io.stdout.write(
             `OIDC redirect URI to register at the issuer: ${operatorPublicUrl(config)}/api/v1/auth/oidc/callback\n`,
@@ -83,6 +90,8 @@ export async function main(
     case 'admin-scim-group-link':
     case 'admin-scim-group-unlink':
       return runAdmin(command, io);
+    case 'admin-instances':
+      return runInstances(io);
     case 'admin-tenancy-role':
       return runTenancyRole(command, io);
     case 'admin-tenancy-check':

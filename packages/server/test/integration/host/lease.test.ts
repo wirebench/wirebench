@@ -29,6 +29,7 @@ import type { TenantDbFactory } from '../../../src/tenancy/tenant-db.js';
 import { createTenancy, directoryOf, type Tenancy } from '../../../src/tenancy/tenancy.js';
 import { describeDb, testDatabase, type TestDatabase } from '../../helpers/database.js';
 import { statementLog, type StatementLog } from '../../helpers/tenancy.js';
+import { testInstance } from '../../helpers/context.js';
 import { manualTimers, type ManualTimers } from '../../helpers/timers.js';
 
 const IDLE_MS = 30 * 60_000;
@@ -426,6 +427,34 @@ describeDb('the host-instance lease (spec §19.9)', () => {
     expect(lost).toEqual([]);
     expect(leases.size).toBe(1);
     await leases.close();
+  });
+
+  it('on the instance heartbeat, renews on each beat and arms no renew timer of its own (spec §20.2)', async () => {
+    const timers = manualTimers();
+    const heartbeat = testInstance('single', 'holder-one');
+    const beating = new HostLeases({
+      db: tenancy.db,
+      holder: 'holder-two',
+      setTimer: timers.setTimer,
+      heartbeat,
+      log: () => undefined,
+    });
+    // Nothing held: a beat sends nothing.
+    await heartbeat.beat();
+    await beating.take(alice);
+    // One process, one timer: the beat's, not a lease timer.
+    expect(timers.pending(RENEW_MS)).toBe(0);
+    await expire(home, alice.id);
+    await heartbeat.beat();
+    // The beat renewed it: the row is live again under its holder.
+    const live = await tenancy
+      .db(home)
+      .query<{ holder: string; live: boolean }>(
+        'select holder, expires_at > now() as live from host_leases where user_id = $1',
+        [alice.id],
+      );
+    expect(live.rows).toEqual([{ holder: 'holder-two', live: true }]);
+    await beating.close();
   });
 
   it('a renew extends only the users this process holds, not an orphaned row of its own', async () => {
@@ -886,18 +915,18 @@ describeDb('the host-instance lease (spec §19.9)', () => {
       }
     };
 
-    it('clears the stale leases of every tenant', async () => {
+    it('clears the stale leases of every tenant in single mode', async () => {
       await seed();
-      await clearLeasesAtStartUp('self-hosted', tenancy, quiet);
+      await clearLeasesAtStartUp('single', tenancy, quiet);
       expect(await leaseRows(home)).toEqual([]);
       expect(await leaseRows(acme)).toEqual([]);
       // Cleared tenant by tenant, so a take after it is free.
       expect(await serverProcess('holder-one').instances.open(alice, socket('a1'))).toBeDefined();
     });
 
-    it('a hosted process leaves them to expire', async () => {
+    it('multi leaves them to expire: another instance may hold them (spec §20.1)', async () => {
       await seed();
-      await clearLeasesAtStartUp('hosted', tenancy, quiet);
+      await clearLeasesAtStartUp('multi', tenancy, quiet);
       expect(await leaseRows(home)).toEqual([{ user_id: alice.id, holder: 'crashed' }]);
       expect(await leaseRows(acme)).toEqual([{ user_id: carol.id, holder: 'crashed' }]);
     });

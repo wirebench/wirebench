@@ -262,3 +262,14 @@ describe('--tenant (hosted spec §19.11)', () => {
     }
   });
 });
+
+describe('admin instances (hosted spec §20.10)', () => {
+  it('parses it with nothing after it, and refuses --tenant', () => {
+    expect(parseServerArgs(['admin', 'instances'])).toEqual({ command: 'admin-instances' });
+    expect(() => parseServerArgs(['admin', 'instances', 'extra'])).toThrow(/usage: wirebench-server admin instances/);
+    expect(() => parseServerArgs(['admin', 'instances', '--tenant', 'acme'])).toThrow(/--tenant/);
+  });
+  it('lists it in the help', () => {
+    expect(HELP_TEXT).toContain('wirebench-server admin instances');
+  });
+});

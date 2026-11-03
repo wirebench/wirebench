@@ -110,6 +110,8 @@ export const URL_WITHOUT_SCOPE_ALLOWED: readonly string[] = ['packages/server/sr
 export const RAW_DB_ALLOWED: readonly string[] = [
   'packages/server/src/serve.ts',
   'packages/server/src/identity/cli.ts',
+  // `admin instances` (spec §20.10): it opens the pool to read the unscoped instance table, and no tenant.
+  'packages/server/src/operations/cli.ts',
 ];
 const RAW_DB_DIRS: readonly string[] = ['packages/server/src/db/', TENANCY_DIR];
 /** The raw pool and its types (`db/pool.ts`, `db/querier.ts`), by the end of a module specifier. */

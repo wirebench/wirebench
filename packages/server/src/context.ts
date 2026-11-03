@@ -14,6 +14,7 @@ import type {
 } from '@wirebench/engine';
 import type { ModuleConfig } from './config.js';
 import { requireFeature } from './licensing/gate.js';
+import type { ServerInstance } from './operations/instances.js';
 import type { RepoStore } from './repos/repo-store.js';
 import type { TenantScope } from './tenancy/scope.js';
 import { outsideTenantUnit, type TenantQuerier } from './tenancy/tenant-db.js';
@@ -407,6 +408,11 @@ export interface ServerContext {
    * spec §17.5): `egressPolicyOf(config)`, which hosted mode always makes deny private ranges.
    */
   readonly egress: EgressPolicy;
+  /**
+   * This process (spec §20.1, §20.2): its holder id, one instance or several, and the 15 s heartbeat its instance row
+   * renews on, which the host leases renew on too.
+   */
+  readonly instance: ServerInstance;
   /** Replaced by the licensing module in `register()`; the one field a module may assign (licensing spec §5.1). */
   license: LicenseService;
 }

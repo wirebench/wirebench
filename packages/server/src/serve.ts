@@ -3,6 +3,7 @@
  * PostgreSQL and migrations, the data directory, then listen. Each failure exits with the code the
  * spec gives and names the thing that failed, never a value.
  */
+import { randomUUID } from 'node:crypto';
 import type { EventEmitter } from 'node:events';
 import { access, constants } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -12,16 +13,29 @@ import {
   ConfigError,
   egressPolicyOf,
   forgetDatabaseUrls,
+  instanceModeOf,
   loadConfig,
   migrationUrlOf,
+  MULTI_NEEDS_ENTERPRISE,
   type ServerConfig,
 } from './config.js';
-import { MetaRegistry, permissiveLicense, serverHooks, type ServerContext, type ServerModule } from './context.js';
+import {
+  MetaRegistry,
+  permissiveLicense,
+  serverHooks,
+  type LicenseService,
+  type ServerContext,
+  type ServerModule,
+} from './context.js';
 import type { Database } from './db/querier.js';
 import { loadMigrations, migrate, MIGRATIONS_DIR, pendingMigrations, type Migration } from './db/migrate.js';
 import { createDatabase } from './db/pool.js';
 import { checkAppRole, checkPostgresVersion } from './tenancy/checks.js';
+import { allowsMultipleInstances, InstanceRegistry, licenseLapseWatch } from './operations/instances.js';
 import { OPERATIONS_MIGRATIONS_DIR } from './operations/migrations.js';
+import { realTimer } from './live/module.js';
+import { STOP_PASS } from './tenancy/jobs.js';
+import type { Tenancy } from './tenancy/tenancy.js';
 import { TENANCY_MIGRATIONS_DIR } from './tenancy/migrations.js';
 import { RunningLock, SERVER_DRAIN_MS, serverRunning, type RunningLockOptions } from './tenancy/running-lock.js';
 import { operatorPublicUrl } from './tenancy/urls.js';
@@ -81,6 +95,10 @@ export interface StartOptions {
    * always reach it, and a server without it has no tenants, so it refuses.
    */
   readonly allowNoTenants?: boolean;
+  /** The instance heartbeat's timer (spec §20.2); tests fire it by hand. */
+  readonly setTimer?: (fn: () => void, ms: number) => { cancel(): void };
+  /** The monotonic clock the hourly license check of a `multi` server reads; tests move it. */
+  readonly now?: () => number;
   /** How a lost running lock is retried (spec §19.10); tests shorten it. */
   readonly runningLock?: Pick<RunningLockOptions, 'retakeWindowMs' | 'retryDelayMs' | 'heartbeatMs' | 'open'>;
 }
@@ -162,6 +180,29 @@ function stepFailure(dataDir: string, error: unknown): string {
 }
 
 /** How a failed migration reads on stderr: a WirebenchError (e.g. `server-schema-too-new`) keeps its code. */
+/**
+ * The default tenant's license state (spec §20.1), read in its own unit through the job loop: a self-hosted server
+ * has that one tenant. `undefined` when it could not be read, which the job loop has logged.
+ */
+async function defaultTenantLicense(
+  tenancy: Tenancy,
+  license: () => LicenseService,
+  log: Parameters<Tenancy['forEachTenant']>[2],
+): Promise<Awaited<ReturnType<LicenseService['state']>> | undefined> {
+  const directory = directoryOf(tenancy);
+  let state: Awaited<ReturnType<LicenseService['state']>> | undefined;
+  await tenancy.forEachTenant(
+    'instances-license',
+    async (tx, scope) => {
+      if (!directory.isDefault(scope)) return undefined;
+      state = await license().state(scope, tx);
+      return STOP_PASS;
+    },
+    log,
+  );
+  return state;
+}
+
 function migrationFailure(error: unknown): string {
   if (error instanceof WirebenchError) return `${error.code}: ${error.message}`;
   return `migration failed: ${error instanceof Error ? error.message : String(error)}`;
@@ -490,6 +531,7 @@ export async function startServer(
     return fail(new StartupError(ExitCode.Config, `data directory ${config.dataDir} is not writable`));
   }
   const warnings: { readonly message: string; readonly details: Record<string, unknown> }[] = [];
+  let tenantsLoaded = false;
   // The root wraps each tenant's data key (spec §19.7); without it no key is made, and nothing is sealed.
   const tenancy = createTenancy(
     db,
@@ -498,7 +540,8 @@ export async function startServer(
   try {
     await checkAppRole(db, config.mode, (message, details) => warnings.push({ message, details }));
     // A module list that stops short of 0019 leaves 0020 out (`allMigrations`), and with it every tenant.
-    if (!(await directoryOf(tenancy).load()) && options.allowNoTenants !== true) {
+    tenantsLoaded = await directoryOf(tenancy).load();
+    if (!tenantsLoaded && options.allowNoTenants !== true) {
       return fail(new StartupError(ExitCode.Migration, 'migration 0020 is not applied: the server has no tenants'));
     }
   } catch (error) {
@@ -514,6 +557,21 @@ export async function startServer(
       `lost during start-up and could not be taken again: ${lockLost.early?.message ?? 'the server-running lock'}`,
     );
   const repos = new RepoStore({ git, dataDir: config.dataDir });
+  const instances = instanceModeOf(config);
+  // Logged through `appLog` once the app's logger exists; nothing beats before `start`, which comes after it.
+  const appLog: { warn?: (details: Record<string, unknown>, message: string) => void } = {};
+  // The process's id (spec §19.9, §20.2): its instance row and its host leases share it.
+  const registry = new InstanceRegistry({
+    db,
+    holder: randomUUID(),
+    mode: instances,
+    ...(config.instanceUrl !== undefined ? { url: config.instanceUrl } : {}),
+    version: config.version,
+    setTimer: options.setTimer ?? realTimer,
+    log: (message, error) => appLog.warn?.({ err: error }, message),
+    // A test's start-up without 0020 has no 0022 either, so no table to write.
+    record: tenantsLoaded,
+  });
   const ctx: ServerContext = {
     config,
     tenancy,
@@ -523,6 +581,7 @@ export async function startServer(
     meta: new MetaRegistry(),
     egress: egressPolicyOf(config),
     hooks: serverHooks(),
+    instance: registry,
     license: permissiveLicense(),
   };
   let app: FastifyInstance;
@@ -545,19 +604,60 @@ export async function startServer(
   dbLog.warn = (error) => {
     app.log.warn({ err: error }, 'a database connection failed');
   };
+  appLog.warn = (details, message) => {
+    app.log.warn(details, message);
+  };
   for (const warning of warnings) app.log.warn(warning.details, warning.message);
   for (const note of stepNotes) app.log[note.level](note.details, note.message);
   // Module registration can take seconds (OIDC discovery): a lock lost meanwhile means no listening at all.
   if (lockLost.early !== undefined) {
     await app.close();
+    await registry.stop();
     await heldLock.release();
     await db.close();
     throw lostDuringStart();
   }
+  // Spec §20.1, ruling 3: several instances of a self-hosted server need Enterprise, valid or in grace. Hosted mode
+  // is the operator's own and needs no license for it.
+  const watchLicense = instances === 'multi' && config.mode === 'self-hosted';
+  if (watchLicense) {
+    const state = await defaultTenantLicense(tenancy, () => ctx.license, app.log);
+    if (!allowsMultipleInstances(state)) {
+      await app.close();
+      await heldLock.release();
+      await db.close();
+      throw new StartupError(
+        ExitCode.Config,
+        `server-instances-need-enterprise: ${MULTI_NEEDS_ENTERPRISE}; the license here is ${
+          state === undefined ? 'unreadable' : `${state.edition} (${state.status})`
+        }. Set WIREBENCH_SERVER_INSTANCES=single or install an Enterprise license`,
+      );
+    }
+    // A lapse while running warns once an hour and never stops the server; the next start refuses.
+    registry.onBeat(
+      licenseLapseWatch({
+        read: () => defaultTenantLicense(tenancy, () => ctx.license, app.log),
+        warn: (message, details) => {
+          app.log.warn(details, message);
+        },
+        ...(options.now !== undefined ? { now: options.now } : {}),
+      }),
+    );
+  }
+  try {
+    await registry.start();
+  } catch (error) {
+    await app.close();
+    await heldLock.release();
+    await db.close();
+    throw new StartupError(ExitCode.Migration, `the instance row could not be written: ${migrationFailure(error)}`);
+  }
+  app.log.info({ holder: registry.holder, instances }, 'running as this instance');
   try {
     await app.listen({ host: config.host, port: config.port });
   } catch (error) {
     await app.close();
+    await registry.stop();
     await heldLock.release();
     await db.close();
     const code = (error as { readonly code?: unknown }).code;
@@ -598,6 +698,8 @@ export async function startServer(
       // work (a push looks up its author and writes commits), so the pool outlives that work. From
       // here on, new repository work is refused with server-shutting-down.
       if (!lost) await repos.drain();
+      // A clean stop deletes its own row; a crash leaves it to the next renew's sweep.
+      await registry.stop();
       await heldLock.release();
       await db.close();
     })();

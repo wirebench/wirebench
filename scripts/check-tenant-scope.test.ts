@@ -231,11 +231,14 @@ describe('check:tenant-scope', () => {
     for (const file of [
       'packages/server/src/serve.ts',
       'packages/server/src/identity/cli.ts',
+      'packages/server/src/operations/cli.ts',
       'packages/server/src/db/migrate.ts',
       'packages/server/src/tenancy/tenancy.ts',
     ]) {
       expect(findRawDatabase(file, allowed), file).toEqual([]);
     }
+    // The registry itself takes the pool from the start-up: only `admin instances` opens one in src/operations/.
+    expect(findRawDatabase('packages/server/src/operations/instances.ts', allowed)).toHaveLength(1);
     expect(findRawDatabase('packages/server/src/main.ts', allowed)).toHaveLength(1);
     // A module of another name, and a comment, are not the pool.
     expect(findRawDatabase(route, "import { x } from './db/pool-size.js';\n// import from '../db/pool.js'\n")).toEqual(
