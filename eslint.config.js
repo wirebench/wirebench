@@ -35,14 +35,19 @@ export default tseslint.config(
     ignores: [
       '**/dist/**',
       '**/dist-test/**',
+      '**/dist-browser/**',
       '**/out/**',
       '**/coverage/**',
       '**/node_modules/**',
       '**/playwright-report/**',
       '**/test-results/**',
       '.superpowers/**',
+      // Worktrees nest whole copies of the repository; linting them runs ESLint out of memory.
+      '.claude/worktrees/**',
+      'git-worktrees/**',
       '**/fixtures/**',
       'docs-site/.astro/**',
+      'site/.astro/**',
       // Its astro:content types are generated into .astro/ by an Astro build or `astro sync`, which
       // the lint job never runs, so typed rules would see every import as unresolved.
       'docs-site/src/content.config.ts',
