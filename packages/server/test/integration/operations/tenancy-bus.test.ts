@@ -159,6 +159,27 @@ describeDb('the tenant map and the data-key cache on the bus (hosted spec §20.3
     );
   });
 
+  it('keeps the key it just wrote, and reloads its own map once per write (review M2)', async () => {
+    const a = await node();
+    const b = await node();
+    const { scope } = await new TenantAdmin(db, directoryOf(a.h.ctx.tenancy)).create({ slug: 'acme', name: 'Acme' });
+    const reloads = vi.spyOn(a.resolver, 'invalidate');
+    const remoteReloads = vi.spyOn(b.resolver, 'invalidate');
+    await new TenantAdmin(db, directoryOf(a.h.ctx.tenancy)).create({ slug: 'beta', name: 'Beta' });
+    await vi.waitFor(() => {
+      expect(remoteReloads).toHaveBeenCalledTimes(1);
+    });
+    expect(reloads).toHaveBeenCalledTimes(1);
+    const made = await a.h.ctx.tenancy.dataKey(scope);
+    // Re-sealed behind A's back: a cache that dropped its own fresh key would read this one.
+    await db.query('update tenants set data_key = $1 where id = $2::uuid', [
+      await environmentKeyRoot(ROOT).wrap(scope.tenantId, newDataKey()),
+      scope.tenantId,
+    ]);
+    await new Promise((done) => setTimeout(done, 250));
+    expect((await a.h.ctx.tenancy.dataKey(scope)).equals(made)).toBe(true);
+  });
+
   it('polls the directory every 10 min, a backstop behind the bus', () => {
     expect(RELOAD_MS).toBe(600_000);
   });

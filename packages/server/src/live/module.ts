@@ -16,6 +16,7 @@ import { LIVE_CAPABILITY, LIVE_CLOSE, LIVE_LIMITS } from '@wirebench/engine';
 import type { FastifyInstance, onRequestHookHandler } from 'fastify';
 import { announce, cluster, type ServerContext, type ServerModule } from '../context.js';
 import { displayNamesOf } from '../identity/repo.js';
+import { endGoneSessions } from '../operations/sessions.js';
 import { CommitStore } from '../sync/commit-store.js';
 import { tenantUrl, type UrlConfig } from '../tenancy/urls.js';
 import { identitySettings } from '../identity/env.js';
@@ -227,8 +228,19 @@ export function liveModule(options: LiveOptions = {}): ServerModule {
           hub.resync(event);
         }),
       );
+      // A bus that missed events resyncs the rooms (in `listened`), and may have missed a `sessionEnded` (review I1):
+      // the gone tokens' sockets end as if it had come.
       ctx.bus.onListen((listened) => {
         hub.listened(listened);
+        if (!listened.reconnected) return;
+        void endGoneSessions(
+          ctx.tenancy,
+          hub.heldSessions(),
+          (event) => {
+            hub.sessionEnded(event);
+          },
+          ctx.log,
+        );
       });
       // A holder whose instance row died (spec §20.2) leaves no presence behind. Asked on the heartbeat, and only
       // while this hub keeps another holder's lists, so a lone server never reads the table for it.

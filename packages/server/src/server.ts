@@ -7,7 +7,7 @@
  * (`@fastify/swagger`, `openapi-types`) would ship in the container image licensed for nothing.
  */
 import Fastify, { type FastifyInstance, type RouteOptions } from 'fastify';
-import { cluster, type ServerContext, type ServerModule } from './context.js';
+import { remote, type ServerContext, type ServerModule } from './context.js';
 import { toProblem } from './problem.js';
 import { healthRoutes } from './routes/health.js';
 import { metaRoutes } from './routes/meta.js';
@@ -98,7 +98,8 @@ export async function buildServer(ctx: ServerContext, options: BuildServerOption
         app.log.warn({ err: error }, 'the tenant map could not be reloaded; keeping the last one');
       });
     };
-    ctx.hooks.tenantsChanged.push(cluster(reload));
+    // `remote` (review M2): a write here already reloads it through the directory's own change.
+    ctx.hooks.tenantsChanged.push(remote(reload));
     ctx.bus.onListen(({ reconnected }) => {
       if (reconnected) reload();
     });

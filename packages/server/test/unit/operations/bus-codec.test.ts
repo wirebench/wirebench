@@ -50,8 +50,9 @@ describe('the bus codec (hosted spec §20.3)', () => {
   it('carries only ids for every kind, and decodes back to the event less its scope', () => {
     for (const kind of ANNOUNCEMENT_KINDS) {
       const event = EVENTS[kind];
-      const payload = encode(FROM, kind, { ...event, ...PRIVATE });
-      expect(payload, kind).toBeDefined();
+      const payloads = encode(FROM, kind, { ...event, ...PRIVATE });
+      expect(payloads, kind).toHaveLength(1);
+      const payload = payloads![0];
       for (const value of [...Object.values(PRIVATE), 'acme-secret-slug', 'name', 'email', 'tenant"']) {
         expect(payload, `${kind}: ${value}`).not.toContain(value);
       }
@@ -68,18 +69,40 @@ describe('the bus codec (hosted spec §20.3)', () => {
     expect(encode(FROM, 'headMoved', { ...EVENTS.headMoved, tenantId: 'acme' })).toBeUndefined();
   });
 
-  it('sends an event over the limit as a resync for its tenant, never truncated', () => {
-    const users = Array.from({ length: 400 }, () => randomUUID());
-    const payload = encode(FROM, 'presenceChanged', { ...EVENTS.presenceChanged, users });
-    expect(JSON.parse(payload!)).toEqual({ v: 1, from: FROM, kind: 'resync', tenantId });
-    // A field outside the kind's list never counts towards the size: it is not copied.
-    expect(encode(FROM, 'presenceReset', { holder: FROM, padding: 'x'.repeat(MAX_PAYLOAD_BYTES) })).toBe(
-      JSON.stringify({ v: 1, from: FROM, kind: 'presenceReset', holder: FROM }),
+  it('cuts a big room’s presence into numbered parts under the limit, never truncated (review M1)', () => {
+    const users = Array.from({ length: 600 }, () => randomUUID());
+    const payloads = encode(FROM, 'presenceChanged', { ...EVENTS.presenceChanged, users }, 7)!;
+    expect(payloads.length).toBeGreaterThan(1);
+    const parts = payloads.map((payload) => {
+      expect(Buffer.byteLength(payload, 'utf8')).toBeLessThanOrEqual(MAX_PAYLOAD_BYTES);
+      return decode(payload)!.event as AnnouncementEvents['presenceChanged'];
+    });
+    expect(parts.map((part) => [part.seq, part.part, part.parts])).toEqual(
+      parts.map((_, n) => [7, n, payloads.length]),
     );
+    expect(parts.flatMap((part) => part.users)).toEqual(users);
+    // A part out of range, or a part without its count or sequence, is refused.
+    const first = JSON.parse(payloads[0]!) as Record<string, unknown>;
+    expect(decode(JSON.stringify({ ...first, part: payloads.length }))).toBeUndefined();
+    expect(decode(JSON.stringify({ ...first, parts: undefined }))).toBeUndefined();
+    expect(decode(JSON.stringify({ ...first, seq: undefined }))).toBeUndefined();
+    // A field outside the kind's list never counts towards the size: it is not copied.
+    expect(encode(FROM, 'presenceReset', { holder: FROM, padding: 'x'.repeat(MAX_PAYLOAD_BYTES) })).toEqual([
+      JSON.stringify({ v: 1, from: FROM, kind: 'presenceReset', holder: FROM }),
+    ]);
+  });
+
+  it('encodes the missed marker as a resync with no tenant (review I2)', () => {
+    expect(encode(FROM, 'resync', {})).toEqual([JSON.stringify({ v: 1, from: FROM, kind: 'resync' })]);
+    expect(decode(JSON.stringify({ v: 1, from: FROM, kind: 'resync' }))).toEqual({
+      from: FROM,
+      kind: 'resync',
+      event: {},
+    });
   });
 
   it('refuses an unknown version, an unknown kind, an extra field and anything not JSON', () => {
-    const good = JSON.parse(encode(FROM, 'hooksChanged', EVENTS.hooksChanged)!) as Record<string, unknown>;
+    const good = JSON.parse(encode(FROM, 'hooksChanged', EVENTS.hooksChanged)![0]!) as Record<string, unknown>;
     expect(decode(JSON.stringify(good))).toBeDefined();
     expect(decode(JSON.stringify({ ...good, v: 2 }))).toBeUndefined();
     expect(decode(JSON.stringify({ ...good, kind: 'everything' }))).toBeUndefined();

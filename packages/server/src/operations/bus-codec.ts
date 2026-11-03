@@ -5,7 +5,11 @@
  * - **Ids only** (ADR-0013). Each kind has a fixed list of fields, all ids or closed values (a status, an edition),
  *   and the encoder copies those and nothing else: a scope, a name, an email or file content on the event never
  *   reaches the wire, and an id that looks like anything else is refused on the way in.
- * - **Never truncated.** An event that would not fit is sent as `{ v: 1, from, kind: 'resync', tenantId }`.
+ * - **Never truncated.** A room's presence over the limit goes as several `presenceChanged` parts, each under it,
+ *   numbered `part` of `parts` and sharing one `seq`; the receiving hub replaces the holder's list once it has them all
+ *   (review M1). Any other event that would not fit is sent as `{ v: 1, from, kind: 'resync', tenantId }`.
+ * - **The missed marker** is a `resync` with no `tenantId`: the sender lost events it could not send, and every peer
+ *   resyncs everything, as after a lost bus of its own (review I2).
  * - **Strict on the way in.** An unknown `v`, an unknown kind or a field out of shape is refused whole. The
  *   decoder does not brand a scope: the bus rebuilds `tenant` from `tenantId` through the tenant directory.
  */
@@ -94,16 +98,26 @@ const WIRE = {
     kind: z.literal('tenantKeysChanged'),
     tenantId: tenantId.optional(),
   }),
-  presenceChanged: z.strictObject({
-    ...envelope,
-    kind: z.literal('presenceChanged'),
-    tenantId,
-    workspaceId: id,
-    holder,
-    users: z.array(id),
-  }),
+  presenceChanged: z
+    .strictObject({
+      ...envelope,
+      kind: z.literal('presenceChanged'),
+      tenantId,
+      workspaceId: id,
+      holder,
+      users: z.array(id),
+      seq: z.number().int().nonnegative().optional(),
+      part: z.number().int().nonnegative().optional(),
+      parts: z.number().int().min(2).optional(),
+    })
+    .refine(
+      (wire) =>
+        (wire.parts === undefined) === (wire.part === undefined) &&
+        (wire.parts === undefined) === (wire.seq === undefined) &&
+        (wire.parts === undefined || wire.part! < wire.parts),
+    ),
   presenceReset: z.strictObject({ ...envelope, kind: z.literal('presenceReset'), holder }),
-  resync: z.strictObject({ ...envelope, kind: z.literal('resync'), tenantId }),
+  resync: z.strictObject({ ...envelope, kind: z.literal('resync'), tenantId: tenantId.optional() }),
 } as const satisfies Record<AnnouncementKind, z.ZodType>;
 
 /** The fields of each kind that go on the wire, beside `v`, `from` and `kind`. */
@@ -133,11 +147,12 @@ export type BusMessage = {
 }[AnnouncementKind];
 
 /**
- * The payload for one event, or `undefined` when the event itself is out of shape (an id that is not one): that is
- * a bug at the announcing line, and the bus logs it rather than send it. Over the size limit, a `resync` for the
- * event's tenant, or `undefined` when it has none.
+ * The payloads for one event, in order: one, or a big room's presence in parts that share `seq` (the sender's own
+ * counter). `undefined` when the event itself is out of shape (an id that is not one): that is a bug at the
+ * announcing line, and the bus logs it rather than send it. Any other kind over the size limit becomes a `resync`
+ * for the event's tenant, or `undefined` when it has none.
  */
-export function encode(from: string, kind: AnnouncementKind, event: object): string | undefined {
+export function encode(from: string, kind: AnnouncementKind, event: object, seq = 0): string[] | undefined {
   const source = event as Readonly<Record<string, unknown>>;
   const wire: Record<string, unknown> = { v: BUS_VERSION, from, kind };
   for (const field of FIELDS[kind]) {
@@ -146,10 +161,35 @@ export function encode(from: string, kind: AnnouncementKind, event: object): str
   }
   if (!WIRE[kind].safeParse(wire).success) return undefined;
   const payload = JSON.stringify(wire);
-  if (Buffer.byteLength(payload, 'utf8') <= MAX_PAYLOAD_BYTES) return payload;
+  if (Buffer.byteLength(payload, 'utf8') <= MAX_PAYLOAD_BYTES) return [payload];
+  if (kind === 'presenceChanged') return presenceParts(wire, seq);
   const tenant = source.tenantId;
   if (typeof tenant !== 'string' || !CANONICAL_UUID.test(tenant)) return undefined;
-  return JSON.stringify({ v: BUS_VERSION, from, kind: 'resync', tenantId: tenant });
+  return [JSON.stringify({ v: BUS_VERSION, from, kind: 'resync', tenantId: tenant })];
+}
+
+/**
+ * A presence list cut, in order, into parts under the limit. Ids are ASCII (the `id` pattern), so each costs its
+ * length, two quotes and a comma; the envelope is measured once with the widest numbers it can carry.
+ */
+function presenceParts(wire: Readonly<Record<string, unknown>>, seq: number): string[] {
+  const users = wire.users as readonly string[];
+  const envelopeBytes = Buffer.byteLength(
+    JSON.stringify({ ...wire, users: [], seq, part: users.length, parts: users.length }),
+    'utf8',
+  );
+  const chunks: string[][] = [[]];
+  let bytes = envelopeBytes;
+  for (const user of users) {
+    const cost = user.length + 3;
+    if (bytes + cost > MAX_PAYLOAD_BYTES && chunks.at(-1)!.length > 0) {
+      chunks.push([]);
+      bytes = envelopeBytes;
+    }
+    chunks.at(-1)!.push(user);
+    bytes += cost;
+  }
+  return chunks.map((chunk, part) => JSON.stringify({ ...wire, users: chunk, seq, part, parts: chunks.length }));
 }
 
 /** The message in `payload`, or `undefined` for anything this version does not know. Never throws. */

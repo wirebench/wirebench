@@ -19,6 +19,8 @@ import {
 } from '../../../src/context.js';
 import { openSession, type Session } from '../../../src/db/pool.js';
 import { HostInstances } from '../../../src/host/instances.js';
+import { revokeToken } from '../../../src/identity/repo.js';
+import type { HeldSessions } from '../../../src/operations/sessions.js';
 import { liveModule } from '../../../src/live/module.js';
 import { BusSignals, NotificationBus } from '../../../src/operations/bus.js';
 import { InstanceRegistry } from '../../../src/operations/instances.js';
@@ -285,6 +287,56 @@ describeDb('the live hub, host instances and shares on the bus (hosted spec §20
     await vi.waitFor(() => {
       expect(hostEnded).toHaveBeenCalledWith(ended);
     });
+  });
+
+  it('a bus that missed events ends the gone sessions and re-checks the shares on every holder (review I1)', async () => {
+    const { a, b, ana, ben, team, workspaceId } = await fleet();
+    const tenant = a.h.tdb.scope;
+    const watcher = await connect(b, ben, workspaceId);
+    // The share registry on a third node, and the host instances on a server of their own: both say they hold Ana's
+    // and Ben's sessions, and the real handlers run on what the re-validation finds.
+    const held = (): HeldSessions =>
+      new Map([[tenant.tenantId, { tenant, tokenIds: new Set([ana.tokenId, ben.tokenId]) }]]);
+    vi.spyOn(ShareRegistry.prototype, 'heldSessions').mockImplementation(held);
+    vi.spyOn(HostInstances.prototype, 'heldSessions').mockImplementation(held);
+    const shareEnded = vi.spyOn(ShareRegistry.prototype, 'sessionEnded');
+    const shareRecheck = vi.spyOn(ShareRegistry.prototype, 'recheck');
+    const hostEnded = vi.spyOn(HostInstances.prototype, 'sessionEnded');
+    const c = await node([terminalSharesModule()]);
+    const host = await hostHarness({ db, dataDir });
+    cleanups.push(() => host.close());
+    const hosted = await busFor(db, host.hooks, host.ctx.instance.holder, host.ctx.bus as BusSignals, host);
+    cleanups.push(() => hosted.bus.stop(0));
+    // Written while the buses are down, so no instance hears them: Ben's session revoked, Ben out of the team.
+    await revokeToken(a.h.tdb, ben.tokenId, new Date());
+    await teamsRepo.deleteMember(a.h.tdb, team.id, ben.user.id);
+    for (const session of [b.sessions[0]!, c.sessions[0]!, hosted.sessions[0]!]) {
+      await db.query('select pg_terminate_backend($1)', [session.pid]);
+    }
+    expect(await watcher.next('session-ended')).toEqual({ type: 'session-ended' });
+    expect((await watcher.closed).code).toBe(LIVE_CLOSE.unauthenticated);
+    const gone = { tenantId: tenant.tenantId, tokenId: ben.tokenId };
+    await vi.waitFor(() => {
+      expect(shareRecheck).toHaveBeenCalledWith(tenant.tenantId);
+      expect(shareEnded).toHaveBeenCalledWith(gone);
+      expect(hostEnded).toHaveBeenCalledWith(gone);
+    });
+    // Ana's session is live: nothing ends it.
+    expect(shareEnded).toHaveBeenCalledTimes(1);
+    expect(hostEnded).toHaveBeenCalledTimes(1);
+  });
+
+  it('a peer’s missed marker resyncs this instance the same way (review I2)', async () => {
+    const { a, b, ben, workspaceId } = await fleet();
+    const watcher = await connect(b, ben, workspaceId);
+    await revokeToken(a.h.tdb, ben.tokenId, new Date());
+    // As A's bus sends it after a payload it gave up.
+    await db.query('select pg_notify($1, $2)', [
+      a.bus.channel,
+      JSON.stringify({ v: 1, from: a.registry.holder, kind: 'resync' }),
+    ]);
+    expect(await watcher.next('session-ended')).toEqual({ type: 'session-ended' });
+    expect((await watcher.closed).code).toBe(LIVE_CLOSE.unauthenticated);
   });
 
   it('one licenseChanged writes one audit row in a fleet of two', async () => {

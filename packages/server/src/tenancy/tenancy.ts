@@ -9,7 +9,7 @@
  */
 import { WirebenchError } from '@wirebench/engine';
 import type { FastifyBaseLogger } from 'fastify';
-import { announce, cluster, type ServerHooks } from '../context.js';
+import { announce, remote, type ServerHooks } from '../context.js';
 import type { Database } from '../db/querier.js';
 import type { BusEvents } from '../operations/bus.js';
 import { TenantDirectory } from './directory.js';
@@ -81,9 +81,10 @@ export function createTenancy(db: Database, options: TenancyOptions = {}): Tenan
  * Keeps this process's data-key cache in step with the other instances' (spec §20.3); `buildServer` calls it once.
  *
  * - A directory write here announces `tenantsChanged`, and a data key written here `tenantKeysChanged{tenantId}`.
- * - Their `cluster` listeners drop the keys: every one for `tenantsChanged` (as a write here does), the one tenant's
- *   for `tenantKeysChanged`. Here they run once more after the direct drop, which is harmless; from the bus they are
- *   delivered and never announced again.
+ * - Their `remote` listeners (review M2) drop the keys another instance's write made stale: every one for
+ *   `tenantsChanged` (as a write here does through the directory's own change), the one tenant's for
+ *   `tenantKeysChanged`. A write here never reaches them: the directory's change already dropped the keys, and a key
+ *   this process just wrote is the right one, which dropping would only make it read back.
  * - A bus that listens again after a loss may have missed either, so every key is dropped then too.
  *
  * The tenant map's own listeners are `server.ts`'s, where the resolver is made. Idempotent per `tenancy`.
@@ -100,12 +101,12 @@ export function shareTenancyCaches(tenancy: Tenancy, hooks: ServerHooks, bus: Bu
     announce(hooks.tenantKeysChanged, { tenantId }, log);
   });
   hooks.tenantsChanged.push(
-    cluster(() => {
+    remote(() => {
       keys.invalidate();
     }),
   );
   hooks.tenantKeysChanged.push(
-    cluster(({ tenantId }) => {
+    remote(({ tenantId }) => {
       keys.invalidate(tenantId);
     }),
   );

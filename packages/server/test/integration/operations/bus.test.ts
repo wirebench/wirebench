@@ -16,10 +16,11 @@ import {
   serverHooks,
   type AccessChangedEvent,
   type HeadMovedEvent,
+  type PresenceChangedEvent,
   type ServerHooks,
 } from '../../../src/context.js';
 import { openSession, type Session } from '../../../src/db/pool.js';
-import { NotificationBus, QUEUE_LIMIT, type Listened } from '../../../src/operations/bus.js';
+import { NotificationBus, QUEUE_LIMIT, type BusQuerier, type Listened } from '../../../src/operations/bus.js';
 import { scopeOf, type TenantScope } from '../../../src/tenancy/scope.js';
 import { startServer } from '../../../src/serve.js';
 import { BUILTIN_MODULES } from '../../../src/modules.js';
@@ -45,6 +46,8 @@ interface Process {
   readonly sessions: Session[];
   /** What each list heard, by kind of listener. */
   readonly heard: { cluster: unknown[]; local: unknown[] };
+  /** Every listen and resync its bus ran its `onListen` listeners for. */
+  readonly listened: Listened[];
 }
 
 describeDb('the notification bus (hosted spec §20.3)', () => {
@@ -62,7 +65,7 @@ describeDb('the notification bus (hosted spec §20.3)', () => {
 
   const process = (
     on: TestDatabase = db,
-    options: { queueLimit?: number; scopes?: readonly TenantScope[]; start?: boolean } = {},
+    options: { queueLimit?: number; scopes?: readonly TenantScope[]; start?: boolean; pool?: BusQuerier } = {},
   ): Process => {
     const holder = randomUUID();
     const hooks = serverHooks();
@@ -73,7 +76,7 @@ describeDb('the notification bus (hosted spec §20.3)', () => {
       local((event) => heard.local.push(event)),
     );
     const bus = new NotificationBus({
-      db: on,
+      db: options.pool ?? on,
       holder,
       hooks,
       open: async () => {
@@ -86,10 +89,28 @@ describeDb('the notification bus (hosted spec §20.3)', () => {
       log,
       retryDelayMs: 50,
       maxRetryDelayMs: 200,
+      sendRetryDelaysMs: [10, 20],
       ...(options.queueLimit !== undefined ? { queueLimit: options.queueLimit } : {}),
     });
+    const listened: Listened[] = [];
+    bus.onListen((event) => listened.push(event));
     started.push(bus);
-    return { holder, hooks, bus, sessions, heard };
+    return { holder, hooks, bus, sessions, heard, listened };
+  };
+
+  /** `on`, whose `pg_notify` throws the next `failures` times. */
+  const flaky = (on: TestDatabase, failures: number): BusQuerier & { failures: number } => {
+    const pool = {
+      failures,
+      query: (text: string, params?: readonly unknown[]) => {
+        if (pool.failures > 0) {
+          pool.failures--;
+          return Promise.reject(new Error('the pool is down'));
+        }
+        return on.query(text, params);
+      },
+    };
+    return pool;
   };
 
   /** Lets notifications in flight arrive: a round trip on each bus's pool and a moment more. */
@@ -133,21 +154,85 @@ describeDb('the notification bus (hosted spec §20.3)', () => {
     expect(access[0]!.tenant).toBe(TENANT);
   });
 
-  it('sends an event that would not fit as a resync for its tenant', async () => {
+  it('splits a big room’s presence into parts under the limit, never a resync (review M1)', async () => {
     const a = process();
     const b = process();
-    const presence: unknown[] = [];
+    const presence: PresenceChangedEvent[] = [];
     const resyncs: unknown[] = [];
     b.hooks.presenceChanged.push(cluster((event) => presence.push(event)));
     b.hooks.resync.push(cluster((event) => resyncs.push(event)));
     await a.bus.start();
     await b.bus.start();
-    const users = Array.from({ length: 400 }, () => randomUUID());
-    announce(a.hooks.presenceChanged, { tenantId: TENANT.tenantId, workspaceId: 'w1', holder: a.holder, users }, log);
+    const users = Array.from({ length: 600 }, (_, n) => `01J8ZD${String(n).padStart(20, '0')}`);
+    const event = { tenantId: TENANT.tenantId, workspaceId: 'w1', holder: a.holder, users };
+    announce(a.hooks.presenceChanged, event, log);
+    announce(a.hooks.presenceChanged, { ...event, users: users.slice(0, 2) }, log);
     await vi.waitFor(() => {
-      expect(resyncs).toEqual([{ tenantId: TENANT.tenantId }]);
+      expect(presence.at(-1)?.users).toEqual(users.slice(0, 2));
     });
-    expect(presence).toEqual([]);
+    const parts = presence.slice(0, -1);
+    expect(parts.length).toBeGreaterThan(1);
+    expect(parts.map((part) => [part.part, part.parts])).toEqual(parts.map((_, n) => [n, parts.length]));
+    expect(new Set(parts.map((part) => part.seq)).size).toBe(1);
+    expect(parts.flatMap((part) => part.users)).toEqual(users);
+    // The small one after is whole: no parts, so it applies as it is.
+    expect(presence.at(-1)?.parts).toBeUndefined();
+    expect(resyncs).toEqual([]);
+  });
+
+  it('retries a failed send with a short backoff, so a blip loses nothing (review I2)', async () => {
+    const pool = flaky(db, 2);
+    const a = process(db, { pool });
+    const b = process();
+    await a.bus.start();
+    await b.bus.start();
+    announce(a.hooks.headMoved, head(1), log);
+    await vi.waitFor(() => {
+      expect(b.heard.cluster).toEqual([head(1)]);
+    });
+    expect(a.bus.stats()).toMatchObject({ failed: 0 });
+    await settle();
+    expect(b.listened).toEqual([{ reconnected: false }]);
+  });
+
+  it('gives a send up after three tries, then sends the missed marker and the peers resync (review I2)', async () => {
+    const pool = flaky(db, 0);
+    const a = process(db, { pool });
+    const b = process();
+    const resyncs: unknown[] = [];
+    b.hooks.resync.push(cluster((event) => resyncs.push(event)));
+    await a.bus.start();
+    await b.bus.start();
+    pool.failures = 3;
+    announce(a.hooks.headMoved, head(1), log);
+    // The queue is idle after the give-up, and the marker can go at once.
+    await vi.waitFor(() => {
+      expect(b.listened).toEqual([{ reconnected: false }, { reconnected: true }]);
+    });
+    expect(b.heard.cluster).toEqual([]);
+    expect(resyncs).toEqual([]); // the tenant-less marker is a resync of everything, not a tenant's
+    expect(a.bus.stats()).toMatchObject({ failed: 1 });
+    expect(a.listened).toEqual([{ reconnected: false }]);
+  });
+
+  it('sends the marker once a send succeeds again when the marker itself failed (review I2)', async () => {
+    const pool = flaky(db, 0);
+    const a = process(db, { pool });
+    const b = process();
+    await a.bus.start();
+    await b.bus.start();
+    pool.failures = 6; // the event's three tries and the marker's
+    announce(a.hooks.headMoved, head(1), log);
+    await vi.waitFor(() => {
+      expect(pool.failures).toBe(0);
+    });
+    await settle();
+    expect(b.listened).toEqual([{ reconnected: false }]);
+    announce(a.hooks.headMoved, head(2), log);
+    await vi.waitFor(() => {
+      expect(b.heard.cluster).toEqual([head(2)]);
+      expect(b.listened).toEqual([{ reconnected: false }, { reconnected: true }]);
+    });
   });
 
   it('drops the oldest from a full queue, counts it, and sends the rest in order', async () => {
@@ -157,20 +242,21 @@ describeDb('the notification bus (hosted spec §20.3)', () => {
     await b.bus.start();
     // Not listening yet: nothing drains, so the queue fills.
     for (let n = 0; n < 5; n++) a.bus.send('headMoved', head(n));
-    expect(a.bus.stats()).toEqual({ queued: 3, dropped: 2, failed: 0 });
+    expect(a.bus.stats()).toMatchObject({ queued: 3, dropped: 2, failed: 0 });
     await a.bus.start();
     await vi.waitFor(() => {
       expect(b.heard.cluster).toEqual([head(2), head(3), head(4)]);
+      // Review I2: what was dropped is announced as missed, and the peer resyncs.
+      expect(b.listened).toEqual([{ reconnected: false }, { reconnected: true }]);
     });
-    expect(a.bus.stats()).toEqual({ queued: 0, dropped: 2, failed: 0 });
+    expect(a.bus.stats()).toMatchObject({ queued: 0, dropped: 2, failed: 0 });
   });
 
   it('reconnects a killed listening connection, calls onLost and onListen, and hears again', async () => {
     const a = process();
     const b = process();
-    const listened: Listened[] = [];
+    const listened = b.listened;
     const lost: Error[] = [];
-    b.bus.onListen((event) => listened.push(event));
     b.bus.onLost((error) => lost.push(error));
     await a.bus.start();
     await b.bus.start();

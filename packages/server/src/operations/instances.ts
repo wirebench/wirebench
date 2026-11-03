@@ -92,6 +92,8 @@ export class InstanceRegistry implements ServerInstance {
   private timer: { cancel(): void } | undefined;
   private started = false;
   private stopped = false;
+  /** The beat still running, which a later beat skips and {@link stop} waits for (review M3). */
+  private beating: Promise<void> | undefined;
 
   constructor(private readonly deps: InstanceRegistryDeps) {
     this.holder = deps.holder;
@@ -110,8 +112,21 @@ export class InstanceRegistry implements ServerInstance {
     this.arm();
   }
 
-  /** One heartbeat: the row's renew and sweep, and every listener, side by side. Never throws. */
-  async renew(): Promise<void> {
+  /**
+   * One heartbeat: the row's renew and sweep, and every listener, side by side. Never throws. While one runs, another
+   * call waits for it instead of starting a second, and after {@link stop} none starts.
+   */
+  renew(): Promise<void> {
+    if (this.beating !== undefined) return this.beating;
+    if (this.stopped) return Promise.resolve();
+    const beat = this.beat().finally(() => {
+      this.beating = undefined;
+    });
+    this.beating = beat;
+    return beat;
+  }
+
+  private async beat(): Promise<void> {
     const row = this.recording
       ? (async () => {
           await this.deps.db.query(RENEW_ROW, this.rowParams());
@@ -135,12 +150,16 @@ export class InstanceRegistry implements ServerInstance {
     return listLive(this.deps.db);
   }
 
-  /** Stops the heartbeat and deletes this process's row; a failure is logged, and the row dies in {@link DEAD_MS}. */
+  /**
+   * Stops the heartbeat and deletes this process's row; a failure is logged, and the row dies in {@link DEAD_MS}. A
+   * beat still running is waited for first: its upsert landing after the delete would bring the row back.
+   */
   async stop(): Promise<void> {
     if (this.stopped) return;
     this.stopped = true;
     this.timer?.cancel();
     this.timer = undefined;
+    await this.beating;
     if (!this.started || !this.recording) return;
     try {
       await this.deps.db.query(DELETE_OWN, [this.holder]);

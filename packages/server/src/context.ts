@@ -139,12 +139,15 @@ export type Announcement<E> = (event: E) => void;
  *   map and the data-key cache.
  * - **`local`**: from this process only. For an effect that must happen once in the fleet, like the audit module's
  *   `licenseChanged` row.
+ * - **`remote`**: from the other instances only (review M2). For a cache that the writing line here already keeps
+ *   right itself, so hearing its own write again would undo it: the data-key cache drops nothing on its own key write,
+ *   and the tenant map, which reloads on the directory's own change, does not reload twice.
  */
-export type ListenerKind = 'cluster' | 'local';
+export type ListenerKind = 'cluster' | 'local' | 'remote';
 
 declare const listenerBrand: unique symbol;
 
-/** A listener with its kind: made only by {@link cluster} or {@link local}, so a bare function is a type error. */
+/** A listener with its kind: made only by {@link cluster}, {@link local} or {@link remote}, so a bare function is a type error. */
 export interface Listener<E> {
   readonly kind: ListenerKind;
   readonly fn: Announcement<E>;
@@ -159,6 +162,11 @@ export function cluster<E>(fn: Announcement<E>): Listener<E> {
 /** A listener that hears this process's announcements only. */
 export function local<E>(fn: Announcement<E>): Listener<E> {
   return Object.freeze({ kind: 'local', fn }) as Listener<E>;
+}
+
+/** A listener that hears the other instances' announcements only, through the bus (review M2). */
+export function remote<E>(fn: Announcement<E>): Listener<E> {
+  return Object.freeze({ kind: 'remote', fn }) as Listener<E>;
 }
 
 /**
@@ -183,6 +191,14 @@ export interface PresenceChangedEvent {
   readonly workspaceId: string;
   readonly holder: string;
   readonly users: readonly string[];
+  /**
+   * Set by the bus on a big room's list, cut into parts under the payload limit (review M1): this is part `part`
+   * (0-based) of `parts`, and every part of one list shares `seq`. A hub never sets them; a receiving hub replaces
+   * the holder's list once all the parts of one `seq` came.
+   */
+  readonly seq?: number;
+  readonly part?: number;
+  readonly parts?: number;
 }
 
 /** Drop every room's users `holder` announced (spec §20.3): it lost its bus, or it is stopping. */
@@ -192,10 +208,12 @@ export interface PresenceResetEvent {
 
 /**
  * Something about the tenant changed that the bus could not carry (an event over the payload limit): each hub
- * resyncs that tenant's rooms (spec §20.3). Made by the bus, never by a module.
+ * resyncs that tenant's rooms (spec §20.3). Made by the bus, never by a module. Without `tenantId` it is the bus's
+ * missed marker (review I2): the bus turns it into a resync of everything (`onListen` with `reconnected: true`) and
+ * never hands it to this list.
  */
 export interface ResyncEvent {
-  readonly tenantId: string;
+  readonly tenantId?: string;
 }
 
 /** A license was installed or removed (licensing spec §3.9); fired after the statement that stored or deleted it. */
@@ -362,14 +380,14 @@ export class Announcements<E> {
     return this.#listeners.length;
   }
 
-  /** Every listener, `local` and `cluster`: what an announcement in this process reaches. */
+  /** The `local` and `cluster` listeners: what an announcement in this process reaches. */
   all(): readonly Listener<E>[] {
-    return this.#listeners;
+    return this.#listeners.filter((listener) => listener.kind !== 'remote');
   }
 
-  /** The `cluster` listeners: what another instance's announcement reaches. */
+  /** The `cluster` and `remote` listeners: what another instance's announcement reaches. */
   clustered(): readonly Listener<E>[] {
-    return this.#listeners.filter((listener) => listener.kind === 'cluster');
+    return this.#listeners.filter((listener) => listener.kind !== 'local');
   }
 
   /** Hands the event to the bus, if one is connected. Never throws. */
@@ -484,7 +502,7 @@ export function announce<E>(listeners: Announcements<E>, event: E, log: FastifyB
 }
 
 /**
- * Another instance's announcement, from the bus (spec §20.3): the `cluster` listeners only, on the same terms as
+ * Another instance's announcement, from the bus (spec §20.3): the `cluster` and `remote` listeners, on the same terms as
  * {@link announce}, and never forwarded again.
  */
 export function deliverRemote<E>(listeners: Announcements<E>, event: E, log: FastifyBaseLogger): void {

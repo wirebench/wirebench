@@ -394,6 +394,21 @@ export async function tokenByHash(
   return { token: withDates<TokenRow>(token, TOKEN_DATES), user: withDates<UserRow>(user, USER_DATES) };
 }
 
+/**
+ * Which of `ids` are still live sessions here: not revoked, not deleted, and their user not disabled. One query, for
+ * a process that missed `sessionEnded` events and re-validates the sockets it holds (hosted edition spec §20.3).
+ * Expiry by age is not asked: each holder already ends those on its own clock.
+ */
+export async function liveTokenIds(db: TenantQuerier, ids: readonly string[]): Promise<Set<string>> {
+  if (ids.length === 0) return new Set();
+  const rows = await db.query<{ id: string }>(
+    `select t.id from device_tokens t join users u on u.id = t.user_id
+      where t.id = any($1::text[]) and t.revoked_at is null and u.disabled_at is null`,
+    [[...ids]],
+  );
+  return new Set(rows.rows.map((row) => row.id));
+}
+
 export async function touchToken(db: TenantQuerier, id: string, at: Date): Promise<void> {
   await db.query('update device_tokens set last_used_at = $2 where id = $1', [id, at]);
 }

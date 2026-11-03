@@ -37,6 +37,7 @@ import type {
   SessionEndedEvent,
 } from '../context.js';
 import type { Listened } from '../operations/bus.js';
+import { holdSession, type HeldSessions } from '../operations/sessions.js';
 import type { TenantScope } from '../tenancy/scope.js';
 import type { Effective } from '../teams/roles.js';
 import { LIVE_TOO_MANY_SUBSCRIPTIONS } from './errors.js';
@@ -139,6 +140,11 @@ export class LiveHub {
   private readonly names = new Map<Room, Map<string, string>>();
   /** What this hub last announced of each room, as joined ids, so an unchanged list is not announced again. */
   private readonly announced = new Map<Room, string>();
+  /**
+   * A big list still arriving in parts, by holder and room (review M1): its `seq` and the parts so far. A part of a
+   * newer `seq` gives the older list up, and a part of an older one is ignored.
+   */
+  private readonly partial = new Map<string, { readonly seq: number; readonly parts: (readonly string[])[] }>();
 
   constructor(private readonly deps: LiveHubDeps) {}
 
@@ -300,10 +306,12 @@ export class LiveHub {
   presenceChanged(event: PresenceChangedEvent): void {
     if (this.closed || this.cluster === undefined || event.holder === this.cluster.holder) return;
     const room = keyOf(event.tenantId, event.workspaceId);
+    const users = this.wholeList(room, event);
+    if (users === undefined) return;
     const lists = this.remote.get(room) ?? new Map<string, readonly string[]>();
-    if ((lists.get(event.holder) ?? []).join(',') === event.users.join(',')) return;
-    if (event.users.length === 0) lists.delete(event.holder);
-    else lists.set(event.holder, [...event.users]);
+    if ((lists.get(event.holder) ?? []).join(',') === users.join(',')) return;
+    if (users.length === 0) lists.delete(event.holder);
+    else lists.set(event.holder, users);
     this.storeLists(room, lists);
     const tenant = this.tenantOfRoom(room);
     if (tenant === undefined) return;
@@ -322,6 +330,38 @@ export class LiveHub {
     if (this.closed || this.cluster === undefined || event.holder === this.cluster.holder) return;
     this.sendPresence(this.dropHolders((holder) => holder === event.holder));
     for (const room of this.byWorkspace.keys()) this.announceOwn(room, true);
+  }
+
+  /**
+   * The holder's whole list for the room once it is complete: a list in one message at once, a list in parts when its
+   * last part came (review M1); `undefined` while parts are missing.
+   */
+  private wholeList(room: Room, event: PresenceChangedEvent): readonly string[] | undefined {
+    const key = `${event.holder}|${room}`;
+    if (event.parts === undefined || event.part === undefined || event.seq === undefined) {
+      this.partial.delete(key);
+      return [...event.users];
+    }
+    let pending = this.partial.get(key);
+    // A straggler of a list a newer one replaced is too old to apply.
+    if (pending !== undefined && event.seq < pending.seq) return undefined;
+    if (pending?.seq !== event.seq) {
+      pending = { seq: event.seq, parts: [] };
+      this.partial.set(key, pending);
+    }
+    pending.parts[event.part] = event.users;
+    let count = 0;
+    for (const part of pending.parts) if (part !== undefined) count++;
+    if (count < event.parts) return undefined;
+    this.partial.delete(key);
+    return pending.parts.flat();
+  }
+
+  /** The device tokens of the sockets held here, by tenant: what a resync re-validates (review I1). */
+  heldSessions(): HeldSessions {
+    const held: HeldSessions = new Map();
+    for (const { session } of this.bySocket.values()) holdSession(held, session.tenant, session.tokenId);
+    return held;
   }
 
   /** The holders whose lists this hub keeps: the heartbeat asks the instance table only when there are some. */
@@ -345,6 +385,7 @@ export class LiveHub {
     if (this.closed || this.cluster === undefined) return;
     if (listened.reconnected) {
       this.remote.clear();
+      this.partial.clear();
       this.names.clear();
     }
     this.cluster.announceReset({ holder: this.cluster.holder });
@@ -354,7 +395,8 @@ export class LiveHub {
 
   /** The bus could not carry an event for the tenant: its rooms resync (spec §20.3). */
   resync(event: ResyncEvent): void {
-    if (this.closed || this.cluster === undefined) return;
+    // A tenant-less one is the bus's missed marker, which reaches `listened` instead.
+    if (this.closed || this.cluster === undefined || event.tenantId === undefined) return;
     this.resyncRooms([...this.byWorkspace.keys()].filter((room) => room.startsWith(`${event.tenantId}:`)));
   }
 
@@ -449,6 +491,7 @@ export class LiveHub {
   /** Drops the lists of the holders `drop` picks. Returns the rooms whose union changed. */
   private dropHolders(drop: (holder: string) => boolean): Room[] {
     const changed: Room[] = [];
+    for (const key of [...this.partial.keys()]) if (drop(key.slice(0, key.indexOf('|')))) this.partial.delete(key);
     for (const [room, lists] of [...this.remote]) {
       const before = lists.size;
       for (const holder of [...lists.keys()]) if (drop(holder)) lists.delete(holder);

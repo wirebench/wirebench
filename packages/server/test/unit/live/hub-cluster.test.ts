@@ -137,6 +137,46 @@ describe('the live hub across instances (spec §20.3)', () => {
     expect(late.take().at(-1)).toEqual({ type: 'presence', workspaceId: WS_A, users: users(ANA, BEN, CAT) });
   });
 
+  it('replaces a holder’s list from parts only once every part of one sequence came (review M1)', async () => {
+    const f = fixture();
+    const ana = await f.connect(ANA, WS_A);
+    const part = (seq: number, n: number, parts: number, ...ids: string[]): PresenceChangedEvent => ({
+      ...remote(THERE, WS_A, ...ids),
+      seq,
+      part: n,
+      parts,
+    });
+    f.hub.presenceChanged(part(4, 0, 2, BEN));
+    await f.hub.idle();
+    expect(ana.take()).toEqual([]);
+    // A newer list starts: the older one's parts are given up.
+    f.hub.presenceChanged(part(5, 0, 2, CAT));
+    f.hub.presenceChanged(part(4, 1, 2, ANA));
+    await f.hub.idle();
+    expect(ana.take()).toEqual([]);
+    f.hub.presenceChanged(part(5, 1, 2, BEN));
+    await f.hub.idle();
+    expect(ana.take()).toEqual([{ type: 'presence', workspaceId: WS_A, users: users(ANA, BEN, CAT) }]);
+    // A whole list after replaces it at once, and leaves no parts behind.
+    f.hub.presenceChanged(remote(THERE, WS_A, CAT));
+    await f.hub.idle();
+    expect(ana.take()).toEqual([{ type: 'presence', workspaceId: WS_A, users: users(ANA, CAT) }]);
+  });
+
+  it('assembles a 600-user room from its parts', async () => {
+    const f = fixture();
+    const ana = await f.connect(ANA, WS_A);
+    const many = Array.from({ length: 600 }, (_, n) => `01J8ZF${String(n).padStart(20, '0')}`);
+    const chunks = [many.slice(0, 250), many.slice(250, 500), many.slice(500)];
+    chunks.forEach((chunk, n) => {
+      f.hub.presenceChanged({ ...remote(THERE, WS_A, ...chunk), seq: 0, part: n, parts: chunks.length });
+    });
+    await f.hub.idle();
+    // One name lookup for the whole list, once it is whole.
+    expect(f.nameQueries).toEqual([many]);
+    expect(ana.take()).toHaveLength(1);
+  });
+
   it('ignores its own announcements, and another tenant’s room is another room', async () => {
     const f = fixture();
     const ana = await f.connect(ANA, WS_A);

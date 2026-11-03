@@ -4,7 +4,63 @@
  */
 import { describe, expect, it, vi } from 'vitest';
 import { formatAge, formatInstances } from '../../../src/operations/cli.js';
-import { allowsMultipleInstances, LICENSE_CHECK_MS, licenseLapseWatch } from '../../../src/operations/instances.js';
+import {
+  allowsMultipleInstances,
+  HEARTBEAT_MS,
+  InstanceRegistry,
+  LICENSE_CHECK_MS,
+  licenseLapseWatch,
+} from '../../../src/operations/instances.js';
+import { manualTimers } from '../../helpers/timers.js';
+
+describe('the heartbeat and stop (review M3)', () => {
+  /** A pool whose upserts wait until the test lets them go; every statement is recorded in order. */
+  const pool = () => {
+    const statements: string[] = [];
+    const held: (() => void)[] = [];
+    const db = {
+      query: (text: string) => {
+        statements.push(text.trim().split(/\s+/)[0]!);
+        if (!text.startsWith('insert')) return Promise.resolve({ rows: [] });
+        return new Promise<{ rows: never[] }>((done) => held.push(() => done({ rows: [] })));
+      },
+    };
+    return { db, statements, release: () => held.splice(0).forEach((go) => go()) };
+  };
+
+  it('skips a beat while one renew runs, and stop waits for it before deleting the row', async () => {
+    const { db, statements, release } = pool();
+    const timers = manualTimers();
+    const registry = new InstanceRegistry({
+      db,
+      holder: '11111111-1111-4111-8111-111111111111',
+      mode: 'multi',
+      version: '0.0.0-test',
+      setTimer: timers.setTimer,
+      log: () => undefined,
+    });
+    const starting = registry.start();
+    release();
+    await starting;
+    statements.length = 0;
+    timers.fire(HEARTBEAT_MS); // a renew starts and hangs on its upsert
+    timers.fire(HEARTBEAT_MS); // the next beat finds it running and skips
+    await Promise.resolve();
+    expect(statements).toEqual(['insert']);
+    let stopped = false;
+    const stopping = registry.stop().then(() => {
+      stopped = true;
+    });
+    await new Promise((done) => setTimeout(done, 10));
+    // The delete waits: a renew landing after it would bring the stopped row back.
+    expect(statements).toEqual(['insert']);
+    expect(stopped).toBe(false);
+    release();
+    await stopping;
+    expect(statements).toEqual(['insert', 'delete', 'delete']);
+    expect(statements.at(-1)).toBe('delete');
+  });
+});
 
 describe('the license several instances need (ruling 3)', () => {
   it('is Enterprise, valid or in grace', () => {

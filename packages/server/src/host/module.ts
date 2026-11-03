@@ -33,6 +33,7 @@ import { auditIp, cluster, recordAudit, type AuditInput, type ServerContext, typ
 import { sessionToken } from '../identity/cookies.js';
 import { identitySettings } from '../identity/env.js';
 import { tokenByHash } from '../identity/repo.js';
+import { endGoneSessions } from '../operations/sessions.js';
 import { hashToken } from '../identity/tokens.js';
 import { realTimer } from '../live/module.js';
 import { tenantUrl } from '../tenancy/urls.js';
@@ -362,6 +363,18 @@ export function hostModule(options: HostModuleOptions = {}): ServerModule {
           instances.sessionEnded(event);
         }),
       );
+      // A bus that missed events may have missed a `sessionEnded` (review I1): the gone tokens' sockets close as if.
+      ctx.bus.onListen(({ reconnected }) => {
+        if (!reconnected) return;
+        void endGoneSessions(
+          ctx.tenancy,
+          instances.heldSessions(),
+          (event) => {
+            instances.sessionEnded(event);
+          },
+          ctx.log,
+        );
+      });
       app.addHook('onClose', async () => {
         await instances.closeAll();
         // The pool closes after the app, so every secret audit row is written first.
