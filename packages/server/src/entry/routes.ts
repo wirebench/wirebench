@@ -17,8 +17,11 @@ export const ENTRY_BODY_LIMIT = 1024;
 export const PER_CLIENT = { capacity: 5, refillPerMs: 5 / 60_000 } as const;
 export const PER_ADDRESS = { capacity: 3, refillPerMs: 3 / 3_600_000 } as const;
 
-/** What `<input type=email>` accepts, near enough: one `@`, a dot in the domain, no space, at most 254 characters. */
-const ADDRESS = /^[^\s@]{1,64}@[^\s@]+\.[^\s@]+$/;
+/**
+ * An address, near enough to what `<input type=email>` accepts: one `@`, a dot in the domain, at most 254 characters,
+ * and none of the characters a mail library reads as a list or a display name (`,;<>"()[]\`) or any space.
+ */
+const ADDRESS = /^[^\s@,;<>"()[\]\\]{1,64}@[^\s@,;<>"()[\]\\]+\.[^\s@,;<>"()[\]\\]+$/;
 
 /** The per-address bucket's key: a keyed hash, so the limiter's map never holds an address. */
 export function addressBucketKey(key: Buffer, address: string): string {
@@ -65,7 +68,8 @@ export function registerEntryRoutes(app: FastifyInstance, options: EntryRoutesOp
       if (request.headers.origin !== origin) return reply.code(403).header('cache-control', 'no-store').send();
       const body = request.body instanceof URLSearchParams ? request.body : new URLSearchParams();
       const address = (body.get('email') ?? '').trim().toLowerCase();
-      // Both buckets are charged for every post, so a refused one tells a prober nothing about the address either.
+      // The client's bucket is charged for every post; the address's only for a valid address the client may send.
+      // Either way the answer below is the same page, so neither bucket tells a prober anything.
       const client = clients.take(`ip:${request.ip}`);
       if (client.allowed && address.length <= 254 && ADDRESS.test(address)) {
         if (addresses.take(keyOf(address)).allowed) options.queue.push(address);

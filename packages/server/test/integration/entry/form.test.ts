@@ -66,13 +66,23 @@ describeDb('the entry form (spec §21.4)', () => {
     });
 
   it('answers the same page, byte for byte, to a valid, a malformed and a missing address', async () => {
-    const answers = [await post('Someone@Acme.test'), await post('not an address'), await post(undefined)];
+    const answers = [
+      await post('Someone@Acme.test'),
+      await post('not an address'),
+      await post(undefined),
+      await post('a@acme.test,postmaster'),
+    ];
     for (const res of answers) {
       expect(res.statusCode).toBe(200);
       expect(res.headers['set-cookie']).toBeUndefined();
       expect(res.headers['cache-control']).toBe('no-store');
       expect(res.body).toBe(answers[0]!.body);
     }
+    // The headers too, but for the ones that change with every response.
+    const varying = new Set(['date', 'x-request-id', 'request-id']);
+    const headersOf = (res: (typeof answers)[number]) =>
+      Object.entries(res.headers).filter(([name]) => !varying.has(name));
+    for (const res of answers) expect(headersOf(res)).toEqual(headersOf(answers[0]!));
     expect(answers[0]!.body).toContain('If that address has a team, a message is on its way.');
     await queue.idle();
     expect(queued).toEqual(['someone@acme.test']);

@@ -36,6 +36,7 @@ describeDb('the entry lookup and message (spec §21.4)', () => {
   const sent: { to: string; mail: EntryMail; smtp: { url: string; from: string } }[] = [];
   const logLines: string[] = [];
   let ip = 0;
+  let failWith: ((to: string) => string) | undefined;
   beforeAll(async () => {
     const at = new Date('2026-11-03T12:00:00.000Z');
     const user = async (tx: Parameters<typeof repo.insertUser>[0], email: string): Promise<repo.UserRow> =>
@@ -52,6 +53,7 @@ describeDb('the entry lookup and message (spec §21.4)', () => {
       modules: [
         entryModule({
           send: (smtp, to, mail) => {
+            if (failWith !== undefined) return Promise.reject(new Error(failWith(to)));
             sent.push({ smtp: { ...smtp }, to, mail });
             return Promise.resolve();
           },
@@ -75,6 +77,9 @@ describeDb('the entry lookup and message (spec §21.4)', () => {
           await repo.setDisabled(tx, gone.id, at);
         });
         await write(directory.defaultScope(), (tx) => user(tx, 'default@example.test'));
+        const paused = (await admin.create({ slug: 'paused', name: 'Paused' })).scope;
+        await write(paused, (tx) => user(tx, 'both@example.test'));
+        await db.query(`update tenants set status = 'suspended' where slug = 'paused'`);
       },
     });
   });
@@ -83,6 +88,7 @@ describeDb('the entry lookup and message (spec §21.4)', () => {
   });
   beforeEach(() => {
     sent.length = 0;
+    failWith = undefined;
     ip++;
   });
 
@@ -115,6 +121,18 @@ describeDb('the entry lookup and message (spec §21.4)', () => {
     expect(sent).toHaveLength(1);
     expect(sent[0]!.mail.text).toContain('https://acme.app.test/sign-in');
     expect(sent[0]!.mail.text).toContain('https://beta.app.test/sign-in');
+    // A suspended tenant is not resolvable, so it is never listed.
+    expect(sent[0]!.mail.text).not.toContain('paused');
+  });
+
+  it("logs a failed send by its mail host only, never the refusal's text, which quotes the address", async () => {
+    failWith = (to) => `550 5.1.1 <${to}>: Recipient address rejected`;
+    logLines.length = 0;
+    await ask('only-acme@example.test');
+    const warned = logLines.filter((line) => line.includes('an entry message could not be sent'));
+    expect(warned).toHaveLength(1);
+    expect(JSON.parse(warned[0]!)).toMatchObject({ mailHost: 'mail.test' });
+    for (const line of logLines) expect(line).not.toContain('only-acme@example.test');
   });
 
   it('sends nothing for an unknown address, a disabled user or a user of the default tenant', async () => {

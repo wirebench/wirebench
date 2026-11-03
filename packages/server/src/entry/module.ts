@@ -59,7 +59,13 @@ export function entryModule(options: EntryModuleOptions = {}): ServerModule {
         const matches = await teamsOf(ctx.tenancy, address, log);
         if (matches.length > 0) {
           const teams = matches.map((match) => ({ name: match.name, url: tenantUrl(config, match.scope) }));
-          await send(smtp, address, renderEntryMail({ teams, entryHost, siteUrl }));
+          try {
+            await send(smtp, address, renderEntryMail({ teams, entryHost, siteUrl }));
+          } catch {
+            // A mail server's refusal quotes the recipient ("550 … <someone@…>: Recipient address rejected"), so
+            // the error itself is never logged: only the mail host, which names no one.
+            log.warn({ mailHost: new URL(smtp.url).hostname }, 'an entry message could not be sent');
+          }
         }
         log.info({ matched: matches.length, ms: Date.now() - started }, 'an entry lookup finished');
       };
