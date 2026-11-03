@@ -35,6 +35,7 @@ describeDb('0003_teams (§4.1)', () => {
       'terminal-shares',
       'host',
       'agent',
+      'entry',
     ]);
   });
 

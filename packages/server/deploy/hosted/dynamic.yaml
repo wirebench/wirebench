@@ -1,0 +1,30 @@
+# Traefik's routes for the hosted edition (hosted spec §21.5). `APP_DOMAIN` comes from the Traefik container's
+# environment; the templates run once, at start-up.
+http:
+  routers:
+    wirebench:
+      entryPoints:
+        - websecure
+      # The apex, which the server redirects to the entry, and exactly one label under it: the entry and every tenant.
+      rule: 'Host(`{{ env "APP_DOMAIN" }}`) || HostRegexp(`^[a-z0-9-]+\.{{ env "APP_DOMAIN" | replace "." "\\." }}$`)'
+      service: wirebench
+      middlewares:
+        - hsts
+      tls:
+        certResolver: le
+        # One certificate: a wildcard does not cover its own apex, so the apex is the main name.
+        domains:
+          - main: '{{ env "APP_DOMAIN" }}'
+            sans:
+              - '*.{{ env "APP_DOMAIN" }}'
+  middlewares:
+    hsts:
+      headers:
+        # No preload: that is a one-way choice for a real domain, taken later.
+        stsSeconds: 31536000
+        stsIncludeSubdomains: true
+  services:
+    wirebench:
+      loadBalancer:
+        servers:
+          - url: http://server:8080

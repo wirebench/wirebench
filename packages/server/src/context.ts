@@ -623,7 +623,8 @@ export interface ServerModule {
     | 'session-logs'
     | 'terminal-shares'
     | 'host'
-    | 'agent';
+    | 'agent'
+    | 'entry';
   /**
    * The module's `NNNN_name.sql` files, merged with the host's in version order (`serve.ts`
    * `allMigrations`). By convention `packages/server/migrations/<module>/` (e.g.

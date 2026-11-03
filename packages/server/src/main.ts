@@ -50,6 +50,11 @@ export async function main(
             `instances: multi; ${MULTI_NEEDS_ENTERPRISE}: serve refuses with server-instances-need-enterprise otherwise\n`,
           );
         }
+        // Spec §21.1: accepted, but only hosted mode reads them.
+        if (config.mode !== 'hosted' && (config.appDomain !== undefined || config.siteDomain !== undefined))
+          io.stdout.write(
+            'WIREBENCH_SERVER_APP_DOMAIN and WIREBENCH_SERVER_SITE_DOMAIN are read in hosted mode only; this server ignores them\n',
+          );
         if (config.oidcIssuer !== undefined) {
           io.stdout.write(
             `OIDC redirect URI to register at the issuer: ${operatorPublicUrl(config)}/api/v1/auth/oidc/callback\n`,

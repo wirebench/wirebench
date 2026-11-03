@@ -149,6 +149,8 @@ with the variable's name and the rule it broke, never the value.
 | `WIREBENCH_SERVER_HOST_IDLE_MINUTES` | no | `30` | Minutes after a user’s last browser connection closes before the server stops that user’s host and frees its memory (1–1440). The user’s files stay. |
 | `WIREBENCH_SERVER_INSTANCES` | no | `single` | `single`: one server process. `multi`: several instances against one database and one data volume, which needs an Enterprise license that is valid or in grace (the start is refused otherwise) and WIREBENCH_SERVER_INSTANCE_URL. |
 | `WIREBENCH_SERVER_INSTANCE_URL` | no | — | This instance’s private address, which the other instances reach it at: `http://host:port`, such as `http://10.0.0.5:8091`; the port is its internal listener’s. Required with `WIREBENCH_SERVER_INSTANCES=multi`. |
+| `WIREBENCH_SERVER_APP_DOMAIN` | no | — | Hosted mode only: the product’s domain. Each team is `https://<slug>.<domain>`, and `app.<domain>` mails a person their teams’ links. Unused on a self-hosted server. |
+| `WIREBENCH_SERVER_SITE_DOMAIN` | no | — | Hosted mode only: the public site’s domain, which the server links to and never serves. It must not be, or sit under, the app domain. Unused on a self-hosted server. |
 {/* config:end */}
 {/* prettier-ignore-end */}
 

@@ -7,6 +7,10 @@ All notable changes to this project are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Hosted names (server, not yet switched on).** `WIREBENCH_SERVER_APP_DOMAIN` and `WIREBENCH_SERVER_SITE_DOMAIN`
+  name the hosted edition's two domains; `app.<app-domain>` emails a person the sign-in links of their teams, the apex
+  redirects there, and slugs such as `app`, `api` and the area names are reserved. A deployment recipe in
+  `packages/server/deploy/hosted/` issues one wildcard certificate with Traefik. A self-hosted server is unchanged.
 - **Colour themes.** Nine colour themes beside Default — Field kit, Sandstone, Dusk, Seed, Pith,
   Rind, Plume, Kiln and Trail — each in dark and light, chosen in Settings → Appearance or with **Theme: choose colour theme…**,
   which previews them as you move through the list; the mode (Dark, Light, System) stays a separate choice.

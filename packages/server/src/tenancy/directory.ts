@@ -11,6 +11,7 @@ import { WirebenchError } from '@wirebench/engine';
 import type { Querier } from '../db/querier.js';
 import type { TenantKeys } from './keys.js';
 import { scopeOf, type TenantScope } from './scope.js';
+import { checkSlug } from './slugs.js';
 
 /**
  * A lost `server_identity` row. It holds the id licenses are bound to, so the advice is to restore it, never to
@@ -117,6 +118,16 @@ export class TenantDirectory {
     return rows.rows.map(scopeOf);
   }
 
+  /** {@link resolvable}, with each tenant's name: what the entry's message lists (spec §21.4). */
+  async resolvableNamed(): Promise<{ readonly scope: TenantScope; readonly name: string }[]> {
+    const rows = await this.#db.query<{ id: string; slug: string; name: string }>(
+      `select t.id::text as id, t.slug, t.name from tenants t
+       where t.status = 'active' and t.id is distinct from (select default_tenant_id from server_identity)
+       order by t.created_at, t.id`,
+    );
+    return rows.rows.map((row) => ({ scope: scopeOf(row), name: row.name }));
+  }
+
   async get(id: string): Promise<(TenantRow & { readonly scope: TenantScope }) | undefined> {
     const rows = await this.#db.query<TenantRow & Record<string, unknown>>(
       `select ${COLUMNS} from tenants where id = $1::uuid`,
@@ -162,6 +173,11 @@ export class TenantAdmin {
    * and the tenant gets it the first time the root exists.
    */
   async create(input: NewTenant): Promise<TenantRow & { readonly scope: TenantScope }> {
+    // Spec §21.2: the one writer of a slug checks it before anything is written, reserved names included.
+    const slug = checkSlug(input.slug);
+    if (slug === 'slug-invalid')
+      throw new WirebenchError('tenancy-slug-invalid', 'that slug is not a valid tenant slug');
+    if (slug === 'slug-reserved') throw new WirebenchError('tenancy-slug-reserved', 'that slug is reserved');
     const id = randomUUID();
     const dataKey = (await directoryKeys.get(this.#directory)?.wrapNew(id)) ?? null;
     const rows = await this.#db.query<TenantRow & Record<string, unknown>>(

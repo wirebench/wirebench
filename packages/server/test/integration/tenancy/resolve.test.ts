@@ -201,7 +201,8 @@ describeDb('tenant resolution (spec §19.5)', () => {
         'unknown.example.test',
         'two.labels.example.test',
         'acme.example.test.evil.test',
-        'example.test',
+        // The apex redirects to the entry (spec §21.3), and the entry 404s every route but its own.
+        'app.example.test',
         'default.example.test',
         'paused.example.test',
         'gone.example.test',

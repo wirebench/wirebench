@@ -1,0 +1,91 @@
+# Wirebench Server, hosted edition (hosted spec §21.5, ADR-0038): Traefik in front, the only public listener, with one
+# Let's Encrypt certificate for <app-domain> and *.<app-domain> issued by ACME DNS-01 at Hetzner DNS; the server and
+# PostgreSQL behind it, neither with a published port. README.md beside this file is the runbook.
+#
+# Hosted mode starts once the control plane (slice 7) lifts its refusal; until then the server refuses
+# WIREBENCH_SERVER_MODE=hosted at start-up, and this file documents the deployment it will run.
+#
+# Settings go in `.env` beside this file (`env.example` lists them; copy it to `.env`), and the Hetzner DNS API token in
+# `secrets/hetzner_api_token`, mode 600. Then `docker compose up -d`.
+name: wirebench-hosted
+
+services:
+  traefik:
+    image: traefik:v3.7.17
+    restart: unless-stopped
+    command:
+      - --providers.file.filename=/etc/traefik/dynamic.yaml
+      - --providers.file.watch=false
+      - --entrypoints.web.address=:80
+      - --entrypoints.web.http.redirections.entrypoint.to=websecure
+      - --entrypoints.web.http.redirections.entrypoint.scheme=https
+      - --entrypoints.websecure.address=:443
+      - --certificatesresolvers.le.acme.email=${ACME_EMAIL:?set ACME_EMAIL in .env}
+      - --certificatesresolvers.le.acme.storage=/letsencrypt/acme.json
+      - --certificatesresolvers.le.acme.caserver=${ACME_CA_SERVER:-https://acme-v02.api.letsencrypt.org/directory}
+      - --certificatesresolvers.le.acme.dnschallenge.provider=hetzner
+      - --certificatesresolvers.le.acme.dnschallenge.resolvers=1.1.1.1:53,9.9.9.9:53
+      - --log.level=INFO
+    environment:
+      # Read by the dynamic file's templates.
+      APP_DOMAIN: ${APP_DOMAIN:?set APP_DOMAIN in .env}
+      # lego's hetzner provider reads the token from this file; it never appears in the environment.
+      HETZNER_API_TOKEN_FILE: /run/secrets/hetzner_api_token
+    secrets:
+      - hetzner_api_token
+    ports:
+      - '80:80'
+      - '443:443'
+    volumes:
+      - ./dynamic.yaml:/etc/traefik/dynamic.yaml:ro
+      - letsencrypt:/letsencrypt
+
+  server:
+    image: ghcr.io/wirebench/wirebench-server:${WIREBENCH_VERSION:-latest}
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - path: server.env
+        required: false
+    environment:
+      WIREBENCH_SERVER_MODE: hosted
+      WIREBENCH_SERVER_APP_DOMAIN: ${APP_DOMAIN:?set APP_DOMAIN in .env}
+      WIREBENCH_SERVER_SITE_DOMAIN: ${SITE_DOMAIN:?set SITE_DOMAIN in .env}
+      WIREBENCH_SERVER_PUBLIC_URL: https://app.${APP_DOMAIN}
+      WIREBENCH_SERVER_MIGRATION_DATABASE_URL: postgres://wirebench:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db:5432/wirebench
+      WIREBENCH_SERVER_DATABASE_URL: postgres://wirebench_app:${WIREBENCH_APP_DB_PASSWORD:?set WIREBENCH_APP_DB_PASSWORD in .env}@db:5432/wirebench
+      # Traefik is the only way in, so its X-Forwarded-Host and X-Forwarded-For are the request's.
+      WIREBENCH_SERVER_TRUST_PROXY: 'true'
+      WIREBENCH_SERVER_BROWSER_CLIENT: 'true'
+      WIREBENCH_SERVER_SECRETS_KEY: ${WIREBENCH_SECRETS_KEY:?set WIREBENCH_SECRETS_KEY in .env}
+      # app.<app-domain> mails people the links of their teams (spec §21.4).
+      WIREBENCH_SERVER_SMTP_URL: ${SMTP_URL:?set SMTP_URL in .env}
+      WIREBENCH_SERVER_SMTP_FROM: ${SMTP_FROM:?set SMTP_FROM in .env}
+    volumes:
+      - wirebench-data:/data
+
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: wirebench
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: wirebench
+    volumes:
+      - wirebench-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U wirebench']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+secrets:
+  hetzner_api_token:
+    file: ./secrets/hetzner_api_token
+
+volumes:
+  letsencrypt:
+  wirebench-db:
+  wirebench-data:

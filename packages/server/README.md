@@ -64,6 +64,8 @@ database, one data directory; run it behind TLS. Design: `docs/specs/2026-09-24-
 | `WIREBENCH_SERVER_HOST_IDLE_MINUTES` | no | `30` | Minutes after a user’s last browser connection closes before the server stops that user’s host and frees its memory (1–1440). The user’s files stay. |
 | `WIREBENCH_SERVER_INSTANCES` | no | `single` | `single`: one server process. `multi`: several instances against one database and one data volume, which needs an Enterprise license that is valid or in grace (the start is refused otherwise) and WIREBENCH_SERVER_INSTANCE_URL. |
 | `WIREBENCH_SERVER_INSTANCE_URL` | no | — | This instance’s private address, which the other instances reach it at: `http://host:port`, such as `http://10.0.0.5:8091`; the port is its internal listener’s. Required with `WIREBENCH_SERVER_INSTANCES=multi`. |
+| `WIREBENCH_SERVER_APP_DOMAIN` | no | — | Hosted mode only: the product’s domain. Each team is `https://<slug>.<domain>`, and `app.<domain>` mails a person their teams’ links. Unused on a self-hosted server. |
+| `WIREBENCH_SERVER_SITE_DOMAIN` | no | — | Hosted mode only: the public site’s domain, which the server links to and never serves. It must not be, or sit under, the app domain. Unused on a self-hosted server. |
 <!-- config:end -->
 <!-- prettier-ignore-end -->
 
@@ -473,6 +475,15 @@ server-side send path until an operator asks for them.
   browser build, then the copy: `pnpm --filter @wirebench/server... build`,
   `pnpm --filter @wirebench/desktop build:browser`, `pnpm --filter @wirebench/server copy-browser`. With the
   switch on and no build copied, the server refuses to start.
+
+## Hosted names
+
+The hosted edition puts each team at `https://<slug>.<app-domain>` and the entry, where a person gets their teams'
+links by email, at `app.<app-domain>` (hosted edition spec §21). `WIREBENCH_SERVER_APP_DOMAIN` and
+`WIREBENCH_SERVER_SITE_DOMAIN` name the product's domain and the site's; both are read in hosted mode only, which the
+control plane will switch on, and a self-hosted server ignores them (`config check` says so). Slugs such as `app`,
+`api`, `www`, the area and protocol names and the brand names are reserved. The deployment recipe, with Traefik issuing
+one wildcard certificate by DNS-01 and the public suffix list step, is in [`deploy/hosted/`](deploy/hosted/README.md).
 
 ## Local agent
 

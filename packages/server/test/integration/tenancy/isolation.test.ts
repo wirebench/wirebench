@@ -160,7 +160,7 @@ async function routeSweep(w: World): Promise<RouteSweep> {
       // The control: A's admin on A's host.
       const control = await w.a.tenant.inject(await route.request(ctx(w.a)));
       await route.after?.(ctx(w.a));
-      if (route.cls === 'federated') {
+      if (route.cls === 'federated' || route.cls === 'entry') {
         if (control.statusCode !== 404) result.controls.push(`${key}: A got ${control.statusCode}, not 404`);
       } else if (control.statusCode >= 400) {
         result.controls.push(`${key}: A got ${control.statusCode} ${control.body.slice(0, 300)}`);
@@ -182,7 +182,8 @@ async function routeSweep(w: World): Promise<RouteSweep> {
       const emptyList = status < 300 && res.body.trim() === '[]';
       const refused =
         route.refused !== undefined ? route.refused(res) : (route.statuses ?? [404]).includes(status) || emptyList;
-      if (route.cls === 'federated' && status !== 404) result.violations.push(`${key}: B got ${status}, not 404`);
+      if ((route.cls === 'federated' || route.cls === 'entry') && status !== 404)
+        result.violations.push(`${key}: B got ${status}, not 404`);
       if (route.cls === 'refused' && !refused) {
         result.violations.push(`${key}: B got ${status} ${res.body.slice(0, 300)}`);
       }

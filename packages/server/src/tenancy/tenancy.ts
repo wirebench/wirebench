@@ -32,6 +32,15 @@ export interface Tenancy {
     fn: (tx: TenantQuerier, scope: TenantScope) => Promise<JobOutcome>,
     log: Pick<FastifyBaseLogger, 'error'>,
   ): Promise<JobPass>;
+  /**
+   * One unit per tenant a hosted `Host` may name (spec §19.5: active, not the default), with its name: the entry's
+   * lookup (spec §21.4). Otherwise as {@link forEachTenant}.
+   */
+  forEachResolvableTenant(
+    job: string,
+    fn: (tx: TenantQuerier, scope: TenantScope, name: string) => Promise<JobOutcome>,
+    log: Pick<FastifyBaseLogger, 'error'>,
+  ): Promise<JobPass>;
   /** `/healthz`: whether the database answers `select 1`, which reads no table and needs no tenant. */
   reachable(): Promise<void>;
   /**
@@ -63,6 +72,14 @@ export function createTenancy(db: Database, options: TenancyOptions = {}): Tenan
   const tenancy: Tenancy = {
     db: factory,
     forEachTenant: (job, fn, log) => forEachTenant({ directory, db: factory, log }, job, fn),
+    forEachResolvableTenant: async (job, fn, log) => {
+      const named = await directory.resolvableNamed();
+      const names = new Map(named.map(({ scope, name }) => [scope.tenantId, name]));
+      const list = (): Promise<TenantScope[]> => Promise.resolve(named.map(({ scope }) => scope));
+      return forEachTenant({ directory: { list }, db: factory, log }, job, (tx, scope) =>
+        fn(tx, scope, names.get(scope.tenantId) ?? scope.slug),
+      );
+    },
     reachable: async () => {
       await db.query('select 1');
     },
