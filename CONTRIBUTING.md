@@ -23,9 +23,15 @@ Locally, `pnpm check:tests` (typecheck + tests + perf gates) is the OS-sensitive
 pnpm check        # lint + typecheck + wsi:docs --check + contrast:check + check:doc-paths + test + test:perf
 ```
 
-A change that touches only documentation (`docs/`, `docs-site/`, `site/`, Markdown anywhere) skips
-the test and e2e jobs; `check` still runs, and `.github/workflows/docs.yml` runs the Markdown-facing
-checks (`pnpm check:docs`: Prettier, the generated docs, cited paths and images, banned terms).
+On a pull request, the jobs past the Vitest suite (e2e, the server's PostgreSQL suites, the image,
+npm and Action smoke tests and the like) run only when a file they build or read changed: their
+packages, the workspace packages those depend on, and the scripts they run
+(`scripts/ci/changed-jobs.ts`, which names each job's inputs). A server-only change skips the desktop
+e2e, for example. The workflows, the root's files, the lockfile and any folder the script does not
+know run everything, and so does every push to `main`. A change that touches only documentation
+(`docs/`, `docs-site/`, `site/`, Markdown anywhere) skips the test and e2e jobs; `check` still runs,
+and `.github/workflows/docs.yml` runs the Markdown-facing checks (`pnpm check:docs`: Prettier, the
+generated docs, cited paths and images, banned terms).
 
 The Vitest shards split the suite by each file's recorded time on the OS running it
 (`scripts/vitest-shard-timings.json`). When one shard of a run takes much longer than the others,
