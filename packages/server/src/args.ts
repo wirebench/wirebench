@@ -347,3 +347,5 @@ export function parseServerArgs(argv: readonly string[]): ServerCommand {
       throw new UsageError(`unknown command "${word}"`);
   }
 }
+
+// CI probe: this pull request is closed unmerged.
