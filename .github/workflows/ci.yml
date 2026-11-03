@@ -25,49 +25,54 @@ concurrency:
 # for one finished last. `coverage-report` waits for `coverage`, whose blobs it merges.
 
 jobs:
-  # Which kind of change this is. A change that touches only documentation — `docs/`, the documentation and
-  # landing sites, Markdown and MDX anywhere — skips the test and e2e jobs below: no build, test or package
-  # reads those files, so they would only re-prove code that was already green. Those jobs then show as
-  # skipped, under the same names, and `main` requires no check, so a skipped job never blocks a merge.
-  # What such a change can break is still checked: `check` runs on every change, with the two Vitest projects
-  # that read docs and the site (`scripts`, `site`); `docs.yml` checks the Markdown and `site.yml` builds the
-  # sites. A change that mixes documentation with anything else runs everything.
+  # Which jobs this change calls for (`scripts/ci/changed-jobs.ts`). On a pull request, each job below runs only
+  # when a file it builds or reads changed: its packages, the workspace packages they depend on, and the
+  # scripts it runs. A documentation-only change (`docs/`, the documentation and landing sites, Markdown and MDX
+  # anywhere) calls for none of them; the workflows, the root's files, the lockfile and any folder the script
+  # cannot place call for all of them. Pushes to `main` run everything.
+  #
+  # `code` (anything but documentation) runs the Vitest, coverage and `check` jobs, which cover every package.
+  # A skipped job shows as skipped, under its usual name, and `main` requires no check, so it never blocks a
+  # merge. What a documentation change can break is still checked: `check` runs on every change, with the two
+  # Vitest projects that read docs and the site (`scripts`, `site`); `docs.yml` checks the Markdown and
+  # `site.yml` builds the sites.
   changes:
     runs-on: ubuntu-latest
     outputs:
       code: ${{ steps.filter.outputs.code }}
+      server_integration: ${{ steps.filter.outputs.server_integration }}
+      tenancy_postgres: ${{ steps.filter.outputs.tenancy_postgres }}
+      server_upgrade: ${{ steps.filter.outputs.server_upgrade }}
+      browser_e2e: ${{ steps.filter.outputs.browser_e2e }}
+      image_smoke: ${{ steps.filter.outputs.image_smoke }}
+      npm_smoke: ${{ steps.filter.outputs.npm_smoke }}
+      action_smoke: ${{ steps.filter.outputs.action_smoke }}
+      kerberos_integration: ${{ steps.filter.outputs.kerberos_integration }}
+      wss_xmlsec: ${{ steps.filter.outputs.wss_xmlsec }}
+      e2e: ${{ steps.filter.outputs.e2e }}
     steps:
       # A pull request checks out its merge commit, whose first parent is the base branch: depth 2 is enough
       # to diff the whole pull request against it.
       - uses: actions/checkout@v7
         with:
           fetch-depth: 2
+      # The script runs on Node's own TypeScript support and needs no install.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
       - id: filter
         env:
           EVENT: ${{ github.event_name }}
-          BEFORE: ${{ github.event.before }}
         run: |
-          if [ "$EVENT" = pull_request ]; then
-            base=HEAD^1
-          elif [ -n "$BEFORE" ] && [ "$BEFORE" != 0000000000000000000000000000000000000000 ] &&
-            git fetch --depth=1 --quiet origin "$BEFORE"; then
-            base=$BEFORE
-          else
-            echo 'No earlier commit to compare with: running everything.'
-            echo code=true >> "$GITHUB_OUTPUT"
+          if [ "$EVENT" != pull_request ]; then
+            echo 'A push to main: running everything.'
+            node scripts/ci/changed-jobs.ts --all | tee -a "$GITHUB_OUTPUT"
             exit 0
           fi
-          # Kept apart from the filter so a failing diff fails the job instead of reading as "documentation only".
-          files=$(git diff --name-only "$base" HEAD)
-          code=$(grep -Ev '^(docs|docs-site|site)/|\.mdx?$' <<< "$files" | head -n 5 || true)
-          if [ -n "$code" ]; then
-            echo "Changes outside the documentation, for example:"
-            echo "$code"
-            echo code=true >> "$GITHUB_OUTPUT"
-          else
-            echo 'Documentation only: the test and e2e jobs skip.'
-            echo code=false >> "$GITHUB_OUTPUT"
-          fi
+          # Kept apart from the script so a failing diff fails the job instead of reading as "nothing changed".
+          files=$(git diff --name-only HEAD^1 HEAD)
+          echo "$files" | head -n 20
+          node scripts/ci/changed-jobs.ts <<< "$files" | tee -a "$GITHUB_OUTPUT"
 
   # Typecheck, lint, formatting, the generated docs, contrast, doc paths, banned terms, licences and the
   # other source-tree checks (`pnpm check:static`), then the perf budgets: properties of the source tree,
@@ -105,7 +110,6 @@ jobs:
   test:
     needs: changes
     if: needs.changes.outputs.code == 'true'
-    name: test (${{ matrix.os }}, ${{ matrix.shard }}/${{ matrix.shards }})
     strategy:
       fail-fast: false
       # macOS runs the suite on pushes to `main` only. The plan's five macOS runners at once are the limit on a
@@ -114,7 +118,7 @@ jobs:
       # cannot reach `strategy.matrix.include` entry by entry, hence the two lists as JSON.
       matrix:
         # Pull requests: Windows only. Pushes to main: macOS too.
-        include: ${{ fromJSON(github.event_name == 'push' && '[{"os":"macos-latest","shard":1,"shards":2},{"os":"macos-latest","shard":2,"shards":2},{"os":"windows-latest","shard":1,"shards":4},{"os":"windows-latest","shard":2,"shards":4},{"os":"windows-latest","shard":3,"shards":4},{"os":"windows-latest","shard":4,"shards":4}]' || '[{"os":"windows-latest","shard":1,"shards":4},{"os":"windows-latest","shard":2,"shards":4},{"os":"windows-latest","shard":3,"shards":4},{"os":"windows-latest","shard":4,"shards":4}]') }}
+        include: ${{ fromJSON(github.event_name == 'push' && '[{"os":"macos-latest","shard":"1/2"},{"os":"macos-latest","shard":"2/2"},{"os":"windows-latest","shard":"1/4"},{"os":"windows-latest","shard":"2/4"},{"os":"windows-latest","shard":"3/4"},{"os":"windows-latest","shard":"4/4"}]' || '[{"os":"windows-latest","shard":"1/4"},{"os":"windows-latest","shard":"2/4"},{"os":"windows-latest","shard":"3/4"},{"os":"windows-latest","shard":"4/4"}]') }}
     runs-on: ${{ matrix.os }}
     env:
       WIREBENCH_REQUIRE_GIT: '1'
@@ -131,8 +135,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @wirebench/engine build
       # `pnpm run`, not `pnpm test`: pnpm's own `test` command refuses options it does not know, such as `--shard`.
-      - run: pnpm run test --shard=${{ matrix.shard }}/${{ matrix.shards }}
-      - if: matrix.shard == 1
+      - run: pnpm run test --shard=${{ matrix.shard }}
+      - if: startsWith(matrix.shard, '1/')
         run: pnpm test:perf
 
   # The unit and integration suite on Linux, under v8 coverage, split into shards. A shard covers only part of
@@ -141,11 +145,10 @@ jobs:
   coverage:
     needs: changes
     if: needs.changes.outputs.code == 'true'
-    name: coverage (${{ matrix.shard }}/4)
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4]
+        shard: ['1/4', '2/4', '3/4', '4/4']
     runs-on: ubuntu-latest
     env:
       WIREBENCH_REQUIRE_GIT: '1'
@@ -161,10 +164,10 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm test:coverage --shard=${{ matrix.shard }}/4 --reporter=default --reporter=blob
+      - run: pnpm test:coverage --shard=${{ matrix.shard }} --reporter=default --reporter=blob
       - uses: actions/upload-artifact@v7
         with:
-          name: coverage-blob-${{ matrix.shard }}
+          name: coverage-blob-${{ strategy.job-index }}
           path: .vitest/blob
           include-hidden-files: true
           if-no-files-found: error
@@ -198,7 +201,7 @@ jobs:
   # database unset (they skip, saying so); this job runs them for real, once, on Linux.
   server-integration:
     needs: changes
-    if: needs.changes.outputs.code == 'true'
+    if: needs.changes.outputs.server_integration == 'true'
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -250,7 +253,7 @@ jobs:
   kerberos-integration:
     # A short job: it starts after `check` (see `jobs`).
     needs: [changes, check]
-    if: ${{ !cancelled() && needs.changes.outputs.code == 'true' }}
+    if: ${{ !cancelled() && needs.changes.outputs.kerberos_integration == 'true' }}
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -270,7 +273,7 @@ jobs:
   wss-xmlsec:
     # A short job: it starts after `check` (see `jobs`).
     needs: [changes, check]
-    if: ${{ !cancelled() && needs.changes.outputs.code == 'true' }}
+    if: ${{ !cancelled() && needs.changes.outputs.wss_xmlsec == 'true' }}
     strategy:
       # One OS's toolchain failing must not hide the other's result.
       fail-fast: false
@@ -303,23 +306,22 @@ jobs:
   # first shard only, after its other specs, with the runner to themselves.
   e2e:
     needs: changes
-    if: needs.changes.outputs.code == 'true'
-    name: e2e (${{ matrix.os }}, ${{ matrix.shard }}/${{ matrix.shards }})
+    if: needs.changes.outputs.e2e == 'true'
     strategy:
       # One OS failing must not cancel the others: a Windows-only regression has to be
       # visible even when the macOS screenshot comparison is unhappy, and vice versa.
       fail-fast: false
       matrix:
         include:
-          - { os: ubuntu-latest, shard: 1, shards: 2 }
-          - { os: ubuntu-latest, shard: 2, shards: 2 }
-          - { os: macos-latest, shard: 1, shards: 4 }
-          - { os: macos-latest, shard: 2, shards: 4 }
-          - { os: macos-latest, shard: 3, shards: 4 }
-          - { os: macos-latest, shard: 4, shards: 4 }
-          - { os: windows-latest, shard: 1, shards: 3 }
-          - { os: windows-latest, shard: 2, shards: 3 }
-          - { os: windows-latest, shard: 3, shards: 3 }
+          - { os: ubuntu-latest, shard: '1/2' }
+          - { os: ubuntu-latest, shard: '2/2' }
+          - { os: macos-latest, shard: '1/4' }
+          - { os: macos-latest, shard: '2/4' }
+          - { os: macos-latest, shard: '3/4' }
+          - { os: macos-latest, shard: '4/4' }
+          - { os: windows-latest, shard: '1/3' }
+          - { os: windows-latest, shard: '2/3' }
+          - { os: windows-latest, shard: '3/3' }
     runs-on: ${{ matrix.os }}
     # The shared-workspace specs drive the system git; every hosted runner ships one, and this
     # makes a runner that does not fail loudly instead of quietly skipping.
@@ -356,9 +358,9 @@ jobs:
       - name: Run e2e
         env:
           XVFB: ${{ runner.os == 'Linux' && 'xvfb-run -a' || '' }}
-        run: $XVFB pnpm --filter @wirebench/e2e exec playwright test --project electron --shard=${{ matrix.shard }}/${{ matrix.shards }}
+        run: $XVFB pnpm --filter @wirebench/e2e exec playwright test --project electron --shard=${{ matrix.shard }}
       - name: Run the e2e perf budgets
-        if: matrix.shard == 1
+        if: startsWith(matrix.shard, '1/')
         env:
           XVFB: ${{ runner.os == 'Linux' && 'xvfb-run -a' || '' }}
         run: $XVFB pnpm --filter @wirebench/e2e exec playwright test --project electron-perf --no-deps
@@ -366,13 +368,13 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: playwright-report-${{ matrix.os }}-${{ matrix.shard }}
+          name: playwright-report-${{ matrix.os }}-${{ strategy.job-index }}
           path: e2e/playwright-report
       - name: Upload test results
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: test-results-${{ matrix.os }}-${{ matrix.shard }}
+          name: test-results-${{ matrix.os }}-${{ strategy.job-index }}
           path: e2e/test-results
 
   # The browser client end to end (hosted edition spec §17.7): builds the server image, which carries the
@@ -387,7 +389,7 @@ jobs:
   browser-e2e:
     # A short job: it starts after `check` (see `jobs`).
     needs: [changes, check]
-    if: ${{ !cancelled() && needs.changes.outputs.code == 'true' }}
+    if: ${{ !cancelled() && needs.changes.outputs.browser_e2e == 'true' }}
     strategy:
       fail-fast: false
       matrix:
@@ -472,7 +474,7 @@ jobs:
   server-upgrade:
     # A short job: it starts after `check` (see `jobs`).
     needs: [changes, check]
-    if: ${{ !cancelled() && needs.changes.outputs.code == 'true' }}
+    if: ${{ !cancelled() && needs.changes.outputs.server_upgrade == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     services:
@@ -546,7 +548,7 @@ jobs:
   tenancy-postgres:
     # A short job: it starts after `check` (see `jobs`).
     needs: [changes, check]
-    if: ${{ !cancelled() && needs.changes.outputs.code == 'true' }}
+    if: ${{ !cancelled() && needs.changes.outputs.tenancy_postgres == 'true' }}
     strategy:
       fail-fast: false
       matrix:
@@ -591,7 +593,7 @@ jobs:
   image-smoke:
     # A short job: it starts after `check` (see `jobs`).
     needs: [changes, check]
-    if: ${{ !cancelled() && needs.changes.outputs.code == 'true' }}
+    if: ${{ !cancelled() && needs.changes.outputs.image_smoke == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -620,7 +622,7 @@ jobs:
   # then run the same four checks against that install (packages/cli, task 1 of #31).
   npm-smoke:
     needs: changes
-    if: needs.changes.outputs.code == 'true'
+    if: needs.changes.outputs.npm_smoke == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -648,7 +650,7 @@ jobs:
   # (`continue-on-error`) since a red assertion is the expected outcome under test.
   action-smoke:
     needs: changes
-    if: needs.changes.outputs.code == 'true'
+    if: needs.changes.outputs.action_smoke == 'true'
     strategy:
       fail-fast: false
       matrix:
