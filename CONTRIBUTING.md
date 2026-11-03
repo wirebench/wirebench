@@ -15,8 +15,8 @@ maintenance tooling), `fixtures` (WSDL/XSD test material), `docs`.
 
 `pnpm check` must be green before every commit. CI splits it up: the source-tree checks
 (`pnpm check:static`: typecheck, lint and the generated-docs, contrast, doc-path, banned-term and
-licence checks) and the perf gates run once, on Linux; the test suite runs in shards on all three
-OSes, on Linux under coverage. Locally, `pnpm check:tests` (typecheck + tests + perf gates) is the
+licence checks) and the perf gates run once, on Linux; the test suite runs in shards on Linux (under
+coverage) and Windows, and on macOS for pushes to `main`; e2e runs in shards on all three OSes. Locally, `pnpm check:tests` (typecheck + tests + perf gates) is the
 OS-sensitive part on its own:
 
 ```

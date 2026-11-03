@@ -14,9 +14,9 @@ concurrency:
 
 # Wall-clock is set by the slowest job, so the test suites are split across runners: Vitest's `--shard` for
 # the unit and integration suite, Playwright's for e2e. The shard counts follow each OS's time for the whole
-# suite (Linux about 13 min, macOS 22, Windows 31, coverage 27; e2e Linux 12, macOS 26, Windows 20), aiming at
-# about ten minutes a shard. The organisation's plan runs at most 20 jobs at once, five of them on macOS, so
-# more shards stop paying once the runners queue: macOS has five heavy jobs (two test, three e2e).
+# suite (macOS 22 min, Windows 31, coverage 27; e2e Linux 12, macOS 26, Windows 20), aiming at about ten minutes
+# a shard. The organisation's plan runs at most 20 jobs at once, five of them on macOS, so more shards stop
+# paying once the runners queue. macOS is the tight one, which is why its Vitest run waits for `main` (`test`).
 #
 # None of the jobs waits for another except on `changes` (and `coverage-report` on `coverage`): each fails
 # on its own, and serialising them only stretched the wall-clock.
@@ -94,7 +94,7 @@ jobs:
         if: needs.changes.outputs.code != 'true'
         run: pnpm vitest run --project scripts --project site
 
-  # The unit and integration suite (`pnpm test`) on macOS and Windows, split into shards. Linux's run of the
+  # The unit and integration suite (`pnpm test`) on Windows, and on macOS for pushes to `main`, split into shards. Linux's run of the
   # same suite is `coverage` below, which runs every test too, under coverage. Each shard builds the engine,
   # whose `dist/` the tests import (and `tsc -b` builds the packages it references), the same build
   # `test:coverage` starts with; the full type build runs once, in `check`, since `tsc` does not answer
@@ -105,13 +105,13 @@ jobs:
     name: test (${{ matrix.os }}, ${{ matrix.shard }}/${{ matrix.shards }})
     strategy:
       fail-fast: false
+      # macOS runs the suite on pushes to `main` only. The plan's five macOS runners at once are the limit on a
+      # run's wall-clock, and on a pull request they go to the e2e shards, which macOS alone can check (the
+      # committed screenshots); a macOS-only unit-test regression then shows on `main` instead. Expressions
+      # cannot reach `strategy.matrix.include` entry by entry, hence the two lists as JSON.
       matrix:
-        include:
-          - { os: macos-latest, shard: 1, shards: 2 }
-          - { os: macos-latest, shard: 2, shards: 2 }
-          - { os: windows-latest, shard: 1, shards: 3 }
-          - { os: windows-latest, shard: 2, shards: 3 }
-          - { os: windows-latest, shard: 3, shards: 3 }
+        # Pull requests: Windows only. Pushes to main: macOS too.
+        include: ${{ fromJSON(github.event_name == 'push' && '[{"os":"macos-latest","shard":1,"shards":2},{"os":"macos-latest","shard":2,"shards":2},{"os":"windows-latest","shard":1,"shards":4},{"os":"windows-latest","shard":2,"shards":4},{"os":"windows-latest","shard":3,"shards":4},{"os":"windows-latest","shard":4,"shards":4}]' || '[{"os":"windows-latest","shard":1,"shards":4},{"os":"windows-latest","shard":2,"shards":4},{"os":"windows-latest","shard":3,"shards":4},{"os":"windows-latest","shard":4,"shards":4}]') }}
     runs-on: ${{ matrix.os }}
     env:
       WIREBENCH_REQUIRE_GIT: '1'
@@ -308,9 +308,10 @@ jobs:
         include:
           - { os: ubuntu-latest, shard: 1, shards: 2 }
           - { os: ubuntu-latest, shard: 2, shards: 2 }
-          - { os: macos-latest, shard: 1, shards: 3 }
-          - { os: macos-latest, shard: 2, shards: 3 }
-          - { os: macos-latest, shard: 3, shards: 3 }
+          - { os: macos-latest, shard: 1, shards: 4 }
+          - { os: macos-latest, shard: 2, shards: 4 }
+          - { os: macos-latest, shard: 3, shards: 4 }
+          - { os: macos-latest, shard: 4, shards: 4 }
           - { os: windows-latest, shard: 1, shards: 3 }
           - { os: windows-latest, shard: 2, shards: 3 }
           - { os: windows-latest, shard: 3, shards: 3 }
