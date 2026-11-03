@@ -35,6 +35,9 @@ export default defineConfig({
     // TypeScript sources and must never be left as a runtime `require`.
     plugins: [externalizeDepsPlugin()],
     resolve: { alias: sharedAlias },
+    // `ws` comes bundled with `@wirebench/agent`, and it loads these optional native add-ons inside a `try`.
+    // Without this, the dev build swaps them for a stub that throws on load, and `pnpm dev` crashes at start.
+    build: { rollupOptions: { external: ['bufferutil', 'utf-8-validate'] } },
   },
   preload: {
     // `zod` must be bundled, not externalized: Electron's sandboxed preload environment can
