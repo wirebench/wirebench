@@ -112,6 +112,22 @@ const alertHostsText = z
     'must be host names or *.domain patterns, separated by commas',
   );
 
+/**
+ * A hosted name (spec §21.1): a lower-case DNS name of at least two labels, each `[a-z0-9-]`, 1–63 characters, not
+ * starting or ending with `-`, at most 253 characters; no scheme, port, path, trailing dot or IP literal.
+ */
+const domainText = z
+  .string()
+  .transform((value) => value.trim().toLowerCase())
+  .refine(
+    (name) =>
+      name.length <= 253 &&
+      /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$/.test(name) &&
+      // The last label of a DNS name is never all digits, so this refuses an IPv4 literal.
+      !/^\d+$/.test(name.slice(name.lastIndexOf('.') + 1)),
+    'must be a domain name such as example.test: two labels at least, no scheme, port, path or trailing dot',
+  );
+
 const inputSchema = z.object({
   // Both values parse, so the type has both, but `hosted` is refused here: tests build a hosted config directly.
   mode: z
@@ -177,6 +193,8 @@ const inputSchema = z.object({
   secretsKey: keyText.transform((value) => Buffer.from(value, 'base64')).optional(),
   egressDenyPrivate: booleanText('false'),
   hostIdleMinutes: integerText(1, 1440, '30'),
+  appDomain: domainText.optional(),
+  siteDomain: domainText.optional(),
 });
 
 type ConfigKey = keyof z.input<typeof inputSchema>;
@@ -184,11 +202,6 @@ type ConfigKey = keyof z.input<typeof inputSchema>;
 export interface ServerConfig extends z.output<typeof inputSchema> {
   /** The package version, for `/api/v1/meta` and `--version`. */
   readonly version: string;
-  /**
-   * The domain hosted tenants are named under, `<slug>.<appDomain>` (spec §19.5). Only tests set it in
-   * slice 4; slice 6 gives it its variable.
-   */
-  readonly appDomain?: string;
 }
 
 /**
@@ -627,6 +640,22 @@ export const CONFIG_VARIABLES: readonly ConfigVariable[] = [
     description:
       'Minutes after a user’s last browser connection closes before the server stops that user’s host and frees its memory (1–1440). The user’s files stay.',
   },
+  {
+    env: 'WIREBENCH_SERVER_APP_DOMAIN',
+    key: 'appDomain',
+    required: false,
+    secret: false,
+    description:
+      'Hosted mode only: the product’s domain. Each team is `https://<slug>.<domain>`, and `app.<domain>` mails a person their teams’ links. Unused on a self-hosted server.',
+  },
+  {
+    env: 'WIREBENCH_SERVER_SITE_DOMAIN',
+    key: 'siteDomain',
+    required: false,
+    secret: false,
+    description:
+      'Hosted mode only: the public site’s domain, which the server links to and never serves. It must not be, or sit under, the app domain. Unused on a self-hosted server.',
+  },
 ];
 
 /** One thing wrong with the environment, phrased without the offending value. */
@@ -667,6 +696,34 @@ function envOf(key: string): string {
   return found.env;
 }
 
+/**
+ * The two hosted names' cross-field rules (spec §21.1): apart in every mode, so a cookie or storage key set on one is
+ * never readable by a page on the other, and both required in hosted mode. `loadConfig` runs it; tests that build a
+ * hosted config directly call it too.
+ */
+export function domainProblems(config: Pick<ServerConfig, 'mode' | 'appDomain' | 'siteDomain'>): ConfigProblem[] {
+  const problems: ConfigProblem[] = [];
+  const { appDomain: app, siteDomain: site } = config;
+  if (app !== undefined && site !== undefined && (app === site || app.endsWith(`.${site}`) || site.endsWith(`.${app}`)))
+    problems.push({
+      variable: 'WIREBENCH_SERVER_SITE_DOMAIN',
+      message: 'must be apart from WIREBENCH_SERVER_APP_DOMAIN: two different names, neither under the other',
+    });
+  if (config.mode === 'hosted') {
+    if (app === undefined)
+      problems.push({
+        variable: 'WIREBENCH_SERVER_APP_DOMAIN',
+        message: 'domains-app-domain-missing: hosted mode needs the app domain',
+      });
+    if (site === undefined)
+      problems.push({
+        variable: 'WIREBENCH_SERVER_SITE_DOMAIN',
+        message: 'domains-site-domain-missing: hosted mode needs the site domain',
+      });
+  }
+  return problems;
+}
+
 /** Parses `env` into a config or throws a {@link ConfigError} naming every problem at once. */
 export function loadConfig(env: NodeJS.ProcessEnv, version: string): ServerConfig {
   const input = inputFrom(env);
@@ -694,7 +751,7 @@ export function loadConfig(env: NodeJS.ProcessEnv, version: string): ServerConfi
   // Cross-field rules zod cannot express per key: the two IdP credentials travel with the issuer,
   // an http:// issuer is a development-only choice like an http:// public URL, and a server with
   // no way to sign in at all is a misconfiguration, not a quiet server (identity spec §4.1).
-  const problems: ConfigProblem[] = [];
+  const problems: ConfigProblem[] = domainProblems(config);
   if (config.oidcIssuer !== undefined) {
     for (const [key, variable] of [
       ['oidcClientId', 'WIREBENCH_SERVER_OIDC_CLIENT_ID'],
