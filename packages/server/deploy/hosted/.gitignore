@@ -1,0 +1,4 @@
+# The operator's settings and the DNS token: never committed.
+.env
+server.env
+secrets/

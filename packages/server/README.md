@@ -474,6 +474,15 @@ server-side send path until an operator asks for them.
   `pnpm --filter @wirebench/desktop build:browser`, `pnpm --filter @wirebench/server copy-browser`. With the
   switch on and no build copied, the server refuses to start.
 
+## Hosted names
+
+The hosted edition puts each team at `https://<slug>.<app-domain>` and the entry, where a person gets their teams'
+links by email, at `app.<app-domain>` (hosted edition spec §21). `WIREBENCH_SERVER_APP_DOMAIN` and
+`WIREBENCH_SERVER_SITE_DOMAIN` name the product's domain and the site's; both are read in hosted mode only, which the
+control plane will switch on, and a self-hosted server ignores them (`config check` says so). Slugs such as `app`,
+`api`, `www`, the area and protocol names and the brand names are reserved. The deployment recipe, with Traefik issuing
+one wildcard certificate by DNS-01 and the public suffix list step, is in [`deploy/hosted/`](deploy/hosted/README.md).
+
 ## Local agent
 
 A browser tab cannot reach the user's `localhost`, a host only their network knows, or a team secret: the
