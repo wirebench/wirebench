@@ -11,6 +11,7 @@ import { WirebenchError } from '@wirebench/engine';
 import type { Querier } from '../db/querier.js';
 import type { TenantKeys } from './keys.js';
 import { scopeOf, type TenantScope } from './scope.js';
+import { checkSlug } from './slugs.js';
 
 /**
  * A lost `server_identity` row. It holds the id licenses are bound to, so the advice is to restore it, never to
@@ -162,6 +163,11 @@ export class TenantAdmin {
    * and the tenant gets it the first time the root exists.
    */
   async create(input: NewTenant): Promise<TenantRow & { readonly scope: TenantScope }> {
+    // Spec §21.2: the one writer of a slug checks it before anything is written, reserved names included.
+    const slug = checkSlug(input.slug);
+    if (slug === 'slug-invalid')
+      throw new WirebenchError('tenancy-slug-invalid', 'that slug is not a valid tenant slug');
+    if (slug === 'slug-reserved') throw new WirebenchError('tenancy-slug-reserved', 'that slug is reserved');
     const id = randomUUID();
     const dataKey = (await directoryKeys.get(this.#directory)?.wrapNew(id)) ?? null;
     const rows = await this.#db.query<TenantRow & Record<string, unknown>>(
