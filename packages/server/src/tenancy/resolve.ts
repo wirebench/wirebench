@@ -8,16 +8,70 @@
  *   `trustProxy`), lower-cased and without its port. It must be one label followed by `.<appDomain>`, naming an
  *   active tenant other than the default one. Anything else answers `404` with an empty body and
  *   `cache-control: no-store`, so the answer names nothing. WebSocket upgrades pass through the same hook.
+ * - **The apex and the entry** (spec §21.3). In hosted mode `<appDomain>` itself redirects to the entry, and
+ *   `app.<appDomain>` serves only the routes marked {@link ENTRY_ROUTE}, with no tenant: a module route that reached
+ *   for one there throws rather than serving the default tenant.
  */
 import { WirebenchError } from '@wirebench/engine';
+import type { IncomingMessage } from 'node:http';
 import type { FastifyBaseLogger, FastifyInstance, FastifyRequest } from 'fastify';
 import type { ServerConfig } from '../config.js';
 import type { TenantDirectory } from './directory.js';
 import type { TenantScope } from './scope.js';
 import { appDomainOf } from './urls.js';
 
+declare module 'fastify' {
+  interface FastifyContextConfig {
+    /** `true` on an entry route (spec §21.4): the one kind of route `app.<appDomain>` serves. */
+    wirebenchEntry?: boolean;
+  }
+}
+
+/** What the router stores per constraint value: the handler type `addConstraintStrategy`'s storage holds. */
+type EntryHandler = Parameters<
+  ReturnType<Parameters<FastifyInstance['addConstraintStrategy']>[0]['storage']>['set']
+>[1];
+
+const ENTRY_CONSTRAINT = 'wirebenchEntry';
+const ENTRY_VALUE = 'entry';
+
+/**
+ * The host a request names, as `request.hostname` reads it with a boolean `trustProxy` (Fastify 5's `request.host`):
+ * the last `X-Forwarded-Host` entry behind a trusted proxy, else `Host`. For the route constraint, which runs before
+ * Fastify has built the request.
+ */
+export function rawHostOf(req: IncomingMessage, trustProxy: boolean): string {
+  const forwarded = trustProxy ? req.headers['x-forwarded-host'] : undefined;
+  if (typeof forwarded === 'string' && forwarded !== '') {
+    const last = forwarded.lastIndexOf(',');
+    return hostKey(last === -1 ? forwarded : forwarded.slice(last + 1));
+  }
+  const authority = req.headers[':authority'];
+  return hostKey(req.headers.host ?? (typeof authority === 'string' ? authority : ''));
+}
+
 /** The routes that take no tenant: health reads no tenant row (spec §19.5). */
 const UNSCOPED_ROUTES = new Set(['/healthz']);
+
+/**
+ * What an entry route is registered with (spec §21.4): a constraint that only a request for `app.<appDomain>` meets,
+ * so on a tenant host the same path is the tenant's, and the config the root hook lets through on the entry host.
+ * Fastify's own host constraint is not used: it compares the raw `Host` header, port and case included, and never
+ * reads `X-Forwarded-Host`.
+ */
+export const ENTRY_ROUTE = Object.freeze({
+  constraints: Object.freeze({ [ENTRY_CONSTRAINT]: ENTRY_VALUE }),
+  config: Object.freeze({ wirebenchEntry: true }),
+});
+
+/** The neutral entry's host name, `app.<appDomain>`, lower-cased. */
+export function entryHostOf(config: Pick<ServerConfig, 'appDomain'>): string {
+  return `app.${appDomainOf(config)}`;
+}
+
+function isEntryRoute(request: FastifyRequest): boolean {
+  return request.routeOptions.config.wirebenchEntry === true;
+}
 
 /** How often the hosted map is read again; slice 5 replaces the poll with a notification. */
 export const RELOAD_MS = 60_000;
@@ -107,7 +161,7 @@ export class TenantResolver {
  */
 export async function registerTenantResolution(
   app: FastifyInstance,
-  config: Pick<ServerConfig, 'mode' | 'appDomain'>,
+  config: Pick<ServerConfig, 'mode' | 'appDomain' | 'trustProxy'>,
   directory: TenantDirectory,
 ): Promise<TenantResolver | undefined> {
   if (config.mode !== 'hosted') {
@@ -126,7 +180,22 @@ export async function registerTenantResolution(
       return scope;
     },
   });
-  const resolver = new TenantResolver({ appDomain: appDomainOf(config), directory, log: app.log });
+  const appDomain = appDomainOf(config);
+  const entryHost = entryHostOf(config);
+  const resolver = new TenantResolver({ appDomain, directory, log: app.log });
+  const handlers = new Map<unknown, EntryHandler>();
+  app.addConstraintStrategy({
+    name: ENTRY_CONSTRAINT,
+    storage: () => ({
+      get: (value) => handlers.get(value) ?? null,
+      set: (value, handler) => {
+        handlers.set(value, handler);
+      },
+    }),
+    deriveConstraint: (req: IncomingMessage) =>
+      rawHostOf(req, config.trustProxy) === entryHost ? ENTRY_VALUE : undefined,
+    mustMatchWhenDerived: false,
+  });
   await resolver.invalidate();
   resolver.start();
   app.addHook('onClose', () => {
@@ -134,7 +203,17 @@ export async function registerTenantResolution(
   });
   app.addHook('onRequest', async (request, reply) => {
     if (request.routeOptions.url !== undefined && UNSCOPED_ROUTES.has(request.routeOptions.url)) return;
-    const scope = resolver.resolve(request.hostname);
+    const host = hostKey(request.hostname);
+    if (host === appDomain) {
+      void reply.code(308).header('location', `https://${entryHost}/`).header('cache-control', 'no-store').send();
+      return reply;
+    }
+    if (host === entryHost) {
+      if (isEntryRoute(request)) return undefined;
+      void reply.code(404).header('cache-control', 'no-store').send();
+      return reply;
+    }
+    const scope = resolver.resolve(host);
     if (scope === undefined) {
       void reply.code(404).header('cache-control', 'no-store').send();
       return reply;
