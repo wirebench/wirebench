@@ -140,6 +140,15 @@ export const ROUTE_MAP: Readonly<Record<string, RouteCase>> = {
   'GET /api/v1/meta': { cls: 'own', request: () => ({ method: 'GET', url: api('/meta') }) },
   // Also the entry's page (spec §21.4), which the entry suite covers: on a tenant host `/` is the browser client's.
   'GET /': { cls: 'own', request: (ctx) => ({ method: 'GET', url: '/', headers: asTab(ctx) }) },
+  'POST /': {
+    cls: 'entry',
+    request: () => ({
+      method: 'POST',
+      url: '/',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      payload: 'email=a%40acme.test',
+    }),
+  },
   'GET /*': { cls: 'own', request: (ctx) => ({ method: 'GET', url: '/workspaces', headers: asTab(ctx) }) },
   // The browser build's files, one route each (`routeKey` folds them into one key).
   'GET /assets/*': { cls: 'own', request: (ctx) => ({ method: 'GET', url: ctx.url }) },
