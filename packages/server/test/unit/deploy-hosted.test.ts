@@ -106,25 +106,30 @@ describe('the hosted deployment recipe', () => {
     }
   });
 
-  it('is a valid compose file, where Docker Compose is installed', async () => {
-    try {
-      await run('docker', ['compose', 'version']);
-    } catch {
-      return;
-    }
-    const env = {
-      ...process.env,
-      APP_DOMAIN: 'app.test',
-      SITE_DOMAIN: 'site.test',
-      ACME_EMAIL: 'operator@site.test',
-      POSTGRES_PASSWORD: 'p',
-      WIREBENCH_APP_DB_PASSWORD: 'a',
-      WIREBENCH_SECRETS_KEY: 'k',
-      SMTP_URL: 'smtp://mail.site.test:587',
-      SMTP_FROM: 'teams@site.test',
-    };
-    await expect(
-      run('docker', ['compose', '-f', join(DIR, 'compose.yaml'), 'config', '--quiet'], { env }),
-    ).resolves.toBeDefined();
-  });
+  // Linux only: Docker Desktop on the Windows and macOS runners takes seconds just to answer `compose version`.
+  it.runIf(process.platform === 'linux')(
+    'is a valid compose file, where Docker Compose is installed',
+    async () => {
+      try {
+        await run('docker', ['compose', 'version']);
+      } catch {
+        return;
+      }
+      const env = {
+        ...process.env,
+        APP_DOMAIN: 'app.test',
+        SITE_DOMAIN: 'site.test',
+        ACME_EMAIL: 'operator@site.test',
+        POSTGRES_PASSWORD: 'p',
+        WIREBENCH_APP_DB_PASSWORD: 'a',
+        WIREBENCH_SECRETS_KEY: 'k',
+        SMTP_URL: 'smtp://mail.site.test:587',
+        SMTP_FROM: 'teams@site.test',
+      };
+      await expect(
+        run('docker', ['compose', '-f', join(DIR, 'compose.yaml'), 'config', '--quiet'], { env }),
+      ).resolves.toBeDefined();
+    },
+    30_000,
+  );
 });
