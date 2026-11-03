@@ -1,10 +1,10 @@
 name: Docs
 
 # The checks a Markdown change can fail, run on their own so a docs-only change does not wait on the
-# full CI matrix (`ci.yml` ignores Markdown-only changes). These are the Markdown-facing parts of
+# full CI matrix (`ci.yml` skips its test and e2e jobs for documentation-only changes). These are the Markdown-facing parts of
 # `pnpm check`: Prettier, the generated docs (`--check` fails when a hand edit drifts from the
 # source they are generated from), the paths and images the docs cite, and the banned terms.
-# A change that also touches code runs this alongside `ci.yml`, whose `pnpm check` repeats it.
+# A change that also touches code runs this alongside `ci.yml`, whose `pnpm check:static` repeats it.
 on:
   push:
     branches: [main]

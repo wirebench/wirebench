@@ -1,5 +1,29 @@
-import { resolve } from 'node:path';
+import { readFileSync } from 'node:fs';
+import { relative, resolve } from 'node:path';
 import { defineConfig } from 'vitest/config';
+import { BaseSequencer, type TestSpecification } from 'vitest/node';
+import { assignShards, TIMINGS_PATH, timingKey, type ShardTimings } from './scripts/vitest-shards.ts';
+
+// CI splits the coverage run across runners (`ci.yml`, the `coverage` matrix). Each shard covers only part of
+// the suite, so it skips the thresholds and the reports and writes a blob instead; the `coverage-report` job
+// merges the blobs and checks the thresholds against the whole suite.
+const coverageShard = process.env['WIREBENCH_COVERAGE_SHARD'] === '1';
+
+/**
+ * `--shard=i/n` by recorded time instead of by file count, so CI's shards take about as long as each other
+ * (`scripts/vitest-shards.ts`). Only `shard` is replaced; the order within a shard is Vitest's own.
+ */
+class TimedShardSequencer extends BaseSequencer {
+  override shard(files: TestSpecification[]): Promise<TestSpecification[]> {
+    const { root, shard } = this.ctx.config;
+    if (!shard) return Promise.resolve(files);
+    const timings = JSON.parse(readFileSync(TIMINGS_PATH, 'utf8')) as ShardTimings;
+    const weights = timings[process.platform] ?? { defaultMs: 1, files: {} };
+    const key = (spec: TestSpecification) => timingKey(spec.project.name, relative(root, spec.moduleId));
+    const shardOf = assignShards(files.map(key), weights, shard.count);
+    return Promise.resolve(files.filter((spec) => shardOf.get(key(spec)) === shard.index - 1));
+  }
+}
 
 export default defineConfig({
   resolve: {
@@ -12,16 +36,21 @@ export default defineConfig({
     // pick up `test/bench/**` in `vitest bench` mode. Blank it here so only the project that
     // asks for benchmarks — `engine-bench` — runs them.
     benchmark: { include: [] },
+    sequence: { sequencer: TimedShardSequencer },
     coverage: {
       provider: 'v8',
       include: ['packages/core/src/**', 'packages/protocol-*/src/**', 'packages/engine/src/**'],
       exclude: ['packages/engine/src/index.ts'],
-      thresholds: {
-        lines: 85,
-        branches: 85,
-        functions: 85,
-        statements: 85,
-      },
+      ...(coverageShard
+        ? { reporter: [] }
+        : {
+            thresholds: {
+              lines: 85,
+              branches: 85,
+              functions: 85,
+              statements: 85,
+            },
+          }),
     },
     projects: [
       {

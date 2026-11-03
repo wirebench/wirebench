@@ -1,15 +1,9 @@
 name: CI
 
-# A change that touches only Markdown skips this workflow: no build, test or package reads a tracked
-# `.md`/`.mdx` file, so the jobs below would only re-prove the code that was already green.
-# What Markdown can break — formatting, the generated docs, cited paths, images, banned terms — is
-# checked by `docs.yml`. A change that mixes Markdown with anything else still runs everything.
 on:
   push:
     branches: [main]
-    paths-ignore: ['**/*.md', '**/*.mdx']
   pull_request:
-    paths-ignore: ['**/*.md', '**/*.mdx']
 
 permissions:
   contents: read
@@ -18,42 +12,69 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Wall-clock is set by the slowest job, so the test suites are split across runners: Vitest's `--shard` for
+# the unit and integration suite, Playwright's for e2e. The shard counts follow each OS's time for the whole
+# suite (macOS 22 min, Windows 31, coverage 27; e2e Linux 12, macOS 26, Windows 20), aiming at about ten minutes
+# a shard. The organisation's plan runs at most 20 jobs at once, five of them on macOS, so more shards stop
+# paying once the runners queue. macOS is the tight one, which is why its Vitest run waits for `main` (`test`).
+#
+# No job waits for another's result: each fails on its own. Most start as soon as `changes` has run; the
+# short ones (a few minutes each) start once `check` has finished, red or green, so that the long shards get
+# the first of the 20 runners and the short jobs fill the slots that `check` and the first shards give back.
+# Started all at once, the runners went to whichever jobs GitHub picked first, and a long shard that waited
+# for one finished last. `coverage-report` waits for `coverage`, whose blobs it merges.
+
 jobs:
-  check:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
-    env:
-      WIREBENCH_REQUIRE_GIT: '1'
-    defaults:
-      run:
-        shell: bash
+  # Which kind of change this is. A change that touches only documentation — `docs/`, the documentation and
+  # landing sites, Markdown and MDX anywhere — skips the test and e2e jobs below: no build, test or package
+  # reads those files, so they would only re-prove code that was already green. Those jobs then show as
+  # skipped, under the same names, and `main` requires no check, so a skipped job never blocks a merge.
+  # What such a change can break is still checked: `check` runs on every change, with the two Vitest projects
+  # that read docs and the site (`scripts`, `site`); `docs.yml` checks the Markdown and `site.yml` builds the
+  # sites. A change that mixes documentation with anything else runs everything.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
     steps:
+      # A pull request checks out its merge commit, whose first parent is the base branch: depth 2 is enough
+      # to diff the whole pull request against it.
       - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v7
         with:
-          node-version: 24
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      # Lint, formatting, the generated-docs, contrast, doc-path, banned-term and licence checks
-      # are properties of the source tree, not of the OS running them: they run once, on Linux
-      # (`pnpm check`). macOS and Windows run what can actually differ there — the type build
-      # and the test suites (`pnpm check:tests`). Line endings, the one thing Prettier could
-      # catch per OS, are pinned by `.gitattributes`.
-      - run: ${{ matrix.os == 'ubuntu-latest' && 'pnpm check' || 'pnpm check:tests' }}
+          fetch-depth: 2
+      - id: filter
+        env:
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          if [ "$EVENT" = pull_request ]; then
+            base=HEAD^1
+          elif [ -n "$BEFORE" ] && [ "$BEFORE" != 0000000000000000000000000000000000000000 ] &&
+            git fetch --depth=1 --quiet origin "$BEFORE"; then
+            base=$BEFORE
+          else
+            echo 'No earlier commit to compare with: running everything.'
+            echo code=true >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Kept apart from the filter so a failing diff fails the job instead of reading as "documentation only".
+          files=$(git diff --name-only "$base" HEAD)
+          code=$(grep -Ev '^(docs|docs-site|site)/|\.mdx?$' <<< "$files" | head -n 5 || true)
+          if [ -n "$code" ]; then
+            echo "Changes outside the documentation, for example:"
+            echo "$code"
+            echo code=true >> "$GITHUB_OUTPUT"
+          else
+            echo 'Documentation only: the test and e2e jobs skip.'
+            echo code=false >> "$GITHUB_OUTPUT"
+          fi
 
-  # The jobs below do not wait for `check`: each fails on its own, and serialising them behind
-  # the slowest check runner only stretched the wall-clock — a red `check` never made a green
-  # e2e result less informative, and vice versa.
-
-  # Coverage runs once, on Linux only: it re-executes the engine's unit/integration suite under
-  # v8 coverage instrumentation, which is slower than the plain run `check` already did on every
-  # OS above, and the 85% thresholds (`vitest.config.ts`) are a property of the engine's source
-  # and tests, not of the OS running them.
-  coverage:
+  # Typecheck, lint, formatting, the generated docs, contrast, doc paths, banned terms, licences and the
+  # other source-tree checks (`pnpm check:static`), then the perf budgets: properties of the source tree,
+  # not of the OS running them, so they run once, on Linux. Line endings, the one thing Prettier could catch
+  # per OS, are pinned by `.gitattributes`. The test suites run in `test` and `coverage` below.
+  check:
+    needs: changes
     runs-on: ubuntu-latest
     env:
       WIREBENCH_REQUIRE_GIT: '1'
@@ -68,11 +89,116 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm test:coverage
+      - run: pnpm check:static
+      - run: pnpm test:perf
+      # The tests of the doc checks and of the landing site read `docs/` and `site/`: a documentation-only
+      # change, which skips `test` and `coverage`, still runs them here.
+      - name: The tests that read docs and the site
+        if: needs.changes.outputs.code != 'true'
+        run: pnpm vitest run --project scripts --project site
+
+  # The unit and integration suite (`pnpm test`) on Windows, and on macOS for pushes to `main`, split into shards. Linux's run of the
+  # same suite is `coverage` below, which runs every test too, under coverage. Each shard builds the engine,
+  # whose `dist/` the tests import (and `tsc -b` builds the packages it references), the same build
+  # `test:coverage` starts with; the full type build runs once, in `check`, since `tsc` does not answer
+  # differently per OS. The perf budgets run on the first shard, after its tests, with the runner to themselves.
+  test:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    name: test (${{ matrix.os }}, ${{ matrix.shard }}/${{ matrix.shards }})
+    strategy:
+      fail-fast: false
+      # macOS runs the suite on pushes to `main` only. The plan's five macOS runners at once are the limit on a
+      # run's wall-clock, and on a pull request they go to the e2e shards, which macOS alone can check (the
+      # committed screenshots); a macOS-only unit-test regression then shows on `main` instead. Expressions
+      # cannot reach `strategy.matrix.include` entry by entry, hence the two lists as JSON.
+      matrix:
+        # Pull requests: Windows only. Pushes to main: macOS too.
+        include: ${{ fromJSON(github.event_name == 'push' && '[{"os":"macos-latest","shard":1,"shards":2},{"os":"macos-latest","shard":2,"shards":2},{"os":"windows-latest","shard":1,"shards":4},{"os":"windows-latest","shard":2,"shards":4},{"os":"windows-latest","shard":3,"shards":4},{"os":"windows-latest","shard":4,"shards":4}]' || '[{"os":"windows-latest","shard":1,"shards":4},{"os":"windows-latest","shard":2,"shards":4},{"os":"windows-latest","shard":3,"shards":4},{"os":"windows-latest","shard":4,"shards":4}]') }}
+    runs-on: ${{ matrix.os }}
+    env:
+      WIREBENCH_REQUIRE_GIT: '1'
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @wirebench/engine build
+      # `pnpm run`, not `pnpm test`: pnpm's own `test` command refuses options it does not know, such as `--shard`.
+      - run: pnpm run test --shard=${{ matrix.shard }}/${{ matrix.shards }}
+      - if: matrix.shard == 1
+        run: pnpm test:perf
+
+  # The unit and integration suite on Linux, under v8 coverage, split into shards. A shard covers only part of
+  # the suite, so it skips the 85% thresholds (`WIREBENCH_COVERAGE_SHARD`, see `vitest.config.ts`) and writes
+  # a blob report; `coverage-report` merges the blobs and holds the whole suite to the thresholds.
+  coverage:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    name: coverage (${{ matrix.shard }}/4)
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    runs-on: ubuntu-latest
+    env:
+      WIREBENCH_REQUIRE_GIT: '1'
+      WIREBENCH_COVERAGE_SHARD: '1'
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test:coverage --shard=${{ matrix.shard }}/4 --reporter=default --reporter=blob
+      - uses: actions/upload-artifact@v7
+        with:
+          name: coverage-blob-${{ matrix.shard }}
+          path: .vitest/blob
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 1
+
+  # The coverage shards' blobs, merged: the test results once more, and the coverage of the whole suite
+  # against the thresholds in `vitest.config.ts`.
+  coverage-report:
+    needs: [changes, coverage]
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: coverage-blob-*
+          path: .vitest/blob
+          merge-multiple: true
+      - run: pnpm vitest run --merge-reports --coverage
 
   # The server's integration suite needs a real PostgreSQL. `check` runs the same files with the
   # database unset (they skip, saying so); this job runs them for real, once, on Linux.
   server-integration:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -122,6 +248,9 @@ jobs:
   # runs the same file with WIREBENCH_KERBEROS_TESTS unset (it skips, saying so); this job builds a
   # throwaway realm and runs it for real, once, on Linux.
   kerberos-integration:
+    # A short job: it starts after `check` (see `jobs`).
+    needs: [changes, check]
+    if: ${{ !cancelled() && needs.changes.outputs.code == 'true' }}
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -139,6 +268,9 @@ jobs:
       - run: WIREBENCH_KERBEROS_TESTS=1 pnpm vitest run --project engine-integration packages/engine/test/integration/auth/kerberos-real.test.ts
 
   wss-xmlsec:
+    # A short job: it starts after `check` (see `jobs`).
+    needs: [changes, check]
+    if: ${{ !cancelled() && needs.changes.outputs.code == 'true' }}
     strategy:
       # One OS's toolchain failing must not hide the other's result.
       fail-fast: false
@@ -164,16 +296,30 @@ jobs:
         run: brew install libxmlsec1
       - run: WIREBENCH_REQUIRE_XMLSEC=1 pnpm test:wss-xmlsec
 
-  # The e2e matrix runs on all three OSes, but the theme *screenshot* comparison happens on
-  # macOS only: only the macOS snapshots are committed (see e2e/specs/a11y.spec.ts), and those
-  # two tests skip themselves elsewhere. Everything else in the suite runs everywhere.
+  # The e2e matrix runs on all three OSes, split into shards with Playwright's `--shard`. The theme *screenshot*
+  # comparison happens on macOS only: only the macOS snapshots are committed (see e2e/specs/a11y.spec.ts), and
+  # those two tests skip themselves elsewhere. Everything else in the suite runs everywhere. The startup and
+  # interaction budgets (`perf.spec.ts`, the `electron-perf` project) are timing assertions, so they run on the
+  # first shard only, after its other specs, with the runner to themselves.
   e2e:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    name: e2e (${{ matrix.os }}, ${{ matrix.shard }}/${{ matrix.shards }})
     strategy:
       # One OS failing must not cancel the others: a Windows-only regression has to be
       # visible even when the macOS screenshot comparison is unhappy, and vice versa.
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        include:
+          - { os: ubuntu-latest, shard: 1, shards: 2 }
+          - { os: ubuntu-latest, shard: 2, shards: 2 }
+          - { os: macos-latest, shard: 1, shards: 4 }
+          - { os: macos-latest, shard: 2, shards: 4 }
+          - { os: macos-latest, shard: 3, shards: 4 }
+          - { os: macos-latest, shard: 4, shards: 4 }
+          - { os: windows-latest, shard: 1, shards: 3 }
+          - { os: windows-latest, shard: 2, shards: 3 }
+          - { os: windows-latest, shard: 3, shards: 3 }
     runs-on: ${{ matrix.os }}
     # The shared-workspace specs drive the system git; every hosted runner ships one, and this
     # makes a runner that does not fail loudly instead of quietly skipping.
@@ -196,9 +342,6 @@ jobs:
       - name: Install xvfb, mosh and socat
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y xvfb mosh socat
-      - name: Run e2e (Linux, headless via xvfb)
-        if: runner.os == 'Linux'
-        run: xvfb-run -a pnpm test:e2e
       # The hosted Windows runner's screen is 1024x768, which clamps the 1280x820 test window: the
       # REST editor then stacks and the console starts collapsed, as they should on a screen that
       # small, and the specs written for the default window lose their layout.
@@ -209,20 +352,27 @@ jobs:
           Set-DisplayResolution -Width 1920 -Height 1080 -Force
           Add-Type -AssemblyName System.Windows.Forms
           [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+      # Linux has no display: xvfb gives it one.
       - name: Run e2e
-        if: runner.os != 'Linux'
-        run: pnpm test:e2e
+        env:
+          XVFB: ${{ runner.os == 'Linux' && 'xvfb-run -a' || '' }}
+        run: $XVFB pnpm --filter @wirebench/e2e exec playwright test --project electron --shard=${{ matrix.shard }}/${{ matrix.shards }}
+      - name: Run the e2e perf budgets
+        if: matrix.shard == 1
+        env:
+          XVFB: ${{ runner.os == 'Linux' && 'xvfb-run -a' || '' }}
+        run: $XVFB pnpm --filter @wirebench/e2e exec playwright test --project electron-perf --no-deps
       - name: Upload Playwright report
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: playwright-report-${{ matrix.os }}
+          name: playwright-report-${{ matrix.os }}-${{ matrix.shard }}
           path: e2e/playwright-report
       - name: Upload test results
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: test-results-${{ matrix.os }}
+          name: test-results-${{ matrix.os }}-${{ matrix.shard }}
           path: e2e/test-results
 
   # The browser client end to end (hosted edition spec §17.7): builds the server image, which carries the
@@ -235,6 +385,9 @@ jobs:
   # frozen 0019 fixture is loaded into the database and the data volume first, so the server's first start
   # upgrades a team install (0020, 0021, the data directory's move, the re-seal) before the same suite runs.
   browser-e2e:
+    # A short job: it starts after `check` (see `jobs`).
+    needs: [changes, check]
+    if: ${{ !cancelled() && needs.changes.outputs.code == 'true' }}
     strategy:
       fail-fast: false
       matrix:
@@ -317,6 +470,9 @@ jobs:
   # frozen fixture (upgrade-compose.test.ts). Then the way back: the image built at 0019's commit starts on what
   # `admin tenancy revert` leaves (revert-0019-image.test.ts). Both skip everywhere else, for want of the images.
   server-upgrade:
+    # A short job: it starts after `check` (see `jobs`).
+    needs: [changes, check]
+    if: ${{ !cancelled() && needs.changes.outputs.code == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     services:
@@ -388,6 +544,9 @@ jobs:
   # The tenancy suites, revert round trip included, on the other supported PostgreSQL majors (Task 28 review m7):
   # 15 is the oldest the server accepts, and server-integration above runs everything on 16.
   tenancy-postgres:
+    # A short job: it starts after `check` (see `jobs`).
+    needs: [changes, check]
+    if: ${{ !cancelled() && needs.changes.outputs.code == 'true' }}
     strategy:
       fail-fast: false
       matrix:
@@ -430,6 +589,9 @@ jobs:
   # runs the same four checks the other recipes run (packages/cli/Dockerfile, task 3 of #31);
   # `--mock` then serves a mock from the image and stops it with `docker stop` (#61).
   image-smoke:
+    # A short job: it starts after `check` (see `jobs`).
+    needs: [changes, check]
+    if: ${{ !cancelled() && needs.changes.outputs.code == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -457,6 +619,8 @@ jobs:
   # tarballs into an empty directory (no workspace, no `workspace:*` protocol to fall back on),
   # then run the same four checks against that install (packages/cli, task 1 of #31).
   npm-smoke:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -483,6 +647,8 @@ jobs:
   # JUnit file; the same run against the failing selection must exit 1, without failing this job
   # (`continue-on-error`) since a red assertion is the expected outcome under test.
   action-smoke:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     strategy:
       fail-fast: false
       matrix:
