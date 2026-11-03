@@ -11,6 +11,7 @@ import { markStepsDone } from '../../helpers/tenancy.js';
 import { createHash, generateKeyPairSync, randomBytes, sign } from 'node:crypto';
 import type { RouteOptions } from 'fastify';
 import { expect } from 'vitest';
+import { entryModule } from '../../../src/entry/module.js';
 import { agentModule } from '../../../src/agent/module.js';
 import { chainKeys } from '../../../src/audit-log/chain/keys.js';
 import { AuditSealer } from '../../../src/audit-log/chain/sealer.js';
@@ -139,6 +140,9 @@ export async function isolationWorld(options: { readonly policiesDisabled?: bool
       WIREBENCH_SERVER_SCHEDULES_SECRET_KEY: SCHEDULES_KEY,
       WIREBENCH_SERVER_AUDIT_CHAIN_KEY: CHAIN_KEY,
       WIREBENCH_SERVER_HOST_IDLE_MINUTES: '30',
+      // The entry needs a sender in hosted mode (spec §21.4); the sweep never reaches it from a tenant host.
+      WIREBENCH_SERVER_SMTP_URL: 'smtp://mail.test:2525',
+      WIREBENCH_SERVER_SMTP_FROM: 'teams@site.test',
     },
     modules: (clock) => {
       const now = () => clock.now;
@@ -180,6 +184,7 @@ export async function isolationWorld(options: { readonly policiesDisabled?: bool
         }),
         hostModule({ now, setTimer: timers.setTimer, browserRoot: build.root }),
         agentModule({ now, sweepIntervalMs: 0 }),
+        entryModule(),
       ];
       modules.push('identity', ...list.map((module) => module.name));
       return list;

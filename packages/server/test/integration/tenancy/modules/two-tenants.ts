@@ -26,7 +26,12 @@ import {
 
 export const APP_DOMAIN = 'example.test';
 
-export const hosted = (config: ServerConfig): ServerConfig => ({ ...config, mode: 'hosted', appDomain: APP_DOMAIN });
+export const hosted = (config: ServerConfig): ServerConfig => ({
+  ...config,
+  mode: 'hosted',
+  appDomain: APP_DOMAIN,
+  siteDomain: 'site.test',
+});
 
 export type Method = 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
 

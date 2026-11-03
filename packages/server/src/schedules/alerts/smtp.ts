@@ -20,7 +20,8 @@ export interface MailDeliveryOptions {
 export async function sendAlertMail(
   smtp: NonNullable<SchedulesSettings['smtp']>,
   to: readonly string[],
-  email: RenderedEmail,
+  /** `html` may be left out: the hosted entry's message is plain text only (hosted edition spec §21.4). */
+  email: Pick<RenderedEmail, 'subject' | 'text'> & { readonly html?: string },
   options: MailDeliveryOptions = {},
 ): Promise<void> {
   const host = new URL(smtp.url).hostname;
@@ -44,7 +45,13 @@ export async function sendAlertMail(
   });
   try {
     await Promise.race([
-      transport.sendMail({ from: smtp.from, to: [...to], subject: email.subject, text: email.text, html: email.html }),
+      transport.sendMail({
+        from: smtp.from,
+        to: [...to],
+        subject: email.subject,
+        text: email.text,
+        ...(email.html !== undefined ? { html: email.html } : {}),
+      }),
       deadline,
     ]);
   } catch (error) {

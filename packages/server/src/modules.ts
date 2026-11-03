@@ -2,6 +2,7 @@ import type { ServerModule } from './context.js';
 import { agentModule } from './agent/module.js';
 import { auditLogModule } from './audit-log/module.js';
 import { ciTokensModule } from './ci-tokens/module.js';
+import { entryModule } from './entry/module.js';
 import { hooksModule } from './hooks/module.js';
 import { hostModule } from './host/module.js';
 import { identityModule } from './identity/module.js';
@@ -39,6 +40,8 @@ import { terminalSharesModule } from './terminal-shares/module.js';
  * registers nothing while the browser client is off.
  * agent comes after host (hosted edition spec §18.2): it announces `agentUnpaired` for the server host,
  * which does not listen yet. It too registers nothing while the browser client is off.
+ * entry comes last: it registers only public routes, on `app.<app-domain>`, and only in hosted mode (hosted edition
+ * spec §21.4).
  */
 export const BUILTIN_MODULES: readonly ServerModule[] = [
   identityModule(),
@@ -55,4 +58,5 @@ export const BUILTIN_MODULES: readonly ServerModule[] = [
   terminalSharesModule(),
   hostModule(),
   agentModule(),
+  entryModule(),
 ];

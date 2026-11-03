@@ -51,6 +51,8 @@ answered.** Precisely:
   is a manual test until a domain exists.
 - The entry costs one short transaction per tenant per lookup. A queue served one at a time bounds the load; at many
   thousands of tenants an index of address hashes may be needed, and would be its own decision then.
+- Anyone can spend an address's three requests an hour, so its owner may wait an hour and get three messages they did
+  not ask for. The limit is what keeps that small; the message says to ignore it, and it signs nobody in.
 - A queued address is lost on a crash. The person asks again; nothing holds addresses at rest for a convenience mail.
 - Whether each name is a registrable domain is not checked by the server, which carries no public suffix list. The
   runbook says so, and the public suffix submission (§21.6) is an operator step.

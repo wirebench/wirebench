@@ -118,6 +118,16 @@ export class TenantDirectory {
     return rows.rows.map(scopeOf);
   }
 
+  /** {@link resolvable}, with each tenant's name: what the entry's message lists (spec §21.4). */
+  async resolvableNamed(): Promise<{ readonly scope: TenantScope; readonly name: string }[]> {
+    const rows = await this.#db.query<{ id: string; slug: string; name: string }>(
+      `select t.id::text as id, t.slug, t.name from tenants t
+       where t.status = 'active' and t.id is distinct from (select default_tenant_id from server_identity)
+       order by t.created_at, t.id`,
+    );
+    return rows.rows.map((row) => ({ scope: scopeOf(row), name: row.name }));
+  }
+
   async get(id: string): Promise<(TenantRow & { readonly scope: TenantScope }) | undefined> {
     const rows = await this.#db.query<TenantRow & Record<string, unknown>>(
       `select ${COLUMNS} from tenants where id = $1::uuid`,
