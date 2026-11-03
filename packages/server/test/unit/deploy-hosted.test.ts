@@ -100,7 +100,7 @@ describe('the hosted deployment recipe', () => {
   });
 
   it('names no real domain', async () => {
-    for (const file of ['compose.yaml', 'dynamic.yaml', 'env.example']) {
+    for (const file of ['compose.yaml', 'dynamic.yaml', 'env.example', 'README.md']) {
       const text = await readFile(join(DIR, file), 'utf8');
       expect(text, file).not.toMatch(/wirebench\.(co|com|io|dev|app|cloud)\b/);
     }
