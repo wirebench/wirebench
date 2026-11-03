@@ -125,7 +125,7 @@ const domainText = z
       /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$/.test(name) &&
       // The last label of a DNS name is never all digits, so this refuses an IPv4 literal.
       !/^\d+$/.test(name.slice(name.lastIndexOf('.') + 1)),
-    'must be a domain name such as example.test: two labels at least, no scheme, port, path or trailing dot',
+    'must be a domain name such as example.test: two labels at least, no scheme, port, path or trailing dot, and an international name in its xn-- form',
   );
 
 const inputSchema = z.object({

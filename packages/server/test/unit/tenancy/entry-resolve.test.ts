@@ -2,11 +2,12 @@
  * The apex and the entry in hosted resolution (hosted edition spec §21.3): the apex redirects to the entry, the entry
  * serves only routes marked as its own and gives them no tenant, and a tenant host never reaches an entry route.
  */
+import type { IncomingMessage } from 'node:http';
 import Fastify, { type FastifyRequest } from 'fastify';
 import { describe, expect, it, vi } from 'vitest';
 import type { ServerConfig } from '../../../src/config.js';
 import type { TenantDirectory } from '../../../src/tenancy/directory.js';
-import { ENTRY_ROUTE, registerTenantResolution } from '../../../src/tenancy/resolve.js';
+import { ENTRY_ROUTE, rawHostOf, registerTenantResolution } from '../../../src/tenancy/resolve.js';
 import { scopeOf } from '../../../src/tenancy/scope.js';
 
 const ACME = scopeOf({ id: '00000000-0000-4000-8000-00000000000a', slug: 'acme' });
@@ -101,6 +102,38 @@ describe('the entry', () => {
       const res = await app.inject({ method: 'GET', url: '/healthz', headers: { host } });
       expect(res.statusCode, host).toBe(200);
     }
+    await app.close();
+  });
+});
+
+describe('rawHostOf', () => {
+  const req = (headers: Record<string, string>): IncomingMessage => ({ headers }) as unknown as IncomingMessage;
+
+  it('reads Host, keyed like the tenant map', () => {
+    expect(rawHostOf(req({ host: 'APP.app.test:8443' }), false)).toBe('app.app.test');
+    expect(rawHostOf(req({ host: 'app.app.test.' }), false)).toBe('app.app.test');
+  });
+
+  it('takes the last X-Forwarded-Host entry, behind a trusted proxy only', () => {
+    const headers = { host: 'internal:8080', 'x-forwarded-host': 'acme.app.test, app.app.test' };
+    expect(rawHostOf(req(headers), true)).toBe('app.app.test');
+    expect(rawHostOf(req(headers), false)).toBe('internal');
+  });
+
+  it('leaves a non-numeric port in, so the name never matches the entry', () => {
+    expect(rawHostOf(req({ host: 'app.app.test:abc' }), false)).toBe('app.app.test:abc');
+  });
+});
+
+describe('the apex behind a trusted proxy', () => {
+  it('redirects when X-Forwarded-Host names it', async () => {
+    const app = await serverFor(hosted, true);
+    const res = await app.inject({
+      method: 'GET',
+      url: '/',
+      headers: { host: 'internal', 'x-forwarded-host': 'app.test' },
+    });
+    expect(res.statusCode).toBe(308);
     await app.close();
   });
 });

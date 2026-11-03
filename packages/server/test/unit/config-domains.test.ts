@@ -68,6 +68,20 @@ describe('the app and site domains', () => {
     expect(problems[0]?.message).toContain('apart');
   });
 
+  it.each([
+    [`${'a'.repeat(63)}.${'b'.repeat(63)}.${'c'.repeat(63)}.${'d'.repeat(61)}`, 'exactly 253 characters'],
+    ['xn--bcher-kva.test', 'a punycode label'],
+    ['app.xn--p1ai', 'a punycode top-level label'],
+  ])('accepts %s (%s)', (value) => {
+    expect(problemsOf({ WIREBENCH_SERVER_APP_DOMAIN: value })).toEqual([]);
+  });
+
+  it('refuses an all-numeric top-level label', () => {
+    expect(problemsOf({ WIREBENCH_SERVER_APP_DOMAIN: 'app.123' }).map((problem) => problem.variable)).toEqual([
+      'WIREBENCH_SERVER_APP_DOMAIN',
+    ]);
+  });
+
   it('accepts names that only share a suffix of characters, not of labels', () => {
     expect(
       problemsOf({ WIREBENCH_SERVER_APP_DOMAIN: 'xsite.test', WIREBENCH_SERVER_SITE_DOMAIN: 'site.test' }),

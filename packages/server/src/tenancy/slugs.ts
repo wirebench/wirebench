@@ -5,7 +5,10 @@
  * app, and an existing tenant whose slug a later list reserves keeps it.
  */
 
-/** The `tenants.slug` check of migration `0020`: 3–40 characters, `[a-z0-9-]`, no `-` at either end. */
+/**
+ * The `tenants.slug` check of migration `0020`, character for character: `[a-z0-9-]`, no `-` at either end, and one
+ * character or 3–40. §3.6's 3-character minimum is not what the database checks; slice 7's signup form applies it.
+ */
 export const SLUG_PATTERN = /^[a-z0-9]([a-z0-9-]{1,38}[a-z0-9])?$/;
 
 export const RESERVED_SLUGS: ReadonlySet<string> = new Set([

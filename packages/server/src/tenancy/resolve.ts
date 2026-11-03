@@ -57,7 +57,8 @@ const UNSCOPED_ROUTES = new Set(['/healthz']);
  * What an entry route is registered with (spec §21.4): a constraint that only a request for `app.<appDomain>` meets,
  * so on a tenant host the same path is the tenant's, and the config the root hook lets through on the entry host.
  * Fastify's own host constraint is not used: it compares the raw `Host` header, port and case included, and never
- * reads `X-Forwarded-Host`.
+ * reads `X-Forwarded-Host`. Spread it whole and add to it (`{ ...ENTRY_ROUTE, bodyLimit }`); a route that replaced
+ * `config` would lose the mark and answer 404 everywhere.
  */
 export const ENTRY_ROUTE = Object.freeze({
   constraints: Object.freeze({ [ENTRY_CONSTRAINT]: ENTRY_VALUE }),
@@ -210,6 +211,11 @@ export async function registerTenantResolution(
     }
     if (host === entryHost) {
       if (isEntryRoute(request)) return undefined;
+      void reply.code(404).header('cache-control', 'no-store').send();
+      return reply;
+    }
+    // Belt and braces: the constraint already keeps an entry route off every other host.
+    if (isEntryRoute(request)) {
       void reply.code(404).header('cache-control', 'no-store').send();
       return reply;
     }
