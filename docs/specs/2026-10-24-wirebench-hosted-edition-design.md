@@ -6,8 +6,10 @@ customers · Amended 2026-10-26 after an independent review: its four high findi
 (row-level security must be forced), §3.8 and §3.10 (the agent serves a browser a declared subset), §5.4
 guard 6 (background jobs have a tenant scope) and §5.1 (the host package is a factory with no module-level
 state); the rest are folded in where they apply · Amended 2026-10-27 for slice 2 (§17, decision 12,
-ADR-0034) · Amended 2026-10-29 for slice 3 (§18, ADR-0035) · Amended 2026-10-29 for slice 4 (§19, ADR-0036) · Amended 2026-11-03 for slice 5 (§20, ADR-0037) ·
-Issue: #776 (slice 1 is #777, slice 2 is #783, slice 3 is #790, slice 4 is #798, slice 5 is #821) · Module ids: `host-seam`,
+ADR-0034) · Amended 2026-10-29 for slice 3 (§18, ADR-0035) · Amended 2026-10-29 for slice 4 (§19, ADR-0036) ·
+Amended 2026-11-03 for slice 5 (§20, ADR-0037) · Amended 2026-11-03 for slice 6 (§21, ADR-0038) ·
+Issue: #776 (slice 1 is #777, slice 2 is #783, slice 3 is #790, slice 4 is #798, slice 5 is #821, slice 6 is #822) ·
+Module ids: `host-seam`,
 `browser-client`, `local-agent`, `tenancy`, `operations`, `domains`, `control-plane`, `custom-domains`
 
 - Intent: `docs/intent/wirebench-server-teams.md` (roles and sign-in for people without git hosting) extended
@@ -2324,3 +2326,169 @@ logs and sharing spec B1). With several instances, a viewer can land on another 
 Slice 5 adds no criterion of §13. It is done when §11's operations line holds ("two server instances against one
 database, a push on one seen by a live socket on the other") together with the rest of §20.11, and a self-hosted
 one-instance server behaves as before with no new variable set.
+
+## 21. Slice 6 amendment: domains (2026-11-03)
+
+Slice 6 (#822) gives the hosted names their settings and their certificate, opens the neutral entry at
+`app.<app-domain>`, and reserves the slugs no tenant may take. No domain is owned yet (owner, 2026-11-03), so every
+name is read from configuration and none is written into the code, the tests or the docs: they say `<app-domain>`,
+`<site-domain>`, or `app.test` and `site.test` in tests. It builds §3.2's `app.` paragraph, §3.6's reserved list,
+§3.7 and §19.12's slice 6 items, and nothing of slices 5, 7 or 8: hosted mode stays refused by `loadConfig` (§19.1),
+the entry is proven by tests that build a hosted `ServerConfig`, and the deployment recipe runs end to end once
+slice 7 lifts that refusal. Where the build differs from the sections above, this section wins. ADR-0038. Plan:
+`docs/plans/2026-11-03-domains.md`.
+
+Owner rulings (2026-11-03, popup): Traefik terminates TLS and issues the wildcard certificate; Hetzner DNS is the
+DNS-01 provider the recipe targets first; the entry's mail goes through the server's existing SMTP settings; the
+reserved list is §3.6's plus infrastructure and brand names.
+
+### 21.1 The two names (amends §3.7 and §19.5)
+
+| Variable | Key | Meaning |
+| --- | --- | --- |
+| `WIREBENCH_SERVER_APP_DOMAIN` | `appDomain` | The product's registrable name. Tenants are `<slug>.<app-domain>`, the entry is `app.<app-domain>`. |
+| `WIREBENCH_SERVER_SITE_DOMAIN` | `siteDomain` | The marketing site's registrable name (site, docs, signup). The server serves nothing there; the entry page and its mail link to `https://<site-domain>/`. |
+
+- **Shape.** A lower-case DNS name of at least two labels, each `[a-z0-9-]`, 1–63 characters, not starting or ending
+  with `-`, 253 characters at most; no scheme, port, path, trailing dot or IP literal. Upper case is folded, anything
+  else is refused with the variable's name.
+- **Two names, apart.** The two must differ, and neither may equal or end with `.` plus the other, so a cookie or a
+  storage key set on one is never readable by a page on the other (§3.7). Whether each is a *registrable* name (one
+  label under a public suffix) is not checked: that needs the public suffix list at run time, which the server does
+  not carry. The operator runbook says it (§21.5).
+- **Where they are read.** Only in hosted mode, where both are required (`domains-app-domain-missing`,
+  `domains-site-domain-missing`). In self-hosted mode they are accepted and unused, and `config check` prints one
+  line saying so; the public URL stays the one name a self-hosted server has.
+- `tenantUrl()`, the resolver and `appDomainOf()` are unchanged: they read `appDomain` as slice 4 left them. The
+  test-only field becomes the environment variable.
+
+### 21.2 Reserved slugs (amends §3.6)
+
+- **One list**, `src/tenancy/slugs.ts`, a frozen literal:
+  - §3.6's: `app`, `api`, `www`, `docs`, `status`, `admin`, `agent`, `mail`, `help`, `support`, `billing`, `login`,
+    `signup`;
+  - every area id and every protocol kind id the app has (today `explorer`, `environments`, `search`, `history`, `wss`,
+    `ssh`, `soap`, `rest`, `grpc`, `ws`, `mcp`), and the protocol names that are not kinds of their own (`graphql`, `http`,
+    `https`, `telnet`, `serial`, `sftp`): a unit test imports `AREAS` and
+    `KINDS` from `@wirebench/wire` and fails when one is missing, so a new area or kind cannot ship unreserved. The
+    runtime list stays a literal, so the server's start-up imports nothing for it;
+  - infrastructure names: `mx`, `smtp`, `imap`, `pop`, `ns1`, `ns2`, `cdn`, `static`, `assets`, `autoconfig`,
+    `autodiscover`, `dev`, `staging`, `test`, `default`;
+  - brand names: `wirebench`, `verathic`.
+- **`checkSlug(slug)`** answers `ok`, `slug-invalid` (§19.2's syntax) or `slug-reserved`. `TenantAdmin.create`
+  calls it first and throws `tenancy-slug-reserved` or `tenancy-slug-invalid`; it is the only writer of a slug in
+  slice 6. Slice 7's signup, rename and `admin tenant create` call the same function.
+- **Not in the database.** The `tenants.slug` check stays syntax only: the list changes with the app, and a check
+  constraint would make every new area a migration. An existing tenant whose slug a later list reserves keeps it;
+  only a new write is refused.
+- **Self-hosted** never sees the list: the default tenant's slug is written by the migration, and `default` is on the
+  list so no hosted tenant takes the name.
+
+### 21.3 Resolution of the entry and the apex (amends §19.5)
+
+In hosted mode the root `onRequest` hook reads the host key (§19.5) and branches before the tenant map:
+
+| Host | Answer |
+| --- | --- |
+| `<app-domain>` (the apex) | `308` to `https://app.<app-domain>/`, path and query dropped, `cache-control: no-store`. |
+| `app.<app-domain>` | The entry (§21.4): its own routes only. Any other path `404`s with an empty body, as an unknown slug does. `request.tenant` stays unresolved, so a module route that reached for it would throw rather than serve the default tenant. |
+| `<slug>.<app-domain>` | Unchanged (§19.5). `app` is reserved, so the map never holds it; the branch above runs first all the same. |
+| anything else | `404`, empty, `no-store` (unchanged). |
+
+The entry's routes are registered with a Fastify host constraint of `app.<app-domain>`, so on a tenant host the same
+paths do not exist. `/healthz` stays unscoped on every host.
+
+### 21.4 The entry at `app.<app-domain>` (amends §3.2)
+
+A server module, `src/entry/`, registered only in hosted mode.
+
+- **`GET /`**: a small server-rendered page in the sign-in page's style (§17.2): the product name, one email field,
+  one button, and a link to `https://<site-domain>/`. No script, no cookie, `cache-control: no-store`, the sign-in
+  page's CSP.
+- **`POST /`** (`application/x-www-form-urlencoded`, field `email`): the same page, saying "If that address has a
+  team, a message is on its way." for every input, valid or not, known or not. The checks, in order:
+  - the `Origin` header must be `https://app.<app-domain>`, else `403` (login CSRF would let a page make a visitor's
+    browser mail someone);
+  - a body over 1 KiB is `413`;
+  - **rate limits**, in-process token buckets (identity's `RateLimiter`): 5 a minute per client address (behind the
+    trusted proxy) and 3 an hour per lower-cased address. Over either limit the page is the same and nothing is
+    queued: answering `429` would tell an address's owner nothing, but would tell a prober which addresses were
+    being tried. A per-address bucket keyed by a keyed hash, so the map never holds an address in the clear;
+  - a malformed address queues nothing.
+- **The lookup runs after the answer.** A valid address joins an in-process queue of at most 200 items, served one at
+  a time, and the response is sent before the lookup starts, so the time to answer does not say whether the address
+  has a team. A full queue drops the item with a warning that names no address. A crash loses queued items; the
+  person asks again (my call: an outbox table would hold addresses at rest for a mail that is only a convenience).
+- **The lookup.** For each resolvable tenant (§19.5: active, not the default), one tenant unit through the job loop's
+  shape (§19.8, guard 6) that reads `users` by `email_lower`, enabled only. No bypass role, no cross-tenant index.
+  A tenant whose unit fails is skipped and logged by tenant id.
+- **The mail.** One plain-text message per lookup with at least one match, none otherwise; sent through
+  `WIREBENCH_SERVER_SMTP_URL` and `_SMTP_FROM` (owner ruling) with the alerts' transport (certificate always
+  verified, the URL never printed). Subject "Your Wirebench teams"; the body lists each tenant's name and
+  `https://<slug>.<app-domain>/sign-in`, then the site link, then "You asked for this at app.<app-domain>. If you
+  did not, ignore it: nothing has changed." Plain text, so a tenant's name, which its admin writes, cannot carry
+  markup into the message. The mail holds links only: no token, nothing that signs anyone in.
+- **Hosted mode needs SMTP.** The module refuses to register without both SMTP settings
+  (`entry-smtp-missing`), so a hosted server never shows a page that promises mail it cannot send.
+- **Logs and audit.** One info line per lookup with the count of tenants matched and the time taken, never the
+  address or a slug. Nothing is written to a tenant's audit chain: no tenant acted, and an address probe would
+  otherwise land in a stranger's log.
+- **Isolation.** The isolation suite (§19.13) classifies the entry's two routes as unscoped-by-host, and a test
+  asserts that a match in tenant A and none in B mails A's link only, and that the page is byte-identical for a known
+  address, an unknown one and a malformed one.
+
+### 21.5 Certificates and the deployment recipe (owner ruling)
+
+- **The server never touches TLS.** It stays plain HTTP behind a proxy, as every deployment is today.
+  `WIREBENCH_SERVER_TRUST_PROXY=true` makes `request.hostname` and the client address the proxy's forwarded ones.
+- **`packages/server/deploy/hosted/`** holds a compose file and a README:
+  - **Traefik v3**, the only public listener: `:80` redirects to `:443`; one router for
+    `Host(<app-domain>) || HostRegexp(^[a-z0-9-]+\.<app-domain>$)` to the server; one certificate resolver,
+    Let's Encrypt by ACME DNS-01 with lego's `hetzner` provider, the token from `HETZNER_API_TOKEN` (a `_FILE` secret
+    in the recipe), one certificate with main `<app-domain>` and SAN `*.<app-domain>` (a wildcard does not cover its
+    apex). Certificates persist in a volume (`acme.json`, mode 600). HSTS without `preload` (preload is a later,
+    one-way choice for a real domain).
+  - **the server** with `WIREBENCH_SERVER_MODE=hosted`, both names from `.env`, the SMTP settings, the two database
+    roles of §19.4, and no published port;
+  - **PostgreSQL 16**, no published port.
+  - `.env.example` names every variable with a placeholder (`APP_DOMAIN=example-app.test`); nothing real.
+  - The DNS records the operator creates: `A`/`AAAA` for `<app-domain>` and `*.<app-domain>` to the proxy, and the
+    site domain's own records, which point elsewhere (the site is static and built apart).
+- **What proves it.** A unit test parses the compose file and the Traefik configuration and checks the router rule,
+  the resolver, the two certificate names and that only Traefik publishes a port. `docker compose config` on the
+  recipe runs in that test when Docker is present. A manual test (`docs/manual-tests/`) covers issuance against
+  Let's Encrypt's staging endpoint once a domain exists. Running the whole recipe waits for slice 7, since hosted
+  mode is refused until then.
+- **Another DNS provider** is a change of `provider` and its token variable in the Traefik file; the README says so
+  and names no other provider.
+
+### 21.6 The public suffix list (operator step)
+
+Not code. The runbook in `deploy/hosted/README.md` gives the steps, to take once `<app-domain>` is registered and
+stable:
+
+1. Keep the registration at least two years ahead; the list's maintainers ask for it.
+2. Open a pull request to the list's private section adding `<app-domain>` under a comment naming the project and a
+   contact address.
+3. Add the TXT record `_psl.<app-domain>` holding that pull request's URL, and keep it as long as the entry is listed.
+4. Until it is merged and shipped by browsers, which takes months, the `__Host-` cookie (§3.2) and per-origin storage
+   protect sessions (§15).
+
+### 21.7 Testing
+
+- Config: each variable's shape, the apart rule both ways, required in hosted, unused-line in self-hosted.
+- Slugs: every reserved slug refused by `TenantAdmin.create`; the `AREAS`/`KINDS` coverage test.
+- Resolution: apex `308`, entry paths served and others `404`, entry routes absent on a tenant host, `request.tenant`
+  unresolved on the entry.
+- Entry: identical pages for known, unknown and malformed; `Origin` refused; both rate limits; queue bound; a lookup
+  across two tenants mails only the matching tenant's link through a fake transport; disabled users and the default
+  tenant never match; refused registration without SMTP.
+- Recipe: the parse test of §21.5.
+
+### 21.8 What slice 6 leaves for slices 7 and 8
+
+- **7:** signup, rename and `admin tenant create` call `checkSlug`; renamed slugs' 30-day redirects and the retired
+  list (§3.6); per-tenant SMTP senders (§19.1) do not change the entry, which mails as the operator; lifting the
+  hosted refusal makes the recipe run.
+- **8:** a custom name is one more resolver entry (§19.12) and one more Traefik router with an HTTP-01 certificate of
+  its own; the entry and the wildcard are unchanged.
