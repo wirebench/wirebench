@@ -6,8 +6,8 @@ customers · Amended 2026-10-26 after an independent review: its four high findi
 (row-level security must be forced), §3.8 and §3.10 (the agent serves a browser a declared subset), §5.4
 guard 6 (background jobs have a tenant scope) and §5.1 (the host package is a factory with no module-level
 state); the rest are folded in where they apply · Amended 2026-10-27 for slice 2 (§17, decision 12,
-ADR-0034) · Amended 2026-10-29 for slice 3 (§18, ADR-0035) · Amended 2026-10-29 for slice 4 (§19, ADR-0036) ·
-Issue: #776 (slice 1 is #777, slice 2 is #783, slice 3 is #790, slice 4 is #798) · Module ids: `host-seam`,
+ADR-0034) · Amended 2026-10-29 for slice 3 (§18, ADR-0035) · Amended 2026-10-29 for slice 4 (§19, ADR-0036) · Amended 2026-11-03 for slice 5 (§20, ADR-0037) ·
+Issue: #776 (slice 1 is #777, slice 2 is #783, slice 3 is #790, slice 4 is #798, slice 5 is #821) · Module ids: `host-seam`,
 `browser-client`, `local-agent`, `tenancy`, `operations`, `domains`, `control-plane`, `custom-domains`
 
 - Intent: `docs/intent/wirebench-server-teams.md` (roles and sign-in for people without git hosting) extended
@@ -2036,3 +2036,291 @@ ADR-0032 (accepted) carries an amendment note naming these, as §17 and §18 did
 
 §5.5's heartbeat advisory lock is a row lease (§19.9). §14's "one transaction for rows" is two migrations, `0020`
 and `0021`, each one transaction (§19.10).
+
+## 20. Slice 5 amendment: operations (2026-11-03)
+
+Slice 5 (#821) lets the server run as several instances against one database and one data volume, and stops one
+tenant from using up a shared server. It builds §5.5 (fan-out, the advisory lock, sticky host sockets), the
+per-tenant budgets of §6 and the operations metrics of §6 and §8. It builds nothing of slices 6 to 8: no wildcard
+name, no `app.` entry, no signup, no per-tenant settings. Where the build differs from the sections above, this
+section wins, and ADR-0013 and ADR-0009 carry a note of what changed (§20.12). Plan:
+`docs/plans/2026-11-03-operations.md`. ADR-0037 records the decision that instances share state only through
+PostgreSQL, with one exception, the share relay (§20.6).
+
+Owner rulings (popup, 2026-11-03):
+
+1. **Metrics are pushed with OpenTelemetry** (OTLP over HTTP), and only when the operator sets an endpoint (§20.8).
+2. **The budgets** are server-side sends per minute, concurrent server-side sends, and a fair share of scheduled-run
+   slots, with server-wide defaults from the environment. Per-tenant overrides arrive with slice 7's settings
+   (§20.7).
+3. **A self-hosted server may run several instances on an Enterprise license only**, by opting in (§20.1).
+4. **Sticky host sockets use the balancer's own cookie**, whatever the balancer. The docs give one worked example,
+   and the host lease stays the guard (§20.5).
+5. **Terminal shares cross instances through a node-to-node relay** (§20.6).
+
+### 20.1 One instance or several
+
+- `WIREBENCH_SERVER_INSTANCES` takes `single` (the default) or `multi`. Hosted mode is always `multi`, whatever the
+  variable says.
+- **`single` is today's server.** Every mechanism of this section runs in it too, so there is one code path, not two
+  (my call): the notification bus, the advisory repository lock and the shared limiter. A one-instance server pays a
+  statement or two per push and per limited request, which `pnpm test:perf` measures (§20.11). What `single` keeps:
+  - start-up deletes every host lease (§19.9), since no other process can hold one;
+  - no instance address is needed, and the share relay never dials (§20.6).
+- **`multi` on a self-hosted server needs Enterprise** (ruling 3).
+  - Start-up reads the default tenant's license state. On anything but an Enterprise license that is valid or in
+    grace, `serve` refuses with `server-instances-need-enterprise`, and `config check` says the same.
+  - A license that lapses while the server runs does not stop it. Every instance logs a warning once an hour, and the
+    next start refuses. A running fleet is not cut off by a renewal that is a day late (my call).
+  - `multi` drops the start-up lease delete (§19.12), and needs `WIREBENCH_SERVER_INSTANCE_URL` (§20.6).
+- **What stays per process,** by design, in both modes: the eight host sockets per user and the live sockets per
+  user (§17.3, ADR-0013). They guard one process's memory, not a tenant's share of the fleet.
+- **Every instance mounts the same data volume read-write** (§5.5). Repositories are written under the advisory lock
+  (§20.4), checkouts and host state under the host lease (§19.9), and nothing else on the volume is written by two
+  processes.
+
+### 20.2 The instance table
+
+```sql
+create table server_instances (
+  holder      uuid primary key,          -- the process id of §19.9, random at start-up
+  url         text,                      -- WIREBENCH_SERVER_INSTANCE_URL; null in `single`
+  version     text not null,
+  started_at  timestamptz not null default now(),
+  renewed_at  timestamptz not null default now()
+);
+```
+
+- **Unscoped**, like `server_identity`: it names processes, not tenants. It joins guard 3's allowlist (§19.8), and
+  `check:tenant-scope` allows it only in `src/operations/`.
+- Migration `0022`, under `packages/server/migrations/operations/`. The app role may select, insert, update and
+  delete it.
+- An instance inserts its row at start-up and renews it with the host leases' 15 s timer. A row older than 60 s is
+  dead, and any instance's renew deletes dead rows. A clean shutdown deletes its own row.
+- Readers: the share relay (§20.6), the metrics' instance count (§20.8), and `admin instances` (§20.10).
+
+### 20.3 The notification bus (amends §5.5 and ADR-0013)
+
+- **One listening connection per process,** an `openSession` on the same URL as the server-running lock (the
+  migration URL where one is set): a transaction pooler cannot hold `LISTEN`, as it cannot hold a session lock.
+- **One channel per server schema:** `wirebench_bus_` followed by the hex of `hashtext(SERVER_SCHEMA)`, so test
+  schemas never hear each other.
+- **Sending.** `announce(...)` keeps its contract: it never throws and never awaits. It now does two things:
+  - delivers to this process's listeners at once, as today;
+  - queues the event for `select pg_notify($channel, $payload)` on the pool, outside any tenant transaction, in
+    order, with a queue of 10 000 events. A full queue drops the oldest and counts it (§20.8).
+- **The payload** is JSON, at most 7 900 bytes: `{ v: 1, from: holder, kind, tenantId, …the event's ids }`.
+  - It carries ids only, never a name, an email or file content (ADR-0013).
+  - `AccessChangedEvent` and `LicenseChangedEvent` carry a branded `TenantScope`. The receiver rebuilds it from
+    `tenantId` with `scopeOf` in `src/tenancy/`, the only place a scope may be made.
+  - An event that would not fit is never truncated. It is sent as `{ v: 1, from, kind: 'resync', tenantId }`, and each
+    receiving hub resyncs that tenant's rooms (below).
+- **Receiving.** A notification from this process's own `holder` is dropped, since it was delivered locally. The rest
+  reach the listeners registered as **cluster** listeners.
+- **Two kinds of listener** (my call): a listener says whether it is `cluster` or `local`.
+  - **Cluster** listeners keep in-memory state in step: the live hub, the host instances' `sessionEnded`, the
+    terminal-share registry, the tenant map and the data-key cache.
+  - **Local** listeners have an effect that must happen once: the audit module's `licenseChanged` writes an audit
+    event, and runs only in the process that announced it.
+  - A listener that does not say which is a type error.
+- **New events:** `tenantsChanged` (from `TenantDirectory.changed()`) and `tenantKeysChanged { tenantId? }` (from the
+  data-key paths). Their cluster listeners call `TenantResolver.invalidate()` and `TenantKeys.invalidate()`, which
+  slice 4 left for this (§19.12). The resolver's 60 s poll stays as a backstop, at 10 minutes.
+- **Presence crosses instances.** The hub announces `presenceChanged { tenantId, workspaceId, holder, users }` with
+  its own sockets' users of that room. Every hub keeps the other holders' lists per room, and `presence` sends the
+  union. A holder's lists are dropped when its `server_instances` row dies, or when it says `presenceReset`.
+- **When the listening connection drops:**
+  - the bus reconnects with a backoff of 1 s to 30 s;
+  - once it listens again, it invalidates the tenant map and the key cache, sends `presenceReset` with its own
+    lists, and **resyncs** every room it holds;
+  - a resync is made of messages clients already know, so a desktop of any version understands it (§14): each
+    subscribed socket gets `head` with the workspace's current head (one query per room), then `access`, then
+    `presence`. Each makes the client run its ordinary fetch. Nothing replays a missed event, as before
+    (ADR-0013); the 300 s safety-net fetch still converges every client.
+- **Ordering.** Notifications from one process arrive in the order it sent them; notifications from two processes
+  have no order. Every event is a hint followed by an HTTP fetch, so neither matters.
+
+### 20.4 The repository lock (amends ADR-0009 and ADR-0012)
+
+- `RepoStore.withLock(scope, workspaceId, fn)` keeps its signature. Inside, after the in-process queue, it takes
+  `pg_advisory_lock(REPO_LOCK_CLASS, hashtext(SERVER_SCHEMA || ':' || tenant_id || ':' || workspace_id))` on a
+  connection it holds for the length of `fn`, and unlocks before returning the connection.
+  - A session lock, not a transaction lock: `fn` runs git for seconds and its own short transactions, so it cannot
+    sit inside one transaction.
+  - The connection comes from a **lock pool** of its own, on the migration URL like the bus (a transaction pooler
+    would hand the session to someone else), with at most 8 connections. A ninth concurrent push waits in the
+    in-process queue first, so one process never holds more than 8 (my call).
+  - The in-process queue stays in front, so pushes to one workspace in one process never queue on the database.
+- A wait longer than 30 s answers `503 repo-busy` with `Retry-After: 5`. The desktop already retries a `503` push.
+- A lost lock connection ends `fn` with `repo-lock-lost` before its next git step. A git step that already started
+  runs to completion, as a crash would: the bare repository's own lock files and the push's compare-and-swap of the
+  head keep it consistent.
+- `drain()` waits for the in-process queue and for every held database lock to be released.
+
+### 20.5 Sticky host sockets (amends §5.5)
+
+- The server sets no routing cookie and reads none (ruling 4). The operator turns on the balancer's own sticky cookie
+  for `/api/v1/host` and `/api/v1/live`.
+- **The worked example is Traefik**, the reverse proxy slice 6's hosted compose uses (`sticky.cookie` with
+  `secure`, `httpOnly` and `sameSite=lax` on the service). The docs say what any balancer must do: keep one browser
+  on one instance while it lives, and move it when that instance is gone.
+- **The lease stays the guard.** A socket that reaches the wrong instance gets `4409 host-lease-held` with
+  `retryAfterMs`, as in §19.9. The bootstrap reconnects after that wait, the balancer sends it back to the holder
+  while the holder lives, and once the holder is gone the next instance takes the lease after expiry.
+- **Draining.** On `SIGTERM` an instance:
+  - stops accepting upgrades;
+  - closes its host sockets `4503 host-draining` after the quit path, and releases their leases at once, so the next
+    instance does not wait for expiry;
+  - closes its live sockets `1012` (service restart).
+
+  The bootstrap reconnects after `4503` with no backoff, and the balancer picks a live instance. `4503` already
+  exists (§17.3); the reason is new.
+
+### 20.6 The share relay (ruling 5)
+
+A terminal share joins one owner socket with viewer sockets, all held by one registry in one process (team session
+logs and sharing spec B1). With several instances, a viewer can land on another instance than the owner.
+
+- **Where a share lives.** `terminal_share_locations(tenant_id, share_id, holder, created_at)`, scoped like every
+  table, keyed `(tenant_id, share_id)`. The owner's instance writes the row when the share starts and deletes it when
+  the share ends. A row whose `holder` has no live `server_instances` row is dead, and a join treats it as no share.
+- **Joining elsewhere.** A viewer's instance that does not hold the share looks it up, then dials the holder's `url`
+  at `/internal/v1/shares/<share_id>` with the viewer's identity, and pipes frames both ways unchanged. The holder
+  sees one more viewer, with that viewer's identity, and every rule of the registry (the viewer limit, control,
+  audit) applies there once.
+- **The internal listener.** `WIREBENCH_SERVER_INSTANCE_URL` names this instance's own address on the private
+  network (for example `http://10.0.0.5:8091`), and the server listens there on a second port that serves only
+  `/internal/v1/*`.
+  - Each relay request carries a token made with HMAC-SHA-256 under a key HKDF derives from
+    `WIREBENCH_SERVER_SECRETS_KEY` ("wirebench/instance-relay/v1"). The token binds the tenant, the share, the
+    viewer's user and token ids, the target holder, and an expiry 30 s ahead. The holder refuses any other.
+  - The public listener never routes `/internal/`, and the internal one routes nothing else.
+  - The docs say the port must not be reachable from outside the private network. The token is the guard if it is.
+- **What does not change:** the share's protocol, its limits and its audit. When the holder dies, the share ends for
+  every viewer, as a restart ends it today.
+- `single` mode never dials: every share lives in the one process.
+
+### 20.7 Per-tenant budgets (amends §6; ruling 2)
+
+- **A shared limiter.** `limiter_buckets(tenant_id, key, tokens real, updated_at)`, an `unlogged` scoped table keyed
+  `(tenant_id, key)`. A charge is one statement: refill by the elapsed time, take if there is enough, and return the
+  tokens left. Unlogged is enough: after a crash the buckets start full, as an in-memory limiter does after a
+  restart.
+- **Every existing limiter moves to it** (amends ADR-0009's "shared rate-limit store"): sign-in per address and per
+  email, SSO and SCIM, licensing, sync key requests, desktop audit events, the agent's pairing and nonce limits with
+  the pairing failure budget, and catch-URL buckets. Their keys, sizes and refill rates are unchanged, and so is
+  every refusal a client sees. Spread over several instances, one tenant's attacker gets no more attempts than on
+  one.
+- **The new budgets,** one bucket each per tenant, with server-wide defaults:
+
+  | Budget | Variable | Default | Refused with |
+  | --- | --- | --- | --- |
+  | Server-side sends per minute | `WIREBENCH_SERVER_TENANT_SENDS_PER_MINUTE` | 600, burst 100 | `429 tenant-send-budget`, `retryAfterMs` |
+  | Concurrent server-side sends | `WIREBENCH_SERVER_TENANT_CONCURRENT_SENDS` | 16 | `429 tenant-send-concurrency` |
+  | Scheduled-run slots | `WIREBENCH_SERVER_TENANT_RUN_SLOTS` | 2 | queued, never refused |
+
+- **What a server-side send is.** A send the server host makes on a browser user's behalf: the host's send channels,
+  listed in `src/operations/send-channels.ts`. A test fails when the channel registry has a send channel that the
+  list does not name, as the allowlist test does (§17.3). A send through a paired agent is not one; nor is a
+  scheduled run's request, which the run slots govern instead.
+- **Concurrency across instances.** `send_slots(tenant_id, slot, holder, expires_at)`, unlogged and scoped. A send
+  takes a slot (`insert … on conflict do update … where expires_at < now()` on one of the tenant's numbered slots)
+  and frees it after. A slot lasts the send's own deadline plus 30 s, so a crashed instance's slots free themselves.
+- **Run slots.** The scheduler's per-server cap (`WIREBENCH_SERVER_SCHEDULES_CONCURRENCY`) stays. Beside it, a
+  tenant runs at most its slots at once across every instance: the claim counts that tenant's `running` runs in the
+  same transaction that claims, and skips the tenant when it is full. The round-robin of §19.8 then offers the slot
+  to the next tenant.
+- **Script limits stay per run** (ADR-0016): 1 s by default, 10 s at most, 64 MiB.
+- **Overrides** per tenant are slice 7's settings. Until then every tenant gets the defaults. A self-hosted server's
+  one tenant gets them too. The send budget's default is set high enough that a team's own use does not reach it,
+  and the operator can raise it.
+- **Where a budget is refused,** the browser shows the refusal on the send like any other failed send, with its
+  retry time. Nothing is queued.
+
+### 20.8 Metrics by tenant id (amends §6 and §8; rulings 1)
+
+- **Off unless an endpoint is set:** the server starts the OpenTelemetry metrics SDK only when
+  `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` or `OTEL_EXPORTER_OTLP_ENDPOINT` is set. A self-hosted server sends nothing
+  by default, and the product's no-telemetry promise is unchanged: the operator chooses where its own server's
+  numbers go. The standard `OTEL_*` variables (headers, interval, timeout, resource attributes) apply as the SDK
+  reads them. `OTEL_SERVICE_NAME` defaults to `wirebench-server`.
+- **Dependencies,** confined to `src/operations/metrics/` and listed in the licences test: `@opentelemetry/api`,
+  `@opentelemetry/sdk-metrics`, `@opentelemetry/resources` and `@opentelemetry/exporter-metrics-otlp-http`, all
+  Apache-2.0, pinned exactly.
+- **Attributes.** A metric names a tenant by `wirebench.tenant.id` (the uuid), never by slug or name. Other
+  attributes are closed sets: the route template (never the URL), the method, the status class, a budget's name, an
+  outcome. Nothing from a request's content, a header or a user is ever an attribute. A test sweeps every recorded
+  attribute against that list.
+- **Instruments:**
+
+  | Name | Kind | Attributes |
+  | --- | --- | --- |
+  | `wirebench.http.requests` | counter | tenant, route, method, status class |
+  | `wirebench.http.duration` | histogram (ms) | tenant, route, method |
+  | `wirebench.live.sockets` | gauge | tenant |
+  | `wirebench.host.instances` | gauge | tenant |
+  | `wirebench.sends` | counter | tenant, outcome (`ok`, `failed`, `refused`) |
+  | `wirebench.budget.refusals` | counter | tenant, budget |
+  | `wirebench.schedules.runs` | counter | tenant, status |
+  | `wirebench.repo.lock.wait` | histogram (ms) | tenant |
+  | `wirebench.bus.dropped` | counter | none |
+  | `wirebench.bus.lag` | histogram (ms) | none |
+  | `wirebench.instances` | gauge | none |
+  | `wirebench.db.pool.waiting` | gauge | pool (`app`, `lock`) |
+
+  The process's id and version are resource attributes (`service.instance.id` is the `holder`).
+- A route without a tenant (`/healthz`, the sign-in page before resolution) records `wirebench.tenant.id` as `none`.
+
+### 20.9 Health
+
+- `GET /healthz` stays as it is (database, data directory, git).
+- `GET /readyz` is new and unscoped: `200` once start-up has finished and while the bus listens; `503` while draining
+  or while the bus reconnects. A balancer's health check uses it, so a draining instance gets no new socket.
+
+### 20.10 Admin
+
+- `wirebench-server admin instances` lists the live `server_instances` rows: holder, address, version, age, last
+  renew. It prints no tenant.
+
+### 20.11 Testing
+
+- **Two instances on one database** (§11's criterion): `test/integration/operations/two-instances.test.ts` starts two
+  full servers on one schema and one data directory, each with its own `holder`, internal port and bus.
+  - A push through one is a `head` on a live socket of the other within 2 s.
+  - `accessChanged` and `sessionEnded` on one close or demote sockets and host instances on the other.
+  - Presence on one shows users subscribed on the other, and drops them when that instance stops.
+  - A tenant created on one resolves on the other, and a data-key change is seen there.
+  - Two pushes to one workspace through the two instances never interleave (the advisory lock), and one waits.
+  - A host socket on the instance that does not hold the lease gets `4409`, and after the holder drains, the other
+    takes the lease at once.
+  - A viewer on one joins a share owned on the other through the relay, and control works both ways.
+  - A tenant's 17th concurrent send is refused on either instance, and its send budget is shared.
+- **The bus:** a dropped listening connection reconnects and resyncs its rooms with `head`, `access` and `presence`;
+  an oversized event goes as `resync`; a full queue drops the oldest; a process ignores its own notifications; a
+  `local` listener runs once in the fleet.
+- **The relay:** a token for another share, viewer, holder or tenant, or an expired one, is refused; the public port
+  answers `404` on `/internal/`.
+- **The limiter:** the same keys and refusals as the in-memory one, under both tenants (the isolation suite of §19.13
+  gains `limiter_buckets`, `send_slots` and `terminal_share_locations`, and classifies `/readyz`).
+- **Metrics:** with an in-memory exporter, each instrument records with its attributes, and the attribute sweep finds
+  only the allowed keys; with no endpoint the SDK is never started.
+- **`multi` and the license:** refused without Enterprise, warned when it lapses, the start-up lease delete skipped.
+- **Perf:** `pnpm test:perf` measures a push and a sign-in before and after, on one instance.
+- **CI** runs the two-instance suite in the server shard. It needs no new service.
+
+### 20.12 What §20 changes in ADR-0009, ADR-0013, §5.5 and §19
+
+- ADR-0009 and ADR-0013 carry an amendment note: the hub fans out through `LISTEN`/`NOTIFY`, the repository lock is
+  an advisory lock, and the rate limits live in PostgreSQL. A server may run as several instances: hosted always,
+  self-hosted on Enterprise by opting in.
+- §5.5's sticky cookie is the balancer's, not the server's (ruling 4).
+- §19.9's start-up lease delete runs in `single` mode only (§19.12).
+- §19.8 guard 3's allowlist gains `server_instances`.
+- Capture ids stay monotonic per process (`hooks/repo.ts`). Two captures in the same millisecond on two instances
+  sort by their random part, not by arrival. Paging stays consistent, since it pages by id.
+
+### 20.13 Success criteria (amends §13)
+
+Slice 5 adds no criterion of §13. It is done when §11's operations line holds ("two server instances against one
+database, a push on one seen by a live socket on the other") together with the rest of §20.11, and a self-hosted
+one-instance server behaves as before with no new variable set.
