@@ -5,6 +5,7 @@
  * - **refused**: one of `statuses` (404 by default), or a 2xx empty list;
  * - **own**: 2xx, B's own data;
  * - **federated**: 404 in hosted mode on both hosts (spec §19.1), so no control applies;
+ * - **entry**: an entry route (spec §21.4), which only `app.<app-domain>` serves, so 404 on both tenant hosts too;
  * - **socket**: a WebSocket route, which the socket sweep covers.
  * No body B gets may hold any of A's ids or anything named for A. A route missing here fails the suite.
  *
@@ -26,7 +27,7 @@ import {
   type World,
 } from './fill.js';
 
-export type RouteClass = 'refused' | 'own' | 'federated' | 'socket';
+export type RouteClass = 'refused' | 'own' | 'federated' | 'entry' | 'socket';
 
 export interface Ctx {
   readonly w: World;
@@ -137,6 +138,7 @@ export const ROUTE_MAP: Readonly<Record<string, RouteCase>> = {
   // ---- the host and meta
   'GET /healthz': { cls: 'own', request: () => ({ method: 'GET', url: '/healthz' }) },
   'GET /api/v1/meta': { cls: 'own', request: () => ({ method: 'GET', url: api('/meta') }) },
+  // Also the entry's page (spec §21.4), which the entry suite covers: on a tenant host `/` is the browser client's.
   'GET /': { cls: 'own', request: (ctx) => ({ method: 'GET', url: '/', headers: asTab(ctx) }) },
   'GET /*': { cls: 'own', request: (ctx) => ({ method: 'GET', url: '/workspaces', headers: asTab(ctx) }) },
   // The browser build's files, one route each (`routeKey` folds them into one key).

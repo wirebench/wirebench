@@ -24,6 +24,7 @@ describe('live-updates module wiring (§5.1)', () => {
       'terminal-shares',
       'host',
       'agent',
+      'entry',
     ]);
   });
 
