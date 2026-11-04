@@ -157,6 +157,31 @@ const domainText = z
     'must be a domain name such as example.test: two labels at least, no scheme, port, path or trailing dot, and an international name in its xn-- form',
   );
 
+/** One DNS server as `Resolver.setServers` takes it: an IPv4 address or an IPv6 one, each with an optional port. */
+function isDnsServer(entry: string): boolean {
+  const port = (text: string | undefined): boolean =>
+    text === undefined || (/^\d{1,5}$/.test(text) && Number(text) >= 1 && Number(text) <= 65_535);
+  const v4 = /^([\d.]+)(?::(\d*))?$/.exec(entry);
+  if (v4 !== null) return isIP(v4[1]!) === 4 && port(v4[2]);
+  const bracketed = /^\[([^\]]+)\](?::(\d*))?$/.exec(entry);
+  if (bracketed !== null) return isIP(bracketed[1]!) === 6 && port(bracketed[2]);
+  return isIP(entry) === 6;
+}
+
+/** `WIREBENCH_SERVER_DNS_SERVERS` (spec §23.2): comma-separated servers, IP addresses only, since `Resolver` takes no names. */
+const dnsServersText = z
+  .string()
+  .transform((value) =>
+    value
+      .split(',')
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0),
+  )
+  .refine(
+    (servers) => servers.length > 0 && servers.every(isDnsServer),
+    'must be IP addresses, each with an optional port (192.0.2.53, 192.0.2.53:5353 or [2001:db8::53]:53), separated by commas',
+  );
+
 const inputSchema = z.object({
   // Both values parse, so the type has both, but `hosted` is refused here: tests build a hosted config directly.
   mode: z
@@ -226,6 +251,7 @@ const inputSchema = z.object({
   instanceUrl: instanceUrlText.optional(),
   appDomain: domainText.optional(),
   siteDomain: domainText.optional(),
+  dnsServers: dnsServersText.optional(),
 });
 
 type ConfigKey = keyof z.input<typeof inputSchema>;
@@ -703,6 +729,14 @@ export const CONFIG_VARIABLES: readonly ConfigVariable[] = [
     secret: false,
     description:
       'Hosted mode only: the public site’s domain, which the server links to and never serves. It must not be, or sit under, the app domain. Unused on a self-hosted server.',
+  },
+  {
+    env: 'WIREBENCH_SERVER_DNS_SERVERS',
+    key: 'dnsServers',
+    required: false,
+    secret: false,
+    description:
+      'Hosted mode only: the DNS servers that check a team’s custom domain, as IP addresses with an optional port, comma-separated (`192.0.2.53, [2001:db8::53]:53`). Unset, the system’s resolver. Unused on a self-hosted server.',
   },
 ];
 

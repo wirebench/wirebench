@@ -66,6 +66,7 @@ database, one data directory; run it behind TLS. Design: `docs/specs/2026-09-24-
 | `WIREBENCH_SERVER_INSTANCE_URL` | no | — | This instance’s private address, which the other instances reach it at: `http://host:port`, such as `http://10.0.0.5:8091`; the port is its internal listener’s. Required with `WIREBENCH_SERVER_INSTANCES=multi`. |
 | `WIREBENCH_SERVER_APP_DOMAIN` | no | — | Hosted mode only: the product’s domain. Each team is `https://<slug>.<domain>`, and `app.<domain>` mails a person their teams’ links. Unused on a self-hosted server. |
 | `WIREBENCH_SERVER_SITE_DOMAIN` | no | — | Hosted mode only: the public site’s domain, which the server links to and never serves. It must not be, or sit under, the app domain. Unused on a self-hosted server. |
+| `WIREBENCH_SERVER_DNS_SERVERS` | no | — | Hosted mode only: the DNS servers that check a team’s custom domain, as IP addresses with an optional port, comma-separated (`192.0.2.53, [2001:db8::53]:53`). Unset, the system’s resolver. Unused on a self-hosted server. |
 <!-- config:end -->
 <!-- prettier-ignore-end -->
 
