@@ -34,6 +34,7 @@ import { domainEmail, type DomainNotice, type Mailer } from './mail.js';
 import {
   getClaim,
   hold,
+  isLive,
   record,
   release,
   serverAdminEmails,
@@ -200,21 +201,20 @@ async function move(
     if (current === undefined || current.token !== token) return undefined;
     const { observation, lastResult: seen } = check();
     const since = { createdAt: current.createdAt, failingSince: current.failingSince };
-    let to = next(current.state, observation, now, since);
+    // A failing name still live returns to active on a pass (spec §23.2): it is read only for that case.
+    const live = current.state === 'failing' && (await isLive(tx, current.name));
+    let to = next(current.state, observation, now, since, live);
     let lastResult: LastResult = seen;
     if (to === 'verified' && (await hold(tx, current.name)) === 'held-elsewhere') {
       // Another tenant proved the name first: this claim stays where it was, and learns nothing about who.
-      to = next(current.state, { ...observation, passed: false }, now, since);
+      to = next(current.state, { ...observation, passed: false }, now, since, live);
       lastResult = { ...seen, heldElsewhere: true, message: 'Another team holds this name, so it cannot be used.' };
     }
     if (to === 'verified' && current.state !== 'verified') {
       await setLive(tx, current.name, false);
       routed = true;
     }
-    if (isHeld(current.state) && !isHeld(to)) {
-      await release(tx, current.name);
-      routed = true;
-    }
+    if (isHeld(current.state) && !isHeld(to) && (await release(tx, current.name))) routed = true;
     const write: CheckRecord = {
       state: to,
       lastResult,
@@ -293,7 +293,10 @@ async function audited(
     target: { kind: 'custom-domain' },
     details: { name: current.name, from: current.state, to },
   });
-  if (deps.mail === undefined || !NOTICES.includes(to)) return undefined;
+  // A failing name back to active never stopped serving: nothing new for the admins to act on.
+  if (deps.mail === undefined || !NOTICES.includes(to) || (to === 'active' && current.state === 'failing')) {
+    return undefined;
+  }
   return { kind: to as DomainNotice, to: await serverAdminEmails(tx), detail };
 }
 

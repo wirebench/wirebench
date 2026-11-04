@@ -8,8 +8,14 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { auditSource } from '../../context.js';
 import { toProblem } from '../../problem.js';
-import { primaryUrl, tenantUrl } from '../../tenancy/urls.js';
-import { endPresentedSession, finishBrowserSignIn, safeRedirectPath, startBrowserFlow } from '../browser-flows.js';
+import { tenantUrl } from '../../tenancy/urls.js';
+import {
+  endPresentedSession,
+  finishBrowserSignIn,
+  onPrimaryHost,
+  safeRedirectPath,
+  startBrowserFlow,
+} from '../browser-flows.js';
 import { clearSessionCookie } from '../cookies.js';
 import type { IdentityEnv } from '../env.js';
 import { methodDisabled, originRefused } from '../errors.js';
@@ -99,17 +105,8 @@ export const browserSignInRoutes =
       async (request, reply) => {
         const provider = env.provider;
         if (provider === undefined) throw methodDisabled();
-        // Federated sign-in completes on the primary name (hosted spec §23.5): the identity provider knows only its
-        // redirect URI, so a start on the other name moves there first, and the flow cookie and the session land on
-        // the name the callback comes back to.
-        const primary = primaryUrl(env.ctx.config, request);
-        if (urlOf(request) !== primary) {
-          return reply
-            .code(302)
-            .header('location', new URL(request.url, primary).toString())
-            .header('cache-control', 'no-store')
-            .send();
-        }
+        const moved = onPrimaryHost(env.ctx.config, request, reply);
+        if (moved !== undefined) return moved;
         const nonce = mintSecret().secret;
         // 43 base64url characters: a valid RFC 7636 verifier.
         const codeVerifier = mintSecret().secret;

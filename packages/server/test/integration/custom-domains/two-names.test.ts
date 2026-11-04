@@ -4,12 +4,16 @@
  * entry, beside `acme.example.test`; `tenantUrl` of a request is the host it came on, and the primary URL that mail and
  * links read is the custom name. Removing the claim moves the primary back. No real DNS: every name is under `.test`.
  */
+import Fastify from 'fastify';
 import { afterAll, beforeAll, expect, it, vi } from 'vitest';
 import type { DnsLookup } from '../../../src/custom-domains/dns.js';
 import { customDomainsModule } from '../../../src/custom-domains/module.js';
+import { claim, removeClaim } from '../../../src/custom-domains/repo.js';
+import { onPrimaryHost } from '../../../src/identity/browser-flows.js';
 import { identitySettings } from '../../../src/identity/env.js';
 import { sessionCookieName } from '../../../src/identity/cookies.js';
 import { licensingModule } from '../../../src/licensing/module.js';
+import { ssoUrls } from '../../../src/sso/env.js';
 import { tenantHostsChanged } from '../../../src/tenancy/tenancy.js';
 import { primaryUrl } from '../../../src/tenancy/urls.js';
 import { describeDb } from '../../helpers/database.js';
@@ -120,6 +124,42 @@ describeDb('two names, one tenant (spec §23.5)', () => {
     expect(primaryUrl(t.h.ctx.config, request)).toBe(CUSTOM_URL);
   });
 
+  it('a browser OIDC or SAML start on the slug host moves to the primary before any flow cookie, and the ACS is there', async () => {
+    // Hosted mode serves no federated route yet (spec §19.1), so the starts' shared step runs on routes of its own.
+    const app = Fastify();
+    const tenant = { ...t.a.scope, customHost: NAME } as typeof t.a.scope;
+    app.decorateRequest('tenant', {
+      getter: () => tenant,
+    });
+    for (const path of ['/sign-in/oidc', '/sign-in/saml']) {
+      app.get(path, (request, reply) => onPrimaryHost(t.h.ctx.config, request, reply) ?? reply.send('started'));
+    }
+    try {
+      for (const path of ['/sign-in/oidc', '/sign-in/saml']) {
+        const moved = await app.inject({ method: 'GET', url: `${path}?redirect_to=%2Fw`, headers: { host: t.a.host } });
+        expect(moved.statusCode, path).toBe(302);
+        expect(moved.headers.location, path).toBe(`${CUSTOM_URL}${path}?redirect_to=%2Fw`);
+        expect(moved.headers['set-cookie'], path).toBeUndefined();
+        const started = await app.inject({ method: 'GET', url: path, headers: { host: NAME } });
+        expect(started.body, path).toBe('started');
+      }
+    } finally {
+      await app.close();
+    }
+    const request = { tenant, hostname: t.a.host };
+    expect(ssoUrls(primaryUrl(t.h.ctx.config, request)).browserAcsUrl).toBe(
+      `${CUSTOM_URL}/api/v1/auth/saml/browser-acs`,
+    );
+  });
+
+  it('removing a claim that holds nothing leaves the map alone', async () => {
+    const removed = await t.b.tdb.transaction(async (tx) => {
+      await claim(tx, { name: 'beta.customer.test', createdBy: null, now: t.h.clock.now });
+      return removeClaim(tx);
+    });
+    expect(removed).toMatchObject({ name: 'beta.customer.test', released: false });
+  });
+
   it("the Origin check on the custom name accepts its own origin and refuses the slug's", async () => {
     const write = (origin: string) =>
       t.h.app.inject({
@@ -153,6 +193,7 @@ describeDb('two names, one tenant (spec §23.5)', () => {
   it('removing the claim drops the name from the map and moves the primary back to the slug', async () => {
     expect((await on(t.a.host, 'DELETE', '/api/v1/tenant/domain')).statusCode).toBe(204);
     expect(await hosts()).toEqual([]);
+    // The released row is what told the map.
     await vi.waitFor(async () => {
       const res = await t.h.app.inject({ method: 'GET', url: '/api/v1/meta', headers: { host: NAME } });
       expect(res.statusCode).toBe(404);
