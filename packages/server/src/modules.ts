@@ -3,6 +3,7 @@ import { agentModule } from './agent/module.js';
 import { auditLogModule } from './audit-log/module.js';
 import { ciTokensModule } from './ci-tokens/module.js';
 import { controlPlaneModule } from './control-plane/module.js';
+import { customDomainsModule } from './custom-domains/module.js';
 import { entryModule } from './entry/module.js';
 import { hooksModule } from './hooks/module.js';
 import { hostModule } from './host/module.js';
@@ -45,6 +46,8 @@ import { terminalSharesModule } from './terminal-shares/module.js';
  * spec §21.4).
  * control-plane comes after entry: its migration `0023` scopes its tables with `0020`'s `tenant_scope()`, which the
  * version order runs first whatever the module order, and it serves nothing outside hosted mode (spec §22.3).
+ * custom-domains comes last (spec §23.6): its routes sit behind identity's guard and read `ctx.license`, and its audit
+ * hook is found at call time. Its migration `0024` loads with the tenancy migrations, not through the module.
  */
 export const BUILTIN_MODULES: readonly ServerModule[] = [
   identityModule(),
@@ -63,4 +66,5 @@ export const BUILTIN_MODULES: readonly ServerModule[] = [
   agentModule(),
   entryModule(),
   controlPlaneModule(),
+  customDomainsModule(),
 ];

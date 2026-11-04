@@ -80,6 +80,7 @@ export class TenantDirectory {
   #defaultTenant: TenantScope | undefined;
   readonly #listeners: (() => void)[] = [];
   readonly #db: Querier;
+  #hasHosts = false;
 
   /** `keys`: the process's data keys, which `TenantAdmin.create` makes a new tenant's key with. */
   constructor(db: Querier, keys?: TenantKeys) {
@@ -134,8 +135,9 @@ export class TenantDirectory {
 
   /** Every tenant not being deleted, as scopes: what the job loop serves. */
   async list(): Promise<TenantScope[]> {
-    const rows = await this.#db.query<{ id: string; slug: string }>(
-      "select id::text as id, slug from tenants where status <> 'deleting' order by created_at, id",
+    const rows = await this.#db.query<{ id: string; slug: string; customHost: string | null }>(
+      `select t.id::text as id, t.slug, ${await this.#customHost()} from tenants t
+       where t.status <> 'deleting' order by t.created_at, t.id`,
     );
     return rows.rows.map(scopeOf);
   }
@@ -143,7 +145,8 @@ export class TenantDirectory {
   /**
    * The tenants a hosted `Host` names (spec §19.5, §22.7): active and suspended, with the status and the reason, and
    * never the default tenant, whose slug no name matches. A deleting tenant is not here, so it answers `404`. A
-   * suspended row without a reason (written before `0023` named one) counts as the operator's.
+   * suspended row without a reason (written before `0023` named one) counts as the operator's. Each scope carries the
+   * tenant's live custom name (spec §23.5), which the map keys on the same entry as the slug.
    */
   async hosted(): Promise<HostedTenant[]> {
     const rows = await this.#db.query<{
@@ -151,8 +154,9 @@ export class TenantDirectory {
       slug: string;
       status: 'active' | 'suspended';
       reason: SuspendedReason | null;
+      customHost: string | null;
     }>(
-      `select t.id::text as id, t.slug, t.status, t.suspended_reason as reason from tenants t
+      `select t.id::text as id, t.slug, t.status, t.suspended_reason as reason, ${await this.#customHost()} from tenants t
        where t.status in ('active', 'suspended') and t.id is distinct from (select default_tenant_id from server_identity)`,
     );
     return rows.rows.map((row) =>
@@ -163,12 +167,29 @@ export class TenantDirectory {
   }
 
   /**
+   * The select-list item for each tenant's live custom name, as `"customHost"` (spec §23.5): the one place outside
+   * `src/custom-domains/` that reads `tenant_hosts`. Only a live name, one with its certificate, is served or made a
+   * primary. `null` on a schema before `0024`; once the table is there it stays, so the check runs until it is.
+   */
+  async #customHost(): Promise<string> {
+    if (!this.#hasHosts) {
+      const exists = await this.#db.query<{ exists: boolean }>(
+        "select to_regclass('tenant_hosts') is not null as exists",
+      );
+      this.#hasHosts = exists.rows[0]?.exists === true;
+    }
+    return this.#hasHosts
+      ? `(select h.host from tenant_hosts h where h.tenant_id = t.id and h.live order by h.host limit 1) as "customHost"`
+      : `null::text as "customHost"`;
+  }
+
+  /**
    * The tenants the entry lists (spec §21.4), with each one's name: active only, and never the default tenant. A
    * suspended tenant is on the hosted map (it answers why it is suspended) but never in the entry's message.
    */
   async resolvableNamed(): Promise<{ readonly scope: TenantScope; readonly name: string }[]> {
-    const rows = await this.#db.query<{ id: string; slug: string; name: string }>(
-      `select t.id::text as id, t.slug, t.name from tenants t
+    const rows = await this.#db.query<{ id: string; slug: string; name: string; customHost: string | null }>(
+      `select t.id::text as id, t.slug, t.name, ${await this.#customHost()} from tenants t
        where t.status = 'active' and t.id is distinct from (select default_tenant_id from server_identity)
        order by t.created_at, t.id`,
     );

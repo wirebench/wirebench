@@ -7,7 +7,7 @@ import { WirebenchError } from '@wirebench/engine';
 import type { ServerModule } from '../context.js';
 import { sendAlertMail } from '../schedules/alerts/smtp.js';
 import { entryHostOf } from '../tenancy/resolve.js';
-import { tenantUrl } from '../tenancy/urls.js';
+import { primaryUrl } from '../tenancy/urls.js';
 import { teamsOf } from './lookup.js';
 import { renderEntryMail, type EntryMail } from './mail.js';
 import { EntryQueue } from './queue.js';
@@ -58,7 +58,7 @@ export function entryModule(options: EntryModuleOptions = {}): ServerModule {
         const started = Date.now();
         const matches = await teamsOf(ctx.tenancy, address, log);
         if (matches.length > 0) {
-          const teams = matches.map((match) => ({ name: match.name, url: tenantUrl(config, match.scope) }));
+          const teams = matches.map((match) => ({ name: match.name, url: primaryUrl(config, match.scope) }));
           try {
             await send(smtp, address, renderEntryMail({ teams, entryHost, siteUrl }));
           } catch {

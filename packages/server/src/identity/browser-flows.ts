@@ -19,7 +19,7 @@ import type { UserRow } from './repo.js';
 import { signIn } from './sessions.js';
 import { hashSecret, hashToken, mintSecret, newId } from './tokens.js';
 import type { TenantQuerier } from '../tenancy/tenant-db.js';
-import { tenantUrl } from '../tenancy/urls.js';
+import { primaryUrl, tenantUrl, type UrlConfig } from '../tenancy/urls.js';
 
 /** §2 of the identity spec: a pending flow lives ten minutes. */
 export const BROWSER_FLOW_TTL_MS = 10 * 60 * 1000;
@@ -100,6 +100,26 @@ export async function startBrowserFlow(
     );
   setFlowCookie(reply, tenantUrl(env.ctx.config, request), state.secret, input.provider === 'saml');
   return state.secret;
+}
+
+/**
+ * A federated sign-in completes on the primary name (hosted spec §23.5): the identity provider knows only the redirect
+ * URI or ACS URL on it. So a browser start on the other name answers `302` to the same path and query on the primary,
+ * before any flow cookie is set, and the flow cookie and the session land on the name the callback comes back to.
+ * Undefined when the request is on the primary already, as every self-hosted request is.
+ */
+export function onPrimaryHost(
+  config: UrlConfig,
+  request: FastifyRequest,
+  reply: FastifyReply,
+): FastifyReply | undefined {
+  const primary = primaryUrl(config, request);
+  if (tenantUrl(config, request) === primary) return undefined;
+  return reply
+    .code(302)
+    .header('location', new URL(request.url, primary).toString())
+    .header('cache-control', 'no-store')
+    .send();
 }
 
 function sameText(a: string, b: string): boolean {

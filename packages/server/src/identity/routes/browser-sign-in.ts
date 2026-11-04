@@ -9,7 +9,13 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { auditSource } from '../../context.js';
 import { toProblem } from '../../problem.js';
 import { tenantUrl } from '../../tenancy/urls.js';
-import { endPresentedSession, finishBrowserSignIn, safeRedirectPath, startBrowserFlow } from '../browser-flows.js';
+import {
+  endPresentedSession,
+  finishBrowserSignIn,
+  onPrimaryHost,
+  safeRedirectPath,
+  startBrowserFlow,
+} from '../browser-flows.js';
 import { clearSessionCookie } from '../cookies.js';
 import type { IdentityEnv } from '../env.js';
 import { methodDisabled, originRefused } from '../errors.js';
@@ -99,6 +105,8 @@ export const browserSignInRoutes =
       async (request, reply) => {
         const provider = env.provider;
         if (provider === undefined) throw methodDisabled();
+        const moved = onPrimaryHost(env.ctx.config, request, reply);
+        if (moved !== undefined) return moved;
         const nonce = mintSecret().secret;
         // 43 base64url characters: a valid RFC 7636 verifier.
         const codeVerifier = mintSecret().secret;
