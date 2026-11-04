@@ -25,7 +25,7 @@ import type { TenantScope } from '../tenancy/scope.js';
 import { RESERVED_SLUGS } from '../tenancy/slugs.js';
 import { tenantWritesOf, type Tenancy } from '../tenancy/tenancy.js';
 import type { ControlDb } from './control-db.js';
-import { claimSlug, type ControlTx } from './slugs.js';
+import { claimSlug, SLUG_LOCK, type ControlTx } from './slugs.js';
 
 /** How long an old slug still redirects to the new one after a rename (spec §22.8). */
 export const REDIRECT_DAYS = 30;
@@ -408,6 +408,62 @@ export class TenantLifecycle {
           editionSource: row.editionSource,
         }),
     };
+  }
+
+  /**
+   * The deletion's first step (spec §22.11) in the control loop's transaction `tx`: status `deleting`. Commit, then
+   * run `after()`, which tells the directory and the bus, so every resolver drops the tenant and its jobs pass it
+   * over. `undefined` when it already was.
+   */
+  async markDeletingWithin(tx: ControlTx, id: string): Promise<{ after(): Promise<void> } | undefined> {
+    const rows = await tx.query(
+      "update tenants set status = 'deleting' where id = $1::uuid and status <> 'deleting' returning id",
+      [id],
+    );
+    if (rows.rows.length === 0) return undefined;
+    return {
+      after: () => {
+        this.#writes.changed();
+        return Promise.resolve();
+      },
+    };
+  }
+
+  /** The `deleting` tenant `id`'s scope, for its units; `undefined` once its row is gone. */
+  async deletingScope(id: string): Promise<TenantScope | undefined> {
+    return this.#writes.scope(id);
+  }
+
+  /**
+   * The deletion's last step (spec §22.11), one control transaction: `tenant_deletions.deleted_at` set, the slug
+   * retired with no redirect and every redirect to it ended, the `tenants` row removed, which removes the data key
+   * and the custom names of `tenant_hosts` with it; then the directory's change, which drops every key cache. A row
+   * already gone is a deletion already finished.
+   */
+  async removeDeleted(id: string, at: Date): Promise<void> {
+    const removed = await this.#deps.control.transaction(async (tx) => {
+      await tx.query(SLUG_LOCK);
+      const row = (
+        await tx.query<{ slug: string }>(
+          "select slug from tenants where id = $1::uuid and status = 'deleting' for update",
+          [id],
+        )
+      ).rows[0];
+      if (row === undefined) return false;
+      await tx.query('update tenant_deletions set deleted_at = $2::timestamptz where tenant_id = $1::uuid', [id, at]);
+      await tx.query(
+        'update tenant_slugs_retired set redirect_to = null, redirect_until = null where tenant_id = $1::uuid',
+        [id],
+      );
+      await tx.query(
+        `insert into tenant_slugs_retired (slug, tenant_id, retired_at) values ($1, $2::uuid, $3::timestamptz)
+         on conflict (slug) do nothing`,
+        [row.slug, id, at],
+      );
+      await tx.query('delete from tenants where id = $1::uuid', [id]);
+      return true;
+    });
+    if (removed) this.#writes.changed();
   }
 
   async #update(tx: ControlTx, id: string, set: string, params: readonly unknown[]): Promise<TenantRow> {

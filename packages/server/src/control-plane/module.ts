@@ -4,7 +4,7 @@
  * mode it takes the control role's pool and the Paddle webhook's secret as its factory's arguments, which `serve.ts`
  * passes through {@link withControlPool}, and refuses to register without them: neither is ever on the shared
  * `ServerContext`. It serves the billing webhook on the entry host (spec §22.5), and runs the control loop
- * (§22.15): the grace sweep, its mails, the tenants' exports and the events' retention.
+ * (§22.15): the grace sweep, its mails, the tenants' exports and deletions, and the events' retention.
  *
  * A tenant's export (§22.9) is the one thing it does in every mode: a self-hosted server, which has no control loop,
  * runs the queued exports from a timer of the module's own, over its one tenant.
@@ -22,6 +22,7 @@ import type { BillingOutcome, MappedEvent } from './billing/events.js';
 import { billingEventsRetentionStep, graceSweepStep } from './billing/sweep.js';
 import { registerPaddleWebhook } from './billing/webhook.js';
 import type { ControlDb } from './control-db.js';
+import { TenantDeletion } from './delete.js';
 import { ExportRunner, exportsStep } from './export/runner.js';
 import { CONTROL_LOOP_MS, ControlLoop, type LoopStep } from './loop.js';
 import { mailStep, type ControlSend } from './mail.js';
@@ -219,6 +220,16 @@ export function controlPlaneModule(options: ControlPlaneOptions = {}): ServerMod
         );
       }
       steps.push(exportsStep(runnerOf(ctx), (id) => lifecycle.tenantScope(id)));
+      // Due deletions (spec §22.11), after the grace sweep and the exports, so a pass never exports a tenant it deletes.
+      steps.push(
+        new TenantDeletion({
+          control,
+          db: ctx.tenancy.db,
+          lifecycle,
+          dataDir: ctx.config.dataDir,
+          log: ctx.log,
+        }).step(),
+      );
       steps.push(billingEventsRetentionStep());
       const loop = new ControlLoop({
         control,
