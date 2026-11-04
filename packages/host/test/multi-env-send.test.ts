@@ -14,7 +14,7 @@ import type { Environment, Project } from '@wirebench/engine';
 import type { HistoryService } from '../src/history-service.js';
 import type { RequestChannelDeps } from '../src/ipc/request.js';
 import { cancelEnvironmentBatch, sendToEnvironments } from '../src/multi-env-send.js';
-import type { SendThroughEngineDeps } from '../src/send/exchange.js';
+import type { SendGate, SendGateRequest, SendThroughEngineDeps } from '../src/send/exchange.js';
 import { createNativeDialogs } from '../src/native-dialogs.js';
 import { createHeadlessPlatform } from './helpers/fake-platform.js';
 import { sendDepsFor } from './helpers/send-deps.js';
@@ -331,6 +331,60 @@ describe('sendToEnvironments', () => {
     expect(response.results.map((result) => result.outcome)).toEqual(['error', 'error']);
     // Once settled the batch is forgotten, and an ordinary send id is not a batch.
     expect(cancelEnvironmentBatch(batches, sendDeps.registry, 'b5')).toBeUndefined();
+  });
+
+  it('asks the embedder’s send gate before each child reaches the wire, and a cancel there sends nothing', async () => {
+    // Hosted spec §20.7: the server paces a fan-out by its tenant's send budget, one charge per environment.
+    const asked: SendGateRequest[] = [];
+    let open!: () => void;
+    const held = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    const sendGate: SendGate = async (send) => {
+      asked.push(send);
+      await held;
+      return undefined;
+    };
+    const { sendDeps, deps } = depsOf(fakeProject(model()));
+    const gated = { ...sendDeps, sendGate };
+    const before = received.length;
+    const pending = sendToEnvironments(gated, deps, batches, {
+      batchId: 'b-gate',
+      requestId: 'rest-1',
+      environmentIds: ['dev', 'prod'],
+      restDraft: {},
+    });
+    await vi.waitFor(() => expect(asked).toHaveLength(2));
+    expect(asked.map((send) => [send.kind, send.interactive, send.cancelled()])).toEqual([
+      ['rest', false, false],
+      ['rest', false, false],
+    ]);
+    // Nothing went out while the gate held both.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(received.length).toBe(before);
+    open();
+    const response = await pending;
+    expect(response.results.map((result) => result.outcome)).toEqual(['ok', 'ok']);
+    expect(received.length - before).toBe(2);
+
+    // A cancel while the gate waits: the gate sees it, and the send is cancelled before the wire.
+    const waiting: SendGateRequest[] = [];
+    const cancelling: SendGate = async (send) => {
+      waiting.push(send);
+      await vi.waitFor(() => expect(send.cancelled()).toBe(true));
+      return undefined;
+    };
+    const again = received.length;
+    const cancelled = sendToEnvironments({ ...sendDeps, sendGate: cancelling }, deps, batches, {
+      batchId: 'b-gate-cancel',
+      requestId: 'rest-1',
+      environmentIds: ['dev'],
+      restDraft: {},
+    });
+    await vi.waitFor(() => expect(waiting).toHaveLength(1));
+    expect(cancelEnvironmentBatch(batches, sendDeps.registry, 'b-gate-cancel')).toEqual({ cancelled: true });
+    expect((await cancelled).results.map((result) => result.outcome)).toEqual(['error']);
+    expect(received.length).toBe(again);
   });
 
   it('records each child in History under its environment’s name', async () => {

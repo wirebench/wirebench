@@ -67,8 +67,9 @@ describeDb('POST /auth/local/sign-in and /auth/sign-out (§3.1)', () => {
     const known = await shape('alice@example.com');
     const unknown = await shape('nobody@example.com');
     expect(unknown).toEqual(known);
-    // The user and the credential are read in the first unit; the refusal's audit has a unit of its own.
-    expect(known[0]).toBe(2);
+    // The address's and the email's buckets are charged first, a unit each (spec §20.7); then the user and the
+    // credential are read in one unit; the refusal's audit has a unit of its own.
+    expect(known.slice(0, 3)).toEqual([1, 1, 2]);
   });
 
   it('distinguishes a disabled user only after a correct password', async () => {

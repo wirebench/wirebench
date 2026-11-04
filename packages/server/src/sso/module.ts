@@ -7,7 +7,7 @@
 import { fileURLToPath } from 'node:url';
 import type { FastifyInstance } from 'fastify';
 import type { ServerContext, ServerModule } from '../context.js';
-import { RateLimiter } from '../identity/rate-limit.js';
+import { TenantRateLimiter } from '../identity/rate-limit.js';
 import type { TenantQuerier } from '../tenancy/tenant-db.js';
 import { tenantUrl, urlWithoutScope } from '../tenancy/urls.js';
 import { samlSettings, ssoUrls, type SsoEnv } from './env.js';
@@ -86,7 +86,13 @@ export function ssoModule(options: SsoOptions = {}): ServerModule {
       const env: SsoEnv = {
         ctx,
         now,
-        limiter: new RateLimiter({ capacity: 10, refillPerMs: 10 / 60_000, now: () => now().getTime() }),
+        limiter: new TenantRateLimiter({
+          name: 'sso',
+          capacity: 10,
+          refillPerMs: 10 / 60_000,
+          db: ctx.tenancy.db,
+          ...(options.now !== undefined ? { now: () => now().getTime() } : {}),
+        }),
         urlsFor: (of) => ssoUrls(tenantUrl(ctx.config, of)),
         saml,
       };

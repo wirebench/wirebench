@@ -63,7 +63,7 @@ function cast(
     },
   };
   const env = {
-    settings: { concurrency: 1 },
+    settings: { concurrency: 1, runSlots: 2 },
     now: () => new Date('2026-10-30T12:00:00Z'),
     setTimer: () => ({ cancel: () => undefined }),
     log: { ...silent, error: (...args: unknown[]) => errors.push(args) },

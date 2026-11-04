@@ -1,7 +1,11 @@
+import { randomUUID } from 'node:crypto';
 import type { Feature } from '@wirebench/engine';
-import { afterEach, beforeEach, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { permissiveLicense, type LicenseService } from '../../../src/context.js';
 import { newId } from '../../../src/identity/tokens.js';
+import * as teamsRepo from '../../../src/teams/repo.js';
+import { scopeOf } from '../../../src/tenancy/scope.js';
+import type { TenantQuerier } from '../../../src/tenancy/tenant-db.js';
 import * as repo from '../../../src/schedules/repo.js';
 import { SCHEDULER_TICK_MS, Scheduler, type SchedulerEnv } from '../../../src/schedules/scheduler.js';
 import { describeDb } from '../../helpers/database.js';
@@ -52,12 +56,17 @@ function scheduler(overrides: Partial<SchedulerEnv> = {}): Scheduler {
   });
 }
 
-/** An enabled hourly schedule, due `dueMs` ago (negative: in the future). */
-async function seedSchedule(name: string, dueMs = 0, timeoutMinutes = 15): Promise<string> {
+/** An enabled hourly schedule, due `dueMs` ago (negative: in the future), in `where`'s tenant and workspace. */
+async function seedSchedule(
+  name: string,
+  dueMs = 0,
+  timeoutMinutes = 15,
+  where: { readonly tdb: TenantQuerier; readonly workspaceId: string } = { tdb: c.h.tdb, workspaceId: c.workspaceId },
+): Promise<string> {
   const id = newId();
-  await repo.insertSchedule(c.h.tdb, {
+  await repo.insertSchedule(where.tdb, {
     id,
-    workspaceId: c.workspaceId,
+    workspaceId: where.workspaceId,
     name,
     cron: '0 * * * *',
     timeZone: 'UTC',
@@ -225,5 +234,91 @@ describeDb('the scheduler (scheduled-runs spec §3.1)', () => {
     expect(c.timers.pending(SCHEDULER_TICK_MS)).toBe(1);
     await s.stop();
     expect(c.timers.pending(SCHEDULER_TICK_MS)).toBe(0);
+  });
+
+  describe('run slots (hosted spec §20.7)', () => {
+    /** Another tenant with a workspace, as a hosted server has beside the default one. */
+    async function otherTenant() {
+      const id = randomUUID();
+      await c.h.db.owner.query('insert into tenants (id, slug, name) values ($1, $2, $3)', [id, 'globex', 'Globex']);
+      const tdb = c.h.ctx.tenancy.db(scopeOf({ id, slug: 'globex' }));
+      const team = await teamsRepo.insertTeam(tdb, { id: newId(), name: 'Globex QA', at: c.h.clock.now });
+      const workspaceId = newId();
+      await teamsRepo.insertWorkspace(tdb, {
+        id: workspaceId,
+        name: 'Globex',
+        teamId: team.id,
+        defaultRole: 'viewer',
+        createdBy: null,
+        at: c.h.clock.now,
+      });
+      return { tdb, workspaceId };
+    }
+
+    it('a tenant at its run slots waits while another tenant’s run starts, under the per-server cap', async () => {
+      const mine = [
+        await seedSchedule('One', 3_000),
+        await seedSchedule('Two', 2_000),
+        await seedSchedule('Three', 1_000),
+      ];
+      const held = heldRuns();
+      const s = scheduler({ execute: held.execute, settings: testSettings({ concurrency: 4, runSlots: 2 }) });
+      // Room for four on this server, but the tenant has two slots.
+      expect(await s.runOnce()).toEqual({ fired: 3, started: 2 });
+      expect((await runsOf(mine[2]!))[0]?.status).toBe('queued');
+
+      const globex = await otherTenant();
+      const theirs = await seedSchedule('Theirs', 0, 15, globex);
+      expect(await s.runOnce()).toEqual({ fired: 1, started: 1 });
+      const their = await globex.tdb.query<{ status: string }>(
+        'select status from schedule_runs where schedule_id = $1',
+        [theirs],
+      );
+      expect(their.rows).toEqual([{ status: 'running' }]);
+      // The full tenant's third run still waits; it starts as soon as one of its two ends.
+      expect((await runsOf(mine[2]!))[0]?.status).toBe('queued');
+      expect(s.running).toBe(3);
+      // Ended as the executor ends a run: its row first, then the promise.
+      await c.h.tdb.query("update schedule_runs set status = 'cancelled', finished_at = started_at where id = $1", [
+        held.started[0]!.runId,
+      ]);
+      held.started[0]!.release();
+      await vi.waitFor(async () => {
+        expect((await runsOf(mine[2]!))[0]?.status).toBe('running');
+      });
+      expect(s.running).toBe(3);
+      await s.stop();
+    });
+
+    it('two servers claiming at once never run more than the tenant’s slots', async () => {
+      // Five queued runs, none due to fire: both servers' passes only start.
+      const ids = await Promise.all(['A', 'B', 'C', 'D', 'E'].map((name) => seedSchedule(name, -60_000)));
+      for (const scheduleId of ids) {
+        await repo.insertRun(c.h.tdb, {
+          id: newId(),
+          scheduleId,
+          trigger: 'manual',
+          status: 'queued',
+          at: c.h.clock.now,
+        });
+      }
+      const held = heldRuns();
+      const settings = testSettings({ concurrency: 4, runSlots: 1 });
+      // Each claim holds its unit open a moment after claiming, so the other server counts inside that window.
+      const claimQueued = async (tx: TenantQuerier, limit: number, at: Date): Promise<string[]> => {
+        const claimed = await repo.claimQueuedRuns(tx, limit, at);
+        await new Promise((done) => setTimeout(done, 50));
+        return claimed;
+      };
+      const [a, b] = [
+        scheduler({ execute: held.execute, settings, claimQueued }),
+        scheduler({ execute: held.execute, settings, claimQueued }),
+      ];
+      await Promise.all([a.runOnce(), b.runOnce()]);
+      const statuses = (await Promise.all(ids.map(runsOf))).map((runs) => runs[0]?.status);
+      expect(statuses.filter((status) => status === 'running')).toHaveLength(1);
+      expect(a.running + b.running).toBe(1);
+      await Promise.all([a.stop(), b.stop()]);
+    });
   });
 });

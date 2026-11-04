@@ -15,6 +15,8 @@ export interface ProblemBody {
 export interface Problem {
   readonly status: number;
   readonly body: ProblemBody;
+  /** Whole seconds for a `Retry-After` header, from `details.retryAfter` (the repository lock's 503, spec §20.4). */
+  readonly retryAfter?: number;
 }
 
 /** A `WirebenchError` that knows its HTTP status. */
@@ -40,7 +42,12 @@ export function toProblem(error: unknown): Problem {
   }
   if (error instanceof WirebenchError) {
     const status = typeof error.details?.status === 'number' ? error.details.status : 500;
-    return { status, body: { code: error.code, message: error.message } };
+    const retryAfter = error.details?.retryAfter;
+    return {
+      status,
+      body: { code: error.code, message: error.message },
+      ...(typeof retryAfter === 'number' && Number.isInteger(retryAfter) && retryAfter > 0 ? { retryAfter } : {}),
+    };
   }
   return { status: 500, body: { code: 'internal', message: 'Internal error' } };
 }

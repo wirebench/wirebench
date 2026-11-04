@@ -6,6 +6,7 @@
  */
 export { createHost } from './host/create-host.js';
 export type { AttachOptions, Host, HostOptions, HostWindows, SecretEvent } from './host/create-host.js';
+export type { SendGate, SendGateRequest } from './send/exchange.js';
 export type { Caller, Capability, HostPlatform } from './host/platform.js';
 export { serveCall } from './host/serve-call.js';
 export type { CallFrame, ReplyFrame } from './host/serve-call.js';

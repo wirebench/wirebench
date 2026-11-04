@@ -356,6 +356,12 @@ export async function claimQueuedRuns(tx: TenantQuerier, limit: number, at: Date
     .map((row) => row.id);
 }
 
+/** How many of the tenant's runs are `running`, on any server. */
+export async function countRunningRuns(tx: TenantQuerier): Promise<number> {
+  const rows = await tx.query<{ n: number }>("select count(*)::int as n from schedule_runs where status = 'running'");
+  return rows.rows[0]?.n ?? 0;
+}
+
 /** A run {@link interruptStaleRuns} ended. */
 export type InterruptedRun = {
   readonly id: string;

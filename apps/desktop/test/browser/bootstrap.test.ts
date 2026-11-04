@@ -368,6 +368,37 @@ describe('startBrowserClient', () => {
     expect(h.fetch).not.toHaveBeenCalledWith(ME_PATH, expect.anything());
   });
 
+  it('reconnects at once, with no backoff, after a 4503 host-draining (spec §20.5), and backs off if refused again', async () => {
+    const h = start();
+    FakeSocket.last().hello();
+    await h.started;
+    FakeSocket.last().drop(4503, 'host-draining');
+    expect(bar()?.textContent).toBe(RECONNECT_TEXT.reconnecting);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(FakeSocket.all).toHaveLength(2);
+    // The same draining server again (the balancer had not moved the tab yet): no hello, so the usual backoff.
+    FakeSocket.last().drop(4503, 'host-draining');
+    await vi.advanceTimersByTimeAsync(1_999);
+    expect(FakeSocket.all).toHaveLength(2);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(FakeSocket.all).toHaveLength(3);
+    FakeSocket.last().hello();
+    expect(bar()?.hidden).toBe(true);
+    expect(h.fetch).not.toHaveBeenCalledWith(ME_PATH, expect.anything());
+  });
+
+  it('keeps the backoff after a 4503 with another reason', async () => {
+    const h = start();
+    FakeSocket.last().hello();
+    await h.started;
+    FakeSocket.last().drop(4503, 'server key refused');
+    expect(bar()?.textContent).toBe(RECONNECT_TEXT.unavailable);
+    await vi.advanceTimersByTimeAsync(999);
+    expect(FakeSocket.all).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(FakeSocket.all).toHaveLength(2);
+  });
+
   it('says the server is finishing an upgrade on 1013, and keeps retrying without a session check', async () => {
     const h = start();
     FakeSocket.last().drop(1013);

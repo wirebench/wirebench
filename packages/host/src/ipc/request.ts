@@ -61,6 +61,7 @@ import {
   previewSoap,
   type RestPreview,
   type SoapPreview,
+  type SendGate,
   type SendThroughEngineDeps,
   type WsPreview,
 } from '../send/exchange.js';
@@ -282,6 +283,8 @@ export interface RequestChannelDeps {
   readonly auditWorkspace?: () => string | undefined;
   /** Where this host's sends go out from (`HostOptions.sendOrigin`); absent on the desktop. */
   readonly sendOrigin?: 'server';
+  /** Asked before each request reaches the wire (`HostOptions.sendGate`); absent on the desktop. */
+  readonly sendGate?: SendGate;
 }
 
 /**
@@ -328,6 +331,7 @@ export function toSendDeps(
     ...(deps.mcpApprovals !== undefined ? { approveCommand: deps.mcpApprovals.approver() } : {}),
     ...(deps.egress !== undefined ? { egress: deps.egress } : {}),
     ...(deps.sendOrigin !== undefined ? { sendOrigin: deps.sendOrigin } : {}),
+    ...(deps.sendGate !== undefined ? { sendGate: deps.sendGate } : {}),
   };
 }
 

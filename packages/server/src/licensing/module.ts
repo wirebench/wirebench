@@ -8,7 +8,7 @@ import type { KeyObject } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import type { FastifyInstance } from 'fastify';
 import type { ServerContext, ServerModule } from '../context.js';
-import { RateLimiter } from '../identity/rate-limit.js';
+import { TenantRateLimiter } from '../identity/rate-limit.js';
 import { PRODUCTION_PUBLIC_KEYS } from './keys.js';
 import { licenseRoutes } from './routes.js';
 import { cachedServerId, createLicenseService } from './service.js';
@@ -47,7 +47,13 @@ export function licensingModule(options: LicensingOptions = {}): ServerModule {
         serverId,
         service,
         hooks: ctx.hooks,
-        limiter: new RateLimiter({ capacity: 10, refillPerMs: 10 / 60_000, now: () => now().getTime() }),
+        limiter: new TenantRateLimiter({
+          name: 'licensing',
+          capacity: 10,
+          refillPerMs: 10 / 60_000,
+          db: ctx.tenancy.db,
+          ...(options.now !== undefined ? { now: () => now().getTime() } : {}),
+        }),
       })(app);
       return Promise.resolve();
     },

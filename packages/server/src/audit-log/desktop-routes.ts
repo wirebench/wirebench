@@ -9,7 +9,8 @@
 import { desktopAuditBatchSchema, teamWorkspaceParamsSchema } from '@wirebench/engine';
 import type { FastifyInstance } from 'fastify';
 import { auditSource, recordAudit, type ServerHooks } from '../context.js';
-import { callerKey, rateLimit, RateLimiter } from '../identity/rate-limit.js';
+import { callerKey, rateLimit, TenantRateLimiter } from '../identity/rate-limit.js';
+import type { TenantDbFactory } from '../tenancy/tenant-db.js';
 import { jsonSchema } from '../schema.js';
 import { forbidden } from '../teams/errors.js';
 import { workspaceById } from '../teams/repo.js';
@@ -28,11 +29,14 @@ const DESKTOP_EVENTS_RATE_LIMIT_PROBLEM = {
   message: 'Too many desktop activity reports. Try again shortly.',
 } as const;
 
-export function desktopEventsLimiter(now: () => Date): RateLimiter {
-  return new RateLimiter({
+/** `now` is a test's injected clock; without one the database's clock refills the buckets. */
+export function desktopEventsLimiter(db: TenantDbFactory, now?: () => Date): TenantRateLimiter {
+  return new TenantRateLimiter({
+    name: 'audit-desktop-events',
     capacity: DESKTOP_EVENTS_RATE.capacity,
     refillPerMs: DESKTOP_EVENTS_RATE.perMinute / 60_000,
-    now: () => now().getTime(),
+    db,
+    ...(now !== undefined ? { now: () => now().getTime() } : {}),
   });
 }
 
@@ -40,7 +44,7 @@ export interface DesktopRoutesEnv {
   /** The tenant databases: the role guard, the reads and the batch's rows run in the request's tenant. */
   readonly tenancy: Pick<Tenancy, 'db'>;
   readonly hooks: ServerHooks;
-  readonly limiter: RateLimiter;
+  readonly limiter: TenantRateLimiter;
 }
 
 export const desktopRoutes =

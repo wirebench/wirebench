@@ -11,6 +11,8 @@ export interface SchedulesSettings {
   /** Seals secrets and alert URLs; absent, they are refused. */
   readonly secretKey?: Buffer;
   readonly concurrency: number;
+  /** Runs one tenant may have `running` at once, every instance together (hosted edition spec §20.7). */
+  readonly runSlots: number;
   readonly maxAgeDays: number;
   readonly maxSnapshotBytes: number;
   /** Hosts Slack, Teams and webhook alerts may go to; absent, any https host. */
@@ -26,6 +28,7 @@ export function schedulesSettings(config: ModuleConfig): SchedulesSettings {
     enabled: config.schedulesEnabled,
     ...(config.schedulesSecretKey !== undefined ? { secretKey: Buffer.from(config.schedulesSecretKey, 'base64') } : {}),
     concurrency: config.schedulesConcurrency,
+    runSlots: config.tenantRunSlots,
     maxAgeDays: config.schedulesMaxAgeDays,
     maxSnapshotBytes: config.schedulesMaxSnapshotMb * MIB,
     ...(config.schedulesAlertHosts !== undefined ? { alertHosts: config.schedulesAlertHosts } : {}),

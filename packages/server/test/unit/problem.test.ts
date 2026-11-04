@@ -29,4 +29,12 @@ describe('toProblem', () => {
     const mapped = toProblem(problem('server-x', 'x', 400, { path: '/data/repos' }));
     expect(JSON.stringify(mapped.body)).not.toContain('/data');
   });
+  it('carries a whole-second retryAfter out of the details, for the Retry-After header (spec §20.4)', () => {
+    expect(toProblem(problem('repo-busy', 'busy', 503, { retryAfter: 5 }))).toEqual({
+      status: 503,
+      body: { code: 'repo-busy', message: 'busy' },
+      retryAfter: 5,
+    });
+    expect(toProblem(problem('server-x', 'x', 503, { retryAfter: 'soon' }))).not.toHaveProperty('retryAfter');
+  });
 });

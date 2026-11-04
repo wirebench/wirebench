@@ -12,7 +12,7 @@ import type { ServerContext, ServerModule } from '../context.js';
 import { identitySettings, type IdentityEnv } from './env.js';
 import { authenticate, type BearerFallback } from './guard.js';
 import { discoverOidc, type OidcProvider } from './oidc.js';
-import { RateLimiter } from './rate-limit.js';
+import { TenantRateLimiter } from './rate-limit.js';
 import { authLocalRoutes } from './routes/auth-local.js';
 import { authOidcRoutes } from './routes/auth-oidc.js';
 import { browserSignInRoutes } from './routes/browser-sign-in.js';
@@ -43,7 +43,13 @@ export function identityModule(options: IdentityOptions = {}): ServerModule {
       ctx,
       settings: identitySettings(ctx.config),
       now,
-      limiter: new RateLimiter({ capacity: 10, refillPerMs: 10 / 60_000, now: () => now().getTime() }),
+      limiter: new TenantRateLimiter({
+        name: 'identity',
+        capacity: 10,
+        refillPerMs: 10 / 60_000,
+        db: ctx.tenancy.db,
+        ...(options.now !== undefined ? { now: () => now().getTime() } : {}),
+      }),
       provider,
     });
 

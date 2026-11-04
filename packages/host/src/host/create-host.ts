@@ -143,7 +143,7 @@ import { registerOAuth2Channels } from '../ipc/oauth2.js';
 import { registerIssuedTokenChannels } from '../ipc/issued-tokens.js';
 import { IssuedTokensService, type ResolvedIssuedToken } from '../issued-tokens.js';
 import { desktopSecrets, stsLogEntry } from '../send/host.js';
-import { ExchangeRegistry } from '../send/exchange.js';
+import { ExchangeRegistry, type SendGate } from '../send/exchange.js';
 import { agentTeamSecrets } from '../agent-team-secrets.js';
 import { sendFromDirectory, type DetachedSendResult, type SendFromDirectoryInput } from '../send/detached.js';
 import { ProjectHost } from '../project-host.js';
@@ -268,6 +268,12 @@ export interface HostOptions {
    * desktop, which stamps nothing and always answers `request.route` with `server`.
    */
   readonly sendOrigin?: 'server';
+  /**
+   * Asked before each request a send, a run's step or one environment of a fan-out puts on the wire
+   * (hosted edition spec §20.7): a Wirebench Server's host paces a run by its tenant's send budget here,
+   * and hears when a WebSocket session has opened. Absent on the desktop.
+   */
+  readonly sendGate?: SendGate;
 }
 
 /** What {@link HostOptions.onSecret} hears: a secret's name, never its value. */
@@ -1466,6 +1472,7 @@ export async function createHost(platform: HostPlatform, embedder: HostOptions =
     confirmProtected: nativeDialogs.confirmProtected,
     ...egressOption,
     ...(embedder.sendOrigin !== undefined ? { sendOrigin: embedder.sendOrigin } : {}),
+    ...(embedder.sendGate !== undefined ? { sendGate: embedder.sendGate } : {}),
   };
   registerRequestChannels(handlerTable, engineService, requestDeps);
   /** The window whose workspace holds `projectId`. */
