@@ -11,6 +11,7 @@ const DIRS = [
   '../../integration/host/',
   '../../integration/agent/',
   '../../integration/control-plane/',
+  '../../integration/custom-domains/',
   './',
 ].map((dir) => fileURLToPath(new URL(dir, import.meta.url)));
 const text = DIRS.flatMap((dir) =>

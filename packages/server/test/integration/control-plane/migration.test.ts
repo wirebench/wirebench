@@ -89,12 +89,14 @@ describeDb('migration 0023: the control plane (hosted spec §22.2, §22.3)', () 
 
   it('is migration 23, from the control-plane module, after the operations one', async () => {
     const migrations = await allMigrations(BUILTIN_MODULES);
-    expect(migrations.at(-1)).toMatchObject({ version: 23, name: 'control-plane' });
+    expect(migrations.find((m) => m.version === 23)).toMatchObject({ name: 'control-plane' });
+    expect(migrations.find((m) => m.version === 22)).toMatchObject({ name: 'operations' });
     expect(BUILTIN_MODULES.find((module) => module.name === 'control-plane')?.migrationsDir).toBe(
       CONTROL_PLANE_MIGRATIONS_DIR,
     );
-    const ledger = await db.owner.query<{ v: number }>('select max(version)::int as v from schema_migrations');
-    expect(ledger.rows[0]!.v).toBe(23);
+    // Slice 8's 0024 follows it; this file pins 0023 by number, not as the last.
+    const ledger = await db.owner.query<{ v: string }>('select name as v from schema_migrations where version = 23');
+    expect(ledger.rows[0]!.v).toBe('control-plane');
   });
 
   it("adds the tenants' billing and lifecycle columns, defaulting an existing tenant to a license", async () => {

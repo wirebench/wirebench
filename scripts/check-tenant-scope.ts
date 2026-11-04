@@ -45,6 +45,9 @@
  *   touch it.
  * - **No `pg_notify` and no `LISTEN` outside `src/operations/`** (spec §20.3): the notification bus is the one
  *   sender and listener, so every payload goes through its codec, which carries ids only.
+ * - **No `tenant_hosts` outside `src/custom-domains/` and `src/tenancy/directory.ts`** (spec §23.3): the unscoped
+ *   table of custom names. Only the custom-domains module writes it, the claim's own row in its tenant's unit, and
+ *   only the directory reads it, for the resolver, so no other code can learn which tenant holds a name.
  * - **The control plane's connection stays in `src/control-plane/`** (spec §22.2, ADR-0039): `ControlDb`, the
  *   functions that open the control pool and hand it to the control-plane module's factory (`withControlPool`), and
  *   any import of `control-db`, outside it and `serve.ts` (which opens the pool and hands it over; the pool is never
@@ -104,6 +107,13 @@ export const TENANCY_DIR = 'packages/server/src/tenancy/';
 export const OPERATIONS_DIR = 'packages/server/src/operations/';
 /** The instance table, by name, in SQL text. */
 const INSTANCES_SQL = /(?<![\w"])"?server_instances"?(?![\w"])/i;
+/** Where `tenant_hosts` may be named (spec §23.3): the module that writes it, and the resolver's read. */
+export const TENANT_HOSTS_ALLOWED: readonly { readonly dir?: string; readonly file?: string }[] = [
+  { dir: 'packages/server/src/custom-domains/' },
+  { file: 'packages/server/src/tenancy/directory.ts' },
+];
+/** The custom names' table, by name, in SQL text. */
+const HOSTS_SQL = /(?<![\w"])"?tenant_hosts"?(?![\w"])/i;
 /**
  * The notification bus's SQL (spec §20.3): `pg_notify(` anywhere, and a whole `LISTEN`/`UNLISTEN` statement, so a
  * sentence that starts with "Listen" is not one.
@@ -236,6 +246,7 @@ export interface ScopeHit {
     | 'for-each-tenant'
     | 'instances-sql'
     | 'notify-sql'
+    | 'hosts-sql'
     | 'control-db'
     | 'context-control'
     | 'control-url'
@@ -349,7 +360,8 @@ function specifier(node: ts.Node): ts.Expression | undefined {
 
 /**
  * Every import of the raw pool outside the files that hold it, and every piece of SQL text that sets the tenant,
- * names the tenants table, calls `for_each_tenant` or names `server_instances` outside `src/operations/`. Strings and template text are read from the syntax tree, so
+ * names the tenants table, calls `for_each_tenant`, names `server_instances` outside `src/operations/` or names
+ * `tenant_hosts` outside its two places. Strings and template text are read from the syntax tree, so
  * a comment never counts; `for_each_tenant` counts as an identifier too, and in `src/tenancy/` as well.
  */
 export function findRawDatabase(file: string, content: string): ScopeHit[] {
@@ -364,6 +376,9 @@ export function findRawDatabase(file: string, content: string): ScopeHit[] {
   const inTenancy = file.startsWith(TENANCY_DIR);
   const inOperations = file.startsWith(OPERATIONS_DIR);
   const inControlPlane = file.startsWith(CONTROL_PLANE_DIR);
+  const hostsAllowed = TENANT_HOSTS_ALLOWED.some((place) =>
+    place.dir !== undefined ? file.startsWith(place.dir) : file === place.file,
+  );
   const visit = (node: ts.Node): void => {
     const from = specifier(node);
     if (
@@ -391,6 +406,7 @@ export function findRawDatabase(file: string, content: string): ScopeHit[] {
       for (const rule of rules) hit(node, rule);
       if (!inOperations && INSTANCES_SQL.test(text)) hit(node, 'instances-sql');
       if (!inOperations && NOTIFY_SQL.some((pattern) => pattern.test(text))) hit(node, 'notify-sql');
+      if (!hostsAllowed && HOSTS_SQL.test(text)) hit(node, 'hosts-sql');
     }
     if (ts.isIdentifier(node) && node.text === 'for_each_tenant') {
       hit(node, 'for-each-tenant');
@@ -537,6 +553,7 @@ if (process.argv[1] !== undefined && fileURLToPath(import.meta.url) === process.
       'for-each-tenant': 'for_each_tenant is for migrations only',
       'instances-sql': 'server_instances outside src/operations/',
       'notify-sql': 'pg_notify or LISTEN outside src/operations/',
+      'hosts-sql': 'tenant_hosts outside src/custom-domains/ and src/tenancy/directory.ts',
       'control-db': 'the control pool (ControlDb, control-db) outside src/control-plane/ and serve.ts',
       'context-control': 'a control pool read off the context; serve.ts hands it to the control-plane module alone',
       'control-url': 'controlDatabaseUrl outside config.ts, serve.ts, tenancy/cli.ts and control-plane/cli.ts',

@@ -7,6 +7,8 @@ import type { Querier } from '../../src/db/querier.js';
 /**
  * The tables without `tenant_id` (spec §19.2): guard 3's allowlist. `server_instances` (0022, spec §20.2) names
  * processes, not tenants; 0023's four (spec §22.3) are the control plane's own, which only the control role reads.
+ * `tenant_hosts` (0024, spec §23.3) is routing only, the custom-name counterpart of `tenants.slug`: it names a tenant
+ * but holds none of its content, and the resolver reads it before any tenant is known.
  */
 export const UNSCOPED_TABLES: readonly string[] = [
   'schema_migrations',
@@ -17,11 +19,12 @@ export const UNSCOPED_TABLES: readonly string[] = [
   'signups',
   'billing_events',
   'tenant_deletions',
+  'tenant_hosts',
 ];
 
 /**
- * The scoped tables: the 36 of spec §19.3, as 0020 and 0021 name them, then the three of 0022 (spec §20.6, §20.7)
- * and the three of 0023 (spec §22.3).
+ * The scoped tables: the 36 of spec §19.3, as 0020 and 0021 name them, then the three of 0022 (spec §20.6, §20.7),
+ * the three of 0023 (spec §22.3) and the one of 0024 (spec §23.3).
  */
 export const SCOPED_TABLES: readonly string[] = [
   'workspaces',
@@ -66,9 +69,13 @@ export const SCOPED_TABLES: readonly string[] = [
   'subscriptions',
   'tenant_exports',
   'tenant_settings',
+  'custom_domains',
 ];
 
-/** The scoped tables 0019 did not have: 0020 creates `host_leases`, 0022 three more and 0023 the last three. */
+/**
+ * The scoped tables 0019 did not have: 0020 creates `host_leases`, 0022 three more, 0023 three more and 0024
+ * `custom_domains`.
+ */
 export const SCOPED_AFTER_0019: readonly string[] = [
   'host_leases',
   'limiter_buckets',
@@ -77,6 +84,7 @@ export const SCOPED_AFTER_0019: readonly string[] = [
   'subscriptions',
   'tenant_exports',
   'tenant_settings',
+  'custom_domains',
 ];
 
 export type ColumnInfo = {

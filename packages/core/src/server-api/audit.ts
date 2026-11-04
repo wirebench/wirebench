@@ -105,6 +105,16 @@ export const AUDIT_ACTIONS = [
   'tenant.renamed',
   'tenant.deletion_requested',
   'tenant.deletion_cancelled',
+  /**
+   * A custom name's check moved it (hosted edition spec §23.2): by name only, never its token. The routes' `claimed`
+   * and `removed` arrive with them.
+   */
+  'custom_domain.verified',
+  'custom_domain.activated',
+  'custom_domain.failing',
+  'custom_domain.lapsed',
+  'custom_domain.paused',
+  'custom_domain.expired',
 ] as const;
 export const auditActionSchema = z.enum(AUDIT_ACTIONS);
 export type AuditAction = z.infer<typeof auditActionSchema>;
@@ -127,6 +137,7 @@ export const AUDIT_ACTION_GROUPS = [
   'terminal_share',
   'agent',
   'tenant',
+  'custom_domain',
 ] as const;
 export type AuditActionGroup = (typeof AUDIT_ACTION_GROUPS)[number];
 
@@ -149,6 +160,7 @@ export const AUDIT_TARGET_KINDS = [
   'terminal-share',
   'agent-pairing',
   'tenant',
+  'custom-domain',
 ] as const;
 export type AuditTargetKind = (typeof AUDIT_TARGET_KINDS)[number];
 
