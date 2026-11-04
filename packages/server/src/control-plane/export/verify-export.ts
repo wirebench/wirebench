@@ -5,18 +5,19 @@
  * time in the canonical UTC form, `abbrev(ip)`, `details` as PostgreSQL's `jsonb` text), so an auditor with the file
  * alone recomputes every link, and a byte edited after the server wrote it names its event.
  */
-import { createHash } from 'node:crypto';
+import { createHash, type Hash } from 'node:crypto';
 import { StringDecoder } from 'node:string_decoder';
 import { WirebenchError } from '@wirebench/engine';
 import type { CanonicalRow } from '../../audit-log/chain/canonical.js';
 import {
-  verifyChainRows,
+  walkChain,
+  type ChainReader,
   type VerifyOptions,
   type VerifySummary,
   type WrongKey,
 } from '../../audit-log/chain/verify.js';
 import type { ChainAnchor, SealedRow } from '../../audit-log/repo.js';
-import type { ExportManifest } from './export.js';
+import { MANIFEST_MAX_BYTES, parseManifest, type ExportManifest } from './export.js';
 import { readTarGz } from './tar.js';
 
 /** The `audit_events` column each canonical field is read from. */
@@ -85,56 +86,96 @@ export type ExportVerifyOutcome =
       readonly checksum: boolean;
     });
 
+/** Every line of `chunks` as JSON, `hash` fed every byte; a character split across two chunks waits for its last byte. */
+async function* linesOf(chunks: AsyncIterable<Buffer>, hash: Hash): AsyncGenerator<Record<string, unknown>> {
+  const decoder = new StringDecoder('utf8');
+  let rest = '';
+  const parse = (line: string): Record<string, unknown> => {
+    try {
+      return JSON.parse(line) as Record<string, unknown>;
+    } catch {
+      throw invalid('a line of audit_events.ndjson is not JSON');
+    }
+  };
+  for await (const chunk of chunks) {
+    hash.update(chunk);
+    const lines = (rest + decoder.write(chunk)).split('\n');
+    rest = lines.pop() ?? '';
+    for (const line of lines) if (line !== '') yield parse(line);
+  }
+  const last = rest + decoder.end();
+  if (last !== '') yield parse(last);
+}
+
 /**
- * Verifies the export at `path`.
+ * The walk's reader over a stream of lines: sealed rows a page at a time, in the file's order (the export writes them
+ * in chain order, and the walk reports any other as a break), unsealed ones counted on the way. The count drains the
+ * rest of the stream, so it is complete whenever the walk asks for it.
+ */
+function streamReader(lines: AsyncGenerator<Record<string, unknown>>, anchor: ChainAnchor | undefined): ChainReader {
+  let unsealed = 0;
+  let done = false;
+  const next = async (): Promise<SealedRow | undefined> => {
+    while (!done) {
+      const read = await lines.next();
+      if (read.done === true) {
+        done = true;
+        break;
+      }
+      const row = sealedRowOf(read.value);
+      if (row !== undefined) return row;
+      unsealed++;
+    }
+    return undefined;
+  };
+  return {
+    anchor: () => Promise.resolve(anchor),
+    page: async (_after, limit) => {
+      const page: SealedRow[] = [];
+      while (page.length < limit) {
+        const row = await next();
+        if (row === undefined) break;
+        page.push(row);
+      }
+      return page;
+    },
+    unsealed: async () => {
+      while (await next()) {
+        // Drained: only the count is wanted now.
+      }
+      return unsealed;
+    },
+  };
+}
+
+/**
+ * Verifies the export at `path`, streaming its audit rows: nothing but a page of them is held at a time.
+ * `manifest.json` must come first, as the export writes it, and be at most 16 MB.
  *
- * @throws WirebenchError `export-archive-invalid` when it has no manifest or no audit file, or a line is not JSON
+ * @throws WirebenchError `export-archive-invalid` when it has no manifest first or no audit file, or a line is not
+ *   JSON
  */
 export async function verifyExportChain(path: string, options: VerifyOptions = {}): Promise<ExportVerifyOutcome> {
   let manifest: ExportManifest | undefined;
-  const sealed: SealedRow[] = [];
-  let unsealed = 0;
-  let sha256: string | undefined;
   for await (const entry of readTarGz(path)) {
-    if (entry.name === 'manifest.json') {
-      manifest = JSON.parse((await entry.buffer()).toString('utf8')) as ExportManifest;
-    } else if (entry.name === 'tables/audit_events.ndjson') {
-      const hash = createHash('sha256');
-      // A character split across two chunks is held until its last byte.
-      const decoder = new StringDecoder('utf8');
-      let rest = '';
-      const take = (line: string): void => {
-        if (line === '') return;
-        let parsed: Record<string, unknown>;
-        try {
-          parsed = JSON.parse(line) as Record<string, unknown>;
-        } catch {
-          throw invalid('a line of audit_events.ndjson is not JSON');
-        }
-        const row = sealedRowOf(parsed);
-        if (row === undefined) unsealed++;
-        else sealed.push(row);
-      };
-      for await (const chunk of entry.chunks()) {
-        hash.update(chunk);
-        const lines = (rest + decoder.write(chunk)).split('\n');
-        rest = lines.pop() ?? '';
-        for (const line of lines) take(line);
-      }
-      take(rest + decoder.end());
-      sha256 = hash.digest('hex');
+    if (manifest === undefined) {
+      if (entry.name !== 'manifest.json') throw invalid('manifest.json is not its first file');
+      if (entry.size > MANIFEST_MAX_BYTES) throw invalid('the manifest is larger than any export writes');
+      manifest = parseManifest(await entry.buffer(), 'export-archive-invalid');
+      if (manifest.chain === null || manifest.chain === undefined) return { kind: 'no-key' };
+      continue;
     }
+    if (entry.name !== 'tables/audit_events.ndjson') continue;
+    const chain = manifest.chain!;
+    const hash = createHash('sha256');
+    const reader = streamReader(
+      linesOf(entry.chunks(), hash),
+      chain.anchor === null ? undefined : anchorOf(chain.anchor),
+    );
+    const outcome = await walkChain(reader, Buffer.from(chain.keyHex, 'hex').toString('utf8'), options);
+    // A wrong key returns before any row: the rest is read for the checksum all the same.
+    await reader.unsealed();
+    return { ...outcome, checksum: manifest.tables['audit_events']?.sha256 === hash.digest('hex') };
   }
-  if (manifest === undefined) throw invalid('it has no manifest.json');
-  if (sha256 === undefined) throw invalid('it has no tables/audit_events.ndjson');
-  const chain = manifest.chain;
-  if (chain === null || chain === undefined) return { kind: 'no-key' };
-  const checksum = manifest.tables['audit_events']?.sha256 === sha256;
-  const key = Buffer.from(chain.keyHex, 'hex').toString('utf8');
-  const outcome = await verifyChainRows(
-    { anchor: chain.anchor === null ? undefined : anchorOf(chain.anchor), sealed, unsealed },
-    key,
-    options,
-  );
-  return { ...outcome, checksum };
+  throw invalid(manifest === undefined ? 'it has no manifest.json' : 'it has no tables/audit_events.ndjson');
 }

@@ -72,7 +72,8 @@ const rowId = (sealed: SealedRow): { id?: string } => (sealed.row.id === null ? 
 
 /**
  * What the walk reads: the anchor, the unsealed count and the sealed rows a page at a time, in chain order. A
- * database's are one snapshot ({@link verifyChain}); an export's are its file's ({@link verifyChainRows}).
+ * database's are one snapshot ({@link verifyChain}); an export's are its file's, streamed
+ * (`control-plane/export/verify-export.ts`). The count is asked for last, when the walk reports.
  */
 export interface ChainReader {
   anchor(): Promise<ChainAnchor | undefined>;
@@ -91,21 +92,24 @@ export async function walkChain(
   const anchor = await read.anchor();
   // Before any row is read: a wrong key would report every link as edited.
   if (anchor !== undefined && anchor.keyId !== keyId(key)) return { kind: 'wrong-key', chainKeyId: anchor.keyId };
-  const unsealed = await read.unsealed();
 
   let checked = 0;
   let firstSeq: bigint | null = null;
   let lastSeq: bigint | null = null;
-  const summary = (broken?: BrokenLink, headBeforeAnchor = false): VerifySummary => ({
-    kind: 'checked',
-    result: broken === undefined ? 'intact' : 'broken',
-    checked,
-    firstSeq,
-    lastSeq,
-    unsealed,
-    ...(broken !== undefined ? { broken } : {}),
-    ...(headBeforeAnchor ? { headBeforeAnchor } : {}),
-  });
+  // The unsealed count is asked for as the walk reports, so a reader that streams its rows has read them all by then.
+  const summary = async (broken?: BrokenLink, headBeforeAnchor = false): Promise<VerifySummary> => {
+    const unsealed = await read.unsealed();
+    return {
+      kind: 'checked',
+      result: broken === undefined ? 'intact' : 'broken',
+      checked,
+      firstSeq,
+      lastSeq,
+      unsealed,
+      ...(broken !== undefined ? { broken } : {}),
+      ...(headBeforeAnchor ? { headBeforeAnchor } : {}),
+    };
+  };
 
   // The head's stored hash, once the walk has verified the row at its seq.
   // An anchor moved forward (the oldest rows cut off), with its head_seq lowered, or edited at all.
@@ -173,27 +177,6 @@ export async function verifyChain(
         options,
       ),
     { readOnlySnapshot: true },
-  );
-}
-
-/**
- * The walk over rows held in memory (an export's `audit_events.ndjson`, spec §22.9), with no database: `sealed` in any
- * order, `unsealed` counted by the caller.
- */
-export function verifyChainRows(
-  chain: { readonly anchor: ChainAnchor | undefined; readonly sealed: readonly SealedRow[]; readonly unsealed: number },
-  key: string,
-  options: VerifyOptions = {},
-): Promise<VerifySummary | WrongKey> {
-  const sorted = [...chain.sealed].sort((a, b) => (a.seq < b.seq ? -1 : a.seq > b.seq ? 1 : 0));
-  return walkChain(
-    {
-      anchor: () => Promise.resolve(chain.anchor),
-      unsealed: () => Promise.resolve(chain.unsealed),
-      page: (after, limit) => Promise.resolve(sorted.filter((row) => row.seq > after).slice(0, limit)),
-    },
-    key,
-    options,
   );
 }
 

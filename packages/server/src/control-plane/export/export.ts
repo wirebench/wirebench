@@ -42,6 +42,8 @@ export interface ExportedColumn {
 
 export interface ExportedTable {
   readonly rows: number;
+  /** The file's size: an import stops writing one that passes it. */
+  readonly bytes: number;
   readonly sha256: string;
   readonly columns: readonly ExportedColumn[];
 }
@@ -79,7 +81,7 @@ export interface ExportManifest {
   readonly bundlesAt: string;
   readonly tables: Readonly<Record<string, ExportedTable>>;
   /** Each workspace's bundle SHA-256; `null` for a workspace whose repository has no commit yet. */
-  readonly workspaces: Readonly<Record<string, { readonly bundle: string | null }>>;
+  readonly workspaces: Readonly<Record<string, { readonly bundle: string | null; readonly bytes: number | null }>>;
   /**
    * The tenant's chain key in hex (its UTF-8 bytes), its key id, and the anchor; `null` on a server with no chain
    * key, whose rows are never sealed.
@@ -113,6 +115,29 @@ export interface ExportResult {
   readonly manifest: ExportManifest;
   readonly size: number;
   readonly sha256: string;
+}
+
+/** The most `manifest.json` may hold: past it, no reader parses it (an export's is a few kilobytes). */
+export const MANIFEST_MAX_BYTES = 16 * 1024 * 1024;
+
+/**
+ * An export's manifest, from its bytes: JSON, at most {@link MANIFEST_MAX_BYTES}, format 1.
+ *
+ * @throws WirebenchError `code` otherwise
+ */
+export function parseManifest(data: Buffer, code: string): ExportManifest {
+  if (data.length > MANIFEST_MAX_BYTES) throw new WirebenchError(code, 'the manifest is larger than any export writes');
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(data.toString('utf8'));
+  } catch {
+    throw new WirebenchError(code, 'the manifest is not JSON');
+  }
+  const manifest = parsed as ExportManifest;
+  if (manifest.format !== EXPORT_FORMAT) {
+    throw new WirebenchError(code, `the export is format ${String(manifest.format)}; this server reads format 1`);
+  }
+  return manifest;
 }
 
 /** `<tenantRoot>/exports`: where the server keeps a tenant's exports (spec §22.9). Never a link. */
@@ -216,6 +241,7 @@ async function writeTable(
   const hash = createHash('sha256');
   const out = createWriteStream(path, { mode: 0o600 });
   let rows = 0;
+  let bytes = 0;
   try {
     for (let offset = 0; ; offset += PAGE) {
       const page = await tx.query<Record<string, unknown>>(
@@ -224,6 +250,7 @@ async function writeTable(
       for (const row of page.rows) {
         const line = `${JSON.stringify(Object.fromEntries(columns.map((column) => [column.name, row[column.name] ?? null])))}\n`;
         hash.update(line, 'utf8');
+        bytes += Buffer.byteLength(line, 'utf8');
         if (!out.write(line, 'utf8')) await once(out, 'drain');
         rows++;
       }
@@ -233,7 +260,7 @@ async function writeTable(
     out.end();
     await once(out, 'close');
   }
-  return { rows, sha256: hash.digest('hex'), columns };
+  return { rows, bytes, sha256: hash.digest('hex'), columns };
 }
 
 /** What the import cannot bring back (spec §22.10), read in the same snapshot as the rows. */
@@ -325,7 +352,7 @@ export async function writeExport(deps: ExportDeps, scope: TenantScope, out: str
       },
       { readOnlySnapshot: true },
     );
-    const bundles: Record<string, { bundle: string | null }> = {};
+    const bundles: Record<string, { bundle: string | null; bytes: number | null }> = {};
     for (const workspaceId of snapshot.workspaces) {
       const bundlePath = join(work, 'repos', `${workspaceId}.bundle`);
       const made = await deps.repos.withLock(scope, workspaceId, async () => {
@@ -337,7 +364,8 @@ export async function writeExport(deps: ExportDeps, scope: TenantScope, out: str
         await deps.git.run(repo, ['bundle', 'create', bundlePath, '--all'], { timeoutMs: 30 * 60_000 });
         return true;
       });
-      bundles[workspaceId] = { bundle: made ? (await sha256Of(bundlePath)).sha256 : null };
+      const sum = made ? await sha256Of(bundlePath) : undefined;
+      bundles[workspaceId] = { bundle: sum?.sha256 ?? null, bytes: sum?.size ?? null };
     }
     const key = deps.chainKey;
     const anchor = snapshot.anchor;

@@ -43,7 +43,7 @@ import type { TenantScope } from '../../tenancy/scope.js';
 import type { TenantDbFactory, TenantQuerier } from '../../tenancy/tenant-db.js';
 import type { TenantRow } from '../../tenancy/directory.js';
 import type { HostedEdition, TenantLifecycle } from '../tenants.js';
-import { EXPORT_FORMAT, type ExportManifest, type OmittedItem } from './export.js';
+import { MANIFEST_MAX_BYTES, parseManifest, type ExportManifest, type OmittedItem } from './export.js';
 import { exportedTables } from './tables.js';
 import { readTarGz } from './tar.js';
 import { verifyExportChain } from './verify-export.js';
@@ -66,6 +66,9 @@ const REWRITES: Readonly<Record<string, (row: Record<string, unknown>) => void>>
   },
 };
 
+/** The default overall cap on what an import unpacks: far past any team's export, short of filling a disk by accident. */
+export const IMPORT_MAX_BYTES = 64 * 1024 ** 3;
+
 const refuse = (code: string, message: string): WirebenchError => new WirebenchError(code, message);
 
 export interface ImportDeps {
@@ -77,6 +80,8 @@ export interface ImportDeps {
   readonly hooks: ServerHooks;
   /** The target tenant's chain key; `undefined` leaves the audit rows unsealed, as the server's sealer would. */
   readonly chainKeyOf: (scope: TenantScope) => string | undefined;
+  /** The most the archive's files may hold in all, unpacked; {@link IMPORT_MAX_BYTES} by default. */
+  readonly maxBytes?: number;
   /** A test's crash: called after each table is written. */
   readonly afterTable?: (table: string) => Promise<void> | void;
 }
@@ -125,11 +130,9 @@ export function sameExport(marker: Marker | undefined, manifest: ExportManifest)
 export async function readManifest(path: string): Promise<ExportManifest> {
   for await (const entry of readTarGz(path)) {
     if (entry.name !== 'manifest.json') continue;
-    const manifest = JSON.parse((await entry.buffer()).toString('utf8')) as ExportManifest;
-    if (manifest.format !== EXPORT_FORMAT) {
-      throw refuse('import-format', `the export is format ${String(manifest.format)}; this server reads format 1`);
-    }
-    return manifest;
+    // The header's size first: a manifest past the cap is never read into memory.
+    if (entry.size > MANIFEST_MAX_BYTES) throw refuse('import-format', 'the manifest is larger than any export writes');
+    return parseManifest(await entry.buffer(), 'import-format');
   }
   throw refuse('import-format', 'the file has no manifest.json: it is not a Wirebench export');
 }
@@ -164,30 +167,58 @@ export async function checkExportChain(path: string): Promise<void> {
   }
 }
 
-/** The archive unpacked under `dir`, every file checked against the manifest. */
-async function unpack(path: string, manifest: ExportManifest, dir: string): Promise<void> {
-  const expected = new Map<string, string>();
-  for (const [table, info] of Object.entries(manifest.tables)) expected.set(`tables/${table}.ndjson`, info.sha256);
+/**
+ * The archive unpacked under `dir`, every file checked against the manifest: its declared size first (a file that
+ * passes it is not written further), then its SHA-256. The declared sizes together must fit `maxBytes`.
+ */
+async function unpack(path: string, manifest: ExportManifest, dir: string, maxBytes: number): Promise<void> {
+  const expected = new Map<string, { readonly sha256: string; readonly bytes: number }>();
+  const declare = (name: string, sha256: string, bytes: unknown): void => {
+    if (typeof bytes !== 'number' || !Number.isSafeInteger(bytes) || bytes < 0) {
+      throw refuse('import-format', `the manifest declares no size for ${name}`);
+    }
+    expected.set(name, { sha256, bytes });
+  };
+  for (const [table, info] of Object.entries(manifest.tables))
+    declare(`tables/${table}.ndjson`, info.sha256, info.bytes);
   for (const [workspaceId, info] of Object.entries(manifest.workspaces)) {
     if (!isWorkspaceId(workspaceId)) throw refuse('import-format', 'the manifest names a workspace id that is not one');
-    if (info.bundle !== null) expected.set(`repos/${workspaceId}.bundle`, info.bundle);
+    if (info.bundle !== null) declare(`repos/${workspaceId}.bundle`, info.bundle, info.bytes);
+  }
+  const total = [...expected.values()].reduce((sum, file) => sum + file.bytes, 0);
+  if (total > maxBytes) {
+    throw refuse(
+      'import-too-large',
+      `the export unpacks to ${String(total)} bytes, past this import's ${String(maxBytes)}`,
+    );
   }
   await mkdir(join(dir, 'tables'), { recursive: true });
   await mkdir(join(dir, 'repos'), { recursive: true });
   const seen = new Set<string>();
   for await (const entry of readTarGz(path)) {
-    const sha = expected.get(entry.name);
+    const file = expected.get(entry.name);
     // Only the files the manifest names are written, each at a path made from a checked table name or workspace id.
-    if (sha === undefined) continue;
+    if (file === undefined) continue;
+    if (entry.size !== file.bytes) {
+      throw refuse('import-checksum-mismatch', `${entry.name} is not the size the manifest declares`);
+    }
     const hash = createHash('sha256');
     const out = createWriteStream(join(dir, entry.name), { mode: 0o600 });
-    for await (const chunk of entry.chunks()) {
-      hash.update(chunk);
-      if (!out.write(chunk)) await once(out, 'drain');
+    let written = 0;
+    try {
+      for await (const chunk of entry.chunks()) {
+        written += chunk.length;
+        if (written > file.bytes) {
+          throw refuse('import-checksum-mismatch', `${entry.name} is larger than the manifest declares`);
+        }
+        hash.update(chunk);
+        if (!out.write(chunk)) await once(out, 'drain');
+      }
+    } finally {
+      out.end();
+      await once(out, 'close');
     }
-    out.end();
-    await once(out, 'close');
-    if (hash.digest('hex') !== sha) {
+    if (hash.digest('hex') !== file.sha256) {
       throw refuse('import-checksum-mismatch', `${entry.name} does not match its checksum in the manifest`);
     }
     seen.add(entry.name);
@@ -359,7 +390,7 @@ export async function importInto(
   );
   const work = join(tmp, `import-${randomBytes(6).toString('hex')}`);
   try {
-    await unpack(path, manifest, work);
+    await unpack(path, manifest, work, deps.maxBytes ?? IMPORT_MAX_BYTES);
     const db = deps.db(scope);
     const exported = Object.keys(manifest.tables).filter((table) => !NOT_INSERTED.has(table));
     const { order, columns } = await db.transaction(async (tx) => ({

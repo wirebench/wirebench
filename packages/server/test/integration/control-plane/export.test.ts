@@ -111,9 +111,13 @@ describeDb('a tenant export (spec §22.9)', () => {
         expect(body!.toString().split('\n').filter(Boolean)).toHaveLength(info.rows);
       }
       expect(manifest.tables.users!.rows).toBe(4);
-      expect(manifest.workspaces[x.emptyWorkspace]).toEqual({ bundle: null });
+      expect(manifest.workspaces[x.emptyWorkspace]).toEqual({ bundle: null, bytes: null });
+      for (const [table, info] of Object.entries(manifest.tables)) {
+        expect(entries.get(`tables/${table}.ndjson`)!.length, table).toBe(info.bytes);
+      }
       const bundle = entries.get(`repos/${x.pushedWorkspace}.bundle`)!;
       expect(sha(bundle)).toBe(manifest.workspaces[x.pushedWorkspace]!.bundle);
+      expect(bundle.length).toBe(manifest.workspaces[x.pushedWorkspace]!.bytes);
       expect(bundle.toString('latin1')).toContain(`${x.head} refs/heads/main`);
       expect(manifest.omitted).toEqual(
         expect.arrayContaining([

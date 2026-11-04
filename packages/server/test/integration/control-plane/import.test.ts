@@ -284,6 +284,37 @@ describeDb('a tenant import (spec §22.10)', () => {
       });
     });
 
+    it('stops at a file past its declared size, an archive past the cap, and a manifest past 16 MB', async () => {
+      const file = join(dir, 'x.tar.gz');
+      await exportOf({ h: x.f.h, scope: x.scope, key: CHAIN_KEY }, file);
+      const back = await syncHarness();
+      closing.push(() => back.close());
+      const deps = importDeps(back, () => CHAIN_KEY);
+      const rewritten = async (name: string, change: (entry: string, data: Buffer) => Buffer): Promise<string> => {
+        const sources: TarSource[] = [];
+        for await (const entry of readTarGz(file))
+          sources.push({ name: entry.name, data: change(entry.name, await entry.buffer()) });
+        const out = join(dir, name);
+        await writeTarGz(out, sources);
+        return out;
+      };
+      const grown = await rewritten('grown.tar.gz', (name, data) =>
+        name === 'tables/teams.ndjson' ? Buffer.concat([data, Buffer.from('{"id":"extra"}\n')]) : data,
+      );
+      await expect(importSelfHosted(deps, back.tdb.scope, grown)).rejects.toMatchObject({
+        code: 'import-checksum-mismatch',
+        message: expect.stringContaining('not the size the manifest declares') as string,
+      });
+      await expect(importSelfHosted({ ...deps, maxBytes: 1024 }, back.tdb.scope, file)).rejects.toMatchObject({
+        code: 'import-too-large',
+      });
+      const huge = await rewritten('huge.tar.gz', (name, data) =>
+        name === 'manifest.json' ? Buffer.concat([data, Buffer.alloc(17 * 1024 * 1024, 0x20)]) : data,
+      );
+      await expect(importSelfHosted(deps, back.tdb.scope, huge)).rejects.toMatchObject({ code: 'import-format' });
+      expect((await back.tdb.query<{ n: string }>('select count(*)::text as n from users')).rows[0]!.n).toBe('0');
+    });
+
     it('resumes an import a crash stopped half-way through its tables', async () => {
       const file = join(dir, 'x.tar.gz');
       await exportOf({ h: x.f.h, scope: x.scope, key: CHAIN_KEY }, file);
