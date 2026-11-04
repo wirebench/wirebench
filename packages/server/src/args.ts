@@ -30,7 +30,9 @@ type TenantAdminCommand =
   | { readonly command: 'admin-schedules-list'; readonly workspace?: string }
   | { readonly command: 'admin-schedules-enable'; readonly id: string }
   | { readonly command: 'admin-schedules-disable'; readonly id: string }
-  | { readonly command: 'admin-schedules-runs'; readonly id: string; readonly limit: number };
+  | { readonly command: 'admin-schedules-runs'; readonly id: string; readonly limit: number }
+  | { readonly command: 'admin-domains-check' }
+  | { readonly command: 'admin-domains-remove' };
 
 export type ServerCommand =
   | { readonly command: 'serve' }
@@ -42,6 +44,8 @@ export type ServerCommand =
    */
   | (TenantAdminCommand & { readonly tenant?: string })
   | { readonly command: 'admin-instances' }
+  /** Every tenant's custom name (hosted edition spec §23.6): it works in no one tenant, so it takes no `--tenant`. */
+  | { readonly command: 'admin-domains-list' }
   | { readonly command: 'admin-tenancy-role'; readonly printSql: boolean }
   | { readonly command: 'admin-tenancy-check' }
   | { readonly command: 'admin-tenancy-status' }
@@ -85,6 +89,13 @@ Usage:
   wirebench-server admin schedules disable <id>
   wirebench-server admin schedules runs <id> [--limit <n>]
                                     A schedule's runs as NDJSON, newest first (default 50, at most 200)
+  wirebench-server admin domains list
+                                    Hosted: every team's custom domain, with its slug, state and last
+                                    check (never its token)
+  wirebench-server admin domains check --tenant <slug>
+                                    Hosted: check a team's custom domain now
+  wirebench-server admin domains remove --tenant <slug>
+                                    Hosted: release a team's custom domain (abuse, a support case)
   wirebench-server admin instances  The server instances running on this database: holder, address,
                                     version, age and last renew
   wirebench-server admin tenancy role [--print-sql]
@@ -107,7 +118,7 @@ Usage:
   wirebench-server --version
   wirebench-server --help
 
-Every admin command but admin instances and admin tenancy takes --tenant <slug>: the tenant it works in. Hosted mode requires it;
+Every admin command but admin instances, admin tenancy and admin domains list takes --tenant <slug>: the tenant it works in. Hosted mode requires it;
 a self-hosted server has one tenant and refuses it.
 
 Configuration is read from WIREBENCH_SERVER_* environment variables; see README.md.
@@ -133,6 +144,8 @@ const OPTIONS = {
   abort: { type: 'boolean' },
   tenant: { type: 'string' },
 } as const;
+
+const DOMAINS_USAGE = 'usage: wirebench-server admin domains list | check --tenant <slug> | remove --tenant <slug>';
 
 const SCHEDULES_USAGE =
   'usage: wirebench-server admin schedules list [--workspace <id>] | enable <id> | disable <id> | runs <id> [--limit <n>]';
@@ -207,8 +220,15 @@ export function parseServerArgs(argv: readonly string[]): ServerCommand {
   }
   const tenant = parsed.values.tenant;
   if (tenant !== undefined) {
-    if (word !== 'admin' || second === 'tenancy' || second === 'instances') {
-      throw new UsageError('--tenant applies to the admin commands, not to admin tenancy or admin instances');
+    if (
+      word !== 'admin' ||
+      second === 'tenancy' ||
+      second === 'instances' ||
+      (second === 'domains' && third === 'list')
+    ) {
+      throw new UsageError(
+        '--tenant applies to the admin commands, not to admin tenancy, admin instances or admin domains list',
+      );
     }
     if (!TENANT_SLUG.test(tenant))
       throw new UsageError('--tenant must be a tenant slug: lower-case letters, digits and -');
@@ -283,6 +303,18 @@ export function parseServerArgs(argv: readonly string[]): ServerCommand {
             }
             default:
               throw new UsageError(SCHEDULES_USAGE);
+          }
+        case 'domains':
+          if (fourth !== undefined) throw new UsageError(DOMAINS_USAGE);
+          switch (third) {
+            case 'list':
+              return { command: 'admin-domains-list' };
+            case 'check':
+              return inTenant({ command: 'admin-domains-check' });
+            case 'remove':
+              return inTenant({ command: 'admin-domains-remove' });
+            default:
+              throw new UsageError(DOMAINS_USAGE);
           }
         case 'instances':
           if (third !== undefined) throw new UsageError('usage: wirebench-server admin instances');

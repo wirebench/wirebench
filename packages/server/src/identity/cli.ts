@@ -10,6 +10,8 @@ import { ConfigError, forgetDatabaseUrls, loadConfig, type ServerConfig, type Se
 import { auditHook } from '../audit-log/hook.js';
 import { chainKeys } from '../audit-log/chain/keys.js';
 import { runAuditCommand, runVerifyCommand } from '../audit-log/cli.js';
+import { DOMAINS_HOSTED_ONLY, isDomainsCommand, runDomainsCommand } from '../custom-domains/cli.js';
+import type { CheckDepsOverrides } from '../custom-domains/deps.js';
 import { SYSTEM_SOURCE, serverHooks } from '../context.js';
 import { pendingMigrations } from '../db/migrate.js';
 import { ADMIN_APPLICATION_NAME, createDatabase } from '../db/pool.js';
@@ -112,6 +114,8 @@ export async function runAdmin(
     readonly now?: () => Date;
     readonly publicKeys?: readonly KeyObject[];
     readonly configure?: (config: ServerConfig) => ServerConfig;
+    /** `admin domains check`'s DNS, probe and mail, for a test. */
+    readonly domains?: CheckDepsOverrides;
   } = {},
 ): Promise<number> {
   let config: ReturnType<typeof loadConfig>;
@@ -123,7 +127,13 @@ export async function runAdmin(
     const loaded = loadConfig(io.env, packageVersion());
     config = options.configure?.(loaded) ?? loaded;
     forgetDatabaseUrls();
-    const misuse = tenantMisuse(config.mode, command.tenant);
+    // Custom domains are hosted only (spec §23.6), and `admin domains list` reads every tenant, so takes none.
+    if (isDomainsCommand(command) && config.mode !== 'hosted') {
+      io.stderr.write(`${DOMAINS_HOSTED_ONLY}\n`);
+      return 1;
+    }
+    const tenant = 'tenant' in command ? command.tenant : undefined;
+    const misuse = command.command === 'admin-domains-list' ? undefined : tenantMisuse(config.mode, tenant);
     if (misuse !== undefined) {
       io.stderr.write(`${misuse}\ntry --help\n`);
       return ExitCode.Config;
@@ -170,6 +180,30 @@ export async function runAdmin(
       const tenancy = createTenancy(db);
       const scope = await cliScope(tenancy, command.tenant, config.mode);
       return await runSchedulesCommand(command, { db: tenancy.db(scope), hooks, now }, io);
+    }
+    if (isDomainsCommand(command)) {
+      const tenancy = createTenancy(db);
+      const scope =
+        command.command === 'admin-domains-list' ? undefined : await cliScope(tenancy, command.tenant, config.mode);
+      return await runDomainsCommand(
+        command,
+        {
+          config,
+          tenancy,
+          hooks,
+          now,
+          license: createLicenseService({
+            tenancy,
+            publicKeys,
+            now,
+            serverId: (tdb) => readServerId(tdb),
+            hosted: true,
+          }),
+          ...(options.domains !== undefined ? { overrides: options.domains } : {}),
+        },
+        scope,
+        io,
+      );
     }
     // Only now: before migrations the server_identity table may not exist. A lost row is a configuration problem,
     // as `serve` reports it (exit 2), not a pending migration; the directory's load and the reader both see it.
