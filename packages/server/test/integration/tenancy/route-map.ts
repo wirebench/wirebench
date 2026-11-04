@@ -162,6 +162,17 @@ export const ROUTE_MAP: Readonly<Record<string, RouteCase>> = {
       payload: '{}',
     }),
   },
+  // Signup (spec §22.6), on the entry host only; on a tenant host `GET /signup` is the browser client's, as `GET /`.
+  'GET /signup': { cls: 'own', request: (ctx) => ({ method: 'GET', url: '/signup', headers: asTab(ctx) }) },
+  'POST /signup': {
+    cls: 'entry',
+    request: () => ({
+      method: 'POST',
+      url: '/signup',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      payload: 'email=a%40acme.test&name=A&slug=probe&seats=1',
+    }),
+  },
   'GET /*': { cls: 'own', request: (ctx) => ({ method: 'GET', url: '/workspaces', headers: asTab(ctx) }) },
   // The browser build's files, one route each (`routeKey` folds them into one key).
   'GET /assets/*': { cls: 'own', request: (ctx) => ({ method: 'GET', url: ctx.url }) },
