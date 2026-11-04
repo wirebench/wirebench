@@ -103,6 +103,12 @@ describe('the bus codec (hosted spec §20.3)', () => {
     expect(decode(payload!)?.at).toBe(at);
   });
 
+  it('decodes a payload without a send time, as an instance on the previous version sends it (rolling upgrade)', () => {
+    const old = JSON.parse(encode(FROM, 'headMoved', EVENTS.headMoved, 0, AT)![0]!) as Record<string, unknown>;
+    delete old.at;
+    expect(decode(JSON.stringify(old))).toEqual({ from: FROM, kind: 'headMoved', event: EVENTS.headMoved });
+  });
+
   it('encodes the missed marker as a resync with no tenant (review I2)', () => {
     expect(encode(FROM, 'resync', {}, 0, AT)).toEqual([JSON.stringify({ v: 1, from: FROM, at: AT, kind: 'resync' })]);
     expect(decode(JSON.stringify({ v: 1, from: FROM, at: AT, kind: 'resync' }))).toEqual({
@@ -121,8 +127,7 @@ describe('the bus codec (hosted spec §20.3)', () => {
     expect(decode(JSON.stringify({ ...good, kind: 'toString' }))).toBeUndefined();
     expect(decode(JSON.stringify({ ...good, email: 'ana@example.com' }))).toBeUndefined();
     expect(decode(JSON.stringify({ ...good, from: 'someone' }))).toBeUndefined();
-    // The send time is a whole, non-negative epoch millisecond, and required.
-    expect(decode(JSON.stringify({ ...good, at: undefined }))).toBeUndefined();
+    // The send time, when present, is a whole, non-negative epoch millisecond.
     expect(decode(JSON.stringify({ ...good, at: -1 }))).toBeUndefined();
     expect(decode(JSON.stringify({ ...good, at: 1.5 }))).toBeUndefined();
     expect(decode(JSON.stringify({ ...good, at: '2026-11-04' }))).toBeUndefined();

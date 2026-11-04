@@ -347,7 +347,7 @@ export class NotificationBus {
       return;
     }
     if (message.from === this.#deps.holder) return;
-    this.#deps.lag?.(Date.now() - message.at);
+    if (message.at !== undefined) this.#deps.lag?.(Date.now() - message.at);
     this.#inbox.push(message);
     const limit = this.#deps.inboxLimit ?? INBOX_LIMIT;
     while (this.#inbox.length > limit) {

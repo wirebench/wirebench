@@ -188,4 +188,20 @@ describe('the bus’s lag (spec §20.8)', () => {
     expect(lags).toHaveLength(1);
     await f.bus.stop(0);
   });
+
+  it('hears a peer on the previous version, which sends no send time, and records no lag for it', async () => {
+    const lags: number[] = [];
+    const heard: unknown[] = [];
+    const f = fake({ lag: (ms) => lags.push(ms) });
+    f.hooks.headMoved.push(cluster((event) => heard.push(event)));
+    await f.bus.start();
+    const old = JSON.parse(encode(PEER, 'headMoved', head(3))![0]!) as Record<string, unknown>;
+    delete old.at;
+    f.raw(JSON.stringify(old));
+    await vi.waitFor(() => {
+      expect(heard).toEqual([head(3)]);
+    });
+    expect(lags).toEqual([]);
+    await f.bus.stop(0);
+  });
 });

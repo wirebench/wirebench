@@ -1,7 +1,7 @@
 /**
  * The notification bus's payloads (hosted edition spec §20.3): `{ v: 1, from, at, kind, tenantId, …the event's ids }`,
  * JSON, at most {@link MAX_PAYLOAD_BYTES}. `at` is the sender's clock when it queued the event (epoch ms): the receiver's
- * `wirebench.bus.lag` (spec §20.8).
+ * `wirebench.bus.lag` (spec §20.8). It is always sent and optional on the way in (a previous version sends none).
  *
  * - **Ids only** (ADR-0013). Each kind has a fixed list of fields, all ids or closed values (a status, an edition),
  *   and the encoder copies those and nothing else: a scope, a name, an email or file content on the event never
@@ -29,7 +29,11 @@ const id = z.string().regex(/^[A-Za-z0-9_-]{1,128}$/);
 const tenantId = z.string().regex(CANONICAL_UUID);
 const holder = z.string().regex(CANONICAL_UUID);
 
-const envelope = { v: z.literal(BUS_VERSION), from: holder, at: z.number().int().nonnegative() };
+/**
+ * `at` is optional on the way in: an instance on the previous version sends none during a rolling upgrade, and its
+ * events must still be heard. Every payload this version encodes carries it.
+ */
+const envelope = { v: z.literal(BUS_VERSION), from: holder, at: z.number().int().nonnegative().optional() };
 
 /** Every kind's wire shape: what is copied out of an event and checked on the way back in. */
 const WIRE = {
@@ -145,7 +149,8 @@ const FIELDS: { readonly [K in AnnouncementKind]: readonly string[] } = {
 export type BusMessage = {
   readonly [K in AnnouncementKind]: {
     readonly from: string;
-    readonly at: number;
+    /** Absent from an instance on the previous version: no lag is recorded for it. */
+    readonly at?: number;
     readonly kind: K;
     readonly event: Omit<AnnouncementEvents[K], 'tenant'>;
   };
@@ -219,10 +224,10 @@ export function decode(payload: string): BusMessage | undefined {
   if (!checked.success) return undefined;
   const event: Record<string, unknown> = { ...checked.data };
   const from = event.from as string;
-  const at = event.at as number;
+  const at = event.at as number | undefined;
   delete event.v;
   delete event.from;
   delete event.at;
   delete event.kind;
-  return { from, at, kind: kind as AnnouncementKind, event } as BusMessage;
+  return { from, ...(at !== undefined ? { at } : {}), kind: kind as AnnouncementKind, event } as BusMessage;
 }
