@@ -335,7 +335,7 @@ export const scheduleRoutes =
         const results = await Promise.all(
           row.alerts.targets.map(async (target, index) => {
             try {
-              await env.deliver(target, payload);
+              await env.deliver(target, payload, request.tenant);
               return { index, kind: target.kind, ok: true };
             } catch (error) {
               return {

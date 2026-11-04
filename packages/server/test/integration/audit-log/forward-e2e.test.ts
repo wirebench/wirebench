@@ -152,9 +152,12 @@ describeDb('audit forwarding from a running server (issue #209)', () => {
       expect(await pass(timers)).toBe(backoff(1));
       expect(await queued(h, eventId)).toBe(1);
       expect(backoff(2)).not.toBe(FORWARD_IDLE_MS);
+      // The tenant's own backoff (spec §19.12 M1) is on the forwarder's clock: the timer fires once it is over.
+      h.clock.advance(backoff(1));
       expect(await pass(timers)).toBe(backoff(2));
       expect(await queued(h, eventId)).toBe(1);
       const r = await receiver(port);
+      h.clock.advance(backoff(2));
       expect(await pass(timers)).toBe(FORWARD_BUSY_MS);
       expect(received(r).map((e) => e.id)).toContain(eventId);
       expect(await queued(h)).toBe(0);

@@ -204,18 +204,24 @@ function reasonOf(error: unknown): string {
   return error instanceof Error ? `${error.name}: ${error.message}` : 'unknown error';
 }
 
-/** Sends one alert to one target; throws why it did not arrive. */
-export type DeliverAlert = (target: StoredAlertTarget, payload: AlertPayload) => Promise<void>;
+/** Sends one alert of `scope`'s tenant to one target; throws why it did not arrive. */
+export type DeliverAlert = (target: StoredAlertTarget, payload: AlertPayload, scope: TenantScope) => Promise<void>;
 
-/** Delivery over SMTP and HTTPS under the server's settings. `options` are for tests: a CA, a deadline. */
+/**
+ * Delivery over SMTP and HTTPS under the server's settings. `smtpFor` is the tenant's mail (hosted: its own SMTP,
+ * else the operator's, spec §22.12); without it, the server's. The rest of `options` are for tests: a CA, a deadline.
+ */
 export function alertDelivery(
   settings: Pick<SchedulesSettings, 'secretKey' | 'alertHosts' | 'smtp'>,
-  options: Pick<HttpsDeliveryOptions, 'ca' | 'timeoutMs' | 'egress'>,
+  options: Pick<HttpsDeliveryOptions, 'ca' | 'timeoutMs' | 'egress'> & {
+    readonly smtpFor?: (scope: TenantScope) => Promise<SchedulesSettings['smtp']>;
+  },
 ): DeliverAlert {
-  return async (target, payload) => {
+  return async (target, payload, scope) => {
     if (target.kind === 'email') {
-      if (settings.smtp === undefined) throw new Error('this server has no mail settings');
-      await sendAlertMail(settings.smtp, target.to, renderEmail(payload), options);
+      const smtp = options.smtpFor !== undefined ? await options.smtpFor(scope) : settings.smtp;
+      if (smtp === undefined) throw new Error('this server has no mail settings');
+      await sendAlertMail(smtp, target.to, renderEmail(payload), options);
       return;
     }
     const key = settings.secretKey;
@@ -361,7 +367,7 @@ export class AlertOutbox {
     try {
       // A target removed since the alert was queued gets nothing; one that took its place gets it.
       if (target === undefined) throw new Error('the alert target was removed');
-      await this.env.deliver(target, row.payload);
+      await this.env.deliver(target, row.payload, scope);
     } catch (error) {
       const attempts = row.attempts + 1;
       const message = messageOf(error);

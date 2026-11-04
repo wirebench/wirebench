@@ -32,6 +32,7 @@ import { workspaceById } from '../teams/repo.js';
 import { requireWorkspaceRole } from '../teams/roles.js';
 import { logEnded, logNotFound, offsetMismatch, recordingOff } from './errors.js';
 import * as repo from './repo.js';
+import type { TenantScope } from '../tenancy/scope.js';
 import type { TenantQuerier } from '../tenancy/tenant-db.js';
 import type { Tenancy } from '../tenancy/tenancy.js';
 
@@ -43,6 +44,8 @@ export interface SessionLogRoutesEnv {
   readonly now: () => Date;
   /** `WIREBENCH_SERVER_SESSION_LOG_MAX_MB`, in bytes. */
   readonly maxLogBytes: number;
+  /** The cap in `scope`'s tenant, when it is the tenant's setting (hosted); `maxLogBytes` otherwise. */
+  readonly maxLogBytesFor?: (scope: TenantScope) => Promise<number>;
 }
 
 /** A desktop user, not a CI token: the role guard lets a CI token through as a viewer of its own workspace. */
@@ -149,7 +152,8 @@ export const sessionLogRoutes =
           if (body.offset !== log.size) throw offsetMismatch();
           // Past the cap the log keeps what it has; the desktop is told, and stops sending.
           if (log.truncated) return { size: log.size, truncated: true };
-          const room = Math.max(0, env.maxLogBytes - log.size);
+          const cap = env.maxLogBytesFor === undefined ? env.maxLogBytes : await env.maxLogBytesFor(tx.scope);
+          const room = Math.max(0, cap - log.size);
           const kept = data.subarray(0, Math.min(room, SESSION_LOG_LIMITS.maxChunkBytes));
           const truncated = kept.length < data.length;
           await repo.appendChunk(tx, { logId: log.id, offset: log.size, data: kept, truncated, at: env.now() });

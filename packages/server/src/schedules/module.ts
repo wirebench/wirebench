@@ -85,7 +85,13 @@ export function schedulesModule(options: SchedulesOptions = {}): ServerModule {
         ...(options.execute !== undefined ? { execute: options.execute } : {}),
       });
       options.onScheduler?.(scheduler);
-      const deliver = options.deliver ?? alertDelivery(settings, { egress: ctx.egress });
+      // The tenant's own SMTP when it set one, else the operator's (spec §22.12).
+      const deliver =
+        options.deliver ??
+        alertDelivery(settings, {
+          egress: ctx.egress,
+          ...(ctx.config.mode === 'hosted' ? { smtpFor: (scope: TenantScope) => ctx.settings.smtp(scope) } : {}),
+        });
       const outbox = new AlertOutbox({ tenancy: ctx.tenancy, now, setTimer, log: ctx.log, license, deliver });
       options.onOutbox?.(outbox);
       scheduleRoutes({ tenancy: ctx.tenancy, hooks: ctx.hooks, license, settings, now, deliver })(app);
@@ -106,6 +112,10 @@ export function schedulesModule(options: SchedulesOptions = {}): ServerModule {
       const sweepers = [
         new CaptureSweeper({
           maxAgeDays: settings.maxAgeDays,
+          // Hosted, each tenant's own age, within the operator's (spec §22.12).
+          ...(ctx.config.mode === 'hosted'
+            ? { maxAgeDaysFor: async (scope: TenantScope) => (await ctx.settings.retention(scope)).schedulesMaxAgeDays }
+            : {}),
           now,
           setTimer,
           log: ctx.log,

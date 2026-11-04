@@ -9,6 +9,7 @@ import { local, type ServerContext, type ServerModule } from '../context.js';
 import type { SetTimer } from '../hooks/env.js';
 import { CaptureSweeper } from '../hooks/sweep.js';
 import { realTimer } from '../live/module.js';
+import type { TenantScope } from '../tenancy/scope.js';
 import type { TenantQuerier } from '../tenancy/tenant-db.js';
 import { isDefaultTenant } from '../tenancy/tenancy.js';
 import { chainKeys } from './chain/keys.js';
@@ -17,6 +18,7 @@ import { AuditSealer } from './chain/sealer.js';
 import { desktopEventsLimiter, desktopRoutes } from './desktop-routes.js';
 import { AuditForwarder } from './forward/forwarder.js';
 import { sinkFromConfig } from './forward/sink.js';
+import { TenantSinks } from './forward/tenant-sinks.js';
 import { auditHook } from './hook.js';
 import { licenseListener } from './license-listener.js';
 import { pendingWrites, type PendingWrites } from '../pending-writes.js';
@@ -42,9 +44,16 @@ export function auditLogModule(options: AuditLogOptions = {}): ServerModule {
     name: 'audit-log',
     migrationsDir: AUDIT_LOG_MIGRATIONS_DIR,
     async register(app: FastifyInstance, ctx: ServerContext): Promise<void> {
-      // Built first: a CA file that cannot be read refuses the start (ConfigError) before anything is wired.
-      const sink = await sinkFromConfig(ctx.config);
-      ctx.hooks.audit.push(auditHook(now, { forward: sink !== undefined }));
+      // Self-hosted, the environment's sink, the default tenant's; built first: a CA file that cannot be read refuses
+      // the start (ConfigError) before anything is wired. Hosted, each tenant's own, from its settings (spec §22.12).
+      const hosted = ctx.config.mode === 'hosted';
+      const sink = hosted ? undefined : await sinkFromConfig(ctx.config);
+      const tenantSinks = hosted ? new TenantSinks(ctx.settings, ctx.egress) : undefined;
+      ctx.hooks.audit.push(
+        auditHook(now, {
+          forward: tenantSinks !== undefined ? (tx) => tenantSinks.forwards(tx.scope) : sink !== undefined,
+        }),
+      );
       // Written after the license route answers: kept, so shutdown waits for them and a test can.
       const licenseWrites = pendingWrites();
       options.onLicenseWrites?.(licenseWrites);
@@ -73,6 +82,10 @@ export function auditLogModule(options: AuditLogOptions = {}): ServerModule {
       // unsealed rows, so a missing key never cuts a gap; each batch reads the anchor, which is cheap.
       const sweeper = new CaptureSweeper({
         maxAgeDays: ctx.config.auditMaxAgeDays,
+        // Hosted, each tenant's own age, within the operator's (spec §22.12).
+        ...(hosted
+          ? { maxAgeDaysFor: async (scope: TenantScope) => (await ctx.settings.retention(scope)).auditMaxAgeDays }
+          : {}),
         now,
         setTimer,
         log: ctx.log,
@@ -92,9 +105,19 @@ export function auditLogModule(options: AuditLogOptions = {}): ServerModule {
       });
       sweeper.start();
       const forwarder =
-        sink === undefined
+        sink === undefined && tenantSinks === undefined
           ? undefined
-          : new AuditForwarder({ tenancy: ctx.tenancy, sink, license: () => ctx.license, now, setTimer, log: ctx.log });
+          : new AuditForwarder({
+              tenancy: ctx.tenancy,
+              sinkFor:
+                tenantSinks !== undefined
+                  ? (scope) => tenantSinks.sinkFor(scope)
+                  : (scope) => Promise.resolve(isDefaultTenant(ctx.tenancy, scope) ? sink : undefined),
+              license: () => ctx.license,
+              now,
+              setTimer,
+              log: ctx.log,
+            });
       forwarder?.start();
       // Only with a chain key (audit-chain spec §3.2); without one nothing is built and no timer armed.
       const sealer =
@@ -109,6 +132,7 @@ export function auditLogModule(options: AuditLogOptions = {}): ServerModule {
         await sweeper.stop();
         await forwarder?.stop();
         await sink?.close();
+        await tenantSinks?.close();
       });
     },
   };

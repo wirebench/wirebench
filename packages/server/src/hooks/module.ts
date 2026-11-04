@@ -17,6 +17,7 @@ import { manageRoutes } from './routes/manage.js';
 import { publicRoutes } from './routes/public.js';
 import { hooksMetaOf, hooksSettings, type HooksSettings } from './settings.js';
 import { CaptureSweeper, captureSweepTarget } from './sweep.js';
+import type { TenantScope } from '../tenancy/scope.js';
 
 /** Beside `dist/`, like every module's migrations (`ServerModule.migrationsDir`). */
 export const HOOKS_MIGRATIONS_DIR = fileURLToPath(new URL('../../migrations/webhook-capture/', import.meta.url));
@@ -94,6 +95,10 @@ export function hooksModule(options: HooksOptions = {}): ServerModule {
       const sweeper = new CaptureSweeper({
         target: captureSweepTarget(ctx.tenancy),
         maxAgeDays: env.settings.maxAgeDays,
+        // Hosted, each tenant's own age, within the operator's (spec §22.12).
+        ...(ctx.config.mode === 'hosted'
+          ? { maxAgeDaysFor: async (scope: TenantScope) => (await ctx.settings.retention(scope)).hooksMaxAgeDays }
+          : {}),
         now,
         setTimer,
         log: ctx.log,
