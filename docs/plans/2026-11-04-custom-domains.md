@@ -35,7 +35,8 @@ ADR-0040; issue #830.
   `src/custom-domains/` and `src/tenancy/directory.ts`, which `check:tenant-scope` enforces.
 - **Shared files** get small, local edits: `tenancy/resolve.ts`, `tenancy/urls.ts`, `tenancy/slugs.ts`,
   `tenancy/directory.ts`, `modules.ts`, `config.ts`, `args.ts`, `main.ts`, the recipe, `CHANGELOG.md` and the spec
-  header line. Migration **0025** (slice 7 holds 0024). Merge main before each Part, and again whenever slice 5 or 7
+  header line. One migration, numbered at merge time: the next free version on main (`allMigrations` refuses gaps; 0023 if it
+  lands before slices 5 and 7 add theirs). Merge main before each Part, and again whenever slice 5 or 7
   merges.
 - **Gates.** `WIREBENCH_SKIP_PERF=1 pnpm check` green before each task's commit. One commit per task, as Mohammed
   Naami <m.naami@outlook.com>, with no trailers. `pnpm test:perf` before each push. Heavy commands under `nice`. No
@@ -70,11 +71,12 @@ ADR-0040; issue #830.
   list grants `custom-domains`, and one with an explicit list that leaves it out does not.
 - [ ] Implement. Check, commit.
 
-### Task 2: migration 0025
+### Task 2: the migration
 
 **Files:**
-- Create: `packages/server/migrations/custom-domains/0025_custom-domains.sql`, `packages/server/src/custom-domains/migrations.ts`.
-- Modify: `modules.ts` (register the module's migrations; the module itself comes in Task 7), `scripts/check-tenant-scope.ts`
+- Create: `packages/server/migrations/custom-domains/00NN_custom-domains.sql` (next free number),
+  `packages/server/src/custom-domains/migrations.ts`.
+- Modify: `serve.ts` (`allMigrations` loads the folder with the tenancy migrations, as it does slice 5's), `scripts/check-tenant-scope.ts`
   and its test (`tenant_hosts` only in `src/custom-domains/` and `src/tenancy/directory.ts`), the migration and role
   tests (`test/integration/tenancy/migration.test.ts`, `role.test.ts`: `tenant_hosts` in the global allowlist with
   its reason and grants), the upgrade checks that expect the latest migration (`upgrade-compose.test.ts`, any `0022`

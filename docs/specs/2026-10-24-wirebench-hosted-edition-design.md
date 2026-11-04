@@ -2579,7 +2579,7 @@ Owner rulings (2026-11-04, popup):
   tenant's chain: `custom-domain.claimed|verified|activated|failing|lapsed|paused|removed`. The token never appears in
   a log line or an audit event.
 
-### 23.3 Storage (migration 0025)
+### 23.3 Storage (one migration)
 
 - **`custom_domains`**, tenant-scoped under forced row-level security like every tenant table (§19.4):
   `tenant_id`, `name`, `token`, `state`, `created_by`, `created_at`, `checked_at`, `verified_at`, `active_at`,
@@ -2591,6 +2591,10 @@ Owner rulings (2026-11-04, popup):
   Only the custom-domains module writes it: the claim's own row, inside the tenant unit that changes the claim's
   state. `check:tenant-scope` keeps the table's name to `src/custom-domains/` and `src/tenancy/directory.ts` (the
   resolver's read), as it keeps `server_instances` to `src/operations/` (§20.2).
+- The migration takes the next free number when it merges: `allMigrations` refuses gaps across folders, so a
+  number claimed ahead of slices 5 and 7 cannot land first. Like slice 5's, it lives in a fixed folder
+  (`migrations/custom-domains/`) loaded with the tenancy migrations, since it calls `tenant_scope()`, and it runs in
+  every mode so the schema never depends on the edition.
 - Slice 7's deletion removes `custom_domains` with every tenant table, and the foreign key cascades to `tenant_hosts`.
 
 ### 23.4 Certificates and the proxy (amends §21.5)
