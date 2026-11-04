@@ -657,7 +657,7 @@ self-hosted teams on their own, which is why they would come first whenever the 
 | 2 | `browser-client` | **Built** (#785, #787 and #789, 2026-10-29, for #783; §17 records what changed from this row). The Vite browser build, `browser-bootstrap.ts`, capability discovery, the sign-in page and `browser_flows`, the cookie session, the server host with checkouts and per-user state via `inject`, live events over the host socket, user-scoped sealed secrets under one server-wide root, the §3.10 allowlist and path guard, the egress rule on every outbound connection | 1 | yes: a self-hosted team gets a browser tab |
 | 3 | `local-agent` | **Built** (#793, #795 and, for the agent hosts, #790, 2026-10-29; ADR-0035; §18 records what changed from this row). `packages/agent` as a library, the loopback socket transport, pairing with the browser subset, the send-route rule and the send bundle, `wirebench agent`, the agent's packaging | 1, 2 | yes |
 | 4 | `tenancy` | **Built** (#800, #805, #807, #811 and #812, 2026-11-02, for #798; §19 records what changed from this row). `tenants`, `tenant_id` on every table, forced row-level security, tenant resolution by `Host`, per-tenant directories and data keys with the one-time re-wrap, the six guards of §5.4 including the job scope, the host-instance lease, the self-hosted migration | 2 | yes, invisibly (one tenant) |
-| 5 | `operations` | **Built** (#828, #833 and #PART3, 2026-11-04, for #821; ADR-0037 accepted; §20 records what changed from this row). `LISTEN`/`NOTIFY` hub fan-out, advisory locks, sticky host sockets, per-tenant budgets, metrics by tenant id | 4 | partly (multi-instance self-hosted) |
+| 5 | `operations` | **Built** (#828, #833 and #836, 2026-11-04, for #821; ADR-0037 accepted; §20 records what changed from this row). `LISTEN`/`NOTIFY` hub fan-out, advisory locks, sticky host sockets, per-tenant budgets, metrics by tenant id | 4 | partly (multi-instance self-hosted) |
 | 6 | `domains` | **Built** (#825, #826 and #827, 2026-11-03, for #822; ADR-0038; §21 records what changed from this row). The two names as settings, the wildcard certificate in a Traefik recipe by DNS-01, the `app.` entry with emailed links, reserved slugs; the public suffix submission is an operator step for when a domain is registered | 4 | no |
 | 7 | `control-plane` | Signup, subscriptions, edition from subscription, suspension, export, deletion, operator commands; per-tenant settings (OIDC, SAML, SCIM, audit forwarding, SMTP sender, retention), today's environment variables becoming the default tenant's (§19.1, §19.12) | 4, 5, 6 | no |
 | 8 | `custom-domains` | CNAME plus TXT verification for Enterprise tenants; §23 records the design (#830, ADR-0040): a second full name that becomes the primary, a CNAME to `custom.<app-domain>`, one per tenant, an HTTP-01 certificate per name through Traefik's HTTP provider | 6, 7 | no |
@@ -2061,7 +2061,7 @@ Owner rulings (popup, 2026-11-03):
    and the host lease stays the guard (§20.5).
 5. **Terminal shares cross instances through a node-to-node relay** (§20.6).
 
-Built in #828, #833 and #PART3 (2026-11-04). The sections below record the build where it differs from the design
+Built in #828, #833 and #836 (2026-11-04). The sections below record the build where it differs from the design
 first written here. Owner rulings taken during the build (popup, 2026-11-04):
 
 6. **Every request inside a run counts.** A run, a sequence or a send to several environments spends one token per

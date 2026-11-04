@@ -1,6 +1,6 @@
 # ADR-0037: server instances share state through PostgreSQL, and only shares cross between them directly
 
-Date: 2026-11-03 · Status: accepted (2026-11-04, built in #828, #833 and #PART3) · Design: `docs/specs/2026-10-24-wirebench-hosted-edition-design.md` §5.5, §6,
+Date: 2026-11-03 · Status: accepted (2026-11-04, built in #828, #833 and #836) · Design: `docs/specs/2026-10-24-wirebench-hosted-edition-design.md` §5.5, §6,
 §20 · Issue: #776, slice 5 #821 · Amends: [ADR-0009](0009-wirebench-server-is-a-fastify-postgres-process.md),
 [ADR-0013](0013-live-updates-use-an-in-process-hub.md)
 
