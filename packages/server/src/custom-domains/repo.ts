@@ -19,6 +19,8 @@ export interface LastResult {
   readonly txt: RecordVerdict;
   /** The certificate probe's verdict (Part C), once the name is held. */
   readonly certificate?: RecordVerdict;
+  /** When the certificate probe last ran, ISO 8601: a verified name is probed every 2 minutes (spec §23.4). */
+  readonly probedAt?: string;
   /** Both records passed, but another tenant holds the name: the claim stays where it was (spec §23.1). */
   readonly heldElsewhere?: true;
   readonly message: string;

@@ -276,6 +276,8 @@ const inputSchema = z.object({
   dnsServers: dnsServersText.optional(),
   proxyListen: hostPortText.optional(),
   proxyTokenFile: z.string().min(1).optional(),
+  proxyTlsAddress: hostPortText.optional(),
+  proxyTlsCaFile: z.string().min(1).optional(),
 });
 
 type ConfigKey = keyof z.input<typeof inputSchema>;
@@ -807,6 +809,21 @@ export const CONFIG_VARIABLES: readonly ConfigVariable[] = [
     description:
       'A file holding the bearer token every request to the proxy listener must carry; required when WIREBENCH_SERVER_PROXY_LISTEN is set. Read at start-up, never logged.',
   },
+  {
+    env: 'WIREBENCH_SERVER_PROXY_TLS_ADDRESS',
+    key: 'proxyTlsAddress',
+    required: false,
+    secret: false,
+    description:
+      'Hosted mode only: `host:port` where the proxy terminates TLS (`traefik:443` in the recipe). A verified custom domain becomes active once a certificate for it, trusted and covering the name, answers there. Unset, a verified domain waits. Unused on a self-hosted server.',
+  },
+  {
+    env: 'WIREBENCH_SERVER_PROXY_TLS_CA_FILE',
+    key: 'proxyTlsCaFile',
+    required: false,
+    secret: false,
+    description: 'A PEM bundle that replaces the system roots for that check: for a test CA only, never in production.',
+  },
 ];
 
 /** One thing wrong with the environment, phrased without the offending value. */
@@ -977,6 +994,12 @@ export function loadConfig(env: NodeJS.ProcessEnv, version: string): ServerConfi
     problems.push({
       variable: 'WIREBENCH_SERVER_PROXY_TOKEN_FILE',
       message: 'is required when WIREBENCH_SERVER_PROXY_LISTEN is set: every request to that listener needs the token',
+    });
+  }
+  if (config.proxyTlsCaFile !== undefined && config.proxyTlsAddress === undefined) {
+    problems.push({
+      variable: 'WIREBENCH_SERVER_PROXY_TLS_CA_FILE',
+      message: 'is set but WIREBENCH_SERVER_PROXY_TLS_ADDRESS is not; set the address or unset the CA file',
     });
   }
   if (config.instances === 'multi' && config.instanceUrl === undefined) {

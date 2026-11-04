@@ -72,6 +72,8 @@ database, one data directory; run it behind TLS. Design: `docs/specs/2026-09-24-
 | `WIREBENCH_SERVER_DNS_SERVERS` | no | — | Hosted mode only: the DNS servers that check a team’s custom domain, as IP addresses with an optional port, comma-separated (`192.0.2.53, [2001:db8::53]:53`). Unset, the system’s resolver. Unused on a self-hosted server. |
 | `WIREBENCH_SERVER_PROXY_LISTEN` | no | — | Hosted mode only: `host:port` of a second, internal listener that tells the proxy which custom domains to route and get certificates for (`GET /proxy/traefik`, and `/healthz`). Never publish it. Unset, no such listener. Unused on a self-hosted server. |
 | `WIREBENCH_SERVER_PROXY_TOKEN_FILE` | no | — | A file holding the bearer token every request to the proxy listener must carry; required when WIREBENCH_SERVER_PROXY_LISTEN is set. Read at start-up, never logged. |
+| `WIREBENCH_SERVER_PROXY_TLS_ADDRESS` | no | — | Hosted mode only: `host:port` where the proxy terminates TLS (`traefik:443` in the recipe). A verified custom domain becomes active once a certificate for it, trusted and covering the name, answers there. Unset, a verified domain waits. Unused on a self-hosted server. |
+| `WIREBENCH_SERVER_PROXY_TLS_CA_FILE` | no | — | A PEM bundle that replaces the system roots for that check: for a test CA only, never in production. |
 <!-- config:end -->
 <!-- prettier-ignore-end -->
 
