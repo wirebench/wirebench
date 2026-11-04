@@ -32,12 +32,15 @@ import type { Database } from './db/querier.js';
 import { loadMigrations, migrate, MIGRATIONS_DIR, pendingMigrations, type Migration } from './db/migrate.js';
 import { APPLICATION_NAME, createDatabase, createLockPool, openSession } from './db/pool.js';
 import { BusSignals, NotificationBus } from './operations/bus.js';
+import { startMetrics, type StartMetricsOptions } from './operations/metrics/sdk.js';
 import { DatabaseRepoLock, guardGit, REPO_LOCK_POOL_MAX, REPO_LOCK_WAIT_MS } from './operations/repo-lock.js';
 import { checkAppRole, checkControlRole, checkPostgresVersion } from './tenancy/checks.js';
 import { openControlDb, type ControlDb } from './control-plane/control-db.js';
 import { withControlPool } from './control-plane/module.js';
 import { allowsMultipleInstances, drainWithin, InstanceRegistry, licenseLapseWatch } from './operations/instances.js';
+import { InternalServer } from './operations/internal-server.js';
 import { limiterSweep } from './operations/limiter.js';
+import { relayKey } from './operations/relay-token.js';
 import { OPERATIONS_MIGRATIONS_DIR } from './operations/migrations.js';
 import { realTimer } from './live/module.js';
 import { STOP_PASS } from './tenancy/jobs.js';
@@ -109,6 +112,8 @@ export interface StartOptions {
   readonly now?: () => number;
   /** How a lost running lock is retried (spec §19.10); tests shorten it. */
   readonly runningLock?: Pick<RunningLockOptions, 'retakeWindowMs' | 'retryDelayMs' | 'heartbeatMs' | 'open'>;
+  /** Test only: the metrics are collected into this reader, with no OTLP endpoint set (spec §20.8). */
+  readonly metricsReader?: StartMetricsOptions['reader'];
 }
 
 /**
@@ -632,6 +637,28 @@ export async function startServer(
     );
   // Logged through `appLog` once the app's logger exists; nothing beats before `start`, which comes after it.
   const appLog: { warn?: (details: Record<string, unknown>, message: string) => void } = {};
+  // The process's id (spec §19.9, §20.2): its instance row, its host leases and its metrics' `service.instance.id`.
+  const holder = randomUUID();
+  // Spec §20.8: the SDK starts only when an OTLP endpoint is set; otherwise every instrument is a no-op.
+  let metricsHandle: Awaited<ReturnType<typeof startMetrics>>;
+  try {
+    metricsHandle = await startMetrics(
+      env,
+      { holder, version: config.version },
+      {
+        ...(options.metricsReader !== undefined ? { reader: options.metricsReader } : {}),
+        warn: (message, error) => appLog.warn?.({ err: error }, message),
+      },
+    );
+  } catch (error) {
+    return fail(
+      new StartupError(
+        ExitCode.Config,
+        `the metrics could not start: ${error instanceof Error ? error.message : String(error)}`,
+      ),
+    );
+  }
+  const { metrics } = metricsHandle;
   // The repository lock (spec §20.4) on the running lock's URL, a direct connection like the bus's: a transaction
   // pooler would hand a session's advisory lock to someone else. A pool opens no connection until the first lock.
   const lockPool = createLockPool(migrationUrl, {
@@ -646,13 +673,15 @@ export async function startServer(
     lock: new DatabaseRepoLock({
       pool: lockPool,
       warn: (error, message) => appLog.warn?.({ err: error }, message),
+      waited: (tenantId, ms) => {
+        metrics.repoLockWait(tenantId, ms);
+      },
     }),
   });
   const instances = instanceModeOf(config);
-  // The process's id (spec §19.9, §20.2): its instance row and its host leases share it.
   const registry = new InstanceRegistry({
     db,
-    holder: randomUUID(),
+    holder,
     mode: instances,
     ...(config.instanceUrl !== undefined ? { url: config.instanceUrl } : {}),
     version: config.version,
@@ -663,6 +692,18 @@ export async function startServer(
   });
   // The modules register on these before the bus exists; the bus is attached to them once made.
   const busSignals = new BusSignals();
+  // The internal listener (spec §20.6), `multi` only: `loadConfig` requires the URL and the secrets key there. A hosted
+  // configuration built without either has no relay, as `single` has none: every share is then its holder's alone.
+  const internal =
+    instances === 'multi' && config.instanceUrl !== undefined && config.secretsKey !== undefined
+      ? new InternalServer({
+          url: config.instanceUrl,
+          ...(config.internalHost !== undefined ? { bindHost: config.internalHost } : {}),
+          holder: registry.holder,
+          key: relayKey(config.secretsKey),
+          scopeFor: async (tenantId) => (await directoryOf(tenancy).get(tenantId))?.scope,
+        })
+      : undefined;
   const ctx: ServerContext = {
     // A copy without the database URLs (Part A review): `ModuleConfig` drops them from the type, this from the object.
     config: moduleConfigOf(config),
@@ -675,6 +716,8 @@ export async function startServer(
     hooks: serverHooks(),
     instance: registry,
     bus: busSignals,
+    ...(internal !== undefined ? { relay: internal } : {}),
+    metrics,
     license: permissiveLicense(),
   };
   let app: FastifyInstance;
@@ -754,8 +797,16 @@ export async function startServer(
     open: () => openSession(migrationUrl, { applicationName: BUS_APPLICATION_NAME }),
     scopeFor: async (tenantId) => (await directoryOf(tenancy).get(tenantId))?.scope,
     log: app.log,
+    lag: (ms) => {
+      metrics.busLag(ms);
+    },
   });
   busSignals.attach(bus);
+  // Read at each collection only, so with no endpoint nothing is ever read (spec §20.8).
+  metrics.observe('busDropped', () => bus.stats().dropped);
+  metrics.observe('poolWaiting', () => ({ app: db.waiting?.() ?? 0, lock: lockPool.waiting() }));
+  // A test's start-up without 0022 has no instance table to count.
+  if (tenantsLoaded) metrics.observe('instances', async () => (await registry.live()).length);
   // `/readyz` follows the bus (spec §20.9): not ready while it reconnects.
   registry.watchBus(busSignals);
   try {
@@ -790,6 +841,25 @@ export async function startServer(
       `cannot listen on ${config.host}:${config.port}${typeof code === 'string' ? ` (${code})` : ''}`,
     );
   }
+  // After the public listener, so a relayed viewer never reaches an instance that is not serving yet.
+  try {
+    await internal?.start(app.log);
+  } catch (error) {
+    await app.close();
+    await internal?.close();
+    await bus.stop(0);
+    await registry.stop();
+    // Opened at start-up as on every other path past it: nothing may hold the process open (review).
+    await metricsHandle.shutdown(0);
+    await lockPool.close();
+    await heldLock.release();
+    await db.close();
+    const code = (error as { readonly code?: unknown }).code;
+    throw new StartupError(
+      ExitCode.Config,
+      `cannot listen on WIREBENCH_SERVER_INSTANCE_URL's port${typeof code === 'string' ? ` (${code})` : ''}`,
+    );
+  }
   const address = app.server.address();
   const port = typeof address === 'object' && address !== null ? address.port : config.port;
   app.log.info({ publicUrl: operatorPublicUrl(config), port, modules: modules.map((m) => m.name) }, 'listening');
@@ -821,6 +891,8 @@ export async function startServer(
       sweep.unref();
       try {
         await app.close(); // stops accepting and waits for in-flight requests
+        // After the app: its shares ended at its close and told their relayed viewers; then the last relays go.
+        await internal?.close();
       } finally {
         clearInterval(sweep);
         clearTimeout(timer);
@@ -830,6 +902,8 @@ export async function startServer(
       // work (a push looks up its author and writes commits), so the pool outlives that work. From
       // here on, new repository work is refused with server-shutting-down.
       if (!lost) await repos.drain();
+      // The last numbers, bounded (`METRICS_FLUSH_MS`), while the pools they read are still open.
+      await metricsHandle.shutdown(lost ? 0 : undefined);
       // Every lock is released by now. Without the running lock, nothing is waited for: the pool ends as each
       // operation still running returns its connection, and the process exits regardless.
       if (lost) void lockPool.close().catch(() => undefined);

@@ -57,8 +57,9 @@ const keyText = z
   );
 
 /**
- * This instance's private address (spec §20.6): `http(s)://host:port`, an origin with its port spelled out, since the
- * port is the internal listener's.
+ * This instance's private address (spec §20.6): `http://host:port`, an origin with its port spelled out, since the
+ * port is the internal listener's. The internal listener speaks plain HTTP, so `https://` is refused rather than
+ * dialled and failing: the private network is the transport's guard.
  */
 const instanceUrlText = z.string().superRefine((value, ctx) => {
   const fail = (message: string) => {
@@ -66,8 +67,11 @@ const instanceUrlText = z.string().superRefine((value, ctx) => {
   };
   if (!URL.canParse(value)) return fail('must be a URL such as http://host:8091');
   const url = new URL(value);
-  if (url.protocol !== 'http:' && url.protocol !== 'https:')
-    return fail('must be http://host:port or https://host:port');
+  if (url.protocol === 'https:')
+    return fail(
+      'must be http://host:port: the internal listener speaks plain HTTP on the private network, which is its transport guard',
+    );
+  if (url.protocol !== 'http:') return fail('must be http://host:port');
   if (url.hostname === '') return fail('must name a host');
   if (url.username !== '' || url.password !== '') return fail('must not carry credentials');
   if (url.port === '') return fail('must name a port: the internal listener’s, such as http://host:8091');
@@ -220,6 +224,7 @@ const inputSchema = z.object({
   hostIdleMinutes: integerText(1, 1440, '30'),
   instances: z.enum(INSTANCE_MODES).default('single'),
   instanceUrl: instanceUrlText.optional(),
+  internalHost: z.string().min(1).optional(),
   tenantSendsPerMinute: integerText(1, 1_000_000, '600'),
   tenantConcurrentSends: integerText(1, 10_000, '16'),
   // Unset, the schedules concurrency (below, in `loadConfig`): one tenant keeps every slot its server has.
@@ -678,7 +683,7 @@ export const CONFIG_VARIABLES: readonly ConfigVariable[] = [
     required: false,
     secret: true,
     description:
-      'Encrypts at rest the secrets each user stores through the browser client, under a key per user derived from this one: 32 random bytes, base64-encoded (`openssl rand -base64 32`). Required when WIREBENCH_SERVER_BROWSER_CLIENT is on.',
+      'Encrypts at rest the secrets each user stores through the browser client, under a key per user derived from this one: 32 random bytes, base64-encoded (`openssl rand -base64 32`). Required when WIREBENCH_SERVER_BROWSER_CLIENT is on, and with `WIREBENCH_SERVER_INSTANCES=multi`, where every instance needs the same key: the instances sign the terminal-share relay between them with a key derived from it.',
   },
   {
     env: 'WIREBENCH_SERVER_EGRESS_DENY_PRIVATE',
@@ -705,7 +710,7 @@ export const CONFIG_VARIABLES: readonly ConfigVariable[] = [
     defaultText: 'single',
     secret: false,
     description:
-      '`single`: one server process. `multi`: several instances against one database and one data volume, which needs an Enterprise license that is valid or in grace (the start is refused otherwise) and WIREBENCH_SERVER_INSTANCE_URL.',
+      '`single`: one server process. `multi`: several instances against one database and one data volume, which needs an Enterprise license that is valid or in grace (the start is refused otherwise), WIREBENCH_SERVER_INSTANCE_URL and WIREBENCH_SERVER_SECRETS_KEY.',
   },
   {
     env: 'WIREBENCH_SERVER_INSTANCE_URL',
@@ -713,7 +718,15 @@ export const CONFIG_VARIABLES: readonly ConfigVariable[] = [
     required: false,
     secret: false,
     description:
-      'This instance’s private address, which the other instances reach it at: `http://host:port`, such as `http://10.0.0.5:8091`; the port is its internal listener’s. Required with `WIREBENCH_SERVER_INSTANCES=multi`.',
+      'This instance’s private address, which the other instances reach it at: `http://host:port`, such as `http://10.0.0.5:8091`; the port is its internal listener’s, which speaks plain HTTP, so `https://` is refused. Required with `WIREBENCH_SERVER_INSTANCES=multi`.',
+  },
+  {
+    env: 'WIREBENCH_SERVER_INTERNAL_HOST',
+    key: 'internalHost',
+    required: false,
+    secret: false,
+    description:
+      'The address the internal listener binds, in place of the one taken from `WIREBENCH_SERVER_INSTANCE_URL` (its host when an IP address or `localhost`, every IPv4 interface for a DNS name). Its port stays the URL’s. If the port is reachable from outside the private network, the relay token is the only guard.',
   },
   {
     env: 'WIREBENCH_SERVER_TENANT_SENDS_PER_MINUTE',
@@ -946,6 +959,13 @@ export function loadConfig(env: NodeJS.ProcessEnv, version: string): ServerConfi
       variable: 'WIREBENCH_SERVER_INSTANCE_URL',
       message:
         'is required when WIREBENCH_SERVER_INSTANCES is multi: the address the other instances reach this one at',
+    });
+  }
+  if (config.instances === 'multi' && config.secretsKey === undefined) {
+    problems.push({
+      variable: 'WIREBENCH_SERVER_SECRETS_KEY',
+      message:
+        'is required when WIREBENCH_SERVER_INSTANCES is multi: the instances sign the share relay with a key derived from it, so every instance needs the same one',
     });
   }
   if (!config.localAuth && config.oidcIssuer === undefined && config.samlIdpMetadata === undefined) {

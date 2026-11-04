@@ -70,10 +70,12 @@ function setup() {
   const timers: { fn: () => void; ms: number; cancelled: boolean }[] = [];
   const audits: ShareAuditEvent[] = [];
   const access = new Map<string, boolean>();
+  const ended: { tenantId: string; shareId: string }[] = [];
   let next = 0;
   const registry = new ShareRegistry({
     canView: (userId) => Promise.resolve(access.get(userId) ?? true),
     audit: (event) => audits.push(event),
+    ended: (tenant, shareId) => ended.push({ tenantId: tenant.tenantId, shareId }),
     newShareId: () => `share${String(next++).padStart(21, 'a')}`,
     now: () => clock,
     setTimer: (fn, ms) => {
@@ -103,6 +105,7 @@ function setup() {
     shareId,
     owner,
     audits,
+    ended,
     actions,
     access,
     timers,
@@ -129,6 +132,16 @@ describe('ReplayBuffer', () => {
 });
 
 describe('ShareRegistry (team sessions spec B1)', () => {
+  it('says once when a share ends, whatever ended it, so its location row goes (hosted spec §20.6)', () => {
+    const s = setup();
+    s.attachOwner();
+    expect(s.ended).toEqual([]);
+    s.registry.message(s.owner, { type: 'end' });
+    s.registry.closeAll();
+    s.registry.detach(s.owner);
+    expect(s.ended).toEqual([{ tenantId: TENANT.tenantId, shareId: s.shareId }]);
+  });
+
   it('starts a share, attaches the owner and refuses a second owner socket', () => {
     const s = setup();
     expect(s.attachOwner()).toBe('owner');

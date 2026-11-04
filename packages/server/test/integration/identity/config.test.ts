@@ -103,7 +103,11 @@ describeDb('identity module boot', () => {
     const code = await main(['config', 'check'], {
       stdout,
       stderr: { write: vi.fn() },
-      env: env({ WIREBENCH_SERVER_INSTANCES: 'multi', WIREBENCH_SERVER_INSTANCE_URL: 'http://10.0.0.5:8091' }),
+      env: env({
+        WIREBENCH_SERVER_INSTANCES: 'multi',
+        WIREBENCH_SERVER_INSTANCE_URL: 'http://10.0.0.5:8091',
+        WIREBENCH_SERVER_SECRETS_KEY: Buffer.alloc(32, 7).toString('base64'),
+      }),
     });
     expect(code).toBe(0);
     const text = stdout.write.mock.calls.map((c) => String(c[0])).join('');

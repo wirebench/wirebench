@@ -15,7 +15,8 @@
  *     list repeats (package split spec §6.4) — these are resolved at runtime
  *     from `node_modules` inside the asar. An optional package built for one platform and CPU (a
  *     prebuilt binding such as `@lydell/node-pty-linux-x64`) is covered by the package requiring it.
- *   * `packages/server`'s `dependencies`, transitively — the container image ships them. The server's
+ *   * `packages/server`'s `dependencies`, transitively — the container image ships them, the OpenTelemetry metrics
+ *     SDK included (hosted spec §20.8), which is installed whether or not an operator sets an endpoint. The server's
  *     `dist/host/bundle.js` also carries the host's and `@wirebench/ssh`'s pure-JS dependencies (yaml,
  *     the GraphQL language service, ssh2). The host's are desktop `dependencies` too
  *     (`scripts/host-dependencies.test.ts`) and ssh's are a root of their own, so both are covered below.

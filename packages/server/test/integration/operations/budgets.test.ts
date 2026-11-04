@@ -13,6 +13,9 @@ import { SENDS_BUCKET, SendBudgets, sendsBucket, type SendBudgetSettings } from 
 import { scopeOf, type TenantScope } from '../../../src/tenancy/scope.js';
 import { tenantDbFactory, type TenantDbFactory } from '../../../src/tenancy/tenant-db.js';
 import { describeDb, testDatabase, type TestDatabase } from '../../helpers/database.js';
+import { collect, collectingMetrics, sweep } from '../../helpers/metrics.js';
+import { BUDGET, OUTCOME, TENANT } from '../../../src/operations/metrics/attributes.js';
+import { INSTRUMENTS } from '../../../src/operations/metrics/instruments.js';
 
 const DEFAULTS: SendBudgetSettings = { sendsPerMinute: 600, concurrentSends: 16 };
 const T0 = Date.parse('2026-11-04T12:00:00.000Z');
@@ -158,6 +161,47 @@ describeDb('the per-tenant send budgets (hosted spec §20.7)', () => {
       },
     });
     expect(served).toBe(6);
+  });
+
+  it('counts each charged send by outcome and each refusal by budget, in its tenant (spec §20.8)', async () => {
+    const scope = await tenant();
+    const { handle, reader } = await collectingMetrics(randomUUID());
+    // A burst of one, and one slot.
+    const budgets = new SendBudgets({
+      db: a,
+      settings: { sendsPerMinute: 6, concurrentSends: 1 },
+      now: () => T0,
+      metrics: handle.metrics,
+    });
+    const frame = (id: number) => ({ id, channel: 'request.send', request: {} });
+    const failed = (id: number): Promise<HostReplyFrame> =>
+      Promise.resolve({ id, ok: false, error: { code: 'send-failed', message: 'no route to host' } });
+    // An uncharged channel counts nothing.
+    await budgets.around(scope, { id: 0, channel: 'request.route', request: {} }, () => failed(0));
+    // A send that could not be made, then the bucket is empty.
+    await budgets.around(scope, frame(1), () => failed(1));
+    await budgets.around(scope, frame(2), () => failed(2));
+    // A slot held elsewhere: refused for concurrency.
+    const held = await budgets.take(scope, { token: false });
+    await budgets.around(scope, frame(3), () => failed(3));
+    if (held.ok) await held.release();
+    const { points } = await collect(reader);
+    expect(sweep(points)).toEqual([]);
+    const byOutcome = (points.get(INSTRUMENTS.sends) ?? []).map((p) => [
+      p.attributes[TENANT],
+      p.attributes[OUTCOME],
+      p.value,
+    ]);
+    expect(byOutcome).toEqual([
+      [scope.tenantId, 'failed', 1],
+      [scope.tenantId, 'refused', 2],
+    ]);
+    const byBudget = (points.get(INSTRUMENTS.budgetRefusals) ?? []).map((p) => [p.attributes[BUDGET], p.value]);
+    expect(byBudget).toEqual([
+      ['sends', 1],
+      ['concurrency', 1],
+    ]);
+    await handle.shutdown();
   });
 
   it('takes the slot first: a send refused for concurrency spends no token', async () => {

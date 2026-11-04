@@ -4,6 +4,12 @@
 - Date: 2026-09-24
 - Context: issue #74; `docs/specs/2026-09-24-wirebench-server-host-design.md`; builds on ADR-0008
   (shared workspaces are git repositories), whose `ServerBackend` this server will answer
+- Amended: 2026-11-04 by the hosted edition spec §20 (slice 5, §20.12;
+  [ADR-0037](0037-server-instances-share-state-through-postgresql.md)): `RepoStore.withLock` takes a PostgreSQL
+  advisory lock per workspace behind the in-process queue, on a lock pool of its own; the rate limiters live in
+  PostgreSQL (`limiter_buckets`), except the `app.` entry's, which runs before a tenant exists; the live hub fans out
+  through `LISTEN`/`NOTIFY`. A server may run as several instances: hosted always, self-hosted on an Enterprise
+  license by opting in with `WIREBENCH_SERVER_INSTANCES=multi`. "One replica per installation" no longer holds.
 
 ## Context
 

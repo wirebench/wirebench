@@ -446,9 +446,11 @@ jobs:
           export WIREBENCH_E2E_SECRETS_KEY
           "${compose[@]}" up -d --no-build --wait
           if [ "$START" = migrated ]; then
-            # The upgrade finished: schema 22, the move and the re-seal done, and queries as wirebench_app.
+            # The upgrade finished: the latest schema (the highest migration on disk), the move and the re-seal
+            # done, and queries as wirebench_app.
             sql() { "${compose[@]}" exec -T db psql -U wirebench -d wirebench -tAc "$1"; }
-            test "$(sql 'select max(version) from schema_migrations')" = 22
+            latest="$(ls packages/server/migrations/*/*.sql | sed -E 's#.*/0*([0-9]+)_[^/]*\.sql$#\1#' | sort -n | tail -1)"
+            test "$(sql 'select max(version) from schema_migrations')" = "$latest"
             test "$(sql 'select tenancy_step from server_identity')" = 'done'
             test "$(sql "select count(*) from pg_stat_activity where usename = 'wirebench_app'")" -gt 0
           fi
