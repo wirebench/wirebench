@@ -21,6 +21,7 @@ import { problem } from '../problem.js';
 import type { TenantDbFactory } from '../tenancy/tenant-db.js';
 import { DAY_MS, GRACE_DAYS } from './billing/sweep.js';
 import type { ExportRow, ExportRunner } from './export/runner.js';
+import { mailDeletionRequested, type DeletionMailDeps } from './deletion-mail.js';
 import type { TenantLifecycle } from './tenants.js';
 
 export interface TenantRoutesDeps {
@@ -31,6 +32,8 @@ export interface TenantRoutesDeps {
   /** Hosted mode only: the billing and deletion routes are not registered without it. */
   readonly lifecycle?: TenantLifecycle;
   readonly now: () => Date;
+  /** The deletion request's mail to every server admin (spec §22.11). */
+  readonly deletionMail: Omit<DeletionMailDeps, 'db' | 'log'>;
 }
 
 function exportView(row: ExportRow) {
@@ -183,6 +186,13 @@ export function tenantRoutes(deps: TenantRoutesDeps) {
       }
       const actor = { source: auditSource(request), by: request.caller!.id };
       const row = await lifecycle.requestDeletion(request.tenant.slug, actor);
+      if (row?.deletingAt !== undefined && row.deletingAt !== null) {
+        await mailDeletionRequested({ ...deps.deletionMail, db: deps.db, log: request.log }, request.tenant, {
+          teamName: row.name,
+          deletingAt: row.deletingAt,
+          by: request.caller!.email,
+        });
+      }
       const current = row ?? (await lifecycle.current(request.tenant.tenantId));
       return reply.code(202).send({
         deletion: { requestedAt: iso(current?.deletionRequestedAt), deletingAt: iso(current?.deletingAt) },

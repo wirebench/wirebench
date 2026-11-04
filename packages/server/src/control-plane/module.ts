@@ -191,6 +191,7 @@ export function controlPlaneModule(options: ControlPlaneOptions = {}): ServerMod
         db: ctx.tenancy.db,
         runner: runnerOf(ctx),
         hooks: ctx.hooks,
+        deletionMail: { config: ctx.config, mail: mailOf(ctx, options) },
         ...(control !== undefined ? { lifecycle: lifecycleOf(ctx, control) } : {}),
         now: options.now ?? (() => new Date()),
       })(app);

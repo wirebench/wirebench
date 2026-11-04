@@ -40,6 +40,8 @@ import type { TenantScope } from '../tenancy/scope.js';
 import { createTenancy, isDefaultTenant, shareTenancyCaches, type Tenancy } from '../tenancy/tenancy.js';
 import { tenantUrl } from '../tenancy/urls.js';
 import { openControlDb, type ControlDb } from './control-db.js';
+import { mailDeletionRequested } from './deletion-mail.js';
+import type { ControlSend } from './mail.js';
 import { writeExport } from './export/export.js';
 import { importHosted, importSelfHosted, type ImportDeps, type ImportReport } from './export/import.js';
 import { REDIRECT_DAYS, TenantLifecycle, type TenantListing } from './tenants.js';
@@ -61,6 +63,8 @@ export interface AdminTenantOptions {
   /** A hosted configuration, which `loadConfig` refuses until Part H (spec §22.1); the bin passes nothing. */
   readonly configure?: (config: ServerConfig) => ServerConfig;
   readonly mail?: InvitationMail;
+  /** How the deletion request's mail goes to every server admin; the operator's SMTP by default. */
+  readonly send?: ControlSend;
 }
 
 const HOSTED_ONLY =
@@ -277,6 +281,28 @@ export async function runAdminTenant(
           return ExitCode.Ok;
         }
         const row = await lifecycle.requestDeletion(command.slug);
+        if (row?.deletingAt !== undefined && row.deletingAt !== null) {
+          const smtp =
+            config.smtpUrl !== undefined && config.smtpFrom !== undefined
+              ? { url: config.smtpUrl, from: config.smtpFrom }
+              : undefined;
+          await mailDeletionRequested(
+            {
+              db: tenancy.db,
+              config,
+              log,
+              mail:
+                smtp === undefined
+                  ? undefined
+                  : {
+                      send: options.send ?? ((to, mail) => sendAlertMail(smtp, to, mail)),
+                      mailHost: smtpHost(smtp.url),
+                    },
+            },
+            await lifecycle.tenantScope(row.id),
+            { teamName: row.name, deletingAt: row.deletingAt, by: 'the operator' },
+          );
+        }
         io.stdout.write(
           row === undefined
             ? `The deletion of ${command.slug} was already asked for\n`

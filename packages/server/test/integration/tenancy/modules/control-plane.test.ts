@@ -8,6 +8,7 @@ import { mkdir, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { auditHook } from '../../../../src/audit-log/hook.js';
+import type { ControlMail } from '../../../../src/control-plane/mail.js';
 import { controlPlaneModule } from '../../../../src/control-plane/module.js';
 import { tenantRoot } from '../../../../src/tenancy/paths.js';
 import { ensureControlRole } from '../../../../src/tenancy/roles.js';
@@ -38,8 +39,20 @@ describeDb('the tenant routes, two tenants (spec §22.9, §22.11)', () => {
   let adminA: SignedInUser;
   let adminB: SignedInUser;
   let memberA: SignedInUser;
+  const sent: { to: readonly string[]; mail: ControlMail }[] = [];
   beforeAll(async () => {
-    t = await twoTenants({ modules: () => [controlPlaneModule({ startLoop: false })] });
+    t = await twoTenants({
+      env: { WIREBENCH_SERVER_SMTP_URL: 'smtp://mail.test:2525', WIREBENCH_SERVER_SMTP_FROM: 'wirebench@mail.test' },
+      modules: () => [
+        controlPlaneModule({
+          startLoop: false,
+          send: (to, mail) => {
+            sent.push({ to, mail });
+            return Promise.resolve();
+          },
+        }),
+      ],
+    });
     await ensureControlRole(t.h.db.owner, t.h.db.controlUrl, t.h.db.url);
     // The audit module is not in this server: its hook records what the routes audit.
     t.h.hooks.audit.push(auditHook(() => new Date()));
@@ -157,6 +170,11 @@ describeDb('the tenant routes, two tenants (spec §22.9, §22.11)', () => {
       slug: 'beta',
     });
     expect(asked.status).toBe(202);
+    // Every server admin of B is told, and nobody of A.
+    expect(sent).toHaveLength(1);
+    expect(sent[0]!.to).toEqual(['admin@beta.example']);
+    expect(sent[0]!.mail.subject).toMatch(/^The Wirebench team beta will be deleted on \d{4}-\d{2}-\d{2}$/);
+    expect(sent[0]!.mail.text).toContain('https://beta.example.test/settings');
     expect(asked.body.deletion.deletingAt).toEqual(expect.any(String));
     const rows = await t.h.db.query<{ slug: string; deleting: boolean }>(
       'select slug, deleting_at is not null as deleting from tenants where slug in ($1, $2) order by slug',
