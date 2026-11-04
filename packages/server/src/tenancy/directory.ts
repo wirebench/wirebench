@@ -232,6 +232,19 @@ export async function hostedEdition(
   return row;
 }
 
+/**
+ * Whether the unit's own tenant serves nothing now, suspended or deleting (spec §22.7): what the scheduler and the
+ * alert outbox hold a tenant's work by, while retention and the audit jobs keep running. A tenant with no row is not
+ * stopped here: the job loop never visits one. Reads only the unit's tenant, like {@link hostedEdition}.
+ */
+export async function tenantStopped(tx: TenantQuerier): Promise<boolean> {
+  const rows = await tx.query<{ status: TenantStatus }>('select status from tenants where id = $1::uuid', [
+    tx.scope.tenantId,
+  ]);
+  const status = rows.rows[0]?.status;
+  return status !== undefined && status !== 'active';
+}
+
 /** Each directory's data keys, kept off the class so nothing outside this file reaches them through it. */
 const directoryKeys = new WeakMap<TenantDirectory, TenantKeys>();
 
