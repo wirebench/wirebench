@@ -7,6 +7,15 @@ All notable changes to this project are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Server: several instances, per-team budgets and metrics (#821).** On an Enterprise license, set
+  `WIREBENCH_SERVER_INSTANCES=multi` to run several server instances against one database and one data volume behind
+  a balancer with a sticky cookie: live updates, presence and pushes work across them, a terminal share can be watched
+  from any instance, and sign-in and other rate limits count the same whichever instance a client reaches. Each team
+  gets a budget for the requests the server sends for its browser users, per minute and at once, and a share of the
+  scheduled-run slots (`WIREBENCH_SERVER_TENANT_*`); runs started in the browser wait rather than fail when the
+  budget is spent. `GET /readyz` tells a balancer when an instance is ready or draining, and a draining instance
+  hands its browser tabs to the next one without a wait. Set an OpenTelemetry endpoint and the server pushes its
+  metrics there, by team id only; without one it sends nothing. A one-instance server is unchanged.
 - **Hosted names (server, not yet switched on).** `WIREBENCH_SERVER_APP_DOMAIN` and `WIREBENCH_SERVER_SITE_DOMAIN`
   name the hosted edition's two domains; `app.<app-domain>` emails a person the sign-in links of their teams, the apex
   redirects there, and slugs such as `app`, `api` and the area names are reserved. A deployment recipe in

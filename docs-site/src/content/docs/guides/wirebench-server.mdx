@@ -30,8 +30,8 @@ Nothing in the app needs a server. Without one, the status bar shows no account.
 
 ## What it needs
 
-- **One process.** Run one replica. Pushes to a workspace are serialised by a lock inside the process,
-  and live updates run on a hub inside it, so a second replica would miss the first's events.
+- **One process,** by default. Several instances against one database need an Enterprise license and a
+  few more things: see [Running several instances](#running-several-instances).
 - **PostgreSQL.** The connection string goes in `WIREBENCH_SERVER_DATABASE_URL`.
 - **A data directory.** It holds the workspaces' repositories and temporary files: `/data` by default.
   The server checks at start-up that it can write there.
@@ -292,8 +292,10 @@ read timeout. A WebSocket upgrade whose `Origin` is not the public URL is refuse
   [Webhook signatures](/wirebench/docs/guides/webhook-signatures/).
 
 <Aside type="caution">
-The per-workspace lock and the live-updates hub live in the server process. Run one replica per data
-directory: two would interleave pushes and miss each other's events.
+Run one instance per data directory unless every instance is set up as in
+[Running several instances](#running-several-instances). An instance left at the default
+`WIREBENCH_SERVER_INSTANCES=single` deletes every host lease when it starts, and terminal shares do not cross
+between such instances.
 </Aside>
 
 ## Metrics
@@ -321,6 +323,99 @@ Each process is `service.instance.id` (its instance id, as `admin instances` lis
 (`wirebench.tenant.id`, or `none`), a request only by its route template, method and status class: never a
 URL, a name, an email or anything a request carried. On shutdown the server pushes its last numbers, waiting
 at most 5 seconds for the collector.
+
+## Running several instances
+
+A server can run as several instances against one database and one data volume, for availability. One instance is
+the default, and it needs nothing below. The instances hear each other through PostgreSQL: live updates, presence and
+team and key changes travel over `LISTEN`/`NOTIFY`, pushes to one workspace wait on a PostgreSQL lock, and the rate
+limits and the per-team budgets are counted in the database, so a client gets the same limits whichever instance it
+reaches. Only a terminal share goes from one instance to another directly.
+
+What it needs:
+
+- **An Enterprise license**, valid or in grace. Without one, a server with `WIREBENCH_SERVER_INSTANCES=multi` refuses
+  to start with `server-instances-need-enterprise`. A license that lapses while the instances run does not stop them:
+  each logs a warning once an hour, and the next start refuses.
+- **On every instance:** `WIREBENCH_SERVER_INSTANCES=multi`; `WIREBENCH_SERVER_INSTANCE_URL`, this instance's own
+  address on the private network, such as `http://10.0.0.5:8091`; and the same `WIREBENCH_SERVER_SECRETS_KEY` on
+  all of them, since the instances sign the share relay with a key derived from it.
+- **PostgreSQL reached directly.** Each instance keeps one listening connection and a small pool of lock connections
+  (at most 8). Neither works through a transaction pooler, so both use `WIREBENCH_SERVER_MIGRATION_DATABASE_URL`
+  (or the database URL when that is unset), which must be a direct connection, as for the server-running lock.
+- **One data volume**, mounted read-write by every instance at the same path.
+- **A balancer with a sticky cookie** for at least `/api/v1/host` and `/api/v1/live`: it keeps one browser on one
+  instance while that instance lives, and moves it when the instance is gone. The server sets and reads no routing
+  cookie of its own. A browser that reaches the wrong instance anyway is told to wait (`4409`) and reconnects; the
+  host lease keeps two instances from working on one user's files.
+- **A private network** between the instances for the port of `WIREBENCH_SERVER_INSTANCE_URL`. It serves only
+  `/internal/v1/`, the terminal-share relay, and must not be reachable from outside; the public port never serves
+  `/internal/`. Each relay request carries a token that lasts 30 seconds, which still refuses anyone without the
+  secrets key if the port is exposed by mistake.
+
+**Health.** `GET /readyz` answers `200` once start-up has finished and while the instance hears the others, and `503`
+(`starting`, `reconnecting` or `draining`) otherwise. Point the balancer's health check at it. `/healthz` stays the
+check of the database, the data directory and git.
+
+**Draining.** On `SIGTERM` an instance answers `503` on `/readyz` and refuses new sockets. Each browser host it runs
+stops, gives up its lease and only then closes its socket, so the tab reconnects at once and the next instance
+takes over without a wait. Live-update sockets close with `1012` and the app reconnects. HTTP requests keep being
+served until the instance closes, and the whole drain takes at most 10 seconds. Stop instances one at a time.
+
+**Instances.** `wirebench-server admin instances` lists the running instances: id, address, version, age and last
+heartbeat. An instance that has not renewed its heartbeat for 60 seconds is treated as gone.
+
+A worked example with Traefik's file provider, two instances on `10.0.0.5` and `10.0.0.6`:
+
+```yaml
+http:
+  routers:
+    wirebench:
+      entryPoints:
+        - websecure
+      rule: 'Host(`wirebench.example.com`)'
+      service: wirebench
+      tls: {}
+  services:
+    wirebench:
+      loadBalancer:
+        # The balancer's own cookie keeps a browser on one instance; Traefik moves it when that instance fails.
+        sticky:
+          cookie:
+            name: wirebench_instance
+            secure: true
+            httpOnly: true
+            sameSite: lax
+        healthCheck:
+          path: /readyz
+          interval: 5s
+          timeout: 3s
+        servers:
+          - url: http://10.0.0.5:8080
+          - url: http://10.0.0.6:8080
+```
+
+Each instance then has `WIREBENCH_SERVER_INSTANCE_URL` set to its own address with the internal port
+(`http://10.0.0.5:8091` and `http://10.0.0.6:8091`), which Traefik does not route. The sticky cookie here covers the
+whole origin, which is the simplest way to cover `/api/v1/host` and `/api/v1/live`. Traefik forwards WebSocket
+upgrades without more configuration. Any other balancer works the same way: a sticky cookie of its own, a health
+check on `/readyz`, and WebSocket upgrades forwarded.
+
+### Per-team budgets
+
+So that one team cannot use up a shared server, the requests the server sends for a team's browser users are
+budgeted, every instance together. The defaults are set high enough that a team's own use does not reach them:
+
+- `WIREBENCH_SERVER_TENANT_SENDS_PER_MINUTE` (600, with a burst of a sixth of it). Past it a send fails with
+  `tenant-send-budget` and the time to retry; a run started in the browser waits until the budget refills instead,
+  each of its requests counting.
+- `WIREBENCH_SERVER_TENANT_CONCURRENT_SENDS` (16). Past it a send fails with `tenant-send-concurrency`. A run counts
+  as one while it lasts, a WebSocket only while it opens.
+- `WIREBENCH_SERVER_TENANT_RUN_SLOTS` (the schedules concurrency by default): scheduled runs one team runs at once.
+  Further runs wait their turn and are never refused.
+
+Sends through a paired local agent and scheduled runs' requests do not count against the send budgets. On a
+self-hosted server the one team gets the same defaults; [Configuration](#configuration) lists the ranges.
 
 ## Upgrading
 
