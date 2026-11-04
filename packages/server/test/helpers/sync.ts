@@ -7,7 +7,9 @@ import { identityHarness, signedInUser, type IdentityHarness, type SignedInUser 
 import { seedTeam } from './teams.js';
 
 /** Identity, teams-access and server-sync over a fresh schema, on the harness clock, with a hermetic ctx.git (R13). */
-export function syncHarness(options: { readonly env?: Record<string, string> } = {}): Promise<IdentityHarness> {
+export function syncHarness(
+  options: { readonly env?: Record<string, string>; readonly repoLock?: { readonly waitMs?: number } } = {},
+): Promise<IdentityHarness> {
   return identityHarness({ ...options, modules: (clock) => [teamsModule({ now: () => clock.now }), syncModule()] });
 }
 
@@ -46,7 +48,9 @@ export interface SyncFixture {
 }
 
 /** The cast every sync integration test starts from, around one empty repository-backed workspace. */
-export async function syncFixture(options: { readonly env?: Record<string, string> } = {}): Promise<SyncFixture> {
+export async function syncFixture(
+  options: { readonly env?: Record<string, string>; readonly repoLock?: { readonly waitMs?: number } } = {},
+): Promise<SyncFixture> {
   const h = await syncHarness(options);
   const admin = await signedInUser(h, { email: 'admin@example.com' });
   const editor = await signedInUser(h, { email: 'editor@example.com' });

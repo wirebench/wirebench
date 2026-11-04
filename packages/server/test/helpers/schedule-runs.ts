@@ -159,6 +159,7 @@ export function testSettings(overrides: Partial<SchedulesSettings> = {}): Schedu
     enabled: true,
     secretKey: Buffer.from(SCHEDULES_KEY, 'base64'),
     concurrency: 2,
+    runSlots: 2,
     maxAgeDays: 90,
     maxSnapshotBytes: 1024 * 1024,
     linkUrl: () => 'https://wirebench.example.test',

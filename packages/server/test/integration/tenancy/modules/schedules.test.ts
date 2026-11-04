@@ -58,9 +58,12 @@ describeDb('scheduled runs in two tenants (tenancy Task 18)', () => {
           now: () => clock.now,
           setTimer: timers.setTimer,
           startScheduler: false,
-          execute: (runId, _signal, scope) => {
+          // Ends the run as the executor would, so its tenant's run slots (spec §20.7) free again.
+          execute: async (runId, _signal, scope) => {
             started.push({ tenantId: scope.tenantId, runId });
-            return Promise.resolve();
+            await t.h.ctx.tenancy
+              .db(scope)
+              .query("update schedule_runs set status = 'passed', finished_at = started_at where id = $1", [runId]);
           },
           onScheduler: (made) => {
             scheduler = made;

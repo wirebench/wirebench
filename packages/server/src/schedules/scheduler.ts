@@ -16,12 +16,17 @@
  * finished run's start uses the licensed tenants the last pass found, so a license change shows within one pass
  * (15 s): a tenant that lost the feature may start a queued run until then, and one that gained it waits for it.
  *
+ * A tenant runs at most its run slots at once across every server (hosted edition spec §20.7): the claim counts its
+ * `running` runs in the claiming unit, under a per-tenant lock, and a full tenant is an empty turn of the rotation
+ * while the per-server cap stays.
+ *
  * A start claims only in the tenants with a run waiting (Task 17 perf): each pass asks every licensed tenant, in
  * the unit it already has, and a claim that finds nothing takes its tenant off the list until the next pass. So a
  * slot coming free costs no unit in the tenants that have nothing queued, however many there are.
  */
 import type { LicenseService } from '../context.js';
 import { newId } from '../identity/tokens.js';
+import { lockRunSlots } from '../operations/budgets.js';
 import type { TenantScope } from '../tenancy/scope.js';
 import type { TenantQuerier } from '../tenancy/tenant-db.js';
 import type { Tenancy } from '../tenancy/tenancy.js';
@@ -49,6 +54,9 @@ export interface SchedulerPass {
   readonly fired: number;
   readonly started: number;
 }
+
+/** A claim that found the tenant at its run slots. */
+const FULL: unique symbol = Symbol('full');
 
 const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
@@ -252,9 +260,14 @@ export class Scheduler {
         idle++;
         continue;
       }
-      let runId: string | undefined;
+      let runId: string | typeof FULL | undefined;
       try {
-        [runId] = await this.env.tenancy.db(scope).transaction((tx) => claim(tx, 1, this.env.now()));
+        runId = await this.env.tenancy.db(scope).transaction(async (tx) => {
+          // The tenant's run slots (spec §20.7), counted under its lock so two servers cannot both take the last.
+          await lockRunSlots(tx);
+          if ((await repo.countRunningRuns(tx)) >= this.env.settings.runSlots) return FULL;
+          return (await claim(tx, 1, this.env.now()))[0];
+        });
       } catch (error) {
         // One tenant whose claim fails is an empty turn for the rest of this round, and the rotation moves past
         // it: it never holds up the tenants after it. Logged once per round.
@@ -264,6 +277,12 @@ export class Scheduler {
           'scheduler could not claim a queued run for one tenant',
         );
         if (this.turn === scope.tenantId) this.turn = tenants[(i + 1) % tenants.length]!.tenantId;
+        idle++;
+        continue;
+      }
+      if (runId === FULL) {
+        // Every slot of the tenant is running: an empty turn, and the rotation offers the slot to the next tenant.
+        // It stays waiting, so a run of it ending here starts its next one.
         idle++;
         continue;
       }

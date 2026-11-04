@@ -571,6 +571,12 @@ describeDb('migration 0020 on the frozen 0019 fixture (hosted spec §19.3, §19.
   });
 
   it('starts a server over the migrated fixture, which still answers 409 for a duplicate email', async () => {
+    // The routes charge the shared limiter (spec §20.7), whose table is 0022's; 0021 does not touch it.
+    await migrate(
+      db.owner,
+      (await allMigrations(BUILTIN_MODULES)).filter((m) => m.version === 22),
+    );
+    await db.grant();
     const keys = testKeys();
     const h = await licensingHarness(keys, {
       db,

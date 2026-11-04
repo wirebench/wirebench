@@ -46,7 +46,7 @@ async function receive(env: HooksEnv, request: FastifyRequest, reply: FastifyRep
   // §3.3 step 2: unknown and disabled answer alike, with no body, so a caller cannot tell them apart.
   if (found === undefined || !found.enabled) return reply.code(404).send();
   const hook = found;
-  if (!env.buckets.take(catchBucketKey(request.tenant.tenantId, hook.id)))
+  if (!(await env.buckets.take(request.tenant, catchBucketKey(request.tenant.tenantId, hook.id))))
     return reply.code(429).header('retry-after', '1').send();
 
   const { path, query } = splitTarget(request.url);

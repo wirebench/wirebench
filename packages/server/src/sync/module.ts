@@ -5,7 +5,7 @@
  */
 import type { FastifyInstance } from 'fastify';
 import type { ServerContext, ServerModule } from '../context.js';
-import { RateLimiter } from '../identity/rate-limit.js';
+import { TenantRateLimiter } from '../identity/rate-limit.js';
 import { CommitStore, sweepIndexFiles } from './commit-store.js';
 import type { SyncEnv } from './env.js';
 import { changesRoutes } from './routes/changes.js';
@@ -32,7 +32,12 @@ export function syncModule(): ServerModule {
         limitBytes: ctx.config.bodyLimitMb * MIB,
       });
       // team-secrets §5.1: 10 key requests per user per 10 minutes.
-      const limiter = new RateLimiter({ capacity: 10, refillPerMs: 10 / 600_000 });
+      const limiter = new TenantRateLimiter({
+        name: 'sync-key-requests',
+        capacity: 10,
+        refillPerMs: 10 / 600_000,
+        db: ctx.tenancy.db,
+      });
       const env: SyncEnv = { ctx, store, limiter };
       ctx.meta.addCapability('sync');
       headRoutes(env)(app);

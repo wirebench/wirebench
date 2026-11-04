@@ -185,3 +185,94 @@ export async function openSession(connectionString: string, options: SessionOpti
     },
   };
 }
+
+/** One lock-pool connection, checked out for the length of a repository operation (hosted edition spec §20.4). */
+export interface LockConnection extends Querier {
+  /** Called once if the connection fails or ends while checked out. */
+  onLost(listener: (error: Error) => void): void;
+  /** Back to the pool, or, with `destroy`, closed: a connection in doubt never goes back. */
+  release(destroy: boolean): void;
+}
+
+/** The repository lock's own pool: session-level advisory locks, so on a direct connection, never a pooler. */
+export interface LockPool {
+  /** How long a checkout and then a lock may each wait; the lock's `lock_timeout` is this. */
+  readonly waitMs: number;
+  /**
+   * A connection, or a rejection with `code: 'pool-timeout'` once {@link waitMs} passed with every connection held.
+   */
+  acquire(): Promise<LockConnection>;
+  close(): Promise<void>;
+}
+
+export interface LockPoolOptions {
+  /** At most this many connections, so at most this many locks held at once by the process (8 in the server). */
+  readonly max: number;
+  readonly applicationName: string;
+  readonly waitMs: number;
+  /** Told when an idle connection fails, never with the connection string. */
+  readonly onError?: (error: Error) => void;
+}
+
+const POOL_TIMEOUT = /timeout exceeded when trying to connect/i;
+
+/**
+ * A `pg.Pool` for the repository lock (spec §20.4). `lock_timeout` is set on every connection at start-up, so a lock
+ * wait past {@link LockPoolOptions.waitMs} fails in the server itself (`55P03`) and never goes on to take the lock;
+ * TCP keepalive is on, so a connection a failover dropped ends with an error rather than staying half-open.
+ */
+export function createLockPool(connectionString: string, options: LockPoolOptions): LockPool {
+  const pool = new pg.Pool({
+    connectionString,
+    max: options.max,
+    application_name: options.applicationName,
+    connectionTimeoutMillis: options.waitMs,
+    lock_timeout: options.waitMs,
+    // `pg` (over `net.Socket.setKeepAlive`) sets only the first probe's delay; the probe interval and count are the
+    // operating system's. A half-open connection is caught sooner by the lock's own probe (`repo-lock.ts`).
+    keepAlive: true,
+    keepAliveInitialDelayMillis: 10_000,
+  });
+  pool.on('error', (error) => options.onError?.(error));
+  return {
+    waitMs: options.waitMs,
+    async acquire() {
+      let client: pg.PoolClient;
+      try {
+        client = await pool.connect();
+      } catch (error) {
+        if (error instanceof Error && POOL_TIMEOUT.test(error.message)) {
+          throw Object.assign(new Error('every repository-lock connection is held'), { code: 'pool-timeout' });
+        }
+        throw error;
+      }
+      let listener: ((error: Error) => void) | undefined;
+      let fired = false;
+      const fire = (error: Error): void => {
+        if (fired) return;
+        fired = true;
+        listener?.(error);
+      };
+      // A checked-out client has no pool listener: without one, a terminated backend's `error` would crash the process.
+      const onError = (error: Error): void => fire(error);
+      const onEnd = (): void => fire(new Error('the connection ended'));
+      client.on('error', onError);
+      client.on('end', onEnd);
+      let released = false;
+      return {
+        ...querierOf(client),
+        onLost(next) {
+          listener = next;
+        },
+        release(destroy) {
+          if (released) return;
+          released = true;
+          client.off('error', onError);
+          client.off('end', onEnd);
+          client.release(destroy || fired ? new Error('the repository-lock connection is in doubt') : undefined);
+        },
+      };
+    },
+    close: () => pool.end(),
+  };
+}

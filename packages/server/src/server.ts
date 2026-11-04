@@ -161,9 +161,11 @@ export async function buildServer(ctx: ServerContext, options: BuildServerOption
         .send({ code: 'bad-request', message: 'The request could not be processed.' });
     }
     const mapped = toProblem(error);
-    if (mapped.status >= 500) {
+    // A 503 with a retry (the repository lock busy, spec §20.4) is load, not a fault: the client tries again.
+    if (mapped.status >= 500 && mapped.retryAfter === undefined) {
       request.log.error({ err: error, requestId: request.id }, 'unhandled error');
     }
+    if (mapped.retryAfter !== undefined) void reply.header('retry-after', String(mapped.retryAfter));
     return reply.code(mapped.status).send(mapped.body);
   });
 

@@ -14,6 +14,7 @@
 import fastifyWebsocket from '@fastify/websocket';
 import { LIVE_CAPABILITY, LIVE_CLOSE, LIVE_LIMITS } from '@wirebench/engine';
 import type { FastifyInstance, onRequestHookHandler } from 'fastify';
+import type { WebSocket } from 'ws';
 import { announce, cluster, type ServerContext, type ServerModule } from '../context.js';
 import { displayNamesOf } from '../identity/repo.js';
 import { endGoneSessions } from '../operations/sessions.js';
@@ -49,6 +50,8 @@ export interface LiveOptions {
 
 /** `LIVE_PATH` under the `/api/v1` prefix the module is mounted at. */
 const ROUTE = '/live';
+/** The reason of a drain's `1012` close. */
+const SERVICE_RESTART = 'service restart';
 /** How long shutdown waits for a peer to answer the `1001` close frame before dropping it (host spec §3.7). */
 const CLOSE_GRACE_MS = 2_000;
 /**
@@ -178,8 +181,26 @@ export function liveModule(options: LiveOptions = {}): ServerModule {
         runLiveSocket(connection, loopFor(tenant));
       });
       // A plain GET (a proxy that strips `Upgrade`) is answered 404 by the plugin (§3.5).
+      // This route's sockets, authenticated or not: a drain closes them `1012`, and no other route's (spec §20.5).
+      const routeSockets = new Set<WebSocket>();
       app.get(ROUTE, { websocket: true, onRequest: originCheck(ctx.config) }, (socket, request) => {
+        // Draining: the balancer moves the desktop to another instance once its back-off ends.
+        if (ctx.instance.draining) {
+          socket.close(LIVE_CLOSE.serviceRestart, SERVICE_RESTART);
+          return;
+        }
+        routeSockets.add(socket);
+        socket.once('close', () => routeSockets.delete(socket));
         runLiveSocket(socket, loopFor(request.tenant));
+      });
+      // Spec §20.5: on `SIGTERM` the live sockets close `1012` (service restart), before the app closes; what the
+      // shutdown's `preClose` finds open later is another route's, and closes `1001` as before.
+      ctx.instance.onDrain(() => {
+        hub.closeAll(LIVE_CLOSE.serviceRestart, SERVICE_RESTART);
+        for (const socket of routeSockets) {
+          if (socket.readyState === socket.OPEN) socket.close(LIVE_CLOSE.serviceRestart, SERVICE_RESTART);
+        }
+        return Promise.resolve();
       });
 
       // `cluster`: every instance's events reach this process's sockets (spec §20.3).

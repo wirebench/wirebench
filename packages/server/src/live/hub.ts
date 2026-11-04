@@ -134,6 +134,11 @@ export class LiveHub {
    */
   private rechecks: Promise<void> = Promise.resolve();
   private closed = false;
+  /** What {@link closeAll} closed with, for a socket authenticated after it. */
+  private closedWith: { readonly code: number; readonly reason: string } = {
+    code: LIVE_CLOSE.goingAway,
+    reason: 'server shutting down',
+  };
   /** The other holders' users, by room and then holder: user ids, as `presenceChanged` carried them (spec §20.3). */
   private readonly remote = new Map<Room, Map<string, readonly string[]>>();
   /** The display names of the other holders' users, by room, looked up in the room's tenant. */
@@ -151,13 +156,13 @@ export class LiveHub {
   /**
    * Binds an authenticated socket to its session (§3.3). The hub sends everything that follows.
    * - `'ok'`: the hub sent `ready` and armed the maximum-age timer. After {@link closeAll}, it closed
-   *   the socket `1001` instead.
+   *   the socket with that call's code instead (`1001`, or `1012` on a drain).
    * - `'too-many-sockets'`: the user already has 32 sockets, so the hub closed this one `4429` and
    *   kept nothing of it.
    */
   admit(socket: LiveSocket, session: LiveSession): 'ok' | 'too-many-sockets' {
     if (this.closed) {
-      closeQuietly(socket, LIVE_CLOSE.goingAway, 'server shutting down');
+      closeQuietly(socket, this.closedWith.code, this.closedWith.reason);
       return 'ok';
     }
     if (this.bySocket.has(socket)) return 'ok';
@@ -400,10 +405,14 @@ export class LiveHub {
     this.resyncRooms([...this.byWorkspace.keys()].filter((room) => room.startsWith(`${event.tenantId}:`)));
   }
 
-  /** Shutdown (§3.3, §5.1): closes every socket `1001` and clears the indexes. Later calls are no-ops. */
-  closeAll(): void {
+  /**
+   * Shutdown (§3.3, §5.1): closes every socket `1001` and clears the indexes. A drain (hosted edition spec §20.5)
+   * passes `1012` instead, and a socket authenticated afterwards is closed the same way. Later calls are no-ops.
+   */
+  closeAll(code: number = LIVE_CLOSE.goingAway, reason = 'server shutting down'): void {
     if (this.closed) return;
     this.closed = true;
+    this.closedWith = { code, reason };
     // The others drop this holder's users at once, rather than when its row dies.
     if (this.announced.size > 0) this.cluster?.announceReset({ holder: this.cluster.holder });
     this.announced.clear();
@@ -417,7 +426,7 @@ export class LiveHub {
     this.byWorkspace.clear();
     this.byUser.clear();
     this.byToken.clear();
-    for (const socket of sockets) closeQuietly(socket, LIVE_CLOSE.goingAway, 'server shutting down');
+    for (const socket of sockets) closeQuietly(socket, code, reason);
   }
 
   /** Settles once every subscribe and access re-check under way has finished. Tests use it in place of sleeping. */

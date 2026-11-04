@@ -16,7 +16,8 @@
  * `HOST_LIMITS.maxSocketsPerUser + 1`th socket closes `4429`, also before any frame. A user whose host another
  * server process holds (the lease, spec §19.9) closes `4409`, `host-lease-held` with a `retryAfterMs`. A user
  * of a tenant whose every seat has a live host, once this process's idle ones are evicted, closes `4429` with
- * `host-instance-cap` (the ninth socket's `4429` says `too many host sockets`).
+ * `host-instance-cap` (the ninth socket's `4429` says `too many host sockets`). A draining process (spec §20.5)
+ * closes every upgrade `4503 host-draining`, and its open sockets the same way once their host's quit path has run.
  *
  * Identity's guard checks `Origin` only on mutating methods: every `GET` under `/api/v1` is free of side
  * effects, so a cross-site `GET` with the cookie can read nothing it may not and change nothing. That
@@ -33,13 +34,14 @@ import { auditIp, cluster, recordAudit, type AuditInput, type ServerContext, typ
 import { sessionToken } from '../identity/cookies.js';
 import { identitySettings } from '../identity/env.js';
 import { tokenByHash } from '../identity/repo.js';
+import { SendBudgets, sendBudgetSettings } from '../operations/budgets.js';
 import { endGoneSessions } from '../operations/sessions.js';
 import { hashToken } from '../identity/tokens.js';
 import { realTimer } from '../live/module.js';
 import { tenantUrl } from '../tenancy/urls.js';
 import { isServedChannel } from './allowlist.js';
 import { browserClientRoutes } from './browser-client.js';
-import { HOST_CLOSE, HOST_LIMITS } from './errors.js';
+import { HOST_CLOSE, HOST_DRAINING_REASON, HOST_LIMITS } from './errors.js';
 import { loadHostRuntime, loadHostSocketLoop, type HostSecretEvent } from './host-runtime.js';
 import { injectSend } from './inject-send.js';
 import { HostInstances, type HostSession, type HostSocketHandle, type HostUser } from './instances.js';
@@ -187,6 +189,9 @@ export function hostModule(options: HostModuleOptions = {}): ServerModule {
         seatLimit: async (tx) => (await ctx.license.state(tx.scope, tx)).seats.limit,
       });
 
+      // Every send channel a tab calls is charged to its user's tenant, across every instance (spec §20.7); each
+      // request of a run is charged as the host puts it on the wire (its `sendGate`).
+      const budgets = new SendBudgets({ db: ctx.tenancy.db, settings: sendBudgetSettings(config), log });
       const instances = new HostInstances({
         dataDir: config.dataDir,
         idleMs: config.hostIdleMinutes * 60_000,
@@ -226,6 +231,7 @@ export function hostModule(options: HostModuleOptions = {}): ServerModule {
                 ),
               credential,
             },
+            sendGate: (send) => budgets.gate(send),
             // In the user's tenant: the audit row is that tenant's.
             onSecret: (event) => {
               secretWrites.track(
@@ -248,6 +254,11 @@ export function hostModule(options: HostModuleOptions = {}): ServerModule {
         const refuse = (code: number, reason: string): void => {
           socket.close(code, reason);
         };
+        // Draining (spec §20.5): no new socket; the tab tries again, and the balancer sends it to a live instance.
+        if (ctx.instance.draining) {
+          refuse(HOST_CLOSE.unavailable, HOST_DRAINING_REASON);
+          return;
+        }
         const serverUrl = tenantUrl(config, request);
         if (request.headers.origin !== serverUrl) {
           refuse(HOST_CLOSE.forbidden, 'origin refused');
@@ -292,6 +303,8 @@ export function hostModule(options: HostModuleOptions = {}): ServerModule {
         // The session ends at its token's creation plus the maximum age, as a live socket's does.
         let deadline: { cancel(): void } | undefined;
         let closed = false;
+        // Aborted when the socket closes: a run paced by the tenant's budget stops waiting (spec §20.7).
+        const gone = new AbortController();
         const checked = tokenByHash(ctx.tenancy.db(request.tenant), hashToken(token))
           .then((found) => {
             if (closed) return;
@@ -348,9 +361,11 @@ export function hostModule(options: HostModuleOptions = {}): ServerModule {
           host,
           callerId: nextCallerId++,
           allowed: isServedChannel,
+          around: (frame, serve) => budgets.around(request.tenant, frame, serve, gone.signal),
           log,
           onClosed: () => {
             closed = true;
+            gone.abort();
             deadline?.cancel();
             instances.release(user, handle);
           },
@@ -375,6 +390,9 @@ export function hostModule(options: HostModuleOptions = {}): ServerModule {
           ctx.log,
         );
       });
+      // Spec §20.5: on `SIGTERM`, before the app closes, each host runs its quit path and gives its lease back, and only
+      // then do its sockets close `4503 host-draining`.
+      ctx.instance.onDrain(() => instances.drain());
       app.addHook('onClose', async () => {
         await instances.closeAll();
         // The pool closes after the app, so every secret audit row is written first.

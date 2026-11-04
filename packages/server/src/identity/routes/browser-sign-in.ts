@@ -54,7 +54,7 @@ export const browserSignInRoutes =
         if (request.headers.origin !== url) throw originRefused();
         const redirectTo = safeRedirectPath(field(request.body, 'redirect_to'), url);
         // The same buckets as the desktop's route, so the two together get no more attempts.
-        const retryAfter = chargeKeys(env.limiter, [ipKey(request), emailKey(request)]);
+        const retryAfter = await chargeKeys(env.limiter, request.tenant, [ipKey(request), emailKey(request)]);
         if (retryAfter > 0) {
           reply.header('retry-after', String(retryAfter));
           return sendSignInPage(reply, env.ctx, {

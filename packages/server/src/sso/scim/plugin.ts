@@ -92,7 +92,7 @@ export const scimPlugin =
     );
 
     const refuse = async (request: FastifyRequest, reply: FastifyReply, reason: string): Promise<FastifyReply> => {
-      const decision = env.limiter.take(scimLimiterKey(request));
+      const decision = await env.limiter.take(request.tenant, scimLimiterKey(request));
       if (!decision.allowed) {
         return reply
           .code(429)

@@ -27,5 +27,11 @@ export function healthRoutes(ctx: ServerContext) {
       const ok = Object.values(checks).every((value) => value === 'ok');
       return reply.code(ok ? 200 : 503).send({ status: ok ? 'ok' : 'failed', checks });
     });
+    // Spec §20.9: what a balancer's health check reads, so a process starting, draining or without its bus gets no
+    // new socket. It reads no tenant and nothing but this process's own state.
+    app.get('/readyz', async (_request, reply) => {
+      const status = ctx.instance.readiness();
+      return reply.code(status === 'ready' ? 200 : 503).send({ status });
+    });
   };
 }

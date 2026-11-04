@@ -9,6 +9,7 @@ import { access, mkdir, rename } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import type { GitCli, WirebenchError } from '@wirebench/engine';
+import type { DatabaseRepoLock } from '../operations/repo-lock.js';
 import { problem } from '../problem.js';
 import { tenantPaths, tenantTmpDirs, TENANTS_DIR } from '../tenancy/paths.js';
 import type { TenantScope } from '../tenancy/scope.js';
@@ -33,12 +34,19 @@ export class RepoStore {
   private readonly git: GitCli;
   private readonly dataDir: string;
   private readonly queues = new Map<string, Promise<void>>();
+  /** The database lock taken after the in-process queue (spec §20.4); absent only in tests that build a store. */
+  private readonly lock: Pick<DatabaseRepoLock, 'hold'> | undefined;
   /** Set by {@link drain}; from then on {@link withLock} refuses new work. */
   private draining = false;
 
-  constructor(deps: { readonly git: GitCli; readonly dataDir: string }) {
+  constructor(deps: {
+    readonly git: GitCli;
+    readonly dataDir: string;
+    readonly lock?: Pick<DatabaseRepoLock, 'hold'>;
+  }) {
     this.git = deps.git;
     this.dataDir = resolve(deps.dataDir);
+    this.lock = deps.lock;
   }
 
   /**
@@ -121,13 +129,20 @@ export class RepoStore {
    *
    * Keyed `tenantId:workspaceId` (hosted edition spec §19.8 guard 5): workspace ids are per tenant, so one id
    * in two tenants is two queues, as it is two repositories.
+   *
+   * Then, with a database lock (the server always has one, spec §20.4), `fn` runs holding the advisory lock for the
+   * tenant's workspace, so another instance on the same volume waits too. The queue stays in front: pushes to one
+   * workspace in one process never queue on the database. With eight locks held, a ninth workspace's operation
+   * waits for a lock-pool connection. Either wait past 30 s rejects with `503 repo-busy`; a lost lock connection
+   * rejects with `repo-lock-lost` at `fn`'s next git step.
    */
   withLock<T>(scope: TenantScope, workspaceId: string, fn: () => Promise<T>): Promise<T> {
     this.assertId(workspaceId);
     if (this.draining) return Promise.reject(shuttingDown());
     const key = `${scope.tenantId}:${workspaceId}`;
     const previous = this.queues.get(key) ?? Promise.resolve();
-    const run = previous.then(fn);
+    const lock = this.lock;
+    const run = previous.then(lock === undefined ? fn : () => lock.hold(scope, workspaceId, fn));
     const settled = run.then(
       () => undefined,
       () => undefined,
@@ -144,7 +159,9 @@ export class RepoStore {
    * A handler keeps running after the drain deadline drops its connection, so the database pool must
    * outlive the repository work, not only the request. Each queue entry is the settled tail of that
    * workspace's chain (it never rejects), so this resolves once every queued operation has finished,
-   * whatever its outcome. Calling it again waits for whatever is still queued.
+   * whatever its outcome. A database lock is unlocked and its connection returned inside that entry, so this also
+   * waits for every held database lock to be released (spec §20.4). Calling it again waits for whatever is still
+   * queued.
    */
   drain(): Promise<void> {
     this.draining = true;

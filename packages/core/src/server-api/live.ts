@@ -47,6 +47,11 @@ export const LIVE_CLOSE = {
   tooBig: 1009,
   /** An unexpected server error on this socket. */
   serverError: 1011,
+  /**
+   * The server is draining for a restart (hosted edition spec §20.5): another instance takes the socket. The desktop
+   * reconnects with back-off, as after `1001`.
+   */
+  serviceRestart: 1012,
   /** A malformed or out-of-order message, or a binary frame. */
   badMessage: 4400,
   /** A bad token, an ended session, or the token's maximum age reached. */

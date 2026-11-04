@@ -27,6 +27,7 @@ export const createServerHost: CreateServerHost = async (input) => {
     sendOrigin: 'server',
     ...(input.server !== undefined ? { server: input.server } : {}),
     ...(input.onSecret !== undefined ? { onSecret: input.onSecret } : {}),
+    ...(input.sendGate !== undefined ? { sendGate: input.sendGate } : {}),
   };
   const host = await createHost(platform, options);
   const serverHost: ServerHost = {

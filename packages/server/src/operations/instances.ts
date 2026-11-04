@@ -7,6 +7,12 @@
  *   every row not renewed for {@link DEAD_MS} (a process that died without its shutdown), and runs each
  *   {@link ServerInstance.onBeat} listener: the host leases renew on it, so a process has one 15 s timer, not two.
  *   The renew is an upsert, so a row another instance swept while this one could not reach the database comes back.
+ * - **Readiness** (§20.9). `starting` until the start-up says it is {@link InstanceRegistry.serving}, then `ready`
+ *   while the bus listens and `reconnecting` while it is lost, and `draining` from the shutdown's first step on.
+ *   `/readyz` answers `200` only when `ready`, so a balancer sends a draining process no new socket.
+ * - **Draining** (§20.5). {@link InstanceRegistry.drain} runs every {@link ServerInstance.onDrain} listener, before
+ *   the app closes: the host module stops its hosts and gives their leases back, the live module closes its sockets
+ *   `1012`. From its first call {@link ServerInstance.draining} is set, and the socket routes refuse every upgrade.
  * - **Stop.** {@link InstanceRegistry.stop} cancels the timer and deletes this process's row.
  *
  * The table names processes, not tenants: nothing here reads or writes a tenant's rows, and `check:tenant-scope`
@@ -15,6 +21,7 @@
 import type { LicenseState } from '@wirebench/engine';
 import type { InstanceMode } from '../config.js';
 import { RENEW_MS } from '../host/lease.js';
+import type { BusEvents } from './bus.js';
 
 /** How often the row is renewed: the host leases' interval, on the same timer. */
 export const HEARTBEAT_MS = RENEW_MS;
@@ -58,6 +65,9 @@ export interface InstanceRow {
   readonly renewedSecondsAgo: number;
 }
 
+/** What `/readyz` says of this process (spec §20.9); only `ready` answers `200`. */
+export type Readiness = 'starting' | 'ready' | 'reconnecting' | 'draining';
+
 /** What a module sees of this process (`ctx.instance`). */
 export interface ServerInstance {
   /** This process's id, random at start-up: the instance row's key and the host leases' holder. */
@@ -67,6 +77,15 @@ export interface ServerInstance {
   onBeat(listener: () => Promise<void>): void;
   /** Every instance renewed within {@link DEAD_MS}, this one included: the live hub drops a dead holder's presence. */
   live(): Promise<InstanceRow[]>;
+  /** Whether this process takes new sockets (spec §20.9), as `/readyz` reports it. */
+  readiness(): Readiness;
+  /** Set from the shutdown's first step (spec §20.5): every socket route refuses an upgrade from then on. */
+  readonly draining: boolean;
+  /**
+   * Runs `listener` when the shutdown begins, before the app closes; the shutdown waits for every listener, and a
+   * failure is logged and is the listener's own.
+   */
+  onDrain(listener: () => Promise<void>): void;
 }
 
 export interface InstanceRegistryDeps {
@@ -89,6 +108,10 @@ export class InstanceRegistry implements ServerInstance {
   readonly holder: string;
   readonly mode: InstanceMode;
   private readonly listeners: (() => Promise<void>)[] = [];
+  private readonly drainListeners: (() => Promise<void>)[] = [];
+  private draining_: Promise<void> | undefined;
+  private served = false;
+  private listening = false;
   private timer: { cancel(): void } | undefined;
   private started = false;
   private stopped = false;
@@ -102,6 +125,49 @@ export class InstanceRegistry implements ServerInstance {
 
   onBeat(listener: () => Promise<void>): void {
     this.listeners.push(listener);
+  }
+
+  /** Follows the bus: listening after each listen, not after a loss. The start-up calls it before the bus starts. */
+  watchBus(bus: BusEvents): void {
+    bus.onListen(() => {
+      this.listening = true;
+    });
+    bus.onLost(() => {
+      this.listening = false;
+    });
+  }
+
+  /** The start-up has finished: the process listens, and takes sockets while the bus does. */
+  serving(): void {
+    this.served = true;
+  }
+
+  readiness(): Readiness {
+    if (this.draining_ !== undefined) return 'draining';
+    if (!this.served) return 'starting';
+    return this.listening ? 'ready' : 'reconnecting';
+  }
+
+  get draining(): boolean {
+    return this.draining_ !== undefined;
+  }
+
+  onDrain(listener: () => Promise<void>): void {
+    this.drainListeners.push(listener);
+  }
+
+  /** The shutdown's first step: every drain listener, side by side; a second call is the same drain. Never throws. */
+  drain(): Promise<void> {
+    this.draining_ ??= Promise.all(
+      this.drainListeners.map((listener) =>
+        Promise.resolve()
+          .then(listener)
+          .catch((error: unknown) => {
+            this.deps.log('a drain listener failed', error);
+          }),
+      ),
+    ).then(() => undefined);
+    return this.draining_;
   }
 
   /** Inserts this process's row, then beats every {@link HEARTBEAT_MS} until {@link stop}. Throws if the insert does. */
@@ -184,6 +250,28 @@ export class InstanceRegistry implements ServerInstance {
       this.arm();
     }, HEARTBEAT_MS);
   }
+}
+
+/**
+ * Waits for `drain` (spec §20.5) at most `ms`: past it, the shutdown goes on and says so, and the drain's listeners
+ * run on while the app closes. `0` waits not at all (the running lock is lost). Never rejects.
+ */
+export async function drainWithin(drain: Promise<void>, ms: number, warn: (message: string) => void): Promise<void> {
+  const settled = drain.then(
+    () => true,
+    () => true,
+  );
+  if (ms <= 0) return;
+  let timer: NodeJS.Timeout | undefined;
+  const done = await Promise.race([
+    settled,
+    new Promise<false>((resolve) => {
+      timer = setTimeout(() => resolve(false), ms);
+      timer.unref();
+    }),
+  ]);
+  clearTimeout(timer);
+  if (!done) warn('the drain did not finish within the drain time; the shutdown goes on');
 }
 
 /** The live rows, for the registry and for `admin instances`, which reads them without a registry of its own. */

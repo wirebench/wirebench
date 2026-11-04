@@ -65,6 +65,9 @@ database, one data directory; run it behind TLS. Design: `docs/specs/2026-09-24-
 | `WIREBENCH_SERVER_HOST_IDLE_MINUTES` | no | `30` | Minutes after a user’s last browser connection closes before the server stops that user’s host and frees its memory (1–1440). The user’s files stay. |
 | `WIREBENCH_SERVER_INSTANCES` | no | `single` | `single`: one server process. `multi`: several instances against one database and one data volume, which needs an Enterprise license that is valid or in grace (the start is refused otherwise) and WIREBENCH_SERVER_INSTANCE_URL. |
 | `WIREBENCH_SERVER_INSTANCE_URL` | no | — | This instance’s private address, which the other instances reach it at: `http://host:port`, such as `http://10.0.0.5:8091`; the port is its internal listener’s. Required with `WIREBENCH_SERVER_INSTANCES=multi`. |
+| `WIREBENCH_SERVER_TENANT_SENDS_PER_MINUTE` | no | `600` | Requests the server sends for one tenant’s browser users per minute, every instance together (1–1000000). A burst of a sixth of it (100 at the default) may go at once; past it a send fails with `tenant-send-budget` and its retry time, while a run started in the browser pauses until the budget refills, each of its requests counting. Sends through a paired agent and scheduled runs do not count. |
+| `WIREBENCH_SERVER_TENANT_CONCURRENT_SENDS` | no | `16` | Requests the server sends for one tenant’s browser users at once, every instance together (1–10000); a run counts as one while it lasts, a WebSocket only while it opens. Past it a send fails with `tenant-send-concurrency`. |
+| `WIREBENCH_SERVER_TENANT_RUN_SLOTS` | no | `WIREBENCH_SERVER_SCHEDULES_CONCURRENCY` | Scheduled runs one tenant runs at once, every instance together (1–1000). Unset, the schedules concurrency, so a one-tenant server runs as many as before. Its further runs wait their turn, never refused; WIREBENCH_SERVER_SCHEDULES_CONCURRENCY still caps each instance. |
 | `WIREBENCH_SERVER_APP_DOMAIN` | no | — | Hosted mode only: the product’s domain. Each team is `https://<slug>.<domain>`, and `app.<domain>` mails a person their teams’ links. Unused on a self-hosted server. |
 | `WIREBENCH_SERVER_SITE_DOMAIN` | no | — | Hosted mode only: the public site’s domain, which the server links to and never serves. It must not be, or sit under, the app domain. Unused on a self-hosted server. |
 <!-- config:end -->
@@ -586,8 +589,8 @@ editors and admins create, change, rotate, clear and delete.
   - A sweep every ten minutes deletes captures older than `WIREBENCH_SERVER_HOOKS_MAX_AGE_DAYS`.
   - A body is stored up to `WIREBENCH_SERVER_HOOKS_BODY_LIMIT_MB`; the rest is counted but not kept.
   - A workspace holds at most `WIREBENCH_SERVER_HOOKS_PER_WORKSPACE` catch URLs.
-- **The rate limit is per catch URL and per process**: `WIREBENCH_SERVER_HOOKS_RATE_PER_SECOND` tokens a
-  second, up to `WIREBENCH_SERVER_HOOKS_BURST`. Run **one** replica, as for live updates.
+- **The rate limit is per catch URL**, kept in the database so every instance spends one bucket:
+  `WIREBENCH_SERVER_HOOKS_RATE_PER_SECOND` tokens a second, up to `WIREBENCH_SERVER_HOOKS_BURST`.
 - **The secret stays out of logs.** Request logs show `/hooks/[redacted]`.
 - **Behind a proxy with `WIREBENCH_SERVER_TRUST_PROXY`**, the server's usual `x-request-id` handling
   applies on catch URLs too: a proxy-supplied id may be echoed back. Nothing from the request body or

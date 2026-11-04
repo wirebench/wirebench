@@ -1,8 +1,10 @@
 import type { FastifyRequest } from 'fastify';
 import { describe, expect, it } from 'vitest';
-import { RateLimiter, callerKey, chargeKeys, emailKey, ipKey } from '../../../src/identity/rate-limit.js';
+import { RateLimiter, callerKey, emailKey, ipKey } from '../../../src/identity/rate-limit.js';
 import { scopeOf } from '../../../src/tenancy/scope.js';
 
+// The in-memory limiter is the entry's (pre-tenant); the tenant limiters' suites run against the table in
+// test/integration/operations/limiters-moved.test.ts.
 describe('RateLimiter (§3.6)', () => {
   const limiter = (start = 0) => {
     let now = start;
@@ -59,13 +61,5 @@ describe('the sign-in limiter keys (hosted edition spec §19.8 guard 5)', () => 
     expect(emailKey(request(ONE))).toBe(`${ONE.tenantId}:email:ada@example.com`);
     expect(callerKey(request(ONE))).toBe(`${ONE.tenantId}:user:01JB3Z9K7Q4ZJ6X1V8W2M5N0AA`);
     for (const key of [ipKey, emailKey, callerKey]) expect(key(request(ONE))).not.toBe(key(request(TWO)));
-  });
-
-  it("never let one tenant's attempts use up another's", () => {
-    const limiter = new RateLimiter({ capacity: 10, refillPerMs: 10 / 60_000, now: () => 0 });
-    const keys = (tenant: typeof ONE) => [ipKey(request(tenant)), emailKey(request(tenant))];
-    for (let i = 0; i < 10; i += 1) expect(chargeKeys(limiter, keys(ONE))).toBe(0);
-    expect(chargeKeys(limiter, keys(ONE))).toBeGreaterThan(0);
-    expect(chargeKeys(limiter, keys(TWO))).toBe(0);
   });
 });

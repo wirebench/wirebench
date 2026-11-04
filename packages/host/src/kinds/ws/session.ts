@@ -32,6 +32,8 @@ export function wsSessionOf(
   requestId: string,
   send: DesktopSend,
   onLive: SendOptions['onLive'],
+  /** Told once, when the handshake opens the session (the embedder's `SendGate`). */
+  onOpened?: () => void,
 ): WsSession {
   let handshakeSeen = false;
   const onContract = (index: number, contract: WsFrameContract): void => {
@@ -56,7 +58,10 @@ export function wsSessionOf(
     // The host's handshake row is written as the socket opens; the live event follows it.
     opened: () => handshakeSeen || send.handshakeLogged === true,
     seen: (event) => {
-      if (event.protocol === 'websocket' && event.kind === 'handshake') handshakeSeen = true;
+      if (event.protocol === 'websocket' && event.kind === 'handshake' && !handshakeSeen) {
+        handshakeSeen = true;
+        onOpened?.();
+      }
     },
     forwarded: (event) => {
       if (event.protocol === 'websocket' && event.kind === 'frame') checks?.check(event.frame);

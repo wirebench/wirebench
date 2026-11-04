@@ -2,7 +2,7 @@ import type { ModuleConfig } from '../config.js';
 import type { ServerContext } from '../context.js';
 import { tenantUrl, type ScopeSource } from '../tenancy/urls.js';
 import type { OidcProvider } from './oidc.js';
-import type { RateLimiter } from './rate-limit.js';
+import type { TenantRateLimiter } from './rate-limit.js';
 
 /** The §4.1 knobs the routes read, derived once from the configuration. */
 export interface IdentitySettings {
@@ -44,7 +44,7 @@ export interface IdentityEnv {
   readonly ctx: ServerContext;
   readonly settings: IdentitySettings;
   readonly now: () => Date;
-  readonly limiter: RateLimiter;
+  readonly limiter: TenantRateLimiter;
   readonly provider: OidcProvider | undefined;
 }
 
