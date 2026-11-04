@@ -84,3 +84,45 @@ export async function checkAppRole(
   });
   return report;
 }
+
+export interface ControlRoleReport {
+  readonly role: string;
+  /** Its own attribute: the control role connects as itself, with `noinherit`, and needs BYPASSRLS directly. */
+  readonly bypassRls: boolean;
+  /** Itself, or through a role it may become. */
+  readonly superuser: boolean;
+  /** Tables anywhere in the database this role owns, itself or as a member of their owner. */
+  readonly ownedTables: number;
+}
+
+/**
+ * The control role's start-up check in hosted mode (spec §22.2), after the app role's: it must be a role of its own
+ * (`control-plane-role-shared`), no superuser (`control-plane-role-superuser`), the owner of no table
+ * (`control-plane-role-owns`), and have BYPASSRLS (`control-plane-role-no-bypass`). The first that fails refuses
+ * start-up with its code. `names` are the app role and the owner of the server's schema.
+ */
+export async function checkControlRole(
+  control: Querier,
+  names: { readonly app: string; readonly owner: string },
+): Promise<ControlRoleReport> {
+  const report = (
+    await control.query<{ role: string; superuser: boolean; bypassRls: boolean; ownedTables: number }>(
+      `select r.rolname as role, r.rolbypassrls as "bypassRls",
+          exists (select 1 from pg_roles s where s.rolsuper and pg_has_role(r.oid, s.oid, 'MEMBER')) as superuser,
+          (select count(*)::int from pg_class c
+            where pg_has_role(r.oid, c.relowner, 'MEMBER') and c.relkind in ('r', 'p')
+              and c.relnamespace not in ('pg_catalog'::regnamespace, 'information_schema'::regnamespace)) as "ownedTables"
+        from pg_roles r where r.rolname = current_user`,
+    )
+  ).rows[0]!;
+  const refuse = (code: string, why: string): never => {
+    throw new WirebenchError(code, `the control role ${report.role} ${why}; hosted mode refuses it`);
+  };
+  if (report.role === names.app || report.role === names.owner) {
+    refuse('control-plane-role-shared', 'is the app role or the owner, and must be a role of its own');
+  }
+  if (report.superuser) refuse('control-plane-role-superuser', 'is a superuser');
+  if (report.ownedTables > 0) refuse('control-plane-role-owns', `owns ${String(report.ownedTables)} tables`);
+  if (!report.bypassRls) refuse('control-plane-role-no-bypass', 'does not have BYPASSRLS');
+  return report;
+}

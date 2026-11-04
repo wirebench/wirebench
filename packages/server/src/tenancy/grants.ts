@@ -21,6 +21,12 @@ import { WirebenchError } from '@wirebench/engine';
  */
 export const READ_ONLY_TABLES: readonly string[] = ['schema_migrations', 'server_identity'];
 
+/**
+ * The tables the control role reads and writes (spec §22.2): `tenants`, and the control plane's own tables, which
+ * slice 7 Task 2 (migration `0023`) adds here. The one list: `controlRoleGrants` and its test read it.
+ */
+export const CONTROL_TABLES: readonly string[] = ['tenants'];
+
 export interface AppRoleNames {
   /** The schema the server's tables live in. */
   readonly schema: string;
@@ -40,14 +46,17 @@ function quoteLiteral(value: string): string {
   return `'${value.replaceAll("'", "''")}'`;
 }
 
-export function appRoleGrants(names: AppRoleNames): readonly string[] {
-  // The names go into a dollar-quoted block, which a `$` could end early. No name the server is given
-  // has one, so one is refused rather than quoted.
-  for (const [what, name] of Object.entries(names) as [string, string][]) {
+/** The names go into a dollar-quoted block, which a `$` could end early. No name the server is given has one. */
+function refuseDollar(names: Readonly<Record<string, string>>): void {
+  for (const [what, name] of Object.entries(names)) {
     if (name.includes('$')) {
       throw new WirebenchError('tenancy-role-name-invalid', `the ${what} name may not contain "$"`);
     }
   }
+}
+
+export function appRoleGrants(names: AppRoleNames): readonly string[] {
+  refuseDollar({ ...names });
   const schema = quoteIdent(names.schema);
   const owner = quoteIdent(names.owner);
   const app = quoteIdent(names.app);
@@ -82,5 +91,52 @@ begin
 end
 $grants$`,
     `alter default privileges for role ${owner} in schema ${schema} grant select, insert, update, delete on tables to ${app}`,
+  ];
+}
+
+export interface ControlRoleNames {
+  /** The schema the server's tables live in. */
+  readonly schema: string;
+  /** The control role (spec §22.2). */
+  readonly control: string;
+}
+
+/**
+ * What the control role holds (spec §22.2), as SQL statements the owner runs: `usage` on the schema; `select, insert,
+ * update, delete` on {@link CONTROL_TABLES}; `select` on every scoped table, for the deletion check (§22.11), and no
+ * write on one, since every per-tenant write runs in that tenant's unit on the app role; nothing on any other table.
+ * The scoped tables are read from the catalog as the app role's grants are, by the policy `tenant_scope()` turned on
+ * (`relrowsecurity`), so a table a later migration scopes is covered at the next run. No default privileges: a table
+ * the owner creates later gets nothing until this runs again, which `serve` does at every hosted start.
+ */
+export function controlRoleGrants(names: ControlRoleNames): readonly string[] {
+  refuseDollar({ ...names });
+  const schema = quoteLiteral(names.schema);
+  const control = quoteLiteral(names.control);
+  const tables = CONTROL_TABLES.map(quoteLiteral).join(', ');
+  return [
+    `grant usage on schema ${quoteIdent(names.schema)} to ${quoteIdent(names.control)}`,
+    `do $grants$
+declare
+  t text;
+  scoped boolean;
+begin
+  for t, scoped in
+    select c.relname, c.relrowsecurity from pg_class c
+    join pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = ${schema} and c.relkind in ('r', 'p', 'v', 'm', 'f')
+  loop
+    if t = any (array[${tables}]::text[]) then
+      execute format('grant select, insert, update, delete on %I.%I to %I', ${schema}, t, ${control});
+      execute format('revoke truncate, references, trigger on %I.%I from %I', ${schema}, t, ${control});
+    elsif scoped then
+      execute format('grant select on %I.%I to %I', ${schema}, t, ${control});
+      execute format('revoke insert, update, delete, truncate, references, trigger on %I.%I from %I', ${schema}, t, ${control});
+    else
+      execute format('revoke all on %I.%I from %I', ${schema}, t, ${control});
+    end if;
+  end loop;
+end
+$grants$`,
   ];
 }

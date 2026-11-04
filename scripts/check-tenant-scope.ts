@@ -119,6 +119,9 @@ export const RAW_DB_ALLOWED: readonly string[] = [
   'packages/server/src/identity/cli.ts',
   // `admin instances` (spec §20.10): it opens the pool to read the unscoped instance table, and no tenant.
   'packages/server/src/operations/cli.ts',
+  // The control role's pool (spec §22.2): `openControlDb` builds it, and only `serve.ts` calls that. Task 3 confines
+  // `ControlDb` and the control URL to `src/control-plane/`.
+  'packages/server/src/control-plane/control-db.ts',
 ];
 const RAW_DB_DIRS: readonly string[] = ['packages/server/src/db/', TENANCY_DIR];
 /** The raw pool and its types (`db/pool.ts`, `db/querier.ts`), by the end of a module specifier. */

@@ -6,7 +6,8 @@
  * app role outside compose. It connects as the owner (`WIREBENCH_SERVER_MIGRATION_DATABASE_URL`) and runs what
  * `serve` runs at every start with two URLs: create the app role of `WIREBENCH_SERVER_DATABASE_URL` when it is
  * missing, then grant it its privileges. `--print-sql` only reads, and prints the statements for a role that
- * may create roles to apply.
+ * may create roles to apply. In hosted mode it does the same for the control role of
+ * `WIREBENCH_SERVER_CONTROL_DATABASE_URL` (spec §22.2), whose `create role` only a superuser may run.
  */
 import { access, lstat, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -30,7 +31,7 @@ import { dataKeyState, environmentKeyRoot, storedDataKey, type DataKeyState } fr
 import { tenantRootById } from './paths.js';
 import { revertTenancy, type RevertOptions } from './revert.js';
 import { rewrap } from './rewrap.js';
-import { appRolePlan, ensureAppRole, roleMode, roleNameOf } from './roles.js';
+import { appRolePlan, controlRolePlan, ensureAppRole, ensureControlRole, roleMode, roleNameOf } from './roles.js';
 
 type TenancyRoleCommand = Extract<ServerCommand, { command: 'admin-tenancy-role' }>;
 type TenancyRevertCommand = Extract<ServerCommand, { command: 'admin-tenancy-revert' }>;
@@ -72,7 +73,18 @@ function configOf(io: ServerIo): ServerConfig | number {
 export async function runTenancyRole(command: TenancyRoleCommand, io: ServerIo): Promise<number> {
   const loaded = configOf(io);
   if (typeof loaded === 'number') return loaded;
-  const config = loaded;
+  return runTenancyRoleWith(command, io, loaded);
+}
+
+/** `admin tenancy role` on a loaded configuration: a hosted one, until `loadConfig` accepts it, only from a test. */
+export async function runTenancyRoleWith(
+  command: TenancyRoleCommand,
+  io: ServerIo,
+  config: ServerConfig,
+): Promise<number> {
+  // Hosted mode always has the control URL (`controlPlaneProblems`); a test-built config without it has no control
+  // role to make.
+  const controlUrl = config.mode === 'hosted' ? config.controlDatabaseUrl : undefined;
   // The same rule as `serve` and `migrate`, so the three never disagree about a configuration.
   let mode: 'one-role' | 'two-roles';
   try {
@@ -101,12 +113,31 @@ export async function runTenancyRole(command: TenancyRoleCommand, io: ServerIo):
       }
       io.stdout.write(`-- As the owner, ${plan.owner}:\n`);
       for (const statement of plan.exists ? plan.statements : rest) io.stdout.write(`${statement};\n`);
+      if (controlUrl !== undefined) {
+        const control = await controlRolePlan(owner, controlUrl, config.databaseUrl);
+        const [create, ...grants] = control.statements;
+        if (!control.exists) {
+          io.stdout.write(
+            '-- Secret: the next statement holds the control role password as a SCRAM-SHA-256 verifier.\n',
+          );
+          io.stdout.write('-- As a superuser (only one may create a BYPASSRLS role):\n');
+          io.stdout.write(`${create!};\n`);
+        }
+        io.stdout.write(`-- As the owner, ${control.owner}:\n`);
+        for (const statement of control.exists ? control.statements : grants) io.stdout.write(`${statement};\n`);
+      }
       return ExitCode.Ok;
     }
     const plan = await ensureAppRole(owner, config.databaseUrl);
     io.stdout.write(
       `app role ${plan.role}: ${plan.exists ? 'exists' : 'created'}; privileges granted on schema ${plan.schema}\n`,
     );
+    if (controlUrl !== undefined) {
+      const control = await ensureControlRole(owner, controlUrl, config.databaseUrl);
+      io.stdout.write(
+        `control role ${control.role}: ${control.exists ? 'exists' : 'created'}; privileges granted on schema ${control.schema}\n`,
+      );
+    }
     return ExitCode.Ok;
   } catch (error) {
     if (error instanceof WirebenchError) {

@@ -160,6 +160,7 @@ const inputSchema = z.object({
     .refine((mode): boolean => mode !== 'hosted', HOSTED_REFUSED),
   databaseUrl: z.string().min(1),
   migrationDatabaseUrl: z.string().min(1).optional(),
+  controlDatabaseUrl: z.string().min(1).optional(),
   publicUrl: originText,
   dataDir: z.string().min(1).default('/data'),
   host: z.string().min(1).default('0.0.0.0'),
@@ -234,9 +235,13 @@ export interface ServerConfig extends z.output<typeof inputSchema> {
  * The configuration as modules see it (`ctx.config`, spec §19.5): without the configured public URL, which in hosted
  * mode is no tenant's. A module takes the tenant's URL from `tenantUrl(config, request)`; only `tenancy/urls.ts`
  * reads the field, and `check:tenant-scope` refuses any other read. Nor the database URLs (Task 17 review M3): a
- * module that opened a pool of its own, as the owner above all, would be past every policy; it has `ctx.tenancy`.
+ * module that opened a pool of its own, as the owner above all, would be past every policy; it has `ctx.tenancy`. Nor
+ * the control role's (spec §22.2): only `serve.ts` opens that pool, and hands it to the control plane alone.
  */
-export type ModuleConfig = Omit<ServerConfig, 'publicUrl' | 'databaseUrl' | 'migrationDatabaseUrl'>;
+export type ModuleConfig = Omit<
+  ServerConfig,
+  'publicUrl' | 'databaseUrl' | 'migrationDatabaseUrl' | 'controlDatabaseUrl'
+>;
 
 /** One documented environment variable. */
 export interface ConfigVariable {
@@ -276,6 +281,14 @@ export const CONFIG_VARIABLES: readonly ConfigVariable[] = [
     secret: true,
     description:
       'PostgreSQL connection string for the role that owns the schema; a direct connection, never a pooler. Migrations, `admin tenancy role` and the server-running lock use it. When it names a role other than the database URL’s, the server creates that app role if it is missing and the owner may create roles, and grants it its privileges at every start.',
+  },
+  {
+    env: 'WIREBENCH_SERVER_CONTROL_DATABASE_URL',
+    key: 'controlDatabaseUrl',
+    required: false,
+    secret: true,
+    description:
+      'Hosted mode only, and required there: PostgreSQL connection string for the control role (`wirebench_control`, `login nosuperuser bypassrls noinherit`), the one role past row-level security, which only the control plane connects as. It must name a role other than the app role and the owner. `admin tenancy role` creates it when the owner may (a superuser), or prints the statements with `--print-sql`. Refused on a self-hosted server.',
   },
   {
     env: 'WIREBENCH_SERVER_PUBLIC_URL',
@@ -767,6 +780,23 @@ export function domainProblems(config: Pick<ServerConfig, 'mode' | 'appDomain' |
   return problems;
 }
 
+/**
+ * The control role's URL (spec §22.1, §22.2): required in hosted mode, refused on a self-hosted server, so an operator
+ * who copies a hosted environment learns at once rather than finding it ignored. `loadConfig` runs it; tests that
+ * build a hosted config directly call it too. Never the value, only the variable.
+ */
+export function controlPlaneProblems(config: Pick<ServerConfig, 'mode' | 'controlDatabaseUrl'>): ConfigProblem[] {
+  const variable = 'WIREBENCH_SERVER_CONTROL_DATABASE_URL';
+  if (config.mode === 'hosted') {
+    return config.controlDatabaseUrl === undefined
+      ? [{ variable, message: 'control-plane-control-url-missing: hosted mode needs the control role’s URL' }]
+      : [];
+  }
+  return config.controlDatabaseUrl === undefined
+    ? []
+    : [{ variable, message: 'control-plane-hosted-only: is for hosted mode only; unset it on a self-hosted server' }];
+}
+
 /** Parses `env` into a config or throws a {@link ConfigError} naming every problem at once. */
 export function loadConfig(env: NodeJS.ProcessEnv, version: string): ServerConfig {
   const input = inputFrom(env);
@@ -794,7 +824,7 @@ export function loadConfig(env: NodeJS.ProcessEnv, version: string): ServerConfi
   // Cross-field rules zod cannot express per key: the two IdP credentials travel with the issuer,
   // an http:// issuer is a development-only choice like an http:// public URL, and a server with
   // no way to sign in at all is a misconfiguration, not a quiet server (identity spec §4.1).
-  const problems: ConfigProblem[] = domainProblems(config);
+  const problems: ConfigProblem[] = [...domainProblems(config), ...controlPlaneProblems(config)];
   if (config.oidcIssuer !== undefined) {
     for (const [key, variable] of [
       ['oidcClientId', 'WIREBENCH_SERVER_OIDC_CLIENT_ID'],
@@ -891,12 +921,13 @@ export function loadConfig(env: NodeJS.ProcessEnv, version: string): ServerConfi
 }
 
 /**
- * Deletes both database URLs from `process.env` once the configuration is loaded: `GitCli` spreads
+ * Deletes the database URLs (the app's, the owner's and the control role's) from `process.env` once the configuration is loaded: `GitCli` spreads
  * `process.env` into every git child's environment, which would hand them the connection strings.
  */
 export function forgetDatabaseUrls(): void {
   delete process.env.WIREBENCH_SERVER_DATABASE_URL;
   delete process.env.WIREBENCH_SERVER_MIGRATION_DATABASE_URL;
+  delete process.env.WIREBENCH_SERVER_CONTROL_DATABASE_URL;
 }
 
 /**

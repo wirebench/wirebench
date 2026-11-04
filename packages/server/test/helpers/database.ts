@@ -20,6 +20,11 @@ export const TEST_DATABASE_URL =
  */
 export const OWNER_ROLE = 'wirebench_owner';
 export const APP_ROLE = 'wirebench_app';
+/**
+ * The hosted control plane's role (spec §22.2): `login nosuperuser bypassrls noinherit`, the one role past the
+ * policy. Only a superuser may create it, so the roles script does; only the control-role tests connect as it.
+ */
+export const CONTROL_ROLE = 'wirebench_control';
 
 function roleUrl(override: string | undefined, role: string): string | undefined {
   if (override !== undefined) return override;
@@ -32,6 +37,7 @@ function roleUrl(override: string | undefined, role: string): string | undefined
 
 const OWNER_URL = roleUrl(process.env.WIREBENCH_SERVER_TEST_OWNER_URL, OWNER_ROLE);
 const APP_URL = roleUrl(process.env.WIREBENCH_SERVER_TEST_APP_URL, APP_ROLE);
+const CONTROL_URL = roleUrl(process.env.WIREBENCH_SERVER_TEST_CONTROL_URL, CONTROL_ROLE);
 
 const ROLES_HINT = 'create the test roles: psql the superuser URL -f scripts/ci/server-test-roles.sql';
 
@@ -125,6 +131,11 @@ export interface TestDatabase extends Database {
   readonly url: string;
   /** The owner's URL, for a test that runs migrations through the server (`migrate`, a start-up). */
   readonly ownerUrl: string;
+  /**
+   * The control role's URL with this schema on its search path, for a hosted test (spec §22.2). Nothing is granted
+   * to it until the test runs `ensureControlRole` as the owner.
+   */
+  readonly controlUrl: string;
   /** The schema's owner. Only for migrations and for DDL a test makes; queries go through the app role. */
   readonly owner: Database;
   /** Runs `migrations` as the owner, then grants the app role what the server's app role holds. */
@@ -194,6 +205,7 @@ export async function testDatabase(options: { readonly migrated?: boolean } = {}
     schema,
     url,
     ownerUrl,
+    controlUrl: withSchema(CONTROL_URL!, schema),
     owner,
     migrate: async (migrations) => {
       await migrate(owner, migrations);
