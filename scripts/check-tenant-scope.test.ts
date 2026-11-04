@@ -507,6 +507,31 @@ describe('check:tenant-scope', () => {
       expect(findRawDatabase('packages/server/src/control-plane/tenants.ts', pool)).toMatchObject([{ rule: 'raw-db' }]);
     });
 
+    it('keeps paddleWebhookSecret to config.ts, serve.ts and the control plane module', () => {
+      for (const text of [
+        'const secret = ctx.config.paddleWebhookSecret;',
+        "const secret = config['paddleWebhookSecret'];",
+        'const { paddleWebhookSecret } = config;',
+        "type S = Pick<ServerConfig, 'paddleWebhookSecret'>;",
+      ]) {
+        expect(findControlPlane(route, text), text).toMatchObject([{ rule: 'control-url' }]);
+        expect(findControlPlane('packages/server/src/control-plane/billing/webhook.ts', text), text).toMatchObject([
+          { rule: 'control-url' },
+        ]);
+      }
+      for (const file of [
+        'packages/server/src/config.ts',
+        'packages/server/src/serve.ts',
+        'packages/server/src/control-plane/module.ts',
+      ]) {
+        expect(findControlPlane(file, 'const secret = config.paddleWebhookSecret;'), file).toEqual([]);
+      }
+      // The control role's URL stays out of the module all the same.
+      expect(
+        findControlPlane('packages/server/src/control-plane/module.ts', 'config.controlDatabaseUrl'),
+      ).toMatchObject([{ rule: 'control-url' }]);
+    });
+
     it('keeps SQL naming the control tables to src/control-plane/', () => {
       for (const table of ['signups', 'billing_events', 'tenant_slugs_retired', 'tenant_deletions']) {
         for (const text of [

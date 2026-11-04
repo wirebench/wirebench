@@ -10,7 +10,8 @@
  * | `subscription.canceled` | `deleted` | `canceled` |
  *
  * Seats are the summed `quantity` of the items whose `price.id` is the Team price; none refuses with
- * `billing-no-team-item`. `custom_data.signup` or `custom_data.tenant` says what the subscription pays for.
+ * `billing-no-team-item`. `custom_data.signup`, a signup id the server minted, says what a `created` pays for; nothing
+ * else is read from the custom data, which the buyer's checkout sets: a tenant id there is never taken.
  */
 import { z } from 'zod';
 import { problem } from '../../problem.js';
@@ -62,7 +63,7 @@ const subscription = z.object({
 });
 
 /** A custom-data value we wrote: a string id, or nothing. */
-function customId(data: Record<string, unknown> | null | undefined, key: 'signup' | 'tenant'): string | undefined {
+function customId(data: Record<string, unknown> | null | undefined, key: 'signup'): string | undefined {
   const value = data?.[key];
   return typeof value === 'string' && id.safeParse(value).success ? value : undefined;
 }
@@ -91,7 +92,6 @@ export function mapPaddleEvent(body: Buffer | string, teamPriceId: string): Mapp
   const seats = sub.items.filter((item) => item.price.id === teamPriceId).reduce((sum, item) => sum + item.quantity, 0);
   if (seats < 1) return { kind: 'unapplied', event: { ...base, outcome: 'billing-no-team-item' } };
   const signup = customId(sub.custom_data, 'signup');
-  const tenant = customId(sub.custom_data, 'tenant');
   return {
     kind: 'subscription',
     event: {
@@ -103,7 +103,6 @@ export function mapPaddleEvent(body: Buffer | string, teamPriceId: string): Mapp
       seats,
       periodEnd: sub.current_billing_period?.ends_at ?? null,
       ...(signup !== undefined ? { signup } : {}),
-      ...(tenant !== undefined ? { tenant } : {}),
     },
   };
 }

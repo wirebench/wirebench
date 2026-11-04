@@ -88,6 +88,17 @@ describe("Paddle's signature (spec §22.5)", () => {
     });
   });
 
+  it('refuses two Paddle-Signature headers, which Node joins with a comma, as malformed', () => {
+    const one = `ts=${String(TS)};h1=${h1(SECRET, TS, BODY)}`;
+    const other = `ts=${String(TS)};h1=${h1('pdl_ntfset_test_some_other_secret_placeholder', TS, BODY)}`;
+    for (const joined of [`${one}, ${other}`, `${other}, ${one}`, `${one}, ${one}`]) {
+      expect(verifyPaddleSignature(joined, BODY, SECRET, AT)).toEqual({
+        ok: false,
+        reason: 'billing-signature-malformed',
+      });
+    }
+  });
+
   it('skips keys it does not know, so a later scheme beside h1 still verifies', () => {
     const header = `ts=${String(TS)};h2=whatever;h1=${h1(SECRET, TS, BODY)}`;
     expect(verifyPaddleSignature(header, BODY, SECRET, AT).ok).toBe(true);

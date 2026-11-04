@@ -3,7 +3,9 @@
  *
  * - **the grace sweep** suspends with `unpaid` every active tenant whose subscription has been `past_due` for
  *   {@link GRACE_DAYS} (ruling 2), through {@link TenantLifecycle}, `by: 'billing'`. A tenant a webhook is applying an
- *   event to right now is locked, skipped, and seen on the next pass;
+ *   event to right now is locked, skipped, and seen on the next pass. It also suspends with `canceled` every active
+ *   tenant whose subscription is `canceled` or `paused`: a cancel applied while the tenant was suspended for another
+ *   reason (`importing`, `operator`) is acted on once that suspension is lifted;
  * - **the event retention** deletes `billing_events` rows older than {@link BILLING_EVENTS_KEEP_DAYS}: past that,
  *   Paddle retries nothing, so no replay is left to stop.
  */
@@ -29,6 +31,17 @@ export function graceSweepStep(lifecycle: TenantLifecycle): LoopStep {
       for (const { id } of due.rows) {
         await each(id, async () => {
           const change = await lifecycle.suspendWithin(tx, id, 'unpaid', BILLING);
+          afterCommit(() => change.after(), id);
+        });
+      }
+      const ended = await tx.query<{ id: string }>(
+        `select t.id::text as id from tenants t join subscriptions s on s.tenant_id = t.id
+         where t.status = 'active' and t.edition_source = 'subscription' and s.status in ('canceled', 'paused')
+         order by t.id for no key update of t skip locked`,
+      );
+      for (const { id } of ended.rows) {
+        await each(id, async () => {
+          const change = await lifecycle.suspendWithin(tx, id, 'canceled', BILLING);
           afterCommit(() => change.after(), id);
         });
       }

@@ -3,29 +3,51 @@
  *
  * 1. `billing_events (provider, event_id)` is inserted first. A duplicate inserts nothing and is a no-op (Paddle
  *    retries, and may deliver twice); two deliveries at once wait on each other's row.
- * 2. The tenant is found: the checkout's `custom_data.tenant` (a resubscription), else the tenant whose subscription
- *    has the event's ref, read across tenants on the control role. A ref another tenant holds is refused
- *    (`billing-ref-conflict`, logged by tenant id): a subscription never moves between customers. A `created` for a
- *    signup is Part E's (`completeSignup`); until then it is recorded `signup-pending`.
- * 3. The tenant's row is locked (`for no key update`, which the subscription row's foreign key check does not wait
+ * 2. {@link BILLING_REF_LOCK} is taken on the event's subscription ref: no index spans the tenants' `subscriptions`
+ *    rows, so two events naming one ref for two tenants wait on each other here, and the second reads the first's row.
+ * 3. The tenant is found. A `created` only by `custom_data.signup`, a `signups` row id the server minted (UUIDv4): the
+ *    checkout's custom data is the buyer's to choose, so no tenant is ever taken from it. A signup row with no tenant
+ *    is Part E's (`completeSignup`, `signup-pending` until then); one bound to a tenant is that tenant's
+ *    resubscription. Every other event only by the stored ref (`holders`, read across tenants on the control role).
+ *    An unknown ref less than {@link UNKNOWN_REF_RETRY_MS} old throws `billing-ref-unknown`, so the webhook answers
+ *    500 and the claim rolls back: Paddle does not promise order, and the `created` it follows may still be on its
+ *    way. Older, it is recorded `unmatched`. A ref another tenant holds is refused (`billing-ref-conflict`, logged
+ *    by tenant id): a subscription never moves between customers.
+ * 4. The tenant's row is locked (`for no key update`, which the subscription row's foreign key check does not wait
  *    on), and its subscription read again under it: an event older than `last_event_at` is recorded `stale` and not
- *    applied (Paddle does not promise order).
- * 4. The subscription row is written in the tenant's own unit on the app role (the control role writes no scoped
+ *    applied. A resubscription over a live subscription (`active`, `trialing`, `past_due`) is refused `not-applied`:
+ *    only a canceled or paused one, or none, is replaced.
+ * 5. The subscription row is written in the tenant's own unit on the app role (the control role writes no scoped
  *    table, §22.2), before the control transaction commits: a failure there rolls the event back, so Paddle's retry
  *    applies it again, and every write is a value set, so applying twice is applying once.
- * 5. The tenant follows the table of §22.5, when its edition is the subscription's: `active` or `trialing` sets
+ * 6. The tenant follows the table of §22.5, when its edition is the subscription's: `active` or `trialing` sets
  *    `team` and the seats and resumes a tenant suspended for `unpaid` or `canceled`; `past_due` sets `past_due_since`
  *    once; `paused` and `canceled` suspend at once with `canceled`. An `operator` edition is never touched: the row is
  *    recorded and the event logged `not-applied`. Suspending and resuming go through {@link TenantLifecycle}, whose
  *    audit rows (`by: 'billing'`) and directory change follow the commit.
  */
 import type { FastifyBaseLogger } from 'fastify';
+import { problem } from '../../problem.js';
 import { TENANT_COLUMNS, type TenantRow } from '../../tenancy/directory.js';
+import { SERVER_SCHEMA } from '../../tenancy/running-lock.js';
 import type { Tenancy } from '../../tenancy/tenancy.js';
 import type { ControlDb } from '../control-db.js';
 import type { ControlTx } from '../slugs.js';
 import { BILLING, type PendingChange, type TenantLifecycle } from '../tenants.js';
 import { TEAM_PLAN, type BillingOutcome, type SubscriptionEvent, type UnappliedEvent } from './events.js';
+
+/** The ref lock's class ("WBBR"), beside the server's other advisory-lock classes. */
+export const BILLING_REF_LOCK_CLASS = 0x57424252;
+
+/** Held until the control transaction ends: the schema, the provider and the subscription ref. */
+export const BILLING_REF_LOCK = `select pg_advisory_xact_lock(${String(BILLING_REF_LOCK_CLASS)},
+  hashtext(coalesce(${SERVER_SCHEMA}, '') || ':' || $1::text || ':' || $2::text))`;
+
+/** How long an event naming an unknown ref is answered 500, for Paddle to retry after the `created` it follows. */
+export const UNKNOWN_REF_RETRY_MS = 24 * 60 * 60 * 1000;
+
+/** A subscription a resubscription must not replace: the tenant still has it. */
+const LIVE_STATUSES: readonly string[] = ['active', 'trialing', 'past_due'];
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -35,10 +57,14 @@ export interface ApplyDeps {
   readonly lifecycle: TenantLifecycle;
   readonly log: Pick<FastifyBaseLogger, 'info' | 'warn' | 'error'>;
   /**
-   * Part E's hook (spec §22.6): completes the signup a `created` names, in this control transaction. Absent until
-   * then, and the event is recorded `signup-pending`, with no tenant made.
+   * Part E's hook (spec §22.6): completes the signup a `created` names, in this control transaction, which holds the
+   * ref lock and has locked the `signups` row (`for update`). Called only for a row whose `tenant_id` is null and
+   * whose status is not `completed`: a row bound to a tenant is a resubscription, applied here. Absent until then,
+   * and the event is recorded `signup-pending`, with no tenant made.
    */
   readonly completeSignup?: (tx: ControlTx, event: SubscriptionEvent) => Promise<BillingOutcome>;
+  /** The clock {@link UNKNOWN_REF_RETRY_MS} is counted on. */
+  readonly now?: () => Date;
 }
 
 interface CurrentSubscription {
@@ -103,6 +129,38 @@ function codeOf(error: unknown): string {
   return typeof code === 'string' ? code : 'unknown';
 }
 
+interface SignupRow {
+  readonly tenantId: string | null;
+  readonly status: string;
+}
+
+/** The tenant a `created` pays for, by its signup id alone; or the outcome when there is none to apply it to here. */
+async function signupTenant(
+  deps: ApplyDeps,
+  tx: ControlTx,
+  event: SubscriptionEvent,
+): Promise<{ tenantId: string } | { outcome: BillingOutcome }> {
+  if (event.signup === undefined || !UUID.test(event.signup)) {
+    deps.log.warn({ eventId: event.eventId }, 'a created billing event names no signup');
+    return { outcome: 'unmatched' };
+  }
+  const signup = (
+    await tx.query<SignupRow & Record<string, unknown>>(
+      `select tenant_id::text as "tenantId", status from signups where id = $1::uuid for update`,
+      [event.signup],
+    )
+  ).rows[0];
+  if (signup === undefined || signup.status === 'completed') {
+    deps.log.warn({ eventId: event.eventId }, 'a created billing event names no open signup');
+    return { outcome: 'unmatched' };
+  }
+  if (signup.tenantId === null) {
+    // Part E (spec §22.6) completes the signup here; until then no tenant is made.
+    return { outcome: deps.completeSignup !== undefined ? await deps.completeSignup(tx, event) : 'signup-pending' };
+  }
+  return { tenantId: signup.tenantId };
+}
+
 async function decide(
   deps: ApplyDeps,
   tx: ControlTx,
@@ -110,10 +168,7 @@ async function decide(
   pending: PendingChange[],
   found: (tenantId: string) => void,
 ): Promise<BillingOutcome> {
-  if (event.kind === 'created' && event.tenant === undefined && event.signup !== undefined) {
-    // Part E (spec §22.6) completes the signup here; until then no tenant is made.
-    return deps.completeSignup !== undefined ? deps.completeSignup(tx, event) : 'signup-pending';
-  }
+  await tx.query(BILLING_REF_LOCK, [event.provider, event.ref]);
   const holders = (
     await tx.query<{ tenantId: string }>(
       `select tenant_id::text as "tenantId" from subscriptions where provider = $1 and provider_ref = $2`,
@@ -121,16 +176,22 @@ async function decide(
     )
   ).rows.map((row) => row.tenantId);
   let tenantId: string;
-  if (event.tenant !== undefined) {
-    if (!UUID.test(event.tenant)) return 'unmatched';
-    tenantId = event.tenant.toLowerCase();
-  } else if (holders.length === 1) {
-    tenantId = holders[0]!;
-  } else if (holders.length === 0) {
-    deps.log.warn({ eventId: event.eventId }, 'a billing event names no signup, tenant or known subscription');
-    return 'unmatched';
+  if (event.kind === 'created') {
+    const signup = await signupTenant(deps, tx, event);
+    if ('outcome' in signup) return signup.outcome;
+    tenantId = signup.tenantId;
   } else {
-    tenantId = holders[0]!;
+    const holder = holders[0];
+    if (holder === undefined) {
+      const age = (deps.now ?? (() => new Date()))().getTime() - event.occurredAt.getTime();
+      if (age < UNKNOWN_REF_RETRY_MS) {
+        // Thrown, so the claim rolls back and the webhook answers 500: Paddle retries after the `created`.
+        throw problem('billing-ref-unknown', 'a billing event names a subscription not yet known', 503);
+      }
+      deps.log.warn({ eventId: event.eventId }, 'a billing event names no known subscription');
+      return 'unmatched';
+    }
+    tenantId = holder;
   }
   const others = holders.filter((holder) => holder !== tenantId);
   if (others.length > 0) {
@@ -158,10 +219,19 @@ async function decide(
   ).rows[0];
   if (current !== undefined) {
     if (current.ref === event.ref && current.lastEventAt.getTime() > event.occurredAt.getTime()) return 'stale';
-    // An event about a subscription the tenant no longer has: a `created` replaces it, any other is late news.
-    if (current.ref !== event.ref && event.kind !== 'created') return 'stale';
+    if (current.ref !== event.ref && LIVE_STATUSES.includes(current.status)) {
+      // A resubscription replaces a canceled or paused subscription, never one the tenant still has.
+      deps.log.warn(
+        { tenantId: tenant.id, eventId: event.eventId, subscriptionStatus: current.status },
+        'a resubscription was refused: the tenant still has a live subscription',
+      );
+      return 'not-applied';
+    }
   }
   await writeSubscription(deps, tenant.id, event, current);
+  if (event.kind === 'created') {
+    await tx.query(`update signups set status = 'completed' where id = $1::uuid`, [event.signup]);
+  }
   if (tenant.editionSource !== 'subscription') {
     deps.log.warn(
       { tenantId: tenant.id, editionSource: tenant.editionSource, eventId: event.eventId },

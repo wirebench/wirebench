@@ -1,8 +1,10 @@
 /**
  * The billing webhook (hosted edition spec §22.5; slice 7 Task 13): `POST /billing/paddle` on `app.<app-domain>`
  * only, its raw body checked before it is parsed. `401` and an empty body for a bad signature, `200` once applied or
- * a duplicate, `500` on a database failure. Every key and id here is a placeholder.
+ * a duplicate, `500` on a database failure or an event about a subscription not known yet (so Paddle retries after
+ * its `created`). Every key and id here is a placeholder.
  */
+import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { Writable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
@@ -32,13 +34,25 @@ const hosted = (config: ServerConfig): ServerConfig => ({
   ...PADDLE_TEST_SETTINGS,
 });
 const ENTRY = 'app.app.test';
-const FIXTURE = fileURLToPath(new URL('../../fixtures/paddle/subscription.created.json', import.meta.url));
+const fixture = (type: string): string => fileURLToPath(new URL(`../../fixtures/paddle/${type}.json`, import.meta.url));
 
-/** A fixture's body for `tenantId`, with a fresh event id. */
-function createdFor(tenantId: string, eventId: string): string {
-  const raw = JSON.parse(readFileSync(FIXTURE, 'utf8')) as { event_id: string; data: Record<string, unknown> };
-  return JSON.stringify({ ...raw, event_id: eventId, data: { ...raw.data, custom_data: { tenant: tenantId } } });
+/** The `type` fixture's body with a fresh event id, `occurred_at` now, and `data` changed by `data`. */
+function bodyOf(type: string, eventId: string, data: Record<string, unknown>): string {
+  const raw = JSON.parse(readFileSync(fixture(type), 'utf8')) as { data: Record<string, unknown> };
+  return JSON.stringify({
+    ...raw,
+    event_id: eventId,
+    occurred_at: new Date().toISOString(),
+    data: { ...raw.data, ...data },
+  });
 }
+
+/** A `created` for the signup row `signupId`, with a fresh event id. */
+const createdFor = (signupId: string, eventId: string, ref?: string): string =>
+  bodyOf('subscription.created', eventId, {
+    custom_data: { signup: signupId },
+    ...(ref !== undefined ? { id: ref } : {}),
+  });
 
 const signed = (body: string, ts = Math.floor(Date.now() / 1000), secret: string = SECRET) => ({
   'content-type': 'application/json',
@@ -48,6 +62,9 @@ const signed = (body: string, ts = Math.floor(Date.now() / 1000), secret: string
 describeDb('the billing webhook (spec §22.5)', () => {
   let h: IdentityHarness;
   let tenantId: string;
+  let betaId: string;
+  /** Signup rows bound to each tenant: how a tenant's subscription is attached (spec §22.5). */
+  const signups = { acme: randomUUID(), beta: randomUUID() };
   const lines: string[] = [];
   beforeAll(async () => {
     h = await identityHarness({
@@ -70,6 +87,23 @@ describeDb('the billing webhook (spec §22.5)', () => {
           editionSource: 'subscription',
         });
         tenantId = made.id;
+        const beta = await new TenantAdmin(db, directoryOf(ctx.tenancy)).create({
+          slug: 'beta',
+          name: 'Beta',
+          edition: 'team',
+          editionSource: 'subscription',
+        });
+        betaId = beta.id;
+        for (const [slug, id, tenant] of [
+          ['acme', signups.acme, tenantId],
+          ['beta', signups.beta, betaId],
+        ] as const) {
+          await db.owner.query(
+            `insert into signups (id, email_lower, name, slug, seats, token_hash, status, tenant_id, expires_at)
+             values ($1::uuid, 'owner@site.test', $2, $2, 1, $3, 'verified', $4::uuid, now() + interval '1 day')`,
+            [id, slug, `hash-${id}`, tenant],
+          );
+        }
       },
     });
   });
@@ -81,7 +115,7 @@ describeDb('the billing webhook (spec §22.5)', () => {
     h.app.inject({ method: 'POST', url: '/billing/paddle', headers: { ...headers, host }, payload: body });
 
   it('applies a signed event, and answers a replay 200 with nothing done', async () => {
-    const body = createdFor(tenantId, 'evt_test_web_1');
+    const body = createdFor(signups.acme, 'evt_test_web_1');
     const res = await post(body, signed(body));
     expect([res.statusCode, res.body]).toEqual([200, '']);
     const seats = await h.db.owner.query<{ seats: number }>('select seats from tenants where id = $1', [tenantId]);
@@ -93,7 +127,7 @@ describeDb('the billing webhook (spec §22.5)', () => {
   });
 
   it('answers 401 and an empty body to an unsigned, a wrongly signed, a stale or a changed event', async () => {
-    const body = createdFor(tenantId, 'evt_test_web_2');
+    const body = createdFor(signups.acme, 'evt_test_web_2');
     const stale = Math.floor(Date.now() / 1000) - 600;
     for (const headers of [
       { 'content-type': 'application/json' },
@@ -120,7 +154,7 @@ describeDb('the billing webhook (spec §22.5)', () => {
   });
 
   it('reads any content type raw, and refuses a body over 1 MiB', async () => {
-    const body = createdFor(tenantId, 'evt_test_web_3');
+    const body = createdFor(signups.acme, 'evt_test_web_3');
     const res = await post(body, { ...signed(body), 'content-type': 'text/plain' });
     expect(res.statusCode).toBe(200);
     const big = 'x'.repeat(1024 * 1024 + 1);
@@ -141,8 +175,40 @@ describeDb('the billing webhook (spec §22.5)', () => {
     expect(rows.rows).toEqual([{ outcome: 'ignored' }]);
   });
 
+  it('refuses two Paddle-Signature headers as malformed', async () => {
+    const body = createdFor(signups.acme, 'evt_test_web_7');
+    const one = signed(body)['paddle-signature'];
+    const res = await h.app.inject({
+      method: 'POST',
+      url: '/billing/paddle',
+      headers: { 'content-type': 'application/json', 'paddle-signature': [one, one], host: ENTRY },
+      payload: body,
+    });
+    expect([res.statusCode, res.body]).toEqual([401, '']);
+    expect(lines.join('')).toContain('billing-signature-malformed');
+  });
+
+  it('answers 500 to a cancel before its created, so the retry after the created applies it', async () => {
+    const ref = 'sub_test_web_late';
+    // The created happened first; Paddle delivers the cancel first all the same.
+    const created = createdFor(signups.beta, 'evt_test_web_9', ref);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    const canceled = bodyOf('subscription.canceled', 'evt_test_web_8', { id: ref });
+    const first = await post(canceled, signed(canceled));
+    expect([first.statusCode, first.body]).toEqual([500, '']);
+    const outcome = (eventId: string) =>
+      h.db.owner.query('select outcome from billing_events where event_id = $1', [eventId]);
+    expect((await outcome('evt_test_web_8')).rows).toEqual([]);
+    expect((await post(created, signed(created))).statusCode).toBe(200);
+    expect((await post(canceled, signed(canceled))).statusCode).toBe(200);
+    expect((await outcome('evt_test_web_8')).rows).toEqual([{ outcome: 'applied' }]);
+    const beta = await h.db.owner.query('select status, suspended_reason from tenants where id = $1', [betaId]);
+    expect(beta.rows[0]).toEqual({ status: 'suspended', suspended_reason: 'canceled' });
+    expect(lines.join('')).toContain('billing-ref-unknown');
+  });
+
   it('is not on a tenant host', async () => {
-    const body = createdFor(tenantId, 'evt_test_web_5');
+    const body = createdFor(signups.acme, 'evt_test_web_5');
     expect((await post(body, signed(body), 'acme.app.test')).statusCode).toBe(404);
   });
 });

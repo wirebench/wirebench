@@ -40,10 +40,11 @@ export interface SubscriptionEvent {
   readonly periodEnd: Date | null;
   /** When the provider says it happened: the order events are applied in. */
   readonly occurredAt: Date;
-  /** The signup it pays for (spec §22.6), from the checkout's custom data. */
+  /**
+   * The signup it pays for (spec §22.5, §22.6), from the checkout's custom data: a `signups` row id the server minted.
+   * The buyer chooses the custom data, so this is the only value taken from it, and only a `created` reads it.
+   */
   readonly signup?: string;
-  /** The tenant it pays for, a resubscription's (spec §22.5), from the checkout's custom data. */
-  readonly tenant?: string;
 }
 
 /**
@@ -71,9 +72,10 @@ export type MappedEvent =
  * - `applied`: the subscription row and the tenant are as the event says.
  * - `duplicate`: the event id was seen before; nothing was done.
  * - `stale`: older than the subscription's last applied event (the provider does not promise order).
- * - `unmatched`: no signup, no tenant and no known subscription to apply it to.
- * - `signup-pending`: a `created` for a signup, which Part E completes (spec §22.6).
- * - `not-applied`: the tenant's edition is not the subscription's (`operator`): the row is recorded, nothing else.
+ * - `unmatched`: a `created` naming no open signup, or another event naming a subscription unknown for a day.
+ * - `signup-pending`: a `created` for a signup with no tenant yet, which Part E completes (spec §22.6).
+ * - `not-applied`: the tenant's edition is not the subscription's (`operator`): the row is recorded, nothing else;
+ *   or a resubscription refused, since the tenant still has a live subscription.
  * - `tenant-deleting`: the tenant is being deleted; nothing is changed.
  * - `billing-ref-conflict`: another tenant holds the subscription; it is never moved.
  * - `billing-no-team-item`, `ignored`: see {@link UnappliedEvent}.

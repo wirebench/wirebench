@@ -186,6 +186,9 @@ async function mailAdmins(deps: MailStepDeps, item: Due, suspendsAt: Date | unde
     );
   } catch {
     // A refusal can quote a recipient: only the mail host is logged.
-    deps.log.warn({ tenantId: item.id, mailHost: deps.mailHost, mail: item.kind }, 'a billing mail could not be sent');
+    deps.log.warn(
+      { tenantId: item.id, mailHost: deps.mailHost, mail: item.kind },
+      'a billing mail could not be sent; it will not be retried',
+    );
   }
 }

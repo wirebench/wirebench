@@ -1,7 +1,8 @@
 /**
  * The control loop (hosted edition spec §22.5, §22.15; slice 7 Task 14), with an injected clock: the grace sweep
  * suspends `unpaid` on day 14 and a payment before stops it; each mail goes once; a failing step leaves the others
- * running; the loop lock lets one instance run a pass at a time; old `billing_events` rows are deleted.
+ * running; the loop lock lets one instance run a pass at a time; old `billing_events` rows are deleted; a cancel
+ * recorded under another suspension suspends `canceled` once that one is lifted.
  */
 import { randomUUID } from 'node:crypto';
 import { afterEach, beforeEach, expect, it, vi, type Mock } from 'vitest';
@@ -99,6 +100,17 @@ describeDb('the control loop (hosted spec §22.15)', () => {
     };
   };
 
+  /** A `created` for a signup row bound to `tenantId` (spec §22.5). */
+  const createdFor = async (tenantId: string, overrides: Partial<SubscriptionEvent> = {}) => {
+    const signup = randomUUID();
+    await db.owner.query(
+      `insert into signups (id, email_lower, name, slug, seats, token_hash, status, tenant_id, expires_at)
+       values ($1::uuid, 'owner@acme.test', 'Acme', $2, 1, $3, 'verified', $4::uuid, $5::timestamptz)`,
+      [signup, `s-${signup.slice(0, 8)}`, `hash-${signup}`, tenantId, days(1)],
+    );
+    return event({ kind: 'created', signup, ...overrides });
+  };
+
   /** A subscribed team with one server admin (and one who is not), past due from T0. */
   const pastDueTeam = async (): Promise<{ id: string; scope: TenantScope }> => {
     const made = await lifecycle.create({
@@ -118,7 +130,7 @@ describeDb('the control loop (hosted spec §22.15)', () => {
           [randomUUID(), email, admin, T0],
         );
     }
-    await applySubscriptionEvent(deps, event({ kind: 'created', tenant: made.id, occurredAt: days(-30) }));
+    await applySubscriptionEvent(deps, await createdFor(made.id, { occurredAt: days(-30) }));
     await applySubscriptionEvent(deps, event({ status: 'past_due', occurredAt: T0 }));
     return { id: made.id, scope: made.scope };
   };
@@ -164,6 +176,30 @@ describeDb('the control loop (hosted spec §22.15)', () => {
     now = days(35);
     await applySubscriptionEvent(deps, event({ status: 'active' }));
     expect((await statusOf(id))?.status).toBe('active');
+  });
+
+  it('suspends canceled a tenant whose cancel came while the operator had it suspended, once resumed', async () => {
+    const made = await lifecycle.create({ slug: 'acme', name: 'Acme', edition: 'team', editionSource: 'subscription' });
+    await applySubscriptionEvent(deps, await createdFor(made.id, { occurredAt: days(-1) }));
+    await lifecycle.suspend('acme', 'operator');
+    await applySubscriptionEvent(deps, event({ kind: 'deleted', status: 'canceled' }));
+    expect(await statusOf(made.id)).toEqual({ status: 'suspended', suspended_reason: 'operator' });
+    await lifecycle.resume('acme');
+    expect(await statusOf(made.id)).toEqual({ status: 'active', suspended_reason: null });
+    const loop = loopWith([graceSweepStep(lifecycle)]);
+    await loop.pass();
+    expect(await statusOf(made.id)).toEqual({ status: 'suspended', suspended_reason: 'canceled' });
+    const audit = await tenancy
+      .db(made.scope)
+      .query<{ details: Record<string, unknown> }>(
+        "select details from audit_events where action = 'tenant.suspended' order by at desc, id desc limit 1",
+      );
+    expect(audit.rows[0]?.details).toMatchObject({ reason: 'canceled', by: 'billing' });
+    // An operator's edition keeps its tenant running whatever the subscription says.
+    await lifecycle.resume('acme');
+    await lifecycle.setEdition('acme', { edition: 'enterprise' });
+    await loop.pass();
+    expect((await statusOf(made.id))?.status).toBe('active');
   });
 
   it('mails the server admins once each: past due, three days left, suspended', async () => {

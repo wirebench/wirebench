@@ -44,13 +44,10 @@ describe('the Paddle adapter (spec §22.5)', () => {
     expect(event.occurredAt).toEqual(new Date(raw.occurred_at as string));
     if (data.status === 'canceled' || data.status === 'paused') expect(event.periodEnd).toBeNull();
     else expect(event.periodEnd).toEqual(new Date('2026-12-01T10:00:00.000Z'));
-    if (type === 'subscription.created') {
-      expect(event.signup).toBe(data.custom_data.signup);
-      expect(event.tenant).toBeUndefined();
-    } else {
-      expect(event.tenant).toBe(data.custom_data.tenant);
-      expect(event.signup).toBeUndefined();
-    }
+    if (type === 'subscription.created') expect(event.signup).toBe(data.custom_data.signup);
+    else expect(event.signup).toBeUndefined();
+    // The buyer's checkout sets the custom data: a tenant id there is never read (C1).
+    expect(event).not.toHaveProperty('tenant');
   });
 
   it('refuses a subscription without the Team price: billing-no-team-item', () => {
@@ -90,7 +87,7 @@ describe('the Paddle adapter (spec §22.5)', () => {
     );
     expect(mapped.kind).toBe('subscription');
     if (mapped.kind !== 'subscription') return;
-    expect(mapped.event.tenant).toBeUndefined();
+    expect(mapped.event).not.toHaveProperty('tenant');
     expect(mapped.event.signup).toBeUndefined();
   });
 
