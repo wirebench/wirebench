@@ -6,6 +6,7 @@
  * owner ending the share ends the relayed viewer.
  */
 import { randomBytes, randomUUID } from 'node:crypto';
+import { createServer, type Socket } from 'node:net';
 import Fastify from 'fastify';
 import { afterEach, beforeEach, expect, it } from 'vitest';
 import {
@@ -18,7 +19,7 @@ import type { AuditInput } from '../../../src/context.js';
 import { BusSignals, NotificationBus } from '../../../src/operations/bus.js';
 import { InstanceRegistry } from '../../../src/operations/instances.js';
 import { InternalServer } from '../../../src/operations/internal-server.js';
-import { relayKey, signRelayToken, type RelayClaims } from '../../../src/operations/relay-token.js';
+import { relayKey, signRelayToken, type RelayClaimsInput } from '../../../src/operations/relay-token.js';
 import { openSession } from '../../../src/db/pool.js';
 import { liveModule } from '../../../src/live/module.js';
 import { teamsModule } from '../../../src/teams/module.js';
@@ -90,7 +91,9 @@ describeDb('the share relay between instances (hosted spec §20.6)', () => {
   });
 
   /** One server with teams, live and terminal shares; `relay: false` is a `single` one, which never dials. */
-  const node = async (options: { readonly relay?: boolean } = {}): Promise<Node> => {
+  const node = async (
+    options: { readonly relay?: boolean; readonly newShareId?: () => string } = {},
+  ): Promise<Node> => {
     const relay = options.relay ?? true;
     const timers = manualTimers();
     const holder = randomUUID();
@@ -120,7 +123,11 @@ describeDb('the share relay between instances (hosted spec §20.6)', () => {
         sharingLicense(),
         teamsModule({ now: () => clock.now }),
         liveModule({ now: () => clock.now, setTimer: timers.setTimer }),
-        terminalSharesModule({ now: () => clock.now, setTimer: timers.setTimer }),
+        terminalSharesModule({
+          now: () => clock.now,
+          setTimer: timers.setTimer,
+          ...(options.newShareId !== undefined ? { newShareId: options.newShareId } : {}),
+        }),
       ],
     });
     made.harness = h;
@@ -298,13 +305,14 @@ describeDb('the share relay between instances (hosted spec §20.6)', () => {
   it('refuses every token but the one made for this holder, share and moment', async () => {
     const { a, b, ben, workspaceId, shareId } = await fleet();
     const tenantId = a.h.tdb.scope.tenantId;
-    const good: Omit<RelayClaims, 'expiresAt'> = {
+    const good: RelayClaimsInput = {
       tenantId,
       shareId,
       workspaceId,
       userId: ben.user.id,
       tokenId: ben.tokenId,
       holder: a.registry.holder,
+      purpose: 'join',
       viewer: {
         name: 'ben',
         tokenExpiresAt: Date.now() + 3_600_000,
@@ -316,8 +324,18 @@ describeDb('the share relay between instances (hosted spec §20.6)', () => {
     const infoStatus = async (token: string | undefined): Promise<number> =>
       (await fetch(info, token !== undefined ? { headers: { authorization: `Bearer ${token}` } } : {})).status;
 
+    const forInfo: RelayClaimsInput = { ...good, purpose: 'info' };
     expect(await dialInternal(join, signRelayToken(KEY, good, Date.now()))).toBe('open');
-    expect(await infoStatus(signRelayToken(KEY, good, Date.now()))).toBe(200);
+    expect(await infoStatus(signRelayToken(KEY, forInfo, Date.now()))).toBe(200);
+    // A token works once (review: replay), on its own route only (review: purpose).
+    const once = signRelayToken(KEY, good, Date.now());
+    expect(await dialInternal(join, once)).toBe('open');
+    expect(await dialInternal(join, once)).toBe('refused');
+    const onceInfo = signRelayToken(KEY, forInfo, Date.now());
+    expect(await infoStatus(onceInfo)).toBe(200);
+    expect(await infoStatus(onceInfo)).toBe(401);
+    expect(await dialInternal(join, signRelayToken(KEY, forInfo, Date.now()))).toBe('refused');
+    expect(await infoStatus(signRelayToken(KEY, good, Date.now()))).toBe(401);
 
     const refused: Record<string, string | undefined> = {
       none: undefined,
@@ -330,11 +348,109 @@ describeDb('the share relay between instances (hosted spec §20.6)', () => {
     };
     for (const [what, token] of Object.entries(refused)) {
       expect({ what, outcome: await dialInternal(join, token) }).toEqual({ what, outcome: 'refused' });
+    }
+    const refusedInfo: Record<string, string | undefined> = {
+      none: undefined,
+      junk: 'not-a-token',
+      'another holder': signRelayToken(KEY, { ...forInfo, holder: b.registry.holder }, Date.now()),
+      'another share': signRelayToken(KEY, { ...forInfo, shareId: 'a'.repeat(26) }, Date.now()),
+      'another tenant': signRelayToken(KEY, { ...forInfo, tenantId: randomUUID() }, Date.now()),
+      expired: signRelayToken(KEY, forInfo, Date.now() - 31_000),
+      'another key': signRelayToken(relayKey(randomBytes(32)), forInfo, Date.now()),
+    };
+    for (const [what, token] of Object.entries(refusedInfo)) {
       expect({ what, status: await infoStatus(token) }).toEqual({ what, status: 401 });
     }
     // A share id in the path that is not the token's.
     expect(
       await dialInternal(`${a.url}/internal/v1/shares/${'b'.repeat(26)}`, signRelayToken(KEY, good, Date.now())),
     ).toBe('refused');
+  });
+
+  it('a slow holder whose rows a peer cleared writes them again on its next beat (review)', async () => {
+    const { a, b, ben, shareId, auth } = await fleet();
+    // As a peer does for a holder missing from `live()`: the row goes behind A's back.
+    await a.h.tdb.query('delete from terminal_share_locations');
+    const lost = await openShare(b.port, auth(ben));
+    clients.push(lost);
+    expect(await lost.closed).toEqual({ code: TERMINAL_SHARE_CLOSE.notFound, reason: 'not found' });
+    await a.registry.renew();
+    expect(await locations(a.h)).toEqual([{ share_id: shareId, holder: a.registry.holder }]);
+    const viewer = await openShare(b.port, auth(ben));
+    clients.push(viewer);
+    expect(await viewer.next('viewer-ready')).toMatchObject({ type: 'viewer-ready', hostName: 'web' });
+  });
+
+  it('the beat sweeps the rows of holders with no live instance row, past the grace only (review)', async () => {
+    const { a, shareId } = await fleet();
+    const crashed = randomUUID();
+    await a.h.tdb.query(
+      `insert into terminal_share_locations (share_id, holder, created_at)
+        values ('crashedcrashedcrashedcrash', $1::uuid, now() - interval '2 minutes'),
+               ('youngyoungyoungyoungyoungy', $1::uuid, now())`,
+      [crashed],
+    );
+    await a.registry.renew();
+    expect((await locations(a.h)).map((row) => row.share_id).sort()).toEqual(
+      ['youngyoungyoungyoungyoungy', shareId].sort(),
+    );
+  });
+
+  it('a frame from the viewer before the holder answered closes it as out of order (review)', async () => {
+    const { a, b, ben, auth, shareId } = await fleet();
+    // A holder that takes the connection and never answers the upgrade: the upstream stays connecting.
+    const dialled: Socket[] = [];
+    let reach: () => void = () => undefined;
+    const reached = new Promise<void>((resolve) => {
+      reach = resolve;
+    });
+    const silent = createServer((socket) => {
+      dialled.push(socket);
+      reach();
+    });
+    await new Promise<void>((resolve) => {
+      silent.listen(0, '127.0.0.1', resolve);
+    });
+    try {
+      const port = (silent.address() as { port: number }).port;
+      const hung = randomUUID();
+      await db.query(`insert into server_instances (holder, url, version) values ($1::uuid, $2, '0.0.0-test')`, [
+        hung,
+        `http://127.0.0.1:${String(port)}`,
+      ]);
+      await a.h.tdb.query('update terminal_share_locations set holder = $1::uuid where share_id = $2', [hung, shareId]);
+      const viewer = await openShare(b.port, auth(ben));
+      clients.push(viewer);
+      await reached;
+      viewer.send({ type: 'request-control' });
+      expect(await viewer.closed).toEqual({ code: TERMINAL_SHARE_CLOSE.badMessage, reason: 'out of order' });
+    } finally {
+      for (const socket of dialled) socket.destroy();
+      await new Promise((resolve) => silent.close(resolve));
+    }
+  });
+
+  it('a share whose location row cannot be written is ended before the 500 (review)', async () => {
+    const id = 'clashclashclashclashclashc';
+    const a = await node({ newShareId: () => id });
+    const ana = await signedInUser(a.h, { email: 'ana@example.com' });
+    const team = await seedTeam(a.h, { name: 'Ops', admins: [ana] });
+    const workspaceId = await seedWorkspace(a.h, { team, name: 'Prod' });
+    // Another holder's row under the same id: the insert fails.
+    await a.h.tdb.query('insert into terminal_share_locations (share_id, holder) values ($1, $2::uuid)', [
+      id,
+      randomUUID(),
+    ]);
+    const created = await call(a.h, ana, 'POST', `/workspaces/${workspaceId}/terminal-shares`, {
+      hostName: 'web',
+      cols: 80,
+      rows: 24,
+    });
+    expect(created.status).toBe(500);
+    const info = await call(a.h, ana, 'GET', `/workspaces/${workspaceId}/terminal-shares/${id}`);
+    expect(info.status).toBe(404);
+    await expect
+      .poll(() => a.events.filter((e) => e.action === 'terminal_share.ended').length, { timeout: WAIT_MS })
+      .toBe(1);
   });
 });

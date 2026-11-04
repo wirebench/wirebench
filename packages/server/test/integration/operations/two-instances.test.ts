@@ -37,6 +37,8 @@ import { seedSyncWorkspace } from '../../helpers/sync.js';
 import { call, seedTeam, seedWorkspace } from '../../helpers/teams.js';
 import { openShare, sharingLicenseService, type ShareClient } from '../../helpers/terminal-shares.js';
 
+/** How soon a bus event must arrive: 2 s, or 5 s on a loaded CI runner. */
+const LAG_LIMIT_MS = process.env.CI === undefined ? 2_000 : 5_000;
 const SECRETS_KEY = randomBytes(32).toString('base64');
 /** Six sends a minute is a burst of one (spec §20.7): the second send of the tenant, on either server, is refused. */
 const SENDS_PER_MINUTE = 6;
@@ -79,8 +81,22 @@ describeDb('two instances on one database and one data directory (hosted spec §
       };
     });
 
-  /** One server as `serve` starts it, `multi` with its own public and internal ports. */
+  /**
+   * One server as `serve` starts it, `multi` with its own public and internal ports. The configuration takes no port
+   * `0`, so a free port is probed and passed; another process may take it before the server binds, so a start that
+   * finds either port in use is tried again on fresh ones.
+   */
   const instance = async (): Promise<Instance> => {
+    for (let attempt = 1; ; attempt += 1) {
+      try {
+        return await startInstance();
+      } catch (error) {
+        if (attempt >= 3 || !String(error).includes('EADDRINUSE')) throw error;
+      }
+    }
+  };
+
+  const startInstance = async (): Promise<Instance> => {
     const port = await freePort();
     const env = {
       WIREBENCH_SERVER_DATABASE_URL: db.url,
@@ -222,7 +238,7 @@ describeDb('two instances on one database and one data directory (hosted spec §
     const pushed = await push(a, ana, workspaceId, 'x\n');
     expect(pushed.status).toBe(201);
     expect(await watcher.next('head')).toEqual({ type: 'head', workspaceId, head: pushed.body.head });
-    expect(Date.now() - sent).toBeLessThan(2_000);
+    expect(Date.now() - sent).toBeLessThan(LAG_LIMIT_MS);
   });
 
   it('accessChanged and sessionEnded on one re-check and close the live and host sockets on the other', async () => {

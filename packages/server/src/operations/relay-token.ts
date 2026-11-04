@@ -4,14 +4,16 @@
  * key itself never signs anything and no other use of it can produce a relay token.
  *
  * The token is `base64url(payload).base64url(mac)`; the MAC covers the payload's exact bytes, so every field is bound:
- * the tenant, the share and its workspace, the viewer's user and device-token ids, the target holder, an expiry
- * {@link RELAY_TOKEN_TTL_MS} ahead, and the viewer's name, token maximum age and audit source, which the holder admits
- * the viewer with. A token is refused when its MAC differs (compared in constant time), when it was made for another
- * holder or share, when it expired, or when it claims to live longer than {@link RELAY_TOKEN_TTL_MS}.
+ * the tenant, the share and its workspace, the viewer's user and device-token ids, the target holder, the route it is
+ * for (`join` or `info`), a random token id (`jti`), an expiry {@link RELAY_TOKEN_TTL_MS} ahead, and the viewer's
+ * name, token maximum age and audit source, which the holder admits the viewer with. A token is refused when its MAC
+ * differs (compared in constant time), when it was made for another holder, share or route, when it expired, or when
+ * it claims to live longer than {@link RELAY_TOKEN_TTL_MS}. The holder also refuses a token id it has seen
+ * ({@link SeenRelayTokens}), so a token works once.
  *
  * Neither the key nor a token is ever logged.
  */
-import { createHmac, hkdfSync, timingSafeEqual } from 'node:crypto';
+import { createHmac, hkdfSync, randomBytes, timingSafeEqual } from 'node:crypto';
 import { z } from 'zod';
 import type { AuditSource } from '../context.js';
 
@@ -21,6 +23,9 @@ const INFO = 'wirebench/instance-relay/v1';
 const VERSION = 1;
 /** Far past any real token: a longer one is refused before it is decoded. */
 const MAX_TOKEN_LENGTH = 4096;
+
+/** The internal route a token is for: the share's socket or its join dialog's info. */
+export type RelayPurpose = 'join' | 'info';
 
 /** What a relay token says: who the viewer is, which share in which tenant, and which instance it is for. */
 export interface RelayClaims {
@@ -32,6 +37,10 @@ export interface RelayClaims {
   readonly tokenId: string;
   /** The instance that holds the share, and only it accepts the token. */
   readonly holder: string;
+  /** The one route that accepts the token. */
+  readonly purpose: RelayPurpose;
+  /** Random, made at signing: the holder accepts each token id once. */
+  readonly jti: string;
   /** Epoch ms. */
   readonly expiresAt: number;
   /** What the holder's registry admits the viewer with. */
@@ -58,6 +67,8 @@ const payloadSchema = z.object({
   userId: z.string().min(1),
   tokenId: z.string().min(1),
   holder: z.string().min(1),
+  purpose: z.enum(['join', 'info']),
+  jti: z.string().regex(/^[A-Za-z0-9_-]{16,64}$/),
   expiresAt: z.number().int(),
   viewer: z.object({
     name: z.string(),
@@ -75,8 +86,11 @@ function mac(key: Buffer, body: string): Buffer {
   return createHmac('sha256', key).update(body).digest();
 }
 
-/** A token for `claims`, good until {@link RELAY_TOKEN_TTL_MS} after `now`. */
-export function signRelayToken(key: Buffer, claims: Omit<RelayClaims, 'expiresAt'>, now: number): string {
+/** What a caller signs: everything but the expiry and the token id, which signing adds. */
+export type RelayClaimsInput = Omit<RelayClaims, 'expiresAt' | 'jti'>;
+
+/** A token for `claims`, good once and until {@link RELAY_TOKEN_TTL_MS} after `now`. */
+export function signRelayToken(key: Buffer, claims: RelayClaimsInput, now: number): string {
   const payload = {
     v: VERSION,
     tenantId: claims.tenantId,
@@ -85,6 +99,8 @@ export function signRelayToken(key: Buffer, claims: Omit<RelayClaims, 'expiresAt
     userId: claims.userId,
     tokenId: claims.tokenId,
     holder: claims.holder,
+    purpose: claims.purpose,
+    jti: randomBytes(16).toString('base64url'),
     expiresAt: now + RELAY_TOKEN_TTL_MS,
     viewer: claims.viewer,
   };
@@ -93,13 +109,13 @@ export function signRelayToken(key: Buffer, claims: Omit<RelayClaims, 'expiresAt
 }
 
 /**
- * The claims of a token made under `key` for this holder and share and still good at `now`; `undefined` for any
- * other token, with no reason, so a probe learns nothing.
+ * The claims of a token made under `key` for this holder, share and route and still good at `now`; `undefined` for
+ * any other token, with no reason, so a probe learns nothing. Whether its id was seen is {@link SeenRelayTokens}'s.
  */
 export function verifyRelayToken(
   key: Buffer,
   token: string,
-  expected: { readonly holder: string; readonly shareId: string },
+  expected: { readonly holder: string; readonly shareId: string; readonly purpose: RelayPurpose },
   now: number,
 ): RelayClaims | undefined {
   if (token.length > MAX_TOKEN_LENGTH) return undefined;
@@ -124,11 +140,37 @@ export function verifyRelayToken(
     userId: parsed.data.userId,
     tokenId: parsed.data.tokenId,
     holder: parsed.data.holder,
+    purpose: parsed.data.purpose,
+    jti: parsed.data.jti,
     expiresAt: parsed.data.expiresAt,
     // JSON has no `undefined`: an optional field is absent, never undefined, as `exactOptionalPropertyTypes` wants.
     viewer: parsed.data.viewer as RelayClaims['viewer'],
   };
-  if (claims.holder !== expected.holder || claims.shareId !== expected.shareId) return undefined;
+  if (claims.holder !== expected.holder || claims.shareId !== expected.shareId || claims.purpose !== expected.purpose) {
+    return undefined;
+  }
   if (now >= claims.expiresAt || claims.expiresAt > now + RELAY_TOKEN_TTL_MS) return undefined;
   return claims;
+}
+
+/**
+ * The token ids a holder accepted, each kept until its token expires (at most {@link RELAY_TOKEN_TTL_MS}), so a copied
+ * token is refused the second time. In memory: a token is made for one holder, so no other process needs to know.
+ */
+export class SeenRelayTokens {
+  private readonly seen = new Map<string, number>();
+
+  /** `true` the first time `jti` comes while its token is good, `false` after; drops the expired ids. */
+  admit(jti: string, expiresAt: number, now: number): boolean {
+    for (const [id, until] of this.seen) {
+      if (until <= now) this.seen.delete(id);
+    }
+    if (this.seen.has(jti)) return false;
+    this.seen.set(jti, expiresAt);
+    return true;
+  }
+
+  get size(): number {
+    return this.seen.size;
+  }
 }

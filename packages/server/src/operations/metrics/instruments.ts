@@ -140,13 +140,17 @@ export class ServerMetrics {
     this.#sources[key] = source;
   }
 
+  /**
+   * The counter by tenant, route, method and status class; the histogram by route and method only (review): its
+   * buckets multiply every series, so a tenant on it would grow with tenants times routes times buckets.
+   */
   httpRequest(record: HttpRequestRecord): void {
-    const attributes = {
+    const attributes = { [ROUTE]: routeValue(record.route), [METHOD]: methodValue(record.method) };
+    this.#httpRequests.add(1, {
       [TENANT]: tenantValue(record.tenantId),
-      [ROUTE]: routeValue(record.route),
-      [METHOD]: methodValue(record.method),
-    };
-    this.#httpRequests.add(1, { ...attributes, [STATUS_CLASS]: statusClassValue(record.statusCode) });
+      ...attributes,
+      [STATUS_CLASS]: statusClassValue(record.statusCode),
+    });
     this.#httpDuration.record(record.durationMs, attributes);
   }
 

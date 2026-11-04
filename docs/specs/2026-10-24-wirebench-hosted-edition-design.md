@@ -2126,8 +2126,12 @@ create table server_instances (
 - **The payload** is JSON, at most 7 900 bytes: `{ v: 1, from: holder, at, kind, tenantId, …the event's ids }`.
   - `at` is the send time in epoch ms, for the lag histogram (§20.8). It is optional on decode, so an instance on the
     previous version, which sends none, is still heard during a rolling upgrade.
-  - Each kind has its own field list and a strict decoder. `check:tenant-scope` keeps `pg_notify` and `LISTEN` to
-    `src/operations/`, so no other path puts a payload on the bus past the codec.
+  - Each kind has its own field list, and the encoder copies only those fields. The decoder drops any key it does
+    not know before it checks the known ones strictly, so a newer instance may add an envelope key during a rolling
+    upgrade without its events going unheard; `v` stays the switch for a change an older decoder must refuse (Part C
+    review). The encoder, not the decoder, keeps private fields off the wire, and a dropped key never reaches a
+    listener. `check:tenant-scope` keeps `pg_notify` and `LISTEN` to `src/operations/`, so no other path puts a
+    payload on the bus past the codec.
   - It carries ids only, never a name, an email or file content (ADR-0013).
   - `AccessChangedEvent` and `LicenseChangedEvent` carry a branded `TenantScope`. The receiver rebuilds it from
     `tenantId` with `scopeOf` in `src/tenancy/`, the only place a scope may be made.
@@ -2232,23 +2236,34 @@ logs and sharing spec B1). With several instances, a viewer can land on another 
 - **Where a share lives.** `terminal_share_locations(tenant_id, share_id, holder, created_at)`, scoped like every
   table, keyed `(tenant_id, share_id)`. The owner's instance writes the row when the share starts and deletes it when
   the share ends. A row whose `holder` has no live `server_instances` row is dead, and a join treats it as no share.
+  - On each instance heartbeat the holder writes the rows of every share it still holds again (an upsert, per tenant
+    in its scope), so a holder that was only slow, whose rows a peer cleared as dead, is found again within one beat.
+  - Every 10 minutes the heartbeat also deletes, per tenant through the job loop, the rows whose holder has no live
+    instance row and that are older than a dead instance's 60 s: a crashed holder's rows do not stay for good.
 - **Joining elsewhere.** A viewer's instance that does not hold the share looks it up, then dials the holder's `url`
   at `/internal/v1/shares/<share_id>` with the viewer's identity, and pipes frames both ways unchanged. The holder
   sees one more viewer, with that viewer's identity, and every rule of the registry (the viewer limit, control,
-  audit) applies there once. The viewer's instance clears a dead row it finds.
+  audit) applies there once. The viewer's instance clears a dead row it finds. A frame from the viewer before the
+  holder has answered is out of order, and the viewer is closed with the bad-message code, as the holder would.
+  - A share whose row cannot be written is ended before the create answers `500`.
 - **The join dialog's info** is answered by the holder the same way: a client asks for it before it opens the socket,
   so the relay also serves `GET /internal/v1/shares/<share_id>/info`.
 - **The internal listener.** `WIREBENCH_SERVER_INSTANCE_URL` names this instance's own address on the private
   network (for example `http://10.0.0.5:8091`), and the server listens on its port with a second Fastify that serves
   only `/internal/v1/*`. It binds the URL's host when that is an IP literal or `localhost`, and `0.0.0.0` for a DNS
-  name, which may not resolve to a local address.
+  name, which may not resolve to a local address; `WIREBENCH_SERVER_INTERNAL_HOST` overrides the bind address. The
+  listener speaks plain HTTP, so the URL must be `http://` (configuration refuses `https://`): the private network
+  is the transport's guard.
   - Each relay request carries a token made with HMAC-SHA-256 under a key HKDF derives from
     `WIREBENCH_SERVER_SECRETS_KEY` ("wirebench/instance-relay/v1"), which is why `multi` needs that key (§20.1). The
     token binds the tenant, the share, the workspace, the viewer's user and token ids, the target holder, and an
     expiry 30 s ahead, and carries what the holder admits the viewer with: the display name, when the viewer's device
-    token reaches its maximum age, and the audit source. The holder refuses any other.
+    token reaches its maximum age, and the audit source. It also names its route (`purpose`: `join` or `info`) and
+    carries a random `jti`; the holder keeps each `jti` it accepted until the token expires, so a token works once and
+    on its own route only. The holder refuses any other.
   - The public listener never routes `/internal/`, and the internal one routes nothing else.
-  - The docs say the port must not be reachable from outside the private network. The token is the guard if it is.
+  - The docs say the port must not be reachable from outside the private network. The token is the only guard if
+    it is.
 - **What does not change:** the share's protocol, its limits and its audit. When the holder dies, the share ends for
   every viewer, as a restart ends it today.
 - `single` mode never dials: every share lives in the one process.
@@ -2343,7 +2358,7 @@ logs and sharing spec B1). With several instances, a viewer can land on another 
   | Name | Kind | Attributes |
   | --- | --- | --- |
   | `wirebench.http.requests` | counter | tenant, route, method, status class |
-  | `wirebench.http.duration` | histogram (ms) | tenant, route, method |
+  | `wirebench.http.duration` | histogram (ms) | route, method |
   | `wirebench.live.sockets` | gauge | tenant |
   | `wirebench.host.instances` | gauge | tenant |
   | `wirebench.sends` | counter | tenant, outcome (`ok`, `failed`, `refused`) |
@@ -2360,6 +2375,9 @@ logs and sharing spec B1). With several instances, a viewer can land on another 
 - **As built:**
   - Modules record through `ctx.metrics`. With no endpoint, the instruments sit on the API's no-op meter, the SDK is
     loaded through `import()` only when an endpoint is set, and the gauges' sources are never read.
+  - `wirebench.http.duration` carries no tenant (Part C review): a histogram's buckets multiply its series, so
+    tenant × route × method × buckets would grow with every tenant. The counter keeps tenant × route × method × status
+    class.
   - `wirebench.budget.refusals`'s budget is `sends` or `concurrency`.
   - `wirebench.instances` counts the live `server_instances` rows when the reader collects, not on a timer.
   - `wirebench.schedules.runs` records from a local listener, so each instance counts its own runs.

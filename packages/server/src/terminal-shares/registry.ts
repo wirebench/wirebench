@@ -338,6 +338,25 @@ export class ShareRegistry {
     }
   }
 
+  /** Every share held here, with its tenant: the heartbeat writes their location rows again (spec §20.6). */
+  held(): { readonly tenant: TenantScope; readonly shareId: string }[] {
+    return [...this.shares.values()].map((share) => ({ tenant: share.tenant, shareId: share.id }));
+  }
+
+  /** Whether the share is still held here. */
+  holds(tenantId: string, shareId: string): boolean {
+    return this.shares.has(shareKey(tenantId, shareId));
+  }
+
+  /**
+   * Ends a share whose creation could not finish (its location row was not written): its id was never handed out,
+   * so nobody is attached; the end is audited as any other, pairing the `started` row.
+   */
+  abandon(tenant: TenantScope, shareId: string): void {
+    const share = this.shares.get(shareKey(tenant.tenantId, shareId));
+    if (share !== undefined) this.end(share, 'ended', share.ownerSource);
+  }
+
   /** Someone's access may have changed in `tenantId`: every socket of its shares is looked up again. */
   async recheck(tenantId: string): Promise<void> {
     for (const share of [...this.shares.values()]) {

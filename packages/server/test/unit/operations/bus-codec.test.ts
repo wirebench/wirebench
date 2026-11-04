@@ -119,13 +119,27 @@ describe('the bus codec (hosted spec §20.3)', () => {
     });
   });
 
-  it('refuses an unknown version, an unknown kind, an extra field and anything not JSON', () => {
+  it('hears a newer sender’s extra keys, dropped, but refuses another version (review: rolling upgrades)', () => {
+    const good = JSON.parse(encode(FROM, 'hooksChanged', EVENTS.hooksChanged, 0, AT)![0]!) as Record<string, unknown>;
+    const newer = { ...good, trace: 'abc', email: 'ana@example.com', tenant: { slug: 'acme' } };
+    const heard = decode(JSON.stringify(newer));
+    expect(heard).toEqual({ from: FROM, at: AT, kind: 'hooksChanged', event: EVENTS.hooksChanged });
+    // Nothing of a dropped key reaches a listener.
+    expect(JSON.stringify(heard)).not.toContain('ana@example.com');
+    expect(JSON.stringify(heard)).not.toContain('acme');
+    // A presence part's numbering is known, so kept; on another kind those keys are dropped.
+    expect(decode(JSON.stringify({ ...good, seq: 1, part: 0, parts: 2 }))?.event).toEqual(EVENTS.hooksChanged);
+    // `v` stays the hard break: a payload of another version is refused, whatever it carries.
+    expect(decode(JSON.stringify({ ...newer, v: 2 }))).toBeUndefined();
+    expect(decode(JSON.stringify({ ...good, v: 2 }))).toBeUndefined();
+  });
+
+  it('refuses an unknown version, an unknown kind, a known field out of shape and anything not JSON', () => {
     const good = JSON.parse(encode(FROM, 'hooksChanged', EVENTS.hooksChanged)![0]!) as Record<string, unknown>;
     expect(decode(JSON.stringify(good))).toBeDefined();
     expect(decode(JSON.stringify({ ...good, v: 2 }))).toBeUndefined();
     expect(decode(JSON.stringify({ ...good, kind: 'everything' }))).toBeUndefined();
     expect(decode(JSON.stringify({ ...good, kind: 'toString' }))).toBeUndefined();
-    expect(decode(JSON.stringify({ ...good, email: 'ana@example.com' }))).toBeUndefined();
     expect(decode(JSON.stringify({ ...good, from: 'someone' }))).toBeUndefined();
     // The send time, when present, is a whole, non-negative epoch millisecond.
     expect(decode(JSON.stringify({ ...good, at: -1 }))).toBeUndefined();

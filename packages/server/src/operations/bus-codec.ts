@@ -11,8 +11,12 @@
  *   (review M1). Any other event that would not fit is sent as `{ v: 1, from, at, kind: 'resync', tenantId }`.
  * - **The missed marker** is a `resync` with no `tenantId`: the sender lost events it could not send, and every peer
  *   resyncs everything, as after a lost bus of its own (review I2).
- * - **Strict on the way in.** An unknown `v`, an unknown kind or a field out of shape is refused whole. The
- *   decoder does not brand a scope: the bus rebuilds `tenant` from `tenantId` through the tenant directory.
+ * - **Tolerant of new keys, strict on known ones.** An unknown `v`, an unknown kind or a known field out of shape is
+ *   refused whole. A key this version does not know is dropped before the check (review: rolling upgrades), so a
+ *   newer sender may add one without its events going unheard here; `v` is the switch for a change older decoders
+ *   must refuse. Dropping is no weaker a guard: the encoder, which copies only each kind's own fields, is what keeps
+ *   a name or an email off the wire, and a dropped key never reaches a listener. The decoder does not brand a scope:
+ *   the bus rebuilds `tenant` from `tenantId` through the tenant directory.
  */
 import { z } from 'zod';
 import { editionSchema, scheduleRunStatusSchema } from '@wirebench/engine';
@@ -142,6 +146,14 @@ const FIELDS: { readonly [K in AnnouncementKind]: readonly string[] } = {
   resync: ['tenantId'],
 };
 
+/** The keys a payload of each kind may carry; any other is dropped on the way in. */
+const KNOWN = new Map<string, ReadonlySet<string>>(
+  Object.entries(FIELDS).map(([kind, fields]) => [
+    kind,
+    new Set(['v', 'from', 'at', 'kind', ...fields, ...(kind === 'presenceChanged' ? ['seq', 'part', 'parts'] : [])]),
+  ]),
+);
+
 /**
  * A decoded notification: its sender, when it was sent (the sender's epoch ms) and its kind, and the event as the
  * listeners take it, less any `tenant` scope.
@@ -220,7 +232,9 @@ export function decode(payload: string): BusMessage | undefined {
   if (typeof parsed !== 'object' || parsed === null) return undefined;
   const kind = (parsed as { readonly kind?: unknown }).kind;
   if (typeof kind !== 'string' || !Object.hasOwn(WIRE, kind)) return undefined;
-  const checked = WIRE[kind as AnnouncementKind].safeParse(parsed);
+  const known = KNOWN.get(kind);
+  const kept = Object.fromEntries(Object.entries(parsed).filter(([key]) => known?.has(key) === true));
+  const checked = WIRE[kind as AnnouncementKind].safeParse(kept);
   if (!checked.success) return undefined;
   const event: Record<string, unknown> = { ...checked.data };
   const from = event.from as string;

@@ -33,7 +33,8 @@ const T2 = randomUUID();
 /** Each instrument's attribute keys, exactly as spec §20.8's table lists them. */
 const TABLE: Record<string, readonly string[]> = {
   [INSTRUMENTS.httpRequests]: [TENANT, ROUTE, METHOD, STATUS_CLASS],
-  [INSTRUMENTS.httpDuration]: [TENANT, ROUTE, METHOD],
+  // No tenant on the histogram (review): its buckets multiply every series.
+  [INSTRUMENTS.httpDuration]: [ROUTE, METHOD],
   [INSTRUMENTS.liveSockets]: [TENANT],
   [INSTRUMENTS.hostInstances]: [TENANT],
   [INSTRUMENTS.sends]: [TENANT, OUTCOME],

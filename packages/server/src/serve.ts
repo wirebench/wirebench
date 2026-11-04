@@ -635,6 +635,7 @@ export async function startServer(
     instances === 'multi' && config.instanceUrl !== undefined && config.secretsKey !== undefined
       ? new InternalServer({
           url: config.instanceUrl,
+          ...(config.internalHost !== undefined ? { bindHost: config.internalHost } : {}),
           holder: registry.holder,
           key: relayKey(config.secretsKey),
           scopeFor: async (tenantId) => (await directoryOf(tenancy).get(tenantId))?.scope,
@@ -781,8 +782,12 @@ export async function startServer(
     await internal?.start(app.log);
   } catch (error) {
     await app.close();
+    await internal?.close();
     await bus.stop(0);
     await registry.stop();
+    // Opened at start-up as on every other path past it: nothing may hold the process open (review).
+    await metricsHandle.shutdown(0);
+    await lockPool.close();
     await heldLock.release();
     await db.close();
     const code = (error as { readonly code?: unknown }).code;

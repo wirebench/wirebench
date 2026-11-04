@@ -31,7 +31,7 @@ import { forbidden } from '../teams/errors.js';
 import { effectiveRole, requireWorkspaceRole } from '../teams/roles.js';
 import { shareNotFound } from './errors.js';
 import { ShareRegistry, type ShareRegistryDeps } from './registry.js';
-import { ShareRelay, shareLocations } from './relay.js';
+import { ShareRelay, shareLocationBeat, shareLocations } from './relay.js';
 import { runRelayedViewer, runShareSocket } from './socket.js';
 import type { TenantScope } from '../tenancy/scope.js';
 import { outsideTenantUnit } from '../tenancy/tenant-db.js';
@@ -184,7 +184,13 @@ export function terminalSharesModule(options: TerminalSharesOptions = {}): Serve
             tenant: request.tenant,
           });
           // Where the share lives (spec §20.6), before its id is handed out: a viewer on another instance finds it.
-          await shareLocations.add(ctx.tenancy.db(request.tenant), shareId, ctx.instance.holder);
+          // Without its row the share is ended, so no share outlives a failed create unseen by every other instance.
+          try {
+            await shareLocations.add(ctx.tenancy.db(request.tenant), shareId, ctx.instance.holder);
+          } catch (error) {
+            registry.abandon(request.tenant, shareId);
+            throw error;
+          }
           const answer: TerminalShareCreateResponse = { shareId };
           return reply.code(201).send(answer);
         },
@@ -244,6 +250,19 @@ export function terminalSharesModule(options: TerminalSharesOptions = {}): Serve
           },
         });
       });
+
+      // Spec §20.6: the rows of the shares held here, written again on each instance heartbeat, and the rows of
+      // crashed holders swept every ten minutes.
+      ctx.instance.onBeat(
+        shareLocationBeat({
+          held: () => registry.held(),
+          holds: (tenantId, shareId) => registry.holds(tenantId, shareId),
+          instance: ctx.instance,
+          db: (tenant) => ctx.tenancy.db(tenant),
+          forEachTenant: (job, fn) => ctx.tenancy.forEachTenant(job, (tx) => fn(tx), ctx.log),
+          now: () => now().getTime(),
+        }),
+      );
 
       let heartbeat: { cancel(): void } | undefined;
       const beat = (): void => {

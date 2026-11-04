@@ -63,7 +63,8 @@ database, one data directory; run it behind TLS. Design: `docs/specs/2026-09-24-
 | `WIREBENCH_SERVER_EGRESS_DENY_PRIVATE` | no | `false` | Also refuse private network addresses (10/8, 172.16/12, 192.168/16, 100.64/10, fc00::/7) for connections the server opens for users: scheduled runs, alerts and the browser client. Loopback, link-local and cloud metadata addresses are always refused. |
 | `WIREBENCH_SERVER_HOST_IDLE_MINUTES` | no | `30` | Minutes after a user’s last browser connection closes before the server stops that user’s host and frees its memory (1–1440). The user’s files stay. |
 | `WIREBENCH_SERVER_INSTANCES` | no | `single` | `single`: one server process. `multi`: several instances against one database and one data volume, which needs an Enterprise license that is valid or in grace (the start is refused otherwise), WIREBENCH_SERVER_INSTANCE_URL and WIREBENCH_SERVER_SECRETS_KEY. |
-| `WIREBENCH_SERVER_INSTANCE_URL` | no | — | This instance’s private address, which the other instances reach it at: `http://host:port`, such as `http://10.0.0.5:8091`; the port is its internal listener’s. Required with `WIREBENCH_SERVER_INSTANCES=multi`. |
+| `WIREBENCH_SERVER_INSTANCE_URL` | no | — | This instance’s private address, which the other instances reach it at: `http://host:port`, such as `http://10.0.0.5:8091`; the port is its internal listener’s, which speaks plain HTTP, so `https://` is refused. Required with `WIREBENCH_SERVER_INSTANCES=multi`. |
+| `WIREBENCH_SERVER_INTERNAL_HOST` | no | — | The address the internal listener binds, in place of the one taken from `WIREBENCH_SERVER_INSTANCE_URL` (its host when an IP address or `localhost`, every IPv4 interface for a DNS name). Its port stays the URL’s. If the port is reachable from outside the private network, the relay token is the only guard. |
 | `WIREBENCH_SERVER_TENANT_SENDS_PER_MINUTE` | no | `600` | Requests the server sends for one tenant’s browser users per minute, every instance together (1–1000000). A burst of a sixth of it (100 at the default) may go at once; past it a send fails with `tenant-send-budget` and its retry time, while a run started in the browser pauses until the budget refills, each of its requests counting. Sends through a paired agent and scheduled runs do not count. |
 | `WIREBENCH_SERVER_TENANT_CONCURRENT_SENDS` | no | `16` | Requests the server sends for one tenant’s browser users at once, every instance together (1–10000); a run counts as one while it lasts, a WebSocket only while it opens. Past it a send fails with `tenant-send-concurrency`. |
 | `WIREBENCH_SERVER_TENANT_RUN_SLOTS` | no | `WIREBENCH_SERVER_SCHEDULES_CONCURRENCY` | Scheduled runs one tenant runs at once, every instance together (1–1000). Unset, the schedules concurrency, so a one-tenant server runs as many as before. Its further runs wait their turn, never refused; WIREBENCH_SERVER_SCHEDULES_CONCURRENCY still caps each instance. |
@@ -113,7 +114,9 @@ Each process is `service.instance.id` (its instance id, as `admin instances` lis
 `wirebench.schedules.runs`, `wirebench.repo.lock.wait`, `wirebench.bus.dropped`, `wirebench.bus.lag`,
 `wirebench.instances` and `wirebench.db.pool.waiting`. A team appears only by its id
 (`wirebench.tenant.id`, or `none`), a request only by its route template, method and status class: never a
-URL, a name, an email or anything a request carried. On shutdown the server pushes its last numbers, waiting
+URL, a name, an email or anything a request carried. `wirebench.http.duration` has no team id, only the route
+and method, so its histogram buckets do not multiply by the number of teams; `wirebench.http.requests` counts by
+team. On shutdown the server pushes its last numbers, waiting
 at most 5 seconds for the collector.
 
 ### Database roles
@@ -292,8 +295,12 @@ What it needs:
   host lease keeps two instances from working on one user's files.
 - **A private network** between the instances for the port of `WIREBENCH_SERVER_INSTANCE_URL`. It serves only
   `/internal/v1/`, the terminal-share relay, and must not be reachable from outside; the public port never serves
-  `/internal/`. Each relay request carries a token that lasts 30 seconds, which still refuses anyone without the
-  secrets key if the port is exposed by mistake.
+  `/internal/`. The internal port speaks plain HTTP, so `WIREBENCH_SERVER_INSTANCE_URL` is an `http://` address
+  (`https://` is refused): the private network is what protects the traffic. The port binds the URL's host when it
+  is an IP address or `localhost`, and every IPv4 interface for a DNS name; `WIREBENCH_SERVER_INTERNAL_HOST` names
+  another address to bind. Each relay request carries a token that lasts 30 seconds, works once and only on the
+  route it was made for. If the port is reachable from outside by mistake, that token is the only guard: it still
+  refuses anyone without the secrets key.
 
 **Health.** `GET /readyz` answers `200` once start-up has finished and while the instance hears the others, and `503`
 (`starting`, `reconnecting` or `draining`) otherwise. Point the balancer's health check at it. `/healthz` stays the

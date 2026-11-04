@@ -4,6 +4,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
+import { createServer } from 'node:net';
 import { Writable } from 'node:stream';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { LicenseState } from '@wirebench/engine';
@@ -15,6 +16,7 @@ import { DEAD_MS, HEARTBEAT_MS, InstanceRegistry } from '../../../src/operations
 import { startServer, StartupError, type RunningServer } from '../../../src/serve.js';
 import { describeDb, testDatabase, type TestDatabase } from '../../helpers/database.js';
 import { mkTempDir, removeTempDir } from '../../helpers/git.js';
+import { TestReader } from '../../helpers/metrics.js';
 import { freePort } from '../../helpers/net.js';
 import { manualTimers } from '../../helpers/timers.js';
 
@@ -163,6 +165,7 @@ describeDb('server instances (hosted spec §20.1, §20.2, §20.10)', () => {
       readonly env?: Record<string, string>;
       readonly license?: Pick<LicenseState, 'edition' | 'status'>;
       readonly lines?: string[];
+      readonly metricsReader?: TestReader;
     }): Promise<RunningServer> => {
       const dataDir = await mkTempDir();
       dataDirs.push(dataDir);
@@ -185,7 +188,13 @@ describeDb('server instances (hosted spec §20.1, §20.2, §20.10)', () => {
       return startServer(
         env,
         { stdout: { write: vi.fn() }, stderr: { write: vi.fn() }, env },
-        { signals: new EventEmitter(), exit: vi.fn(), logStream, modules: modulesWith(extra.license) },
+        {
+          signals: new EventEmitter(),
+          exit: vi.fn(),
+          logStream,
+          modules: modulesWith(extra.license),
+          ...(extra.metricsReader !== undefined ? { metricsReader: extra.metricsReader } : {}),
+        },
       );
     };
     /** A `multi` server's variables, its internal listener on a port of its own (spec §20.6). */
@@ -261,6 +270,35 @@ describeDb('server instances (hosted spec §20.1, §20.2, §20.10)', () => {
         await server.close();
       }
       await expect(fetch(`${internal}/healthz`)).rejects.toThrow();
+    });
+
+    it('an internal port in use refuses the start, and leaves no row, pool or metrics behind (review)', async () => {
+      const env = await multi();
+      const taken = createServer();
+      await new Promise<void>((resolve) => {
+        taken.listen(Number(new URL(env.WIREBENCH_SERVER_INSTANCE_URL!).port), '127.0.0.1', resolve);
+      });
+      const reader = new TestReader();
+      const shutdown = vi.spyOn(reader, 'shutdown');
+      try {
+        const failed = await start({
+          env,
+          license: { edition: 'enterprise', status: 'active' },
+          metricsReader: reader,
+        }).then(
+          async (server) => {
+            await server.close();
+            return undefined;
+          },
+          (error: unknown) => error,
+        );
+        expect(failed).toBeInstanceOf(StartupError);
+        expect((failed as StartupError).message).toMatch(/^cannot listen on WIREBENCH_SERVER_INSTANCE_URL's port/);
+        expect(await rows()).toEqual([]);
+        expect(shutdown).toHaveBeenCalled();
+      } finally {
+        await new Promise((resolve) => taken.close(resolve));
+      }
     });
 
     it('a single server opens no internal listener', async () => {
