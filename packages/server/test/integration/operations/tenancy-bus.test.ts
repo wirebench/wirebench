@@ -162,9 +162,16 @@ describeDb('the tenant map and the data-key cache on the bus (hosted spec §20.3
   it('keeps the key it just wrote, and reloads its own map once per write (review M2)', async () => {
     const a = await node();
     const b = await node();
-    const { scope } = await new TenantAdmin(db, directoryOf(a.h.ctx.tenancy)).create({ slug: 'acme', name: 'Acme' });
     const reloads = vi.spyOn(a.resolver, 'invalidate');
     const remoteReloads = vi.spyOn(b.resolver, 'invalidate');
+    const { scope } = await new TenantAdmin(db, directoryOf(a.h.ctx.tenancy)).create({ slug: 'acme', name: 'Acme' });
+    // The first write's notification reaches B on its own time: count from after it, so it is never counted twice.
+    await vi.waitFor(() => {
+      expect(remoteReloads).toHaveBeenCalledTimes(1);
+    });
+    expect(reloads).toHaveBeenCalledTimes(1);
+    reloads.mockClear();
+    remoteReloads.mockClear();
     await new TenantAdmin(db, directoryOf(a.h.ctx.tenancy)).create({ slug: 'beta', name: 'Beta' });
     await vi.waitFor(() => {
       expect(remoteReloads).toHaveBeenCalledTimes(1);
