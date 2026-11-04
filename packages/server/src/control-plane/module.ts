@@ -3,7 +3,8 @@
  * registered in every mode for its migration (`0023`, spec §22.3), and serves nothing outside hosted mode. In hosted
  * mode it takes the control role's pool and the Paddle webhook's secret as its factory's arguments, which `serve.ts`
  * passes through {@link withControlPool}, and refuses to register without them: neither is ever on the shared
- * `ServerContext`. It serves the billing webhook on the entry host (spec §22.5).
+ * `ServerContext`. It serves the billing webhook on the entry host (spec §22.5), and runs the control loop
+ * (§22.15): the grace sweep, its mails and the events' retention.
  */
 import { fileURLToPath } from 'node:url';
 import { WirebenchError } from '@wirebench/engine';
@@ -11,9 +12,14 @@ import type { ServerConfig } from '../config.js';
 import type { ServerContext, ServerModule } from '../context.js';
 import { applySubscriptionEvent, recordUnapplied, type ApplyDeps } from './billing/apply.js';
 import type { BillingOutcome, MappedEvent } from './billing/events.js';
+import { billingEventsRetentionStep, graceSweepStep } from './billing/sweep.js';
 import { registerPaddleWebhook } from './billing/webhook.js';
 import type { ControlDb } from './control-db.js';
+import { ControlLoop, type LoopStep } from './loop.js';
+import { mailStep, type ControlSend } from './mail.js';
 import { TenantLifecycle } from './tenants.js';
+import type { SetTimer } from '../hooks/env.js';
+import { sendAlertMail } from '../schedules/alerts/smtp.js';
 
 /** Migration `0023`: the tenants' new columns, the control tables and the three scoped ones. */
 export const CONTROL_PLANE_MIGRATIONS_DIR = fileURLToPath(new URL('../../migrations/control-plane/', import.meta.url));
@@ -28,6 +34,12 @@ export interface ControlPlaneOptions {
   readonly now?: () => Date;
   /** What the webhook applies a verified event with; tests replace it. */
   readonly apply?: (mapped: MappedEvent) => Promise<BillingOutcome>;
+  /** The control loop's timer (spec §22.15); tests fire it by hand. */
+  readonly setTimer?: SetTimer;
+  /** `false` keeps the loop from arming, for a test that runs no pass. */
+  readonly startLoop?: boolean;
+  /** How the loop's mails go; through the operator's SMTP settings by default. */
+  readonly send?: ControlSend;
 }
 
 /** Each module's options, so {@link withControlPool} can rebuild it with the pool and keep what a test gave it. */
@@ -89,6 +101,32 @@ export function controlPlaneModule(options: ControlPlaneOptions = {}): ServerMod
         apply,
         ...(now !== undefined ? { now: () => now().getTime() } : {}),
       });
+      // The control loop (spec §22.15). Later parts add their steps to this list.
+      const steps: LoopStep[] = [graceSweepStep(lifecycle)];
+      const { smtpUrl, smtpFrom } = ctx.config;
+      if (smtpUrl !== undefined && smtpFrom !== undefined) {
+        const smtp = { url: smtpUrl, from: smtpFrom };
+        steps.push(
+          mailStep({
+            tenancy: ctx.tenancy,
+            lifecycle,
+            config: ctx.config,
+            send: options.send ?? ((to, mail) => sendAlertMail(smtp, to, mail)),
+            log: ctx.log,
+            mailHost: new URL(smtpUrl).hostname,
+          }),
+        );
+      }
+      steps.push(billingEventsRetentionStep());
+      const loop = new ControlLoop({
+        control,
+        steps,
+        log: ctx.log,
+        ...(now !== undefined ? { now } : {}),
+        ...(options.setTimer !== undefined ? { setTimer: options.setTimer } : {}),
+      });
+      if (options.startLoop !== false) loop.start();
+      app.addHook('onClose', () => loop.close());
       return Promise.resolve();
     },
   };
