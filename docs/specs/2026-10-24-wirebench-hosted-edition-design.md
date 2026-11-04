@@ -7,8 +7,8 @@ customers · Amended 2026-10-26 after an independent review: its four high findi
 guard 6 (background jobs have a tenant scope) and §5.1 (the host package is a factory with no module-level
 state); the rest are folded in where they apply · Amended 2026-10-27 for slice 2 (§17, decision 12,
 ADR-0034) · Amended 2026-10-29 for slice 3 (§18, ADR-0035) · Amended 2026-10-29 for slice 4 (§19, ADR-0036) ·
-Amended 2026-11-03 for slice 5 (§20, ADR-0037) · Amended 2026-11-03 for slice 6 (§21, ADR-0038) ·
-Issue: #776 (slice 1 is #777, slice 2 is #783, slice 3 is #790, slice 4 is #798, slice 5 is #821, slice 6 is #822) ·
+Amended 2026-11-03 for slice 5 (§20, ADR-0037) · Amended 2026-11-03 for slice 6 (§21, ADR-0038) · Amended 2026-11-04 for slice 8 (§23, ADR-0040) ·
+Issue: #776 (slice 1 is #777, slice 2 is #783, slice 3 is #790, slice 4 is #798, slice 5 is #821, slice 6 is #822, slice 8 is #830) ·
 Module ids: `host-seam`,
 `browser-client`, `local-agent`, `tenancy`, `operations`, `domains`, `control-plane`, `custom-domains`
 
@@ -659,7 +659,7 @@ self-hosted teams on their own, which is why they would come first whenever the 
 | 5 | `operations` | `LISTEN`/`NOTIFY` hub fan-out, advisory locks, sticky host sockets, per-tenant budgets, metrics by tenant id | 4 | partly (multi-instance self-hosted) |
 | 6 | `domains` | **Built** (#825, #826 and #827, 2026-11-03, for #822; ADR-0038; §21 records what changed from this row). The two names as settings, the wildcard certificate in a Traefik recipe by DNS-01, the `app.` entry with emailed links, reserved slugs; the public suffix submission is an operator step for when a domain is registered | 4 | no |
 | 7 | `control-plane` | Signup, subscriptions, edition from subscription, suspension, export, deletion, operator commands; per-tenant settings (OIDC, SAML, SCIM, audit forwarding, SMTP sender, retention), today's environment variables becoming the default tenant's (§19.1, §19.12) | 4, 5, 6 | no |
-| 8 | `custom-domains` | CNAME plus TXT verification for Enterprise tenants | 6, 7 | no |
+| 8 | `custom-domains` | CNAME plus TXT verification for Enterprise tenants; §23 records the design (#830, ADR-0040): a second full name that becomes the primary, a CNAME to `custom.<app-domain>`, one per tenant, an HTTP-01 certificate per name through Traefik's HTTP provider | 6, 7 | no |
 
 The 2026-10-15 trigger (ten self-hosted paying customers) gates slices 5 to 8. Slices 1 to 4 may be
 scheduled earlier on their own merits, each with its own spec amendment and issue when that happens.
@@ -2492,3 +2492,202 @@ stable:
   hosted refusal makes the recipe run.
 - **8:** a custom name is one more resolver entry (§19.12) and one more Traefik router with an HTTP-01 certificate of
   its own; the entry and the wildcard are unchanged.
+
+## 23. Slice 8 amendment: custom domains (2026-11-04)
+
+Slice 8 (#830) lets an Enterprise tenant serve the product at a name of its own, such as `wirebench.example.com`.
+The name is proved by a CNAME and a TXT record and gets a certificate of its own from the proxy. It builds §3.7's
+custom-name paragraph and the slice 8 items of §19.12 and §21.8, and builds on slice 7's edition (§22). Where the
+build differs from the sections above, this section wins. ADR-0040. Plan: `docs/plans/2026-11-04-custom-domains.md`.
+
+§3.7 says the check reuses "the domain-verification shape of the SAML and SCIM module". That module has none: it
+trusts the identity provider's assertions and never checks a domain. This section defines the shape, and any later
+domain check (an email domain for SAML, say) should reuse it.
+
+Owner rulings (2026-11-04, popup):
+
+- The custom name is a **second full name**: both names serve the whole app, and the custom name becomes the
+  tenant's primary.
+- The CNAME points at one **fixed target, `custom.<app-domain>`**.
+- **One** custom name per tenant.
+- Tenant admins manage it through **the API, an admin command and a Settings tab**.
+
+### 23.1 The name and its records
+
+- **Who.** A tenant admin, with the `custom-domains` feature: a new entry in `FEATURES`
+  (`packages/core/src/server-api/licensing.ts`). An Enterprise license or subscription grants every feature, so this
+  is Enterprise only. In hosted mode `requireFeature` reads slice 7's per-tenant state, and this slice reads no
+  edition column itself. Self-hosted servers have no use for a custom name: they choose their own public URL. There
+  the routes answer `404` (`custom-domains-hosted-only`) and the tab is hidden.
+- **The name.** `checkCustomName(name, config)` answers `ok` or a reason:
+  - the shape of §21.1 (lower-cased, at least two labels, no scheme, port, path, trailing dot or IP literal), plus no
+    `*` label;
+  - `custom-name-ours`: the app domain, the site domain, or any name under either;
+  - `custom-name-local`: `localhost` or a name under `.localhost`, `.local`, `.internal`, `.test`, `.example` or
+    `.invalid`. Tests pass a test-only allowance to use `.test`.
+
+  An apex (`example.com`) passes the shape check but cannot hold a CNAME, so its check never succeeds, and the
+  Settings tab says so. The server carries no public suffix list (§21.1), so it cannot refuse an apex outright.
+- **The records** the server shows, with a token made once per claim (32 random bytes, base64url):
+
+  | Type | Name | Value |
+  | --- | --- | --- |
+  | `CNAME` | `<name>` | `custom.<app-domain>` |
+  | `TXT` | `_wirebench.<name>` | `wirebench-domain-verification=<token>` |
+
+  `custom` joins the reserved slugs (§21.2), so no tenant takes it. It needs no DNS record of its own, since the
+  wildcard `*.<app-domain>` already covers it. The proxy routes nothing to it by name, so it answers `404` like an
+  unknown slug.
+- **One per tenant.** A second claim is refused with `custom-domains-one-per-tenant` until the first is removed.
+- **Claims block no one.** Any number of tenants may claim the same name while it is unverified. The first to pass
+  the check holds it. Holding is a primary key on the name in `tenant_hosts` (§23.3), so two checks cannot both win.
+  A claim that sees the name held elsewhere shows `held-elsewhere`, never by whom.
+
+### 23.2 The check
+
+- **What passes.** Both of these, through one resolver:
+  - **CNAME:** the name's CNAME is `custom.<app-domain>`, compared lower-case without the trailing dot. A provider that
+    flattens CNAMEs (an "alias" at the apex, or a proxied record) also passes when the name's A and AAAA answers
+    equal `custom.<app-domain>`'s, both non-empty.
+  - **TXT:** one TXT string at `_wirebench.<name>` equals the claim's value exactly. Other strings at that name are
+    ignored.
+- **The resolver.** `node:dns/promises`' `Resolver`, using the servers in `WIREBENCH_SERVER_DNS_SERVERS` when set
+  (comma-separated `host[:port]`), else the system's. A 5-second timeout and two tries per query. Tests inject a fake
+  `DnsLookup`; no test asks real DNS.
+- **When it runs.**
+  - On demand: `POST …/check`, at most once a minute per tenant, otherwise `429` with `retry-after`.
+  - From the job loop (§19.8, guard 6), in each tenant's own unit: hourly for pending claims (for 7 days, after which
+    a claim is `expired` and stays until removed), and every 6 hours for verified and active names.
+- **States.**
+
+  | State | Meaning | Served? |
+  | --- | --- | --- |
+  | `pending` | Claimed, records not yet seen | no |
+  | `verified` | Records seen, the name held in `tenant_hosts`, waiting for its certificate | no |
+  | `active` | Certificate live (§23.4) | yes, and it is the primary |
+  | `failing` | Records missing on a re-check since `failing_since`; still served | yes |
+  | `lapsed` | Failing for 72 hours: released from `tenant_hosts`, router gone | no |
+  | `paused` | The feature is gone (the edition left Enterprise): released | no |
+  | `expired` | Pending for 7 days without a pass | no |
+
+  A pass from `failing`, `lapsed` or `paused` goes back through `verified`, so an attacker who takes over a lapsed
+  name has to prove it again. `paused` is set by the check job, which reads the feature through the tenant's scope.
+  A suspended tenant keeps its name. The resolver drops every host of a tenant that is not `active` in
+  `tenants.status` (§19.5), so a suspension takes effect at the next map reload, and resuming needs no new check.
+- **Mail.** The tenant's server admins get one plain-text mail, through the tenant's SMTP sender (slice 7), when a
+  name becomes `active`, `failing` or `lapsed`. Nothing is mailed without SMTP. Each change is an audit event in the
+  tenant's chain: `custom-domain.claimed|verified|activated|failing|lapsed|paused|removed`. The token never appears in
+  a log line or an audit event.
+
+### 23.3 Storage (migration 0025)
+
+- **`custom_domains`**, tenant-scoped under forced row-level security like every tenant table (§19.4):
+  `tenant_id`, `name`, `token`, `state`, `created_by`, `created_at`, `checked_at`, `verified_at`, `active_at`,
+  `failing_since` and `last_result` (jsonb: `cname`, `txt` and `certificate`, each `ok`, `missing` or `wrong`, plus a
+  message). Primary key `(tenant_id)`, which is the one-per-tenant rule.
+- **`tenant_hosts`**, **unscoped**, the custom-name counterpart of `tenants.slug`: `host` (primary key), `tenant_id`
+  (references `tenants`, `on delete cascade`), `live` (boolean: certificate seen) and `since`. It holds no tenant
+  content, only routing, and joins the migration test's allowlist of global tables (§19.13, guard 3) with that reason.
+  Only the custom-domains module writes it: the claim's own row, inside the tenant unit that changes the claim's
+  state. `check:tenant-scope` keeps the table's name to `src/custom-domains/` and `src/tenancy/directory.ts` (the
+  resolver's read), as it keeps `server_instances` to `src/operations/` (§20.2).
+- Slice 7's deletion removes `custom_domains` with every tenant table, and the foreign key cascades to `tenant_hosts`.
+
+### 23.4 Certificates and the proxy (amends §21.5)
+
+- **The server still never touches TLS.** Traefik issues one certificate per verified name by **HTTP-01**, on the `web`
+  entry point. A wildcard is not possible for a name we do not hold DNS for. Traefik's ACME challenge router takes
+  precedence over the entry point's redirect to `https`.
+- **Traefik learns the names from the server**, through its HTTP provider, which polls
+  `GET /proxy/traefik` every 10 seconds. The endpoint is on a **second, internal listener**,
+  `WIREBENCH_SERVER_PROXY_LISTEN` (default unset, so no listener). The recipe sets it to `0.0.0.0:8081` on the
+  compose network, and Traefik's public routers never point at it. Every request must carry
+  `authorization: Bearer <token>`, with the token read from `WIREBENCH_SERVER_PROXY_TOKEN_FILE`; otherwise `401`. The
+  listener serves that one route and `/healthz`. Each instance answers the same payload, built from `tenant_hosts`.
+- **The payload** has one router per held name (`verified`, `active` or `failing`):
+  `Host(<name>)`, entry point `websecure`, `service: wirebench@file`, `middlewares: [hsts@file]` and
+  `tls.certResolver: le-http`. Traefik asks for the certificate as soon as a router appears, which is why only a
+  verified name gets one: an unproved name would spend the CA's rate limit on a name we cannot answer for. Router
+  names are `custom-` plus a hash of the host, so a name's characters never become a Traefik identifier. A name
+  whose router disappears keeps its certificate in `acme.json` until it expires. Traefik prunes nothing, and that is
+  harmless.
+- **`verified` → `active`.** The check job opens a TLS connection to `WIREBENCH_SERVER_PROXY_TLS_ADDRESS`
+  (`traefik:443` in the recipe), sends the name as SNI, and requires a chain that verifies against the system roots
+  (or `WIREBENCH_SERVER_PROXY_TLS_CA_FILE`, which only the Pebble test sets) and covers the name. On success it sets
+  `live` in `tenant_hosts` and the state to `active`. Until then the resolver does not map the name, so a request that
+  reaches it early answers `404`.
+- **The recipe** (`deploy/hosted/`) adds `--providers.http.endpoint=http://server:8081/proxy/traefik`, its poll
+  interval and its header, read from the same `_FILE` secret. It also adds a second resolver, `le-http`, with
+  `httpChallenge.entryPoint=web` and the same storage, and the server's new variables. The DNS records the operator
+  creates are unchanged: `custom.<app-domain>` is under the wildcard.
+
+### 23.5 Two names, one tenant (amends §19.5)
+
+- **Resolution.** `TenantResolver` keys its map by full host name (§19.12), so each live custom name is one more key
+  next to `<slug>.<app-domain>`. `directory.resolvable()` gains a join on `tenant_hosts where live`, still limited to
+  active tenants other than the default one. A custom name that is not live answers `404`, empty and `no-store`, like
+  any unknown host. The apex and entry branches (§21.3) run first and are unchanged.
+- **`tenantUrl` splits in two** (`tenancy/urls.ts`):
+  - `tenantUrl(config, request)` is the URL of the host the request came on, slug or custom. Every check that
+    compares with what the browser is showing reads this: `Origin`, the cookie's `Secure` choice, the browser
+    client's base, the host's in-process transport and the agent pairing origin. Each host keeps its own `__Host-`
+    cookie and its own sign-in. A person signed in on one name is not signed in on the other, which is what a browser
+    does with two origins anyway.
+  - `primaryUrl(config, scope)` is `https://<custom name>` while one is active, else `https://<slug>.<app-domain>`.
+    Everything sent to someone not looking at a page reads this: invitation and alert links, mail, catch URLs shown
+    to an admin, the OIDC redirect URI and the SAML entity ID and ACS URL, and the SCIM base URL.
+    `tenantUrl(config, scope)` (a scope, not a request) becomes `primaryUrl`.
+  - **Federated sign-in completes on the primary name.** A person who starts an OIDC or SAML sign-in on the slug name
+    is sent through the identity provider to the primary name, and their session lands there. The identity provider
+    needs only one redirect URI.
+- **Switching the primary.** When a name becomes `active`, and again when it lapses, the identity-provider URLs move
+  between the two names. The admin's Settings tab and the activation mail say so: update the identity provider's
+  redirect URI or ACS URL, or sign-in through it fails until they do. Local and emailed sign-in are unaffected.
+  Agent pairings stay bound to the origin they were made on (§3.8), so a machine paired on one name serves only pages
+  on that name, and pairing again on the other name adds a second pairing.
+- **Self-hosted** is untouched: `primaryUrl` and `tenantUrl` both return `WIREBENCH_SERVER_PUBLIC_URL`.
+
+### 23.6 Routes, command and Settings
+
+- **Routes**, under the tenant, server-admin only, behind `requireFeature('custom-domains')`, in hosted mode only:
+  - `GET /api/v1/tenant/domain`: the claim, or `{}`. Shows the name, the state, the two records, the last result and
+    when it was checked.
+  - `PUT /api/v1/tenant/domain` with `{ name }`: claims the name. `409` if one exists, `400` with the reason from
+    `checkCustomName`.
+  - `POST /api/v1/tenant/domain/check`: checks now, then answers like `GET`.
+  - `DELETE /api/v1/tenant/domain`: releases the name, drops the router at Traefik's next poll, and moves the primary
+    back to the slug.
+- **Admin command:** `wirebench-server admin domains list` (every tenant's claim: slug, name, state, checked at; the
+  operator's view), `admin domains check --tenant <slug>` and `admin domains remove --tenant <slug>`, which an
+  operator uses for abuse or a support case.
+- **Settings:** a **Domain** tab in the team dialog's admin tabs, beside License and Provisioning. It is shown to
+  server admins of a hosted server whose license state grants `custom-domains`. It has the name field, the two
+  records with copy buttons, the state with its last result in words, **Check now**, **Remove**, and the
+  identity-provider notice of §23.5. It works the same in the desktop app and the browser client.
+
+### 23.7 Security
+
+- **Takeover.** A dangling CNAME, where a customer removed their claim but left the record, gives an attacker
+  nothing. Serving a name needs a TXT token that only the claiming tenant sees, and a new claimant gets a new token.
+- **Name squatting.** A pending claim blocks no one (§23.1), and only a pass holds a name.
+- **Cross-tenant reads.** The only cross-tenant data is `tenant_hosts`: host names, which are public in DNS anyway.
+  Tokens, states and results stay under row-level security. Routes never say which tenant holds a name.
+- **The proxy endpoint** lists host names only, behind a bearer token on a listener that is not public.
+- **Rate.** On-demand checks are bounded per tenant. The job's queries are bounded by one claim per tenant.
+
+### 23.8 Testing
+
+- `checkCustomName`: each reason, including names under the app and site domains and local suffixes.
+- The check, against a fake `DnsLookup`: CNAME match, case and trailing dot, flattened A/AAAA match and mismatch, TXT
+  among other strings, a wrong token, timeouts. Every state change in §23.2's table, including 72 hours of failing,
+  7 days pending, the feature gone, and back through `verified`.
+- Holding: two tenants verify the same name at once and exactly one holds it; the other sees `held-elsewhere`.
+- Two-tenant isolation (§19.13): the routes, the job's unit and the resolver. B never sees A's claim, token or state.
+- Resolution and URLs: a live custom name resolves and a verified one does not; `tenantUrl` per host; `primaryUrl` for
+  mail and identity-provider URLs; an OIDC sign-in started on the slug name lands on the primary.
+- The proxy endpoint: `401` without the token, the payload's shape, nothing on the public listener.
+- The certificate probe, against a local TLS server with a test CA.
+- The recipe: the parse test of §21.5 extended to the HTTP provider and `le-http`. Where Docker is present, a test
+  runs Traefik, Pebble and Pebble's challenge DNS server. A claim's router appears, Pebble issues by HTTP-01, and the
+  probe sees the certificate. No real DNS or ACME anywhere.
+- The Settings tab: renderer unit tests for each state. An e2e test of the tab against the Docker server rig.
