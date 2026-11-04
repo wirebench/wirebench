@@ -1,0 +1,162 @@
+/**
+ * Slice 5 Task 9 (hosted edition spec §20.7): the per-tenant send budgets. Two tenant databases on separate pools
+ * stand for two instances. The 101st send of a burst is refused with its retry time; the 17th send at once is refused
+ * on either instance; a dead instance's slots free themselves once they expire, and a live one's are renewed; a call
+ * on the paired agent's path is never charged; and two tenants' budgets are apart.
+ */
+import { randomUUID } from 'node:crypto';
+import { afterAll, beforeAll, expect, it } from 'vitest';
+import type { Database } from '../../../src/db/querier.js';
+import { createDatabase } from '../../../src/db/pool.js';
+import type { HostReplyFrame } from '../../../src/host/host-runtime.js';
+import { SendBudgets, sendsBucket, type SendBudgetSettings } from '../../../src/operations/budgets.js';
+import { scopeOf, type TenantScope } from '../../../src/tenancy/scope.js';
+import { tenantDbFactory, type TenantDbFactory } from '../../../src/tenancy/tenant-db.js';
+import { describeDb, testDatabase, type TestDatabase } from '../../helpers/database.js';
+
+const DEFAULTS: SendBudgetSettings = { sendsPerMinute: 600, concurrentSends: 16 };
+const T0 = Date.parse('2026-11-04T12:00:00.000Z');
+/** A renewal timer that never fires: the instance holding the slot has died. */
+const dead = (): { cancel(): void } => ({ cancel: () => undefined });
+const sleep = (ms: number): Promise<void> => new Promise((done) => setTimeout(done, ms));
+
+describeDb('the per-tenant send budgets (hosted spec §20.7)', () => {
+  let db: TestDatabase;
+  let second: Database;
+  let a: TenantDbFactory;
+  let b: TenantDbFactory;
+
+  const tenant = async (): Promise<TenantScope> => {
+    const id = randomUUID();
+    const slug = `t-${id.slice(0, 8)}`;
+    await db.owner.query('insert into tenants (id, slug, name) values ($1, $2, $3)', [id, slug, slug]);
+    return scopeOf({ id, slug });
+  };
+  const slotsOf = async (scope: TenantScope): Promise<number> => {
+    const { rows } = await a(scope).query<{ n: number }>(
+      'select count(*)::int as n from send_slots where expires_at >= now()',
+    );
+    return rows[0]!.n;
+  };
+
+  beforeAll(async () => {
+    db = await testDatabase();
+    second = createDatabase(db.url);
+    a = tenantDbFactory(db);
+    b = tenantDbFactory(second);
+  });
+  afterAll(async () => {
+    await second?.close();
+    await db?.close();
+  });
+
+  it('defaults to 600 a minute with a burst of 100', () => {
+    expect(sendsBucket(600)).toEqual({ capacity: 100, refillPerMs: 0.01 });
+  });
+
+  it('refuses the 101st send of a burst with its retry time, and leaves another tenant alone', async () => {
+    const scope = await tenant();
+    const other = await tenant();
+    const budgets = new SendBudgets({ db: a, settings: DEFAULTS, now: () => T0 });
+    for (let n = 0; n < 100; n++) {
+      const taken = await budgets.take(scope);
+      expect(taken.ok, `send ${String(n + 1)}`).toBe(true);
+      if (taken.ok) await taken.release();
+    }
+    const refused = await budgets.take(scope);
+    // One send's worth at 600 a minute: 100 ms.
+    expect(refused).toEqual({
+      ok: false,
+      refusal: {
+        code: 'tenant-send-budget',
+        message: expect.stringContaining('Try again in 1 s') as string,
+        retryAfterMs: 100,
+      },
+    });
+    const elsewhere = await budgets.take(other);
+    expect(elsewhere.ok).toBe(true);
+    if (elsewhere.ok) await elsewhere.release();
+  });
+
+  it('refuses the 17th concurrent send on either instance', async () => {
+    const scope = await tenant();
+    const onA = new SendBudgets({ db: a, settings: DEFAULTS });
+    const onB = new SendBudgets({ db: b, settings: DEFAULTS });
+    const held = await Promise.all(Array.from({ length: 16 }, (_, n) => (n % 2 === 0 ? onA : onB).take(scope)));
+    expect(held.every((taken) => taken.ok)).toBe(true);
+    expect(await slotsOf(scope)).toBe(16);
+    for (const budgets of [onA, onB]) {
+      expect(await budgets.take(scope)).toMatchObject({
+        ok: false,
+        refusal: { code: 'tenant-send-concurrency', retryAfterMs: 1000 },
+      });
+    }
+    // One send ends: its slot is free for the other instance.
+    const first = held[0]!;
+    if (first.ok) await first.release();
+    const next = await onB.take(scope);
+    expect(next.ok).toBe(true);
+    for (const taken of [...held.slice(1), next]) if (taken.ok) await taken.release();
+    expect(await slotsOf(scope)).toBe(0);
+  });
+
+  it('frees a dead instance’s slots once they expire, and keeps a live one’s renewed', async () => {
+    const scope = await tenant();
+    const settings = { ...DEFAULTS, concurrentSends: 2 };
+    const crashed = new SendBudgets({ db: a, settings, holdMs: 400, setTimer: dead });
+    const live = new SendBudgets({ db: b, settings, holdMs: 400 });
+    // Taken and never freed or renewed: the instance died mid-send.
+    expect((await crashed.take(scope)).ok).toBe(true);
+    // Taken and held, renewed every 133 ms.
+    const kept = await live.take(scope);
+    expect(kept.ok).toBe(true);
+    expect((await live.take(scope)).ok).toBe(false);
+    await sleep(700);
+    // The dead one's slot expired; the live one's is still held.
+    const after = await live.take(scope);
+    expect(after.ok).toBe(true);
+    expect(await live.take(scope)).toMatchObject({ ok: false, refusal: { code: 'tenant-send-concurrency' } });
+    for (const taken of [kept, after]) if (taken.ok) await taken.release();
+  });
+
+  it('charges send channels on the host socket and never the paired agent’s path', async () => {
+    const scope = await tenant();
+    // Six a minute: a burst of one.
+    const budgets = new SendBudgets({ db: a, settings: { sendsPerMinute: 6, concurrentSends: 16 }, now: () => T0 });
+    let served = 0;
+    const serve = async (id: number): Promise<HostReplyFrame> => {
+      served++;
+      // The slot is held while the send runs.
+      expect(await slotsOf(scope)).toBe(id >= 100 ? 1 : 0);
+      return { id, ok: true, value: null };
+    };
+    // `request.route`, `request.bundle`, then `agent.send` on the agent, then the record of what it sent.
+    for (const [id, channel] of [
+      'request.route',
+      'request.bundle',
+      'exchanges.recordAgentSend',
+      'exchanges.recordAgentFailure',
+      'request.wsSend',
+    ].entries()) {
+      expect(await budgets.around(scope, { id, channel, request: {} }, () => serve(id))).toMatchObject({ ok: true });
+    }
+    expect(served).toBe(5);
+    const { rows } = await a(scope).query('select key from limiter_buckets');
+    expect(rows).toEqual([]);
+
+    const sent = await budgets.around(scope, { id: 100, channel: 'request.sendRest', request: {} }, () => serve(100));
+    expect(sent).toEqual({ id: 100, ok: true, value: null });
+    expect(await slotsOf(scope)).toBe(0);
+    const refused = await budgets.around(scope, { id: 101, channel: 'request.send', request: {} }, () => serve(101));
+    expect(refused).toEqual({
+      id: 101,
+      ok: false,
+      error: {
+        code: 'tenant-send-budget',
+        message: 'This team has sent too many requests in the last minute. Try again in 10 s.',
+        details: { retryAfterMs: 10_000 },
+      },
+    });
+    expect(served).toBe(6);
+  });
+});

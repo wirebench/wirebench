@@ -9,7 +9,7 @@
  * osTheme }`. Nothing a frame carries is logged.
  */
 import type { WebSocket } from 'ws';
-import type { RunSharedHostSocket, ServerHost } from './host-runtime.js';
+import type { HostCallFrame, HostReplyFrame, RunSharedHostSocket, ServerHost } from './host-runtime.js';
 import { HOST_LIMITS } from './errors.js';
 
 export interface HostSocketDeps {
@@ -22,6 +22,11 @@ export interface HostSocketDeps {
   readonly callerId: number;
   /** The allowlist (`allowlist.ts`). */
   readonly allowed: (channel: string) => boolean;
+  /**
+   * Wraps the serving of each frame the allowlist lets through: the tenant's send budgets (`operations/budgets.ts`)
+   * answer a refused send here instead of the host. Never rejects.
+   */
+  readonly around?: (frame: HostCallFrame, serve: () => Promise<HostReplyFrame>) => Promise<HostReplyFrame>;
   readonly log: (message: string, error: unknown) => void;
   /** Runs once the socket has closed and its scope is gone. */
   readonly onClosed: () => void;
@@ -52,7 +57,10 @@ export function runHostSocket(run: RunSharedHostSocket, ws: WebSocket, deps: Hos
             attach: (caller) => {
               host.attach(caller);
             },
-            serve: (caller, frame) => host.serve(caller, frame, deps.allowed),
+            serve: (caller, frame) => {
+              const serve = (): Promise<HostReplyFrame> => host.serve(caller, frame, deps.allowed);
+              return deps.around === undefined || !deps.allowed(frame.channel) ? serve() : deps.around(frame, serve);
+            },
             detach: () => host.detach(deps.callerId),
           },
     ),

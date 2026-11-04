@@ -33,6 +33,7 @@ import { auditIp, cluster, recordAudit, type AuditInput, type ServerContext, typ
 import { sessionToken } from '../identity/cookies.js';
 import { identitySettings } from '../identity/env.js';
 import { tokenByHash } from '../identity/repo.js';
+import { SendBudgets, sendBudgetSettings } from '../operations/budgets.js';
 import { endGoneSessions } from '../operations/sessions.js';
 import { hashToken } from '../identity/tokens.js';
 import { realTimer } from '../live/module.js';
@@ -241,6 +242,8 @@ export function hostModule(options: HostModuleOptions = {}): ServerModule {
         },
       });
       options.onInstances?.(instances);
+      // Every send channel a tab calls is charged to its user's tenant, across every instance (spec §20.7).
+      const budgets = new SendBudgets({ db: ctx.tenancy.db, settings: sendBudgetSettings(config), log });
       const { tokenMaxMs } = identitySettings(config);
       let nextCallerId = 1;
 
@@ -348,6 +351,7 @@ export function hostModule(options: HostModuleOptions = {}): ServerModule {
           host,
           callerId: nextCallerId++,
           allowed: isServedChannel,
+          around: (frame, serve) => budgets.around(request.tenant, frame, serve),
           log,
           onClosed: () => {
             closed = true;
