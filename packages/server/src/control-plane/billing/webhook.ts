@@ -11,7 +11,7 @@
  *
  * and never another status of its own.
  */
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest, preHandlerHookHandler } from 'fastify';
 import { RateLimiter } from '../../identity/rate-limit.js';
 import { ENTRY_ROUTE } from '../../tenancy/resolve.js';
 import type { BillingOutcome, MappedEvent } from './events.js';
@@ -34,6 +34,22 @@ export interface PaddleWebhookOptions {
   readonly now?: () => number;
 }
 
+/** The per-address limit as a preHandler, so it runs before the body is hashed. */
+function rateLimitByAddress(clients: RateLimiter): preHandlerHookHandler {
+  return (request: FastifyRequest, reply: FastifyReply, done: (error?: Error) => void): void => {
+    const client = clients.take(`ip:${request.ip}`);
+    if (client.allowed) {
+      done();
+      return;
+    }
+    void reply
+      .code(429)
+      .header('cache-control', 'no-store')
+      .header('retry-after', String(client.retryAfterSeconds))
+      .send();
+  };
+}
+
 function codeOf(error: unknown): string {
   const code = (error as { code?: unknown } | null)?.code;
   return typeof code === 'string' ? code : 'unknown';
@@ -48,13 +64,10 @@ export function registerPaddleWebhook(app: FastifyInstance, options: PaddleWebho
     scope.addContentTypeParser('*', { parseAs: 'buffer', bodyLimit: WEBHOOK_BODY_LIMIT }, (_request, body, done) => {
       done(null, body);
     });
-    scope.post(PADDLE_WEBHOOK_PATH, { ...ENTRY_ROUTE, bodyLimit: WEBHOOK_BODY_LIMIT }, async (request, reply) => {
+    const route = { ...ENTRY_ROUTE, bodyLimit: WEBHOOK_BODY_LIMIT, preHandler: [rateLimitByAddress(clients)] };
+    scope.post(PADDLE_WEBHOOK_PATH, route, async (request, reply) => {
       void reply.header('cache-control', 'no-store');
       const log = request.log;
-      const client = clients.take(`ip:${request.ip}`);
-      if (!client.allowed) {
-        return reply.code(429).header('retry-after', String(client.retryAfterSeconds)).send();
-      }
       const body = Buffer.isBuffer(request.body) ? request.body : Buffer.alloc(0);
       const check = verifyPaddleSignature(request.headers['paddle-signature'], body, options.secret, now());
       if (!check.ok) {

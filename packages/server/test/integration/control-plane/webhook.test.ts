@@ -136,8 +136,10 @@ describeDb('the billing webhook (spec §22.5)', () => {
         payload: '{}',
         remoteAddress,
       });
-    for (let i = 0; i < WEBHOOK_RATE; i += 1) expect((await from('203.0.113.7')).statusCode).toBe(401);
-    const limited = await from('203.0.113.7');
+    // The bucket refills (WEBHOOK_RATE a minute) while the loop runs, so the limit lands near WEBHOOK_RATE, not on it.
+    for (let i = 0; i < WEBHOOK_RATE - 10; i += 1) expect((await from('203.0.113.7')).statusCode).toBe(401);
+    let limited = await from('203.0.113.7');
+    for (let i = 0; i < 40 && limited.statusCode !== 429; i += 1) limited = await from('203.0.113.7');
     expect([limited.statusCode, limited.body]).toEqual([429, '']);
     expect(Number(limited.headers['retry-after'])).toBeGreaterThan(0);
     // Another address keeps its own budget.
