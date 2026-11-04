@@ -116,6 +116,13 @@ export function controlPlaneModule(options: ControlPlaneOptions = {}): ServerMod
         // Signup (spec §22.6): it mails, so it needs the operator's SMTP settings, which the entry already requires
         // in hosted mode. The mail goes out after the answer, as the entry's does.
         const entryHost = entryHostOf(ctx.config);
+        const { paddleEnvironment, paddleClientToken } = ctx.config;
+        if (paddleEnvironment === undefined || paddleClientToken === undefined) {
+          throw new WirebenchError(
+            'control-plane-paddle-missing',
+            "hosted mode needs WIREBENCH_SERVER_PADDLE_ENVIRONMENT and WIREBENCH_SERVER_PADDLE_CLIENT_TOKEN: the signup's checkout opens Paddle.js",
+          );
+        }
         const log = ctx.log;
         const signupMails = new EntryQueue<SignupMailItem>({
           run: async (item) => {
@@ -135,6 +142,7 @@ export function controlPlaneModule(options: ControlPlaneOptions = {}): ServerMod
           entryHost,
           appDomain: entryHost.slice('app.'.length),
           queue: signupMails,
+          paddle: { environment: paddleEnvironment, clientToken: paddleClientToken, priceId: teamPriceId },
           ...(now !== undefined ? { now } : {}),
         });
         steps.push(

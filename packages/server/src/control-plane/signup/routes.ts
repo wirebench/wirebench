@@ -17,15 +17,38 @@
  * never holds an address.
  */
 import { randomBytes } from 'node:crypto';
+import { MIN_PASSWORD_LENGTH } from '@wirebench/engine';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import type { EntryQueue } from '../../entry/queue.js';
 import { addressBucketKey, ENTRY_ADDRESS, PER_ADDRESS, PER_CLIENT } from '../../entry/routes.js';
+import { hashPassword } from '../../identity/passwords.js';
 import { RateLimiter } from '../../identity/rate-limit.js';
 import { ENTRY_ROUTE } from '../../tenancy/resolve.js';
 import type { ControlDb } from '../control-db.js';
 import { slugState } from '../slugs.js';
-import { renderSignupForm, renderSignupSent, SIGNUP_PAGE_CSP, type SignupFormValues } from './page.js';
-import { insertSignup, newSignupToken, SIGNUP_MAX_SEATS, SIGNUP_TTL_MS, signupTokenHash } from './repo.js';
+import {
+  checkoutCsp,
+  renderCheckoutStep,
+  renderPasswordStep,
+  renderSignupExpired,
+  renderSignupForm,
+  renderSignupSent,
+  SIGNUP_PAGE_CSP,
+  type PaddleEnvironment,
+  type SignupFormValues,
+} from './page.js';
+import {
+  insertSignup,
+  newSignupToken,
+  passwordStepOpen,
+  SIGNUP_MAX_SEATS,
+  SIGNUP_TTL_MS,
+  signupByToken,
+  signupTokenHash,
+  VERIFIED_GRACE_MS,
+  verifySignup,
+  type SignupRow,
+} from './repo.js';
 
 export const SIGNUP_PATH = '/signup';
 
@@ -68,8 +91,37 @@ export interface SignupRoutesOptions {
   /** `<app-domain>`. */
   readonly appDomain: string;
   readonly queue: Pick<EntryQueue<SignupMailItem>, 'push'>;
+  /** What the checkout step opens Paddle's overlay with (spec §22.5's settings). */
+  readonly paddle: {
+    readonly environment: PaddleEnvironment;
+    readonly clientToken: string;
+    readonly priceId: string;
+  };
   readonly now?: () => Date;
 }
+
+/** What the status poll answers (spec §22.6, step 5): nothing more for an unknown token than for an expired one. */
+export type SignupStatusAnswer =
+  { readonly status: 'pending' | 'expired' } | { readonly status: 'ready'; readonly url: string };
+
+/**
+ * A token's status: `ready` with the team's sign-in page once completed; `pending` while it may still complete (a
+ * pending link before its expiry, a verified one through its grace, since the webhook completes it); `expired`
+ * otherwise, an unknown token included.
+ */
+export function signupStatus(row: SignupRow | undefined, now: Date, appDomain: string): SignupStatusAnswer {
+  if (row === undefined) return { status: 'expired' };
+  if (row.status === 'completed') {
+    return row.tenantId === null
+      ? { status: 'expired' }
+      : { status: 'ready', url: `https://${row.slug}.${appDomain}/sign-in` };
+  }
+  const until = row.expiresAt.getTime() + (row.status === 'verified' ? VERIFIED_GRACE_MS : 0);
+  return until > now.getTime() ? { status: 'pending' } : { status: 'expired' };
+}
+
+/** A link's token as `newSignupToken` makes it: 43 base64url characters. Anything else is unknown at once. */
+const TOKEN = /^[A-Za-z0-9_-]{43}$/;
 
 /** Why a field was refused, in the person's words. */
 const REFUSALS = {
@@ -126,6 +178,38 @@ export function registerSignupRoutes(app: FastifyInstance, options: SignupRoutes
 
   app.get(SIGNUP_PATH, ENTRY_ROUTE, (_request, reply) => form(reply));
 
+  const expired = (reply: FastifyReply): FastifyReply => html(reply, renderSignupExpired()).code(404);
+  const lookup = async (token: string): Promise<SignupRow | undefined> =>
+    TOKEN.test(token) ? signupByToken(options.control, token) : undefined;
+  const summaryOf = (row: SignupRow) => ({
+    email: row.emailLower,
+    name: row.name,
+    teamUrl: `https://${row.slug}.${options.appDomain}`,
+    seats: row.seats,
+  });
+  const passwordStep = (reply: FastifyReply, token: string, row: SignupRow, error?: string): FastifyReply =>
+    html(
+      reply,
+      renderPasswordStep({
+        ...summaryOf(row),
+        token,
+        minLength: MIN_PASSWORD_LENGTH,
+        ...(error !== undefined ? { error } : {}),
+      }),
+    );
+
+  app.get<{ Params: { token: string } }>(`${SIGNUP_PATH}/:token`, ENTRY_ROUTE, async (request, reply) => {
+    const { token } = request.params;
+    const row = await lookup(token);
+    if (!passwordStepOpen(row, now())) return expired(reply);
+    return passwordStep(reply, token, row);
+  });
+
+  app.get<{ Params: { token: string } }>(`${SIGNUP_PATH}/:token/status`, ENTRY_ROUTE, async (request, reply) => {
+    const answer = signupStatus(await lookup(request.params.token), now(), options.appDomain);
+    return reply.code(200).header('cache-control', 'no-store').send(answer);
+  });
+
   // Its own scope, so the form parser and its body limit reach nothing else.
   void app.register((scope, _options, registered) => {
     scope.addContentTypeParser(
@@ -173,6 +257,44 @@ export function registerSignupRoutes(app: FastifyInstance, options: SignupRoutes
       options.queue.push({ to: email, link: `${origin}${SIGNUP_PATH}/${token}` });
       return html(reply, renderSignupSent());
     });
+
+    // The password step (spec §22.6, step 2), then the checkout step (step 3) in its answer.
+    scope.post<{ Params: { token: string } }>(
+      `${SIGNUP_PATH}/:token`,
+      { ...ENTRY_ROUTE, bodyLimit: SIGNUP_BODY_LIMIT },
+      async (request, reply) => {
+        if (request.headers.origin !== origin) return reply.code(403).header('cache-control', 'no-store').send();
+        const { token } = request.params;
+        const row = await lookup(token);
+        if (!passwordStepOpen(row, now())) return expired(reply);
+        const body = request.body instanceof URLSearchParams ? request.body : new URLSearchParams();
+        const password = body.get('password') ?? '';
+        if (password.length < MIN_PASSWORD_LENGTH) {
+          return passwordStep(
+            reply,
+            token,
+            row,
+            `A password is at least ${String(MIN_PASSWORD_LENGTH)} characters long.`,
+          );
+        }
+        const verified = await verifySignup(options.control, token, await hashPassword(password), now());
+        // Another post of the same link won the race: the step is single-use.
+        if (verified === undefined) return expired(reply);
+        const nonce = randomBytes(16).toString('base64');
+        return html(
+          reply,
+          renderCheckoutStep({
+            ...summaryOf(verified),
+            nonce,
+            environment: options.paddle.environment,
+            clientToken: options.paddle.clientToken,
+            priceId: options.paddle.priceId,
+            signupId: verified.id,
+            statusPath: `${SIGNUP_PATH}/${token}/status`,
+          }),
+        ).header('content-security-policy', checkoutCsp(options.paddle.environment, nonce));
+      },
+    );
     registered();
   });
 }

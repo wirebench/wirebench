@@ -173,6 +173,24 @@ export const ROUTE_MAP: Readonly<Record<string, RouteCase>> = {
       payload: 'email=a%40acme.test&name=A&slug=probe&seats=1',
     }),
   },
+  // The signup link's pages: on a tenant host these paths are the browser client's too.
+  'GET /signup/:token': {
+    cls: 'own',
+    request: (ctx) => ({ method: 'GET', url: `/signup/${'A'.repeat(43)}`, headers: asTab(ctx) }),
+  },
+  'GET /signup/:token/status': {
+    cls: 'own',
+    request: (ctx) => ({ method: 'GET', url: `/signup/${'A'.repeat(43)}/status`, headers: asTab(ctx) }),
+  },
+  'POST /signup/:token': {
+    cls: 'entry',
+    request: () => ({
+      method: 'POST',
+      url: `/signup/${'A'.repeat(43)}`,
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      payload: 'password=probe-password-long',
+    }),
+  },
   'GET /*': { cls: 'own', request: (ctx) => ({ method: 'GET', url: '/workspaces', headers: asTab(ctx) }) },
   // The browser build's files, one route each (`routeKey` folds them into one key).
   'GET /assets/*': { cls: 'own', request: (ctx) => ({ method: 'GET', url: ctx.url }) },
