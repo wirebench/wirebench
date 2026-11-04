@@ -66,6 +66,7 @@ import {
 } from './tenancy/file-step.js';
 import { TENANTS_DIR } from './tenancy/paths.js';
 import { buildServer } from './server.js';
+import { createTenantSettings } from './settings/service.js';
 
 /** The exit code of an interrupted shutdown: a second signal while the first is still draining. */
 const EXIT_INTERRUPTED = 130;
@@ -710,6 +711,7 @@ export async function startServer(
           scopeFor: async (tenantId) => (await directoryOf(tenancy).get(tenantId))?.scope,
         })
       : undefined;
+  const hooks = serverHooks();
   const ctx: ServerContext = {
     // A copy without the database URLs (Part A review): `ModuleConfig` drops them from the type, this from the object.
     config: moduleConfigOf(config),
@@ -719,11 +721,22 @@ export async function startServer(
     log: undefined as unknown as ServerContext['log'], // buildServer replaces it with the app's logger
     meta: new MetaRegistry(),
     egress: egressPolicyOf(config),
-    hooks: serverHooks(),
+    hooks,
     instance: registry,
     bus: busSignals,
     ...(internal !== undefined ? { relay: internal } : {}),
     metrics,
+    settings: createTenantSettings({
+      config,
+      tenancy,
+      hooks,
+      bus: busSignals,
+      log: () => ({
+        warn: (details, message) => {
+          appLog.warn?.(details, message);
+        },
+      }),
+    }),
     license: permissiveLicense(),
   };
   let app: FastifyInstance;

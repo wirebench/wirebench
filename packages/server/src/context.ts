@@ -23,6 +23,7 @@ import type { TenantScope } from './tenancy/scope.js';
 import { outsideTenantUnit, type TenantQuerier } from './tenancy/tenant-db.js';
 import type { Tenancy } from './tenancy/tenancy.js';
 import type { ScopeSource } from './tenancy/urls.js';
+import type { TenantSettings } from './settings/service.js';
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -185,6 +186,16 @@ export interface TenantKeysChangedEvent {
 }
 
 /**
+ * A tenant's settings section was written or cleared (spec §22.12): every instance drops its cache of that tenant's
+ * settings, and what it built from them (an OIDC client, a SAML provider, a forward sink). Ids and the section's
+ * name only, never a value.
+ */
+export interface TenantSettingsChangedEvent {
+  readonly tenantId: string;
+  readonly section?: string;
+}
+
+/**
  * One instance's users in one room (spec §20.3): `users` are user ids only, never names (ADR-0013); a receiving hub
  * looks the display names up in the tenant. `holder` is the announcing process's id.
  */
@@ -330,6 +341,7 @@ export interface AnnouncementEvents {
   readonly agentUnpaired: AgentUnpaired;
   readonly tenantsChanged: TenantsChangedEvent;
   readonly tenantKeysChanged: TenantKeysChangedEvent;
+  readonly tenantSettingsChanged: TenantSettingsChangedEvent;
   readonly presenceChanged: PresenceChangedEvent;
   readonly presenceReset: PresenceResetEvent;
   readonly resync: ResyncEvent;
@@ -348,6 +360,7 @@ export const ANNOUNCEMENT_KINDS: readonly AnnouncementKind[] = [
   'agentUnpaired',
   'tenantsChanged',
   'tenantKeysChanged',
+  'tenantSettingsChanged',
   'presenceChanged',
   'presenceReset',
   'resync',
@@ -616,6 +629,11 @@ export interface ServerContext {
    * records without asking whether metrics are on.
    */
   readonly metrics: ServerMetrics;
+  /**
+   * Each tenant's settings (spec §22.12): the table in hosted mode, the environment self-hosted. A module reads a
+   * section through it, never the table.
+   */
+  readonly settings: TenantSettings;
   /** Replaced by the licensing module in `register()`; the one field a module may assign (licensing spec §5.1). */
   license: LicenseService;
 }
