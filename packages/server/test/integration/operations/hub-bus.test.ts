@@ -333,7 +333,7 @@ describeDb('the live hub, host instances and shares on the bus (hosted spec §20
     // As A's bus sends it after a payload it gave up.
     await db.query('select pg_notify($1, $2)', [
       a.bus.channel,
-      JSON.stringify({ v: 1, from: a.registry.holder, kind: 'resync' }),
+      JSON.stringify({ v: 1, from: a.registry.holder, at: Date.now(), kind: 'resync' }),
     ]);
     expect(await watcher.next('session-ended')).toEqual({ type: 'session-ended' });
     expect((await watcher.closed).code).toBe(LIVE_CLOSE.unauthenticated);

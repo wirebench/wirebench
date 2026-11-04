@@ -490,7 +490,7 @@ export async function fill(t: TwoTenants, tenant: Tenant): Promise<Filled> {
     [browser.user.id, `${slug}-holder`, at, new Date(at.getTime() + 60_000)],
   );
 
-  // ---- 0022's tables (slice 5), used from its later tasks: a row each by hand. A bucket key carries the slug,
+  // ---- 0022's tables (slice 5): a row each, by hand where nothing writes one yet. A bucket key carries the slug,
   // as the limiter's keys carry what they count.
   const holder = randomUUID();
   await tenant.tdb.query('insert into limiter_buckets (key, tokens, updated_at) values ($1, 5, $2)', [
@@ -501,11 +501,7 @@ export async function fill(t: TwoTenants, tenant: Tenant): Promise<Filled> {
     holder,
     new Date(at.getTime() + 60_000),
   ]);
-  await tenant.tdb.query('insert into terminal_share_locations (share_id, holder, created_at) values ($1, $2, $3)', [
-    share.shareId,
-    holder,
-    at,
-  ]);
+  // `terminal_share_locations` has its row already: the share created above wrote it (Task 12).
 
   // ---- 0023's tables (slice 7), used from its later tasks: a row each by hand, each carrying the slug.
   await tenant.tdb.query(

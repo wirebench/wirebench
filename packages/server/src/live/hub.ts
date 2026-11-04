@@ -362,6 +362,15 @@ export class LiveHub {
     return pending.parts.flat();
   }
 
+  /** The authenticated sockets held here, by tenant id: the `wirebench.live.sockets` gauge (spec §20.8). */
+  countsByTenant(): Map<string, number> {
+    const counts = new Map<string, number>();
+    for (const { session } of this.bySocket.values()) {
+      counts.set(session.tenant.tenantId, (counts.get(session.tenant.tenantId) ?? 0) + 1);
+    }
+    return counts;
+  }
+
   /** The device tokens of the sockets held here, by tenant: what a resync re-validates (review I1). */
   heldSessions(): HeldSessions {
     const held: HeldSessions = new Map();

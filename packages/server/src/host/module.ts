@@ -191,7 +191,12 @@ export function hostModule(options: HostModuleOptions = {}): ServerModule {
 
       // Every send channel a tab calls is charged to its user's tenant, across every instance (spec §20.7); each
       // request of a run is charged as the host puts it on the wire (its `sendGate`).
-      const budgets = new SendBudgets({ db: ctx.tenancy.db, settings: sendBudgetSettings(config), log });
+      const budgets = new SendBudgets({
+        db: ctx.tenancy.db,
+        settings: sendBudgetSettings(config),
+        log,
+        metrics: ctx.metrics,
+      });
       const instances = new HostInstances({
         dataDir: config.dataDir,
         idleMs: config.hostIdleMinutes * 60_000,
@@ -247,6 +252,7 @@ export function hostModule(options: HostModuleOptions = {}): ServerModule {
         },
       });
       options.onInstances?.(instances);
+      ctx.metrics.observe('hostInstances', () => instances.countsByTenant());
       const { tokenMaxMs } = identitySettings(config);
       let nextCallerId = 1;
 

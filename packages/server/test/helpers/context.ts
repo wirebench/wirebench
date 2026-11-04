@@ -11,6 +11,7 @@ import {
 } from '../../src/context.js';
 import type { Database } from '../../src/db/querier.js';
 import { BusSignals } from '../../src/operations/bus.js';
+import { noopMetrics } from '../../src/operations/metrics/sdk.js';
 import type { ServerInstance } from '../../src/operations/instances.js';
 import type { TenantQuerier } from '../../src/tenancy/tenant-db.js';
 import type { RepoStore } from '../../src/repos/repo-store.js';
@@ -121,6 +122,7 @@ export async function testContext(
     hooks: serverHooks(),
     instance: testInstance(),
     bus: new BusSignals(),
+    metrics: noopMetrics().metrics,
     license: permissiveLicense(),
     ...rest,
     tenancy:
