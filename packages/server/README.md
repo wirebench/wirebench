@@ -70,6 +70,8 @@ database, one data directory; run it behind TLS. Design: `docs/specs/2026-09-24-
 | `WIREBENCH_SERVER_APP_DOMAIN` | no | — | Hosted mode only: the product’s domain. Each team is `https://<slug>.<domain>`, and `app.<domain>` mails a person their teams’ links. Unused on a self-hosted server. |
 | `WIREBENCH_SERVER_SITE_DOMAIN` | no | — | Hosted mode only: the public site’s domain, which the server links to and never serves. It must not be, or sit under, the app domain. Unused on a self-hosted server. |
 | `WIREBENCH_SERVER_DNS_SERVERS` | no | — | Hosted mode only: the DNS servers that check a team’s custom domain, as IP addresses with an optional port, comma-separated (`192.0.2.53, [2001:db8::53]:53`). Unset, the system’s resolver. Unused on a self-hosted server. |
+| `WIREBENCH_SERVER_PROXY_LISTEN` | no | — | Hosted mode only: `host:port` of a second, internal listener that tells the proxy which custom domains to route and get certificates for (`GET /proxy/traefik`, and `/healthz`). Never publish it. Unset, no such listener. Unused on a self-hosted server. |
+| `WIREBENCH_SERVER_PROXY_TOKEN_FILE` | no | — | A file holding the bearer token every request to the proxy listener must carry; required when WIREBENCH_SERVER_PROXY_LISTEN is set. Read at start-up, never logged. |
 <!-- config:end -->
 <!-- prettier-ignore-end -->
 

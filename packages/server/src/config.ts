@@ -182,6 +182,24 @@ const dnsServersText = z
     'must be IP addresses, each with an optional port (192.0.2.53, 192.0.2.53:5353 or [2001:db8::53]:53), separated by commas',
   );
 
+/** `host:port`, as the proxy listener and the certificate probe take it (spec §23.4): a name or IPv4, or `[IPv6]`. */
+const hostPortText = z
+  .string()
+  .refine(
+    (value) => parseHostPort(value) !== undefined,
+    'must be host:port, such as 0.0.0.0:8081 or traefik:443 ([2001:db8::1]:8081 for IPv6)',
+  );
+
+/** Splits `host:port` (see `hostPortText`); undefined when it is not one. */
+export function parseHostPort(value: string): { readonly host: string; readonly port: number } | undefined {
+  const match = /^(?:\[([^\]]+)\]|([A-Za-z0-9.-]+)):(\d{1,5})$/.exec(value.trim());
+  if (match === null) return undefined;
+  const host = match[1] ?? match[2]!;
+  if (match[1] !== undefined && isIP(host) !== 6) return undefined;
+  const port = Number(match[3]);
+  return port >= 1 && port <= 65_535 ? { host, port } : undefined;
+}
+
 const inputSchema = z.object({
   // Both values parse, so the type has both, but `hosted` is refused here: tests build a hosted config directly.
   mode: z
@@ -256,6 +274,8 @@ const inputSchema = z.object({
   appDomain: domainText.optional(),
   siteDomain: domainText.optional(),
   dnsServers: dnsServersText.optional(),
+  proxyListen: hostPortText.optional(),
+  proxyTokenFile: z.string().min(1).optional(),
 });
 
 type ConfigKey = keyof z.input<typeof inputSchema>;
@@ -771,6 +791,22 @@ export const CONFIG_VARIABLES: readonly ConfigVariable[] = [
     description:
       'Hosted mode only: the DNS servers that check a team’s custom domain, as IP addresses with an optional port, comma-separated (`192.0.2.53, [2001:db8::53]:53`). Unset, the system’s resolver. Unused on a self-hosted server.',
   },
+  {
+    env: 'WIREBENCH_SERVER_PROXY_LISTEN',
+    key: 'proxyListen',
+    required: false,
+    secret: false,
+    description:
+      'Hosted mode only: `host:port` of a second, internal listener that tells the proxy which custom domains to route and get certificates for (`GET /proxy/traefik`, and `/healthz`). Never publish it. Unset, no such listener. Unused on a self-hosted server.',
+  },
+  {
+    env: 'WIREBENCH_SERVER_PROXY_TOKEN_FILE',
+    key: 'proxyTokenFile',
+    required: false,
+    secret: false,
+    description:
+      'A file holding the bearer token every request to the proxy listener must carry; required when WIREBENCH_SERVER_PROXY_LISTEN is set. Read at start-up, never logged.',
+  },
 ];
 
 /** One thing wrong with the environment, phrased without the offending value. */
@@ -935,6 +971,12 @@ export function loadConfig(env: NodeJS.ProcessEnv, version: string): ServerConfi
     problems.push({
       variable: 'WIREBENCH_SERVER_SECRETS_KEY',
       message: 'is required when WIREBENCH_SERVER_BROWSER_CLIENT is on; set the key or turn the browser client off',
+    });
+  }
+  if (config.proxyListen !== undefined && config.proxyTokenFile === undefined) {
+    problems.push({
+      variable: 'WIREBENCH_SERVER_PROXY_TOKEN_FILE',
+      message: 'is required when WIREBENCH_SERVER_PROXY_LISTEN is set: every request to that listener needs the token',
     });
   }
   if (config.instances === 'multi' && config.instanceUrl === undefined) {

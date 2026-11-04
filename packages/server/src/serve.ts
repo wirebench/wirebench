@@ -37,6 +37,7 @@ import { allowsMultipleInstances, drainWithin, InstanceRegistry, licenseLapseWat
 import { limiterSweep } from './operations/limiter.js';
 import { OPERATIONS_MIGRATIONS_DIR } from './operations/migrations.js';
 import { CUSTOM_DOMAINS_MIGRATIONS_DIR } from './custom-domains/migrations.js';
+import { startProxyListener, type ProxyListener } from './custom-domains/proxy.js';
 import { realTimer } from './live/module.js';
 import { STOP_PASS } from './tenancy/jobs.js';
 import type { Tenancy } from './tenancy/tenancy.js';
@@ -731,6 +732,18 @@ export async function startServer(
       `cannot listen on ${config.host}:${config.port}${typeof code === 'string' ? ` (${code})` : ''}`,
     );
   }
+  // Spec §23.4: the internal listener Traefik polls for the custom names, hosted mode only, never published.
+  let proxy: ProxyListener | undefined;
+  try {
+    proxy = await startProxyListener(config, tenancy, app.log);
+  } catch (error) {
+    await app.close();
+    await bus.stop(0);
+    await registry.stop();
+    await heldLock.release();
+    await db.close();
+    throw new StartupError(ExitCode.Config, error instanceof Error ? error.message : String(error));
+  }
   const address = app.server.address();
   const port = typeof address === 'object' && address !== null ? address.port : config.port;
   app.log.info({ publicUrl: operatorPublicUrl(config), port, modules: modules.map((m) => m.name) }, 'listening');
@@ -761,6 +774,10 @@ export async function startServer(
       const sweep = setInterval(() => app.server.closeIdleConnections(), 25);
       sweep.unref();
       try {
+        // Traefik keeps the routers it has while the listener is gone; another instance answers its next poll.
+        await proxy?.close().catch((error: unknown) => {
+          app.log.warn({ err: error }, 'the proxy listener did not close cleanly');
+        });
         await app.close(); // stops accepting and waits for in-flight requests
       } finally {
         clearInterval(sweep);

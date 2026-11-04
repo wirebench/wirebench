@@ -152,6 +152,18 @@ export async function setLive(tx: TenantQuerier, name: string, live: boolean): P
   return updated.rowCount === 1;
 }
 
+/**
+ * The names the querier's tenant holds in `tenant_hosts`: what the proxy routes and gets certificates for (spec
+ * §23.4). The module holds a name exactly while its claim is `verified`, `active` or `failing`, in the unit that moves
+ * the claim, so these are the tenant's held names and no other tenant's.
+ */
+export async function heldHosts(tx: TenantQuerier): Promise<readonly string[]> {
+  const rows = await tx.query<{ host: string }>('select host from tenant_hosts where tenant_id = $1 order by host', [
+    tx.scope.tenantId,
+  ]);
+  return rows.rows.map((row) => row.host);
+}
+
 /** Removes the tenant's claim, releasing its name first. Answers the removed claim, or undefined when there was none. */
 export async function removeClaim(tx: TenantQuerier): Promise<Claim | undefined> {
   // Locked, so a check that holds the name commits first and the release below sees its row.
