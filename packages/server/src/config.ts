@@ -652,7 +652,7 @@ export const CONFIG_VARIABLES: readonly ConfigVariable[] = [
     required: false,
     secret: true,
     description:
-      'Encrypts at rest the secrets each user stores through the browser client, under a key per user derived from this one: 32 random bytes, base64-encoded (`openssl rand -base64 32`). Required when WIREBENCH_SERVER_BROWSER_CLIENT is on.',
+      'Encrypts at rest the secrets each user stores through the browser client, under a key per user derived from this one: 32 random bytes, base64-encoded (`openssl rand -base64 32`). Required when WIREBENCH_SERVER_BROWSER_CLIENT is on, and with `WIREBENCH_SERVER_INSTANCES=multi`, where every instance needs the same key: the instances sign the terminal-share relay between them with a key derived from it.',
   },
   {
     env: 'WIREBENCH_SERVER_EGRESS_DENY_PRIVATE',
@@ -679,7 +679,7 @@ export const CONFIG_VARIABLES: readonly ConfigVariable[] = [
     defaultText: 'single',
     secret: false,
     description:
-      '`single`: one server process. `multi`: several instances against one database and one data volume, which needs an Enterprise license that is valid or in grace (the start is refused otherwise) and WIREBENCH_SERVER_INSTANCE_URL.',
+      '`single`: one server process. `multi`: several instances against one database and one data volume, which needs an Enterprise license that is valid or in grace (the start is refused otherwise), WIREBENCH_SERVER_INSTANCE_URL and WIREBENCH_SERVER_SECRETS_KEY.',
   },
   {
     env: 'WIREBENCH_SERVER_INSTANCE_URL',
@@ -903,6 +903,13 @@ export function loadConfig(env: NodeJS.ProcessEnv, version: string): ServerConfi
       variable: 'WIREBENCH_SERVER_INSTANCE_URL',
       message:
         'is required when WIREBENCH_SERVER_INSTANCES is multi: the address the other instances reach this one at',
+    });
+  }
+  if (config.instances === 'multi' && config.secretsKey === undefined) {
+    problems.push({
+      variable: 'WIREBENCH_SERVER_SECRETS_KEY',
+      message:
+        'is required when WIREBENCH_SERVER_INSTANCES is multi: the instances sign the share relay with a key derived from it, so every instance needs the same one',
     });
   }
   if (!config.localAuth && config.oidcIssuer === undefined && config.samlIdpMetadata === undefined) {

@@ -34,7 +34,9 @@ import { BusSignals, NotificationBus } from './operations/bus.js';
 import { DatabaseRepoLock, guardGit, REPO_LOCK_POOL_MAX, REPO_LOCK_WAIT_MS } from './operations/repo-lock.js';
 import { checkAppRole, checkPostgresVersion } from './tenancy/checks.js';
 import { allowsMultipleInstances, drainWithin, InstanceRegistry, licenseLapseWatch } from './operations/instances.js';
+import { InternalServer } from './operations/internal-server.js';
 import { limiterSweep } from './operations/limiter.js';
+import { relayKey } from './operations/relay-token.js';
 import { OPERATIONS_MIGRATIONS_DIR } from './operations/migrations.js';
 import { realTimer } from './live/module.js';
 import { STOP_PASS } from './tenancy/jobs.js';
@@ -600,6 +602,17 @@ export async function startServer(
   });
   // The modules register on these before the bus exists; the bus is attached to them once made.
   const busSignals = new BusSignals();
+  // The internal listener (spec §20.6), `multi` only: `loadConfig` requires the URL and the secrets key there. A hosted
+  // configuration built without either has no relay, as `single` has none: every share is then its holder's alone.
+  const internal =
+    instances === 'multi' && config.instanceUrl !== undefined && config.secretsKey !== undefined
+      ? new InternalServer({
+          url: config.instanceUrl,
+          holder: registry.holder,
+          key: relayKey(config.secretsKey),
+          scopeFor: async (tenantId) => (await directoryOf(tenancy).get(tenantId))?.scope,
+        })
+      : undefined;
   const ctx: ServerContext = {
     config,
     tenancy,
@@ -611,6 +624,7 @@ export async function startServer(
     hooks: serverHooks(),
     instance: registry,
     bus: busSignals,
+    ...(internal !== undefined ? { relay: internal } : {}),
     license: permissiveLicense(),
   };
   let app: FastifyInstance;
@@ -726,6 +740,21 @@ export async function startServer(
       `cannot listen on ${config.host}:${config.port}${typeof code === 'string' ? ` (${code})` : ''}`,
     );
   }
+  // After the public listener, so a relayed viewer never reaches an instance that is not serving yet.
+  try {
+    await internal?.start(app.log);
+  } catch (error) {
+    await app.close();
+    await bus.stop(0);
+    await registry.stop();
+    await heldLock.release();
+    await db.close();
+    const code = (error as { readonly code?: unknown }).code;
+    throw new StartupError(
+      ExitCode.Config,
+      `cannot listen on WIREBENCH_SERVER_INSTANCE_URL's port${typeof code === 'string' ? ` (${code})` : ''}`,
+    );
+  }
   const address = app.server.address();
   const port = typeof address === 'object' && address !== null ? address.port : config.port;
   app.log.info({ publicUrl: operatorPublicUrl(config), port, modules: modules.map((m) => m.name) }, 'listening');
@@ -757,6 +786,8 @@ export async function startServer(
       sweep.unref();
       try {
         await app.close(); // stops accepting and waits for in-flight requests
+        // After the app: its shares ended at its close and told their relayed viewers; then the last relays go.
+        await internal?.close();
       } finally {
         clearInterval(sweep);
         clearTimeout(timer);

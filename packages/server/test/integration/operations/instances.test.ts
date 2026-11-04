@@ -188,7 +188,12 @@ describeDb('server instances (hosted spec §20.1, §20.2, §20.10)', () => {
         { signals: new EventEmitter(), exit: vi.fn(), logStream, modules: modulesWith(extra.license) },
       );
     };
-    const MULTI = { WIREBENCH_SERVER_INSTANCES: 'multi', WIREBENCH_SERVER_INSTANCE_URL: 'http://127.0.0.1:8091' };
+    /** A `multi` server's variables, its internal listener on a port of its own (spec §20.6). */
+    const multi = async (): Promise<Record<string, string>> => ({
+      WIREBENCH_SERVER_INSTANCES: 'multi',
+      WIREBENCH_SERVER_INSTANCE_URL: `http://127.0.0.1:${String(await freePort())}`,
+      WIREBENCH_SERVER_SECRETS_KEY: Buffer.alloc(32, 7).toString('base64'),
+    });
 
     it('a single server writes its row under the holder modules see, and deletes it on close', async () => {
       const server = await start({});
@@ -208,7 +213,7 @@ describeDb('server instances (hosted spec §20.1, §20.2, §20.10)', () => {
       ['Team', { edition: 'team', status: 'active' }],
       ['an expired Enterprise license', { edition: 'enterprise', status: 'expired' }],
     ] as const)('refuses multi on %s with server-instances-need-enterprise, writing no row', async (_name, license) => {
-      const failed = await start({ env: MULTI, license }).then(
+      const failed = await start({ env: await multi(), license }).then(
         async (server) => {
           await server.close();
           return undefined;
@@ -226,17 +231,42 @@ describeDb('server instances (hosted spec §20.1, §20.2, §20.10)', () => {
       ['valid', 'active'],
       ['in grace', 'grace'],
     ] as const)('accepts multi on an Enterprise license %s, its row carrying its address', async (_name, status) => {
-      const server = await start({ env: MULTI, license: { edition: 'enterprise', status } });
+      const env = await multi();
+      const server = await start({ env, license: { edition: 'enterprise', status } });
       try {
         expect(server.ctx.instance.mode).toBe('multi');
         expect(await rows()).toEqual([
           {
             holder: server.ctx.instance.holder,
-            url: 'http://127.0.0.1:8091',
+            url: env.WIREBENCH_SERVER_INSTANCE_URL,
             version: packageVersion(),
             fresh: true,
           },
         ]);
+      } finally {
+        await server.close();
+      }
+    });
+
+    it('a multi server listens on its instance URL for /internal/v1/* only, until it closes (spec §20.6)', async () => {
+      const env = await multi();
+      const internal = env.WIREBENCH_SERVER_INSTANCE_URL!;
+      const server = await start({ env, license: { edition: 'enterprise', status: 'active' } });
+      try {
+        // This server has no terminal-shares module, so no share route either; and nothing else is served.
+        expect((await fetch(`${internal}/internal/v1/shares/${'a'.repeat(26)}/info`)).status).toBe(404);
+        expect((await fetch(`${internal}/healthz`)).status).toBe(404);
+        expect((await fetch(`http://127.0.0.1:${String(server.port)}/internal/v1/shares/x/info`)).status).toBe(404);
+      } finally {
+        await server.close();
+      }
+      await expect(fetch(`${internal}/healthz`)).rejects.toThrow();
+    });
+
+    it('a single server opens no internal listener', async () => {
+      const server = await start({});
+      try {
+        expect(server.ctx.relay).toBeUndefined();
       } finally {
         await server.close();
       }

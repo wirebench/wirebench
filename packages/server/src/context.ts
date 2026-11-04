@@ -16,6 +16,7 @@ import type { ModuleConfig } from './config.js';
 import { requireFeature } from './licensing/gate.js';
 import type { BusEvents } from './operations/bus.js';
 import type { ServerInstance } from './operations/instances.js';
+import type { InstanceRelay } from './operations/internal-server.js';
 import type { RepoStore } from './repos/repo-store.js';
 import type { TenantScope } from './tenancy/scope.js';
 import { outsideTenantUnit, type TenantQuerier } from './tenancy/tenant-db.js';
@@ -604,6 +605,11 @@ export interface ServerContext {
    * rooms there. Announcing goes through `hooks`, never here.
    */
   readonly bus: BusEvents;
+  /**
+   * The share relay between instances (spec §20.6): tokens for another instance's internal listener, and this one's
+   * share routes on it. Set in `multi` only; a `single` server has no internal listener and never dials.
+   */
+  readonly relay?: InstanceRelay;
   /** Replaced by the licensing module in `register()`; the one field a module may assign (licensing spec §5.1). */
   license: LicenseService;
 }

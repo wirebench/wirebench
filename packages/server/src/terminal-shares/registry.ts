@@ -61,6 +61,8 @@ export interface ShareRegistryDeps {
   readonly now: () => number;
   readonly setTimer: (fn: () => void, ms: number) => { cancel(): void };
   readonly log?: (message: string, error?: unknown) => void;
+  /** A share ended, whatever ended it: its location row goes (spec §20.6). Never awaited. */
+  readonly ended?: (tenant: TenantScope, shareId: string) => void;
 }
 
 export type AttachOutcome = 'owner' | 'viewer' | 'not-found' | 'removed' | 'owner-taken' | 'full';
@@ -498,6 +500,11 @@ export class ShareRegistry {
       member.peer.close(TERMINAL_SHARE_CLOSE.ended, reason);
     }
     this.record(share, 'terminal_share.ended', source, { reason, viewers: share.joined.size });
+    try {
+      this.deps.ended?.(share.tenant, share.id);
+    } catch (error) {
+      this.deps.log?.('terminal share location removal failed', error);
+    }
   }
 
   private memberOf(peer: SharePeer): Member | undefined {

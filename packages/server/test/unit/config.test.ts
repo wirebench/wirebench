@@ -695,6 +695,7 @@ describe('one instance or several (hosted edition spec §20.1)', () => {
     ...required,
     WIREBENCH_SERVER_INSTANCES: 'multi',
     WIREBENCH_SERVER_INSTANCE_URL: 'http://10.0.0.5:8091',
+    WIREBENCH_SERVER_SECRETS_KEY: Buffer.alloc(32, 7).toString('base64'),
   };
 
   it('defaults to single, with no instance URL', () => {
@@ -713,6 +714,12 @@ describe('one instance or several (hosted edition spec §20.1)', () => {
   it('refuses multi without an instance URL, naming the URL variable', () => {
     expect(() => loadConfig({ ...required, WIREBENCH_SERVER_INSTANCES: 'multi' }, '1')).toThrow(
       /WIREBENCH_SERVER_INSTANCE_URL: is required when WIREBENCH_SERVER_INSTANCES is multi/,
+    );
+  });
+
+  it('refuses multi without the secrets key the share relay is signed under (spec §20.6)', () => {
+    expect(() => loadConfig({ ...MULTI, WIREBENCH_SERVER_SECRETS_KEY: undefined }, '1')).toThrow(
+      /WIREBENCH_SERVER_SECRETS_KEY: is required when WIREBENCH_SERVER_INSTANCES is multi/,
     );
   });
 
