@@ -29,8 +29,9 @@ import {
 } from './context.js';
 import type { Database } from './db/querier.js';
 import { loadMigrations, migrate, MIGRATIONS_DIR, pendingMigrations, type Migration } from './db/migrate.js';
-import { APPLICATION_NAME, createDatabase, openSession } from './db/pool.js';
+import { APPLICATION_NAME, createDatabase, createLockPool, openSession } from './db/pool.js';
 import { BusSignals, NotificationBus } from './operations/bus.js';
+import { DatabaseRepoLock, guardGit, REPO_LOCK_POOL_MAX, REPO_LOCK_WAIT_MS } from './operations/repo-lock.js';
 import { checkAppRole, checkPostgresVersion } from './tenancy/checks.js';
 import { allowsMultipleInstances, InstanceRegistry, licenseLapseWatch } from './operations/instances.js';
 import { OPERATIONS_MIGRATIONS_DIR } from './operations/migrations.js';
@@ -130,7 +131,8 @@ async function locateGit(config: ServerConfig): Promise<GitCli> {
   if (location === undefined) {
     throw new StartupError(ExitCode.Config, 'git was not found; install git or set WIREBENCH_SERVER_GIT_PATH');
   }
-  return new GitCli(location, { hooksDir: join(config.dataDir, NO_HOOKS_DIR) });
+  // Every git step asks first whether its repository operation still holds its lock (spec §20.4).
+  return guardGit(new GitCli(location, { hooksDir: join(config.dataDir, NO_HOOKS_DIR) }));
 }
 
 /**
@@ -407,6 +409,8 @@ export async function runMigrate(
 
 /** What the bus's listening connection is called in `pg_stat_activity`: a server's, so a revert waits for it. */
 const BUS_APPLICATION_NAME = `${APPLICATION_NAME}-bus`;
+/** The repository lock pool's connections (spec §20.4): a server's too, so a revert waits for them. */
+const REPO_LOCK_APPLICATION_NAME = `${APPLICATION_NAME}-repo-lock`;
 
 export async function startServer(
   env: NodeJS.ProcessEnv,
@@ -562,10 +566,25 @@ export async function startServer(
       ExitCode.Migration,
       `lost during start-up and could not be taken again: ${lockLost.early?.message ?? 'the server-running lock'}`,
     );
-  const repos = new RepoStore({ git, dataDir: config.dataDir });
-  const instances = instanceModeOf(config);
   // Logged through `appLog` once the app's logger exists; nothing beats before `start`, which comes after it.
   const appLog: { warn?: (details: Record<string, unknown>, message: string) => void } = {};
+  // The repository lock (spec §20.4) on the running lock's URL, a direct connection like the bus's: a transaction
+  // pooler would hand a session's advisory lock to someone else. A pool opens no connection until the first lock.
+  const lockPool = createLockPool(migrationUrl, {
+    max: REPO_LOCK_POOL_MAX,
+    applicationName: REPO_LOCK_APPLICATION_NAME,
+    waitMs: REPO_LOCK_WAIT_MS,
+    onError: (error) => dbLog.warn?.(error),
+  });
+  const repos = new RepoStore({
+    git,
+    dataDir: config.dataDir,
+    lock: new DatabaseRepoLock({
+      pool: lockPool,
+      warn: (error, message) => appLog.warn?.({ err: error }, message),
+    }),
+  });
+  const instances = instanceModeOf(config);
   // The process's id (spec §19.9, §20.2): its instance row and its host leases share it.
   const registry = new InstanceRegistry({
     db,
@@ -727,6 +746,10 @@ export async function startServer(
       // work (a push looks up its author and writes commits), so the pool outlives that work. From
       // here on, new repository work is refused with server-shutting-down.
       if (!lost) await repos.drain();
+      // Every lock is released by now. Without the running lock, nothing is waited for: the pool ends as each
+      // operation still running returns its connection, and the process exits regardless.
+      if (lost) void lockPool.close().catch(() => undefined);
+      else await lockPool.close();
       // After the modules closed and the repository work ended, whose announcements it still carries (best effort).
       await bus.stop(lost ? 0 : undefined);
       // A clean stop deletes its own row; a crash leaves it to the next renew's sweep.
