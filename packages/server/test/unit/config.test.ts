@@ -6,6 +6,7 @@ import {
   describeConfig,
   egressPolicyOf,
   HOSTED_REFUSED,
+  instanceModeOf,
   loadConfig,
   migrationUrlOf,
 } from '../../src/config.js';
@@ -227,6 +228,8 @@ describe('describeConfig', () => {
         'WIREBENCH_SERVER_HOOKS_SECRET_KEY',
         'WIREBENCH_SERVER_HOST',
         'WIREBENCH_SERVER_HOST_IDLE_MINUTES',
+        'WIREBENCH_SERVER_INSTANCE_URL',
+        'WIREBENCH_SERVER_INSTANCES',
         'WIREBENCH_SERVER_INVITATION_DAYS',
         'WIREBENCH_SERVER_LOCAL_AUTH',
         'WIREBENCH_SERVER_LOG_LEVEL',
@@ -671,5 +674,79 @@ describe('WIREBENCH_SERVER_MODE (hosted edition spec §19.1)', () => {
     expect(egressPolicyOf(config)).toEqual({ denyPrivate: false });
     expect(egressPolicyOf({ ...config, egressDenyPrivate: true })).toEqual({ denyPrivate: true });
     expect(egressPolicyOf({ ...config, mode: 'hosted' })).toEqual({ denyPrivate: true });
+  });
+});
+
+describe('one instance or several (hosted edition spec §20.1)', () => {
+  const MULTI = {
+    ...required,
+    WIREBENCH_SERVER_INSTANCES: 'multi',
+    WIREBENCH_SERVER_INSTANCE_URL: 'http://10.0.0.5:8091',
+  };
+
+  it('defaults to single, with no instance URL', () => {
+    const config = loadConfig(required, '1');
+    expect(config.instances).toBe('single');
+    expect(config.instanceUrl).toBeUndefined();
+    expect(instanceModeOf(config)).toBe('single');
+  });
+
+  it('reads multi and the instance URL', () => {
+    const config = loadConfig(MULTI, '1');
+    expect(config).toMatchObject({ instances: 'multi', instanceUrl: 'http://10.0.0.5:8091' });
+    expect(instanceModeOf(config)).toBe('multi');
+  });
+
+  it('refuses multi without an instance URL, naming the URL variable', () => {
+    expect(() => loadConfig({ ...required, WIREBENCH_SERVER_INSTANCES: 'multi' }, '1')).toThrow(
+      /WIREBENCH_SERVER_INSTANCE_URL: is required when WIREBENCH_SERVER_INSTANCES is multi/,
+    );
+  });
+
+  it('refuses a value other than single or multi', () => {
+    expect(() => loadConfig({ ...required, WIREBENCH_SERVER_INSTANCES: 'many' }, '1')).toThrow(
+      /WIREBENCH_SERVER_INSTANCES/,
+    );
+  });
+
+  it.each([
+    ['not a URL', 'nowhere'],
+    ['another scheme', 'ftp://10.0.0.5:8091'],
+    ['no port', 'http://10.0.0.5'],
+    ['a path', 'http://10.0.0.5:8091/internal'],
+    ['a trailing slash', 'http://10.0.0.5:8091/'],
+    ['credentials', 'http://a:b@10.0.0.5:8091'],
+  ])('refuses an instance URL with %s, without echoing it', (_why, value) => {
+    let message = '';
+    try {
+      loadConfig({ ...MULTI, WIREBENCH_SERVER_INSTANCE_URL: value }, '1');
+    } catch (error) {
+      message = String(error);
+    }
+    expect(message).toContain('WIREBENCH_SERVER_INSTANCE_URL');
+    expect(message).not.toContain(value);
+  });
+
+  it('is always multi in hosted mode, whatever the variable says', () => {
+    const config = loadConfig(required, '1');
+    expect(instanceModeOf({ ...config, mode: 'hosted' })).toBe('multi');
+  });
+
+  it('documents both variables, and config check reports them', () => {
+    expect(describeConfig(MULTI)).toEqual(
+      expect.arrayContaining([
+        { variable: 'WIREBENCH_SERVER_INSTANCES', status: 'set' },
+        { variable: 'WIREBENCH_SERVER_INSTANCE_URL', status: 'set' },
+      ]),
+    );
+    expect(describeConfig(required)).toEqual(
+      expect.arrayContaining([
+        { variable: 'WIREBENCH_SERVER_INSTANCES', status: 'defaulted' },
+        { variable: 'WIREBENCH_SERVER_INSTANCE_URL', status: 'missing' },
+      ]),
+    );
+    expect(describeConfig({ ...MULTI, WIREBENCH_SERVER_INSTANCE_URL: 'http://x' })).toEqual(
+      expect.arrayContaining([{ variable: 'WIREBENCH_SERVER_INSTANCE_URL', status: 'invalid' }]),
+    );
   });
 });

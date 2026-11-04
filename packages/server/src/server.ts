@@ -7,12 +7,12 @@
  * (`@fastify/swagger`, `openapi-types`) would ship in the container image licensed for nothing.
  */
 import Fastify, { type FastifyInstance, type RouteOptions } from 'fastify';
-import type { ServerContext, ServerModule } from './context.js';
+import { remote, type ServerContext, type ServerModule } from './context.js';
 import { toProblem } from './problem.js';
 import { healthRoutes } from './routes/health.js';
 import { metaRoutes } from './routes/meta.js';
 import { registerTenantResolution, type TenantResolver } from './tenancy/resolve.js';
-import { directoryOf } from './tenancy/tenancy.js';
+import { directoryOf, shareTenancyCaches } from './tenancy/tenancy.js';
 
 export interface BuildServerOptions {
   readonly modules: readonly ServerModule[];
@@ -90,7 +90,21 @@ export async function buildServer(ctx: ServerContext, options: BuildServerOption
 
   // First, so it runs ahead of every module's hooks, on the API, the public routes and every upgrade.
   const resolver = await registerTenantResolution(app, ctx.config, directoryOf(ctx.tenancy));
-  if (resolver !== undefined) options.onTenantResolver?.(resolver);
+  // Spec §20.3: another instance's tenant write, or a bus that missed some, reloads the map and drops the keys.
+  shareTenancyCaches(ctx.tenancy, ctx.hooks, ctx.bus, app.log);
+  if (resolver !== undefined) {
+    const reload = (): void => {
+      resolver.invalidate().catch((error: unknown) => {
+        app.log.warn({ err: error }, 'the tenant map could not be reloaded; keeping the last one');
+      });
+    };
+    // `remote` (review M2): a write here already reloads it through the directory's own change.
+    ctx.hooks.tenantsChanged.push(remote(reload));
+    ctx.bus.onListen(({ reconnected }) => {
+      if (reconnected) reload();
+    });
+    options.onTenantResolver?.(resolver);
+  }
 
   app.addHook('onSend', async (request, reply) => {
     reply.header('x-request-id', request.id);

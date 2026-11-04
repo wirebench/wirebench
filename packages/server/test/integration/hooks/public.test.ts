@@ -5,7 +5,7 @@
  */
 import { request as httpRequest } from 'node:http';
 import { afterEach, beforeEach, expect, it } from 'vitest';
-import type { CaptureReceived } from '../../../src/context.js';
+import { local, type CaptureReceived } from '../../../src/context.js';
 import * as repo from '../../../src/hooks/repo.js';
 import { describeDb } from '../../helpers/database.js';
 import { hooksHarness, seedCatchUrl, type HooksHarness } from '../../helpers/hooks.js';
@@ -26,9 +26,11 @@ async function setUp(env: Record<string, string> = {}): Promise<Cast> {
   const workspaceId = await seedWorkspace(h, { team, name: 'Integration' });
   const hook = await seedCatchUrl(h, workspaceId, 'Payments');
   const heard: CaptureReceived[] = [];
-  h.hooks.captureReceived.push((event) => {
-    heard.push(event);
-  });
+  h.hooks.captureReceived.push(
+    local((event) => {
+      heard.push(event);
+    }),
+  );
   return { h, workspaceId, hook, heard };
 }
 

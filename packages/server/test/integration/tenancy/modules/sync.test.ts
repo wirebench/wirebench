@@ -6,7 +6,7 @@
 import { CATCH_URL_DEFAULT_RESPONSE, type SyncChange, type SyncPushCommit } from '@wirebench/engine';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { ciTokensModule } from '../../../../src/ci-tokens/module.js';
-import type { CaptureReceivedEvent } from '../../../../src/context.js';
+import { local, type CaptureReceivedEvent } from '../../../../src/context.js';
 import { hooksModule } from '../../../../src/hooks/module.js';
 import * as hooksRepo from '../../../../src/hooks/repo.js';
 import { mintCatchSecret } from '../../../../src/hooks/secret.js';
@@ -141,7 +141,7 @@ describeDb('server-sync, webhook capture and CI tokens in two tenants (tenancy T
     const inB = await seedHook(t.b, secret);
     const inA = await seedHook(t.a, secret);
     const events: CaptureReceivedEvent[] = [];
-    t.h.hooks.captureReceived.push((event) => events.push(event));
+    t.h.hooks.captureReceived.push(local((event) => events.push(event)));
     const res = await t.a.inject({ method: 'POST', url: `/hooks/${secret}`, payload: 'x' });
     expect(res.statusCode).toBe(200);
     expect(await countIn(t.a, 'captures', 'catch_url_id = $1', [inA.id])).toBe(1);

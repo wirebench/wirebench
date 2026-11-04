@@ -2,13 +2,26 @@ import { Writable } from 'node:stream';
 import Fastify, { type FastifyBaseLogger } from 'fastify';
 import { describe, expect, it } from 'vitest';
 import {
+  ANNOUNCEMENT_KINDS,
   announce,
+  Announcements,
+  cluster,
+  connectBus,
+  deliverRemote,
+  local,
   serverHooks,
   type Announcement,
   type HeadMoved,
   type HeadMovedEvent,
   type ServerModule,
 } from '../../../src/context.js';
+
+/** A list of `fns`, all `local`. */
+const listOf = (fns: readonly Announcement<HeadMovedEvent>[]): Announcements<HeadMovedEvent> => {
+  const list = new Announcements<HeadMovedEvent>('headMoved');
+  list.push(...fns.map((fn) => local(fn)));
+  return list;
+};
 
 const EVENT: HeadMovedEvent = {
   tenantId: '00000000-0000-4000-8000-000000000001',
@@ -45,7 +58,7 @@ describe('announce (live-updates §3.2, R3)', () => {
     const listeners: Announcement<HeadMoved>[] = ['a', 'b', 'c'].map((name) => (event: HeadMoved) => {
       seen.push([name, event]);
     });
-    announce(listeners, EVENT, recordingLog().log);
+    announce(listOf(listeners), EVENT, recordingLog().log);
     expect(seen.map(([name]) => name)).toEqual(['a', 'b', 'c']);
     expect(seen.every(([, event]) => event === EVENT)).toBe(true);
   });
@@ -64,7 +77,7 @@ describe('announce (live-updates §3.2, R3)', () => {
         calls.push('third');
       },
     ];
-    expect(() => announce(listeners, EVENT, log)).not.toThrow();
+    expect(() => announce(listOf(listeners), EVENT, log)).not.toThrow();
     expect(calls).toEqual(['first', 'third']);
     expect(lines()).toEqual([
       expect.objectContaining({
@@ -80,7 +93,7 @@ describe('announce (live-updates §3.2, R3)', () => {
     // Typed as returning `unknown` so the lint rule against async void callbacks has nothing to see:
     // this stands in for a promise that slipped past it.
     const rejecting = (): unknown => Promise.reject(new Error('late'));
-    announce([rejecting as Announcement<HeadMoved>], EVENT, log);
+    announce(listOf([rejecting as Announcement<HeadMoved>]), EVENT, log);
     expect(lines()).toEqual([]); // announce returned without waiting for the listener
     await new Promise<void>((resolve) => setImmediate(resolve));
     expect(lines()).toEqual([
@@ -93,26 +106,73 @@ describe('announce (live-updates §3.2, R3)', () => {
   });
 });
 
+describe('cluster and local listeners (hosted spec §20.3)', () => {
+  it('delivers a local announcement to both kinds, then hands it to the bus once', () => {
+    const hooks = serverHooks();
+    const heard: string[] = [];
+    hooks.headMoved.push(
+      cluster(() => heard.push('cluster')),
+      local(() => heard.push('local')),
+    );
+    const sent: [string, unknown][] = [];
+    const disconnect = connectBus(hooks, (kind, event) => {
+      heard.push('bus');
+      sent.push([kind, event]);
+    });
+    announce(hooks.headMoved, EVENT, recordingLog().log);
+    expect(heard).toEqual(['cluster', 'local', 'bus']);
+    expect(sent).toEqual([['headMoved', EVENT]]);
+    disconnect();
+    announce(hooks.headMoved, EVENT, recordingLog().log);
+    expect(sent).toHaveLength(1);
+  });
+
+  it('delivers a remote event to the cluster listeners only, and never back to the bus', () => {
+    const hooks = serverHooks();
+    const heard: string[] = [];
+    hooks.headMoved.push(
+      cluster(() => heard.push('cluster')),
+      local(() => heard.push('local')),
+    );
+    const sent: unknown[] = [];
+    connectBus(hooks, (_kind, event) => sent.push(event));
+    deliverRemote(hooks.headMoved, EVENT, recordingLog().log);
+    expect(heard).toEqual(['cluster']);
+    expect(sent).toEqual([]);
+  });
+
+  it('never throws when the bus does', () => {
+    const hooks = serverHooks();
+    connectBus(hooks, () => {
+      throw new Error('queue');
+    });
+    const { log, lines } = recordingLog();
+    expect(() => announce(hooks.headMoved, EVENT, log)).not.toThrow();
+    expect(lines()).toEqual([expect.objectContaining({ level: 40 })]);
+  });
+
+  it('refuses a bare function at the type level', () => {
+    const hooks = serverHooks();
+    // @ts-expect-error a listener says whether it is cluster or local (spec §20.3)
+    hooks.headMoved.push(() => undefined);
+    expect(hooks.headMoved.length).toBe(1);
+  });
+});
+
 describe('serverHooks and ServerModule (live-updates §5.1, §14)', () => {
   it('starts every list empty, and each call gets lists of its own', () => {
     const one = serverHooks();
-    expect(one).toEqual({
-      invitationAccepted: [],
-      audit: [],
-      headMoved: [],
-      accessChanged: [],
-      sessionEnded: [],
-      captureReceived: [],
-      hooksChanged: [],
-      licenseChanged: [],
-      scheduleRunFinished: [],
-      agentUnpaired: [],
-    });
-    one.headMoved.push(() => undefined);
-    one.accessChanged.push(() => undefined);
-    one.sessionEnded.push(() => undefined);
+    expect(one.invitationAccepted).toEqual([]);
+    expect(one.audit).toEqual([]);
+    for (const kind of ANNOUNCEMENT_KINDS) {
+      expect(one[kind]).toBeInstanceOf(Announcements);
+      expect([one[kind].kind, one[kind].length]).toEqual([kind, 0]);
+    }
+    one.headMoved.push(local(() => undefined));
+    one.accessChanged.push(local(() => undefined));
+    one.sessionEnded.push(local(() => undefined));
     const two = serverHooks();
-    expect([two.headMoved, two.accessChanged, two.sessionEnded]).toEqual([[], [], []]);
+    expect([two.headMoved.length, two.accessChanged.length, two.sessionEnded.length]).toEqual([0, 0, 0]);
     // The admin CLI builds its own serverHooks() with no hub: announcing there is a silent no-op.
     const { log, lines } = recordingLog();
     announce(two.headMoved, EVENT, log);

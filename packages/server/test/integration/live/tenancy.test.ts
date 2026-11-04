@@ -46,21 +46,21 @@ describeDb('live updates with two tenants on one server (tenancy Task 11)', () =
   it("never delivers another tenant's head, capture, hooks or ending, though every id matches", async () => {
     const as = (tenant: TenantScope) => ({ tenantId: tenant.tenantId });
     const announceAll = (tenant: TenantScope) => {
-      for (const listener of h.hooks.headMoved)
+      for (const { fn: listener } of h.hooks.headMoved.all())
         listener({ ...as(tenant), workspaceId, head: 'b'.repeat(40), tokenId: 'someone-else' });
-      for (const listener of h.hooks.captureReceived)
+      for (const { fn: listener } of h.hooks.captureReceived.all())
         listener({ ...as(tenant), workspaceId, hookId: HOOK, captureId: CAPTURE });
-      for (const listener of h.hooks.hooksChanged) listener({ ...as(tenant), workspaceId });
+      for (const { fn: listener } of h.hooks.hooksChanged.all()) listener({ ...as(tenant), workspaceId });
     };
     announceAll(other);
-    for (const listener of h.hooks.sessionEnded) listener({ ...as(other), tokenId: ana.tokenId });
-    for (const listener of h.hooks.sessionEnded) listener({ ...as(other), userId: ana.user.id });
+    for (const { fn: listener } of h.hooks.sessionEnded.all()) listener({ ...as(other), tokenId: ana.tokenId });
+    for (const { fn: listener } of h.hooks.sessionEnded.all()) listener({ ...as(other), userId: ana.user.id });
     // Its own tenant's arrive, in order: the other tenant's would have come first.
     const own = h.tdb.scope;
     announceAll(own);
     await client.next('hooks');
     expect(typesOf(client.messages)).toEqual(['ready', 'presence', 'head', 'capture', 'hooks']);
-    for (const listener of h.hooks.sessionEnded) listener({ ...as(own), tokenId: ana.tokenId });
+    for (const { fn: listener } of h.hooks.sessionEnded.all()) listener({ ...as(own), tokenId: ana.tokenId });
     expect(await client.closed).toEqual({ code: 4401 });
   });
 

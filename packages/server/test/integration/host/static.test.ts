@@ -6,7 +6,7 @@
  */
 import { connect } from 'node:net';
 import { afterEach, beforeEach, expect, it } from 'vitest';
-import type { SessionEnded } from '../../../src/context.js';
+import { local, type SessionEnded } from '../../../src/context.js';
 import { BROWSER_CONTENT_SECURITY_POLICY } from '../../../src/host/browser-client.js';
 import { hostModule } from '../../../src/host/module.js';
 import { sessionCookieName } from '../../../src/identity/cookies.js';
@@ -172,9 +172,11 @@ describeDb('the browser tab at the root (hosted spec §17.2, §17.6)', () => {
 
   it('POST /sign-out revokes the session, clears the cookie, closes its host socket 4401 and lands on /sign-in', async () => {
     const ended: SessionEnded[] = [];
-    h.hooks.sessionEnded.push((event) => {
-      ended.push(event);
-    });
+    h.hooks.sessionEnded.push(
+      local((event) => {
+        ended.push(event);
+      }),
+    );
     const alice = await browserUser(h, 'alice@example.com');
     const client = await openHost(h, alice);
     await client.waitFor((frame) => frame.type === 'hello');

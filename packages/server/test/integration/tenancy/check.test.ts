@@ -18,12 +18,12 @@ import { environmentKeyRoot, newDataKey } from '../../../src/tenancy/keys.js';
 import { MIGRATION_PASSES } from '../../../src/tenancy/estimate.js';
 import { runTenancySteps } from '../../../src/tenancy/file-step.js';
 import { loadFixture0019 } from '../../fixtures/tenancy/load.js';
-import { SCOPED_TABLES } from '../../helpers/catalog.js';
+import { SCOPED_AFTER_0019, SCOPED_TABLES } from '../../helpers/catalog.js';
 import { describeDb, testDatabase } from '../../helpers/database.js';
 import { mkTempDir, removeTempDir } from '../../helpers/git.js';
 
-/** The scoped tables that exist at 0019: 0020 creates `host_leases`. */
-const SCOPED_0019 = SCOPED_TABLES.filter((table) => table !== 'host_leases');
+/** The scoped tables that exist at 0019: 0020 creates `host_leases`, 0022 three more. */
+const SCOPED_0019 = SCOPED_TABLES.filter((table) => !SCOPED_AFTER_0019.includes(table));
 
 describeDb('admin tenancy check and status', () => {
   let db: Awaited<ReturnType<typeof testDatabase>>;

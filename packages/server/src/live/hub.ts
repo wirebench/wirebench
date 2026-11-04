@@ -1,13 +1,17 @@
 /**
  * The live hub (live-updates spec §3.3). It records which open sockets belong to which session, user
  * and workspace, and decides what each announcement sends to whom. There is one per server, built in
- * the module's `register()`. Everything is held in memory, which is why the server runs as a single
- * process (ADR-0013).
+ * the module's `register()`. Everything is held in memory, per process (ADR-0013, as amended by ADR-0037).
  *
  * The hub never parses a client message. `socket.ts` feeds it authenticated sessions and parsed
  * subscribes, and the after-commit announcements (§3.2) feed it events. It reaches the database only
  * through the two injected queries (§10), and it reads time only through the injected clock. A unit
  * test can therefore drive it with fake sockets and fake time.
+ *
+ * In a fleet (spec §20.3) the hub hears every instance's announcements through the notification bus. Presence is the
+ * one state it shares: it announces its own users of each room as ids (`presenceChanged`), keeps the other holders'
+ * lists, and sends the union, with the names it looks up in the tenant. After a lost bus, or on a `resync`, every
+ * subscribed socket gets `head`, `access` and `presence`, which make any desktop run its ordinary fetch.
  *
  * Every index is keyed by tenant first (hosted edition spec §19.8 guard 5): a workspace's subscribers are a
  * *room*, `tenantId:workspaceId`, and users, tokens and catch URL windows are keyed `tenantId:id` too. An
@@ -26,9 +30,14 @@ import type {
   CaptureReceivedEvent,
   HeadMovedEvent,
   HooksChangedEvent,
+  PresenceChangedEvent,
+  PresenceResetEvent,
+  ResyncEvent,
   ScheduleRunFinishedEvent,
   SessionEndedEvent,
 } from '../context.js';
+import type { Listened } from '../operations/bus.js';
+import { holdSession, type HeldSessions } from '../operations/sessions.js';
 import type { TenantScope } from '../tenancy/scope.js';
 import type { Effective } from '../teams/roles.js';
 import { LIVE_TOO_MANY_SUBSCRIPTIONS } from './errors.js';
@@ -56,12 +65,26 @@ export interface LiveSession {
   readonly tenant: TenantScope;
 }
 
+/** What the hub needs to share presence and resync in a fleet (spec §20.3). The module always passes it. */
+export interface LiveHubCluster {
+  /** This process's id: the `holder` of what it announces, and what it ignores when its own comes back. */
+  readonly holder: string;
+  readonly announcePresence: (event: PresenceChangedEvent) => void;
+  readonly announceReset: (event: PresenceResetEvent) => void;
+  /** The display names of those ids that are users in `tenant`. Never the emails. */
+  readonly displayNames: (userIds: readonly string[], tenant: TenantScope) => Promise<ReadonlyMap<string, string>>;
+  /** The workspace's current head, `null` while its branch is unborn. */
+  readonly headOf: (workspaceId: string, tenant: TenantScope) => Promise<string | null>;
+}
+
 export interface LiveHubDeps {
   readonly effectiveRole: (userId: string, workspaceId: string, tenant: TenantScope) => Promise<Effective>;
   readonly workspaceIdsOfTeam: (teamId: string, tenant: TenantScope) => Promise<string[]>;
   readonly log: FastifyBaseLogger;
   readonly now: () => number;
   readonly setTimer: (fn: () => void, ms: number) => { cancel(): void };
+  /** Without it (a unit test's hub) presence stays in this process and nothing resyncs. */
+  readonly cluster?: LiveHubCluster;
 }
 
 /** Node's `setTimeout` fires at once past 2^31 − 1 ms (about 24.8 days), and the default maximum token age is 180 days. */
@@ -111,6 +134,17 @@ export class LiveHub {
    */
   private rechecks: Promise<void> = Promise.resolve();
   private closed = false;
+  /** The other holders' users, by room and then holder: user ids, as `presenceChanged` carried them (spec §20.3). */
+  private readonly remote = new Map<Room, Map<string, readonly string[]>>();
+  /** The display names of the other holders' users, by room, looked up in the room's tenant. */
+  private readonly names = new Map<Room, Map<string, string>>();
+  /** What this hub last announced of each room, as joined ids, so an unchanged list is not announced again. */
+  private readonly announced = new Map<Room, string>();
+  /**
+   * A big list still arriving in parts, by holder and room (review M1): its `seq` and the parts so far. A part of a
+   * newer `seq` gives the older list up, and a part of an older one is ignored.
+   */
+  private readonly partial = new Map<string, { readonly seq: number; readonly parts: (readonly string[])[] }>();
 
   constructor(private readonly deps: LiveHubDeps) {}
 
@@ -265,9 +299,116 @@ export class LiveHub {
     });
   }
 
+  /**
+   * Another holder's users of a room (spec §20.3). Its own come back from the bus's local delivery and are ignored.
+   * The room's subscribers here get the union once the newcomers' names are known.
+   */
+  presenceChanged(event: PresenceChangedEvent): void {
+    if (this.closed || this.cluster === undefined || event.holder === this.cluster.holder) return;
+    const room = keyOf(event.tenantId, event.workspaceId);
+    const users = this.wholeList(room, event);
+    if (users === undefined) return;
+    const lists = this.remote.get(room) ?? new Map<string, readonly string[]>();
+    if ((lists.get(event.holder) ?? []).join(',') === users.join(',')) return;
+    if (users.length === 0) lists.delete(event.holder);
+    else lists.set(event.holder, users);
+    this.storeLists(room, lists);
+    const tenant = this.tenantOfRoom(room);
+    if (tenant === undefined) return;
+    void this.track(
+      this.lookUpNames(room, tenant).then(() => {
+        this.sendPresence([room]);
+      }),
+    );
+  }
+
+  /**
+   * Drops every list `holder` announced: it lost its bus, or it is stopping (spec §20.3). Then this hub announces its
+   * own lists again, so a holder that reset after a loss, or that just started, learns them.
+   */
+  presenceReset(event: PresenceResetEvent): void {
+    if (this.closed || this.cluster === undefined || event.holder === this.cluster.holder) return;
+    this.sendPresence(this.dropHolders((holder) => holder === event.holder));
+    for (const room of this.byWorkspace.keys()) this.announceOwn(room, true);
+  }
+
+  /**
+   * The holder's whole list for the room once it is complete: a list in one message at once, a list in parts when its
+   * last part came (review M1); `undefined` while parts are missing.
+   */
+  private wholeList(room: Room, event: PresenceChangedEvent): readonly string[] | undefined {
+    const key = `${event.holder}|${room}`;
+    if (event.parts === undefined || event.part === undefined || event.seq === undefined) {
+      this.partial.delete(key);
+      return [...event.users];
+    }
+    let pending = this.partial.get(key);
+    // A straggler of a list a newer one replaced is too old to apply.
+    if (pending !== undefined && event.seq < pending.seq) return undefined;
+    if (pending?.seq !== event.seq) {
+      pending = { seq: event.seq, parts: [] };
+      this.partial.set(key, pending);
+    }
+    pending.parts[event.part] = event.users;
+    let count = 0;
+    for (const part of pending.parts) if (part !== undefined) count++;
+    if (count < event.parts) return undefined;
+    this.partial.delete(key);
+    return pending.parts.flat();
+  }
+
+  /** The device tokens of the sockets held here, by tenant: what a resync re-validates (review I1). */
+  heldSessions(): HeldSessions {
+    const held: HeldSessions = new Map();
+    for (const { session } of this.bySocket.values()) holdSession(held, session.tenant, session.tokenId);
+    return held;
+  }
+
+  /** The holders whose lists this hub keeps: the heartbeat asks the instance table only when there are some. */
+  otherHolders(): Set<string> {
+    const holders = new Set<string>();
+    for (const lists of this.remote.values()) for (const holder of lists.keys()) holders.add(holder);
+    return holders;
+  }
+
+  /** Drops the lists of every holder not in `live`, the instance rows renewed within 60 s (spec §20.2). */
+  keepHolders(live: ReadonlySet<string>): void {
+    if (this.closed) return;
+    this.sendPresence(this.dropHolders((holder) => !live.has(holder)));
+  }
+
+  /**
+   * The bus listens (spec §20.3). Every time, the hub says `presenceReset` and announces its own lists afresh, and the
+   * others answer with theirs. After a loss, the lists it kept may be stale, so they go too, and every room resyncs.
+   */
+  listened(listened: Listened): void {
+    if (this.closed || this.cluster === undefined) return;
+    if (listened.reconnected) {
+      this.remote.clear();
+      this.partial.clear();
+      this.names.clear();
+    }
+    this.cluster.announceReset({ holder: this.cluster.holder });
+    for (const room of this.byWorkspace.keys()) this.announceOwn(room, true);
+    if (listened.reconnected) this.resyncRooms([...this.byWorkspace.keys()]);
+  }
+
+  /** The bus could not carry an event for the tenant: its rooms resync (spec §20.3). */
+  resync(event: ResyncEvent): void {
+    // A tenant-less one is the bus's missed marker, which reaches `listened` instead.
+    if (this.closed || this.cluster === undefined || event.tenantId === undefined) return;
+    this.resyncRooms([...this.byWorkspace.keys()].filter((room) => room.startsWith(`${event.tenantId}:`)));
+  }
+
   /** Shutdown (§3.3, §5.1): closes every socket `1001` and clears the indexes. Later calls are no-ops. */
   closeAll(): void {
+    if (this.closed) return;
     this.closed = true;
+    // The others drop this holder's users at once, rather than when its row dies.
+    if (this.announced.size > 0) this.cluster?.announceReset({ holder: this.cluster.holder });
+    this.announced.clear();
+    this.remote.clear();
+    this.names.clear();
     const sockets = [...this.bySocket.keys()];
     for (const state of this.bySocket.values()) state.deadline?.cancel();
     for (const open of this.captureWindows.values()) open.timer?.cancel();
@@ -305,7 +446,9 @@ export class LiveHub {
       if (this.bySocket.get(socket) === state) this.fail(socket);
       return;
     }
-    // While the query ran, the socket may have closed, a repeat may have been admitted, or the session filled up.
+    const room = roomOf(state.session, workspaceId);
+    if (found.role !== 'none') await this.lookUpNames(room, state.session.tenant);
+    // While the queries ran, the socket may have closed, a repeat may have been admitted, or the session filled up.
     if (this.bySocket.get(socket) !== state || state.subs.has(workspaceId)) return;
     if (found.role === 'none') {
       this.refuse(socket, workspaceId, 'teams-workspace-not-found');
@@ -315,12 +458,131 @@ export class LiveHub {
       this.refuse(socket, workspaceId, LIVE_TOO_MANY_SUBSCRIPTIONS);
       return;
     }
-    const room = roomOf(state.session, workspaceId);
     const arriving = !this.isPresent(room, state.session.userId);
     state.subs.set(workspaceId, found.role);
     addTo(this.byWorkspace, room, socket);
+    if (arriving) this.announceOwn(room);
     const message: LiveServerMessage = { type: 'presence', workspaceId, users: this.presenceOf(room) };
     this.deliver(arriving ? (this.byWorkspace.get(room) ?? []) : [socket], message);
+  }
+
+  private get cluster(): LiveHubCluster | undefined {
+    return this.deps.cluster;
+  }
+
+  /** The tenant of a room this hub holds sockets in, from one of its sessions. */
+  private tenantOfRoom(room: Room): TenantScope | undefined {
+    for (const socket of this.byWorkspace.get(room) ?? []) {
+      const tenant = this.bySocket.get(socket)?.session.tenant;
+      if (tenant !== undefined) return tenant;
+    }
+    return undefined;
+  }
+
+  private storeLists(room: Room, lists: Map<string, readonly string[]>): void {
+    if (lists.size > 0) {
+      this.remote.set(room, lists);
+      return;
+    }
+    this.remote.delete(room);
+    this.names.delete(room);
+  }
+
+  /** Drops the lists of the holders `drop` picks. Returns the rooms whose union changed. */
+  private dropHolders(drop: (holder: string) => boolean): Room[] {
+    const changed: Room[] = [];
+    for (const key of [...this.partial.keys()]) if (drop(key.slice(0, key.indexOf('|')))) this.partial.delete(key);
+    for (const [room, lists] of [...this.remote]) {
+      const before = lists.size;
+      for (const holder of [...lists.keys()]) if (drop(holder)) lists.delete(holder);
+      if (lists.size === before) continue;
+      this.storeLists(room, lists);
+      changed.push(room);
+    }
+    return changed;
+  }
+
+  /**
+   * Looks up, in one query, the names of the room's remote users this hub has no name for yet, and keeps them while
+   * the room has remote lists. Never rejects; a failure leaves those users out of `presence` until the next try.
+   */
+  private async lookUpNames(room: Room, tenant: TenantScope): Promise<void> {
+    const lists = this.remote.get(room);
+    if (lists === undefined || this.cluster === undefined) return;
+    const known = this.names.get(room);
+    const missing = new Set<string>();
+    for (const ids of lists.values()) for (const id of ids) if (known?.has(id) !== true) missing.add(id);
+    if (missing.size === 0) return;
+    try {
+      const found = await this.cluster.displayNames([...missing], tenant);
+      if (!this.remote.has(room)) return;
+      const names = this.names.get(room) ?? new Map<string, string>();
+      for (const [id, name] of found) names.set(id, name);
+      this.names.set(room, names);
+    } catch (error) {
+      this.deps.log.warn({ err: error }, 'live presence names could not be read');
+    }
+  }
+
+  /** `presenceChanged` with this hub's users of `room`, when they differ from what it last said, or always (`force`). */
+  private announceOwn(room: Room, force = false): void {
+    if (this.cluster === undefined) return;
+    const users = [...new Set(this.localUserIds(room))].sort(compareIds);
+    const joined = users.join(',');
+    if (!force && (this.announced.get(room) ?? '') === joined) return;
+    // An empty list goes out only for a room this hub had announced: the others then drop it.
+    if (users.length === 0) this.announced.delete(room);
+    else this.announced.set(room, joined);
+    this.cluster.announcePresence({
+      tenantId: room.slice(0, room.indexOf(':')),
+      workspaceId: workspaceOf(room),
+      holder: this.cluster.holder,
+      users,
+    });
+  }
+
+  private *localUserIds(room: Room): Iterable<string> {
+    for (const socket of this.byWorkspace.get(room) ?? []) {
+      const session = this.bySocket.get(socket)?.session;
+      if (session !== undefined) yield session.userId;
+    }
+  }
+
+  /**
+   * Spec §20.3: per room, one head query, then `head` (when the branch is born), `access` and `presence` to each
+   * subscribed socket, in that order, and last an access re-check of the room's tenant, since an `accessChanged` the
+   * bus missed would otherwise leave a subscription its user lost. Rooms go one at a time, in the background.
+   */
+  private resyncRooms(rooms: readonly Room[]): void {
+    const cluster = this.cluster;
+    if (cluster === undefined || rooms.length === 0) return;
+    const run = async (): Promise<void> => {
+      const tenants = new Map<string, TenantScope>();
+      for (const room of rooms) {
+        const tenant = this.tenantOfRoom(room);
+        if (tenant === undefined || this.closed) continue;
+        tenants.set(tenant.tenantId, tenant);
+        const workspaceId = workspaceOf(room);
+        let head: string | null = null;
+        try {
+          head = await cluster.headOf(workspaceId, tenant);
+        } catch (error) {
+          this.deps.log.warn({ err: error, workspaceId }, 'live resync could not read the head');
+        }
+        await this.lookUpNames(room, tenant);
+        if (this.closed) return;
+        const sockets = [...(this.byWorkspace.get(room) ?? [])];
+        if (head !== null) this.deliver(sockets, { type: 'head', workspaceId, head });
+        this.deliver(sockets, { type: 'access', workspaceId });
+        this.sendPresence([room]);
+      }
+      for (const tenant of tenants.values()) this.accessChanged({ tenantId: tenant.tenantId, tenant });
+    };
+    void this.track(
+      run().catch((error: unknown) => {
+        this.deps.log.warn({ err: error }, 'live resync failed');
+      }),
+    );
   }
 
   private refuse(socket: LiveSocket, workspaceId: string, code: RefusedCode): void {
@@ -545,10 +807,26 @@ export class LiveHub {
         users.set(session.userId, { id: session.userId, name: session.name });
       }
     }
+    // Spec §20.3: the other holders' users too, each once its name is known.
+    const names = this.names.get(room);
+    for (const ids of this.remote.get(room)?.values() ?? []) {
+      for (const id of ids) {
+        const name = names?.get(id);
+        if (name !== undefined && !users.has(id)) users.set(id, { id, name });
+      }
+    }
     return [...users.values()].sort((a, b) => byName.compare(a.name, b.name) || compareIds(a.id, b.id));
   }
 
+  /** This hub's users of `rooms` changed: it tells the other holders, then the rooms' subscribers here. */
   private announcePresence(rooms: Iterable<Room>): void {
+    const list = [...rooms];
+    for (const room of list) this.announceOwn(room);
+    this.sendPresence(list);
+  }
+
+  /** `presence` to each room's subscribers here. */
+  private sendPresence(rooms: Iterable<Room>): void {
     for (const room of rooms) {
       const sockets = this.byWorkspace.get(room);
       if (sockets === undefined) continue;

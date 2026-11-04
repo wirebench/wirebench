@@ -19,7 +19,8 @@ import {
   type TerminalShareInfo,
 } from '@wirebench/engine';
 import type { FastifyInstance, FastifyRequest, preHandlerAsyncHookHandler } from 'fastify';
-import { auditIp, auditSource, recordAudit, type ServerContext, type ServerModule } from '../context.js';
+import { auditIp, cluster, auditSource, recordAudit, type ServerContext, type ServerModule } from '../context.js';
+import { endGoneSessions } from '../operations/sessions.js';
 import { pendingWrites, type PendingWrites } from '../pending-writes.js';
 import { identitySettings } from '../identity/env.js';
 import { callerForToken } from '../identity/guard.js';
@@ -196,13 +197,37 @@ export function terminalSharesModule(options: TerminalSharesOptions = {}): Serve
       };
       heartbeat = setTimer(beat, TERMINAL_SHARE_LIMITS.heartbeatMs);
 
-      ctx.hooks.accessChanged.push((event) => {
-        registry.recheck(event.tenantId).catch((error: unknown) => {
-          ctx.log.warn({ err: error }, 'terminal share access re-check failed');
-        });
-      });
-      ctx.hooks.sessionEnded.push((event) => {
-        registry.sessionEnded(event);
+      // `cluster`: an access change or a session ended on any instance reaches the shares held here (spec §20.3).
+      ctx.hooks.accessChanged.push(
+        cluster((event) => {
+          registry.recheck(event.tenantId).catch((error: unknown) => {
+            ctx.log.warn({ err: error }, 'terminal share access re-check failed');
+          });
+        }),
+      );
+      ctx.hooks.sessionEnded.push(
+        cluster((event) => {
+          registry.sessionEnded(event);
+        }),
+      );
+      // A bus that missed events may have missed an `accessChanged` or a `sessionEnded` (review I1): each held
+      // tenant's access is checked again, and the gone tokens' sockets go as if their session's end had come.
+      ctx.bus.onListen(({ reconnected }) => {
+        if (!reconnected) return;
+        const held = registry.heldSessions();
+        for (const tenantId of held.keys()) {
+          registry.recheck(tenantId).catch((error: unknown) => {
+            ctx.log.warn({ err: error }, 'terminal share access re-check failed');
+          });
+        }
+        void endGoneSessions(
+          ctx.tenancy,
+          held,
+          (event) => {
+            registry.sessionEnded(event);
+          },
+          ctx.log,
+        );
       });
       app.addHook('onClose', async () => {
         heartbeat?.cancel();

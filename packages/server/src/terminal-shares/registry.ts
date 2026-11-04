@@ -20,6 +20,7 @@ import {
 } from '@wirebench/engine';
 import type { AuditSource, SessionEndedEvent } from '../context.js';
 import type { TenantScope } from '../tenancy/scope.js';
+import { holdSession, type HeldSessions } from '../operations/sessions.js';
 
 /** One socket, as the registry sees it. */
 export interface SharePeer {
@@ -353,6 +354,19 @@ export class ShareRegistry {
         }
       }
     }
+  }
+
+  /**
+   * The device tokens of every attached socket, owners' and viewers', by tenant: what a bus resync re-validates, and
+   * the tenants whose access it re-checks (review I1).
+   */
+  heldSessions(): HeldSessions {
+    const held: HeldSessions = new Map();
+    for (const share of this.shares.values()) {
+      if (share.owner !== undefined) holdSession(held, share.tenant, share.owner.who.tokenId);
+      for (const viewer of share.viewers.values()) holdSession(held, share.tenant, viewer.who.tokenId);
+    }
+    return held;
   }
 
   private inTenant(share: Share, tenant: TenantScope, workspaceId: string): boolean {

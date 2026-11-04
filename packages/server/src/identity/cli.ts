@@ -29,10 +29,11 @@ import { identitySettings, type InvitationEnv } from './env.js';
 import { createInvitation, invitationSummary, isOpen, revokeOpenInvitation } from './invitations.js';
 import * as repo from './repo.js';
 
-// `admin tenancy role` runs as the owner, not the app role, so it has its own runner (tenancy/cli.ts).
+// `admin tenancy role` runs as the owner, not the app role, so it has its own runner (tenancy/cli.ts), and so has
+// `admin instances`, which works in no tenant (operations/cli.ts).
 type AdminCommand = Exclude<
   Extract<ServerCommand, { command: `admin-${string}` }>,
-  { command: `admin-tenancy-${string}` }
+  { command: `admin-tenancy-${string}` | 'admin-instances' }
 >;
 
 /**

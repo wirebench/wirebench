@@ -7,12 +7,17 @@
  * `@fastify/websocket` is registered here, not by the host. Its `onRoute` hook wraps only the routes
  * registered after it in this scope, and `/live` is the only one.
  *
- * The hub is created once per server and fed by the three announcement lists on `ctx.hooks` (§3.2).
+ * The hub is created once per server and fed by the announcement lists on `ctx.hooks` (§3.2), each a `cluster`
+ * listener, so every instance's events reach this process's sockets (hosted edition spec §20.3). Presence crosses
+ * instances as `presenceChanged`, and the bus's listens and `resync` events resync the rooms held here.
  */
 import fastifyWebsocket from '@fastify/websocket';
 import { LIVE_CAPABILITY, LIVE_CLOSE, LIVE_LIMITS } from '@wirebench/engine';
 import type { FastifyInstance, onRequestHookHandler } from 'fastify';
-import type { ServerContext, ServerModule } from '../context.js';
+import { announce, cluster, type ServerContext, type ServerModule } from '../context.js';
+import { displayNamesOf } from '../identity/repo.js';
+import { endGoneSessions } from '../operations/sessions.js';
+import { CommitStore } from '../sync/commit-store.js';
 import { tenantUrl, type UrlConfig } from '../tenancy/urls.js';
 import { identitySettings } from '../identity/env.js';
 import { callerForToken } from '../identity/guard.js';
@@ -90,12 +95,29 @@ export function liveModule(options: LiveOptions = {}): ServerModule {
 
     async register(app: FastifyInstance, ctx: ServerContext): Promise<void> {
       const settings = identitySettings(ctx.config);
+      // A resync's head (spec §20.3), read as `GET …/sync/head` reads it: no repository lock, one rev-parse.
+      const heads = new CommitStore({
+        git: ctx.git.withPlumbing(),
+        repos: ctx.repos,
+        limitBytes: ctx.config.bodyLimitMb * 1024 * 1024,
+      });
       const hub = new LiveHub({
         effectiveRole: (userId, workspaceId, tenant) => effectiveRole(ctx.tenancy.db(tenant), userId, workspaceId),
         workspaceIdsOfTeam: (teamId, tenant) => workspaceIdsOfTeam(ctx.tenancy.db(tenant), teamId),
         log: ctx.log,
         now: () => now().getTime(),
         setTimer,
+        cluster: {
+          holder: ctx.instance.holder,
+          announcePresence: (event) => {
+            announce(ctx.hooks.presenceChanged, event, ctx.log);
+          },
+          announceReset: (event) => {
+            announce(ctx.hooks.presenceReset, event, ctx.log);
+          },
+          displayNames: (ids, tenant) => displayNamesOf(ctx.tenancy.db(tenant), ids),
+          headOf: (workspaceId, tenant) => heads.head(tenant, workspaceId),
+        },
       });
       let heartbeat: { cancel(): void } | undefined;
       // Re-armed before the work, so one failing beat cannot stop every later one: a socket that
@@ -160,23 +182,71 @@ export function liveModule(options: LiveOptions = {}): ServerModule {
         runLiveSocket(socket, loopFor(request.tenant));
       });
 
-      ctx.hooks.headMoved.push((event) => {
-        hub.headMoved(event);
+      // `cluster`: every instance's events reach this process's sockets (spec §20.3).
+      ctx.hooks.headMoved.push(
+        cluster((event) => {
+          hub.headMoved(event);
+        }),
+      );
+      ctx.hooks.accessChanged.push(
+        cluster((event) => {
+          hub.accessChanged(event);
+        }),
+      );
+      ctx.hooks.sessionEnded.push(
+        cluster((event) => {
+          hub.sessionEnded(event);
+        }),
+      );
+      ctx.hooks.captureReceived.push(
+        cluster((event) => {
+          hub.captureReceived(event);
+        }),
+      );
+      ctx.hooks.hooksChanged.push(
+        cluster((event) => {
+          hub.hooksChanged(event);
+        }),
+      );
+      ctx.hooks.scheduleRunFinished.push(
+        cluster((event) => {
+          hub.scheduleRunFinished(event);
+        }),
+      );
+      ctx.hooks.presenceChanged.push(
+        cluster((event) => {
+          hub.presenceChanged(event);
+        }),
+      );
+      ctx.hooks.presenceReset.push(
+        cluster((event) => {
+          hub.presenceReset(event);
+        }),
+      );
+      ctx.hooks.resync.push(
+        cluster((event) => {
+          hub.resync(event);
+        }),
+      );
+      // A bus that missed events resyncs the rooms (in `listened`), and may have missed a `sessionEnded` (review I1):
+      // the gone tokens' sockets end as if it had come.
+      ctx.bus.onListen((listened) => {
+        hub.listened(listened);
+        if (!listened.reconnected) return;
+        void endGoneSessions(
+          ctx.tenancy,
+          hub.heldSessions(),
+          (event) => {
+            hub.sessionEnded(event);
+          },
+          ctx.log,
+        );
       });
-      ctx.hooks.accessChanged.push((event) => {
-        hub.accessChanged(event);
-      });
-      ctx.hooks.sessionEnded.push((event) => {
-        hub.sessionEnded(event);
-      });
-      ctx.hooks.captureReceived.push((event) => {
-        hub.captureReceived(event);
-      });
-      ctx.hooks.hooksChanged.push((event) => {
-        hub.hooksChanged(event);
-      });
-      ctx.hooks.scheduleRunFinished.push((event) => {
-        hub.scheduleRunFinished(event);
+      // A holder whose instance row died (spec §20.2) leaves no presence behind. Asked on the heartbeat, and only
+      // while this hub keeps another holder's lists, so a lone server never reads the table for it.
+      ctx.instance.onBeat(async () => {
+        if (hub.otherHolders().size === 0) return;
+        hub.keepHolders(new Set((await ctx.instance.live()).map((row) => row.holder)));
       });
       ctx.meta.addCapability(LIVE_CAPABILITY);
       heartbeat = setTimer(beat, LIVE_LIMITS.heartbeatMs);

@@ -9,7 +9,9 @@
  */
 import { WirebenchError } from '@wirebench/engine';
 import type { FastifyBaseLogger } from 'fastify';
+import { announce, remote, type ServerHooks } from '../context.js';
 import type { Database } from '../db/querier.js';
+import type { BusEvents } from '../operations/bus.js';
 import { TenantDirectory } from './directory.js';
 import { readTenancyStep } from './file-step.js';
 import { forEachTenant, type JobOutcome, type JobPass } from './jobs.js';
@@ -56,6 +58,8 @@ export interface Tenancy {
 }
 
 const directories = new WeakMap<Tenancy, TenantDirectory>();
+const tenantKeys = new WeakMap<Tenancy, TenantKeys>();
+const shared = new WeakSet<Tenancy>();
 
 export function createTenancy(db: Database, options: TenancyOptions = {}): Tenancy {
   const factory = tenantDbFactory(db, options);
@@ -86,7 +90,46 @@ export function createTenancy(db: Database, options: TenancyOptions = {}): Tenan
     },
   };
   directories.set(tenancy, directory);
+  tenantKeys.set(tenancy, keys);
   return tenancy;
+}
+
+/**
+ * Keeps this process's data-key cache in step with the other instances' (spec §20.3); `buildServer` calls it once.
+ *
+ * - A directory write here announces `tenantsChanged`, and a data key written here `tenantKeysChanged{tenantId}`.
+ * - Their `remote` listeners (review M2) drop the keys another instance's write made stale: every one for
+ *   `tenantsChanged` (as a write here does through the directory's own change), the one tenant's for
+ *   `tenantKeysChanged`. A write here never reaches them: the directory's change already dropped the keys, and a key
+ *   this process just wrote is the right one, which dropping would only make it read back.
+ * - A bus that listens again after a loss may have missed either, so every key is dropped then too.
+ *
+ * The tenant map's own listeners are `server.ts`'s, where the resolver is made. Idempotent per `tenancy`.
+ */
+export function shareTenancyCaches(tenancy: Tenancy, hooks: ServerHooks, bus: BusEvents, log: FastifyBaseLogger): void {
+  if (shared.has(tenancy)) return;
+  shared.add(tenancy);
+  const keys = tenantKeys.get(tenancy);
+  if (keys === undefined) throw new WirebenchError('tenancy-not-loaded', 'this tenancy has no data keys');
+  directoryOf(tenancy).onChange(() => {
+    announce(hooks.tenantsChanged, {}, log);
+  });
+  keys.onWritten((tenantId) => {
+    announce(hooks.tenantKeysChanged, { tenantId }, log);
+  });
+  hooks.tenantsChanged.push(
+    remote(() => {
+      keys.invalidate();
+    }),
+  );
+  hooks.tenantKeysChanged.push(
+    remote(({ tenantId }) => {
+      keys.invalidate(tenantId);
+    }),
+  );
+  bus.onListen(({ reconnected }) => {
+    if (reconnected) keys.invalidate();
+  });
 }
 
 /** The directory behind `tenancy`; only the files `check:tenant-scope` names may call it. */

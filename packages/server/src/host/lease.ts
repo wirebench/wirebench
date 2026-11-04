@@ -29,7 +29,8 @@
  */
 import { WirebenchError } from '@wirebench/engine';
 import type { FastifyBaseLogger } from 'fastify';
-import type { ServerMode } from '../config.js';
+import type { InstanceMode } from '../config.js';
+import type { ServerInstance } from '../operations/instances.js';
 import { SERVER_SCHEMA } from '../tenancy/running-lock.js';
 import type { TenantScope } from '../tenancy/scope.js';
 import type { Tenancy } from '../tenancy/tenancy.js';
@@ -144,6 +145,11 @@ export interface HostLeasesDeps {
    * Without it (a test), there is no cap.
    */
   readonly seatLimit?: (tx: TenantQuerier) => Promise<number | null>;
+  /**
+   * The process's heartbeat (`ctx.instance`, spec §20.2): the renewals run on it, so the process has one 15 s timer,
+   * not two. Without it (a test of the leases alone), they run on a timer of their own, armed while a lease is held.
+   */
+  readonly heartbeat?: Pick<ServerInstance, 'onBeat'>;
 }
 
 /** One held lease. A new take makes a new object, so an answer about an older one never touches it. */
@@ -178,6 +184,10 @@ export class HostLeases implements InstanceLeases {
 
   constructor(private readonly deps: HostLeasesDeps) {
     this.now = deps.now ?? (() => performance.now());
+    // A beat with nothing held sends nothing: `renew` loops over the held tenants only.
+    deps.heartbeat?.onBeat(async () => {
+      if (!this.closed) await this.renew();
+    });
   }
 
   onLost(listener: (user: HostUserKey, why: LeaseLoss) => void): void {
@@ -288,6 +298,7 @@ export class HostLeases implements InstanceLeases {
   }
 
   private armRenew(): void {
+    if (this.deps.heartbeat !== undefined) return;
     if (this.renewTimer !== undefined || this.closed || this.held.size === 0) return;
     this.renewTimer = this.deps.setTimer(() => {
       this.renewTimer = undefined;
@@ -393,16 +404,17 @@ export class HostLeases implements InstanceLeases {
 }
 
 /**
- * Self-hosted start-up (spec §19.9): every lease is a crashed run's, since a self-hosted server is one process, so
- * each tenant's are deleted, through the job loop (the app role outside a tenant sees no row). A hosted process
- * leaves them to expire. A multi-instance self-hosted server (slice 5) must drop this (§19.12).
+ * A `single` start-up (spec §19.9, §20.1): every lease is a crashed run's, since no other process can hold one, so
+ * each tenant's are deleted, through the job loop (the app role outside a tenant sees no row). In `multi`, hosted
+ * mode always, another instance may hold them, so they are left to expire (§19.12). `instances` is
+ * `instanceModeOf(config)`.
  */
 export async function clearLeasesAtStartUp(
-  mode: ServerMode,
+  instances: InstanceMode,
   tenancy: Pick<Tenancy, 'forEachTenant'>,
   log: Pick<FastifyBaseLogger, 'error'>,
 ): Promise<void> {
-  if (mode === 'hosted') return;
+  if (instances === 'multi') return;
   await tenancy.forEachTenant(
     'host-lease-clear',
     async (tx: TenantQuerier) => {

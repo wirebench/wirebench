@@ -98,6 +98,39 @@ describeDb('identity module boot', () => {
     expect(text).not.toContain('top-secret');
   });
 
+  it('config check reports the two instance variables, and that multi needs Enterprise (spec §20.1)', async () => {
+    const stdout = { write: vi.fn() };
+    const code = await main(['config', 'check'], {
+      stdout,
+      stderr: { write: vi.fn() },
+      env: env({ WIREBENCH_SERVER_INSTANCES: 'multi', WIREBENCH_SERVER_INSTANCE_URL: 'http://10.0.0.5:8091' }),
+    });
+    expect(code).toBe(0);
+    const text = stdout.write.mock.calls.map((c) => String(c[0])).join('');
+    expect(text).toMatch(/WIREBENCH_SERVER_INSTANCES\s+set/);
+    expect(text).toMatch(/WIREBENCH_SERVER_INSTANCE_URL\s+set/);
+    expect(text).toContain('needs an Enterprise license that is valid or in grace');
+    expect(text).toContain('server-instances-need-enterprise');
+    // The address is no secret, but config check prints statuses, never values.
+    expect(text).not.toContain('10.0.0.5');
+
+    const single = { write: vi.fn() };
+    expect(await main(['config', 'check'], { stdout: single, stderr: { write: vi.fn() }, env: env({}) })).toBe(0);
+    const singleText = single.write.mock.calls.map((c) => String(c[0])).join('');
+    expect(singleText).toMatch(/WIREBENCH_SERVER_INSTANCES\s+defaulted/);
+    expect(singleText).not.toContain('server-instances-need-enterprise');
+
+    const stderr = { write: vi.fn() };
+    expect(
+      await main(['config', 'check'], {
+        stdout: { write: vi.fn() },
+        stderr,
+        env: env({ WIREBENCH_SERVER_INSTANCES: 'multi' }),
+      }),
+    ).toBe(2);
+    expect(stderr.write.mock.calls.map((c) => String(c[0])).join('')).toContain('WIREBENCH_SERVER_INSTANCE_URL');
+  });
+
   it('config check also prints the browser client’s redirect URI when it is on', async () => {
     const stdout = { write: vi.fn() };
     const code = await main(['config', 'check'], {

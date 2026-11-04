@@ -74,8 +74,8 @@ function isEntryRoute(request: FastifyRequest): boolean {
   return request.routeOptions.config.wirebenchEntry === true;
 }
 
-/** How often the hosted map is read again; slice 5 replaces the poll with a notification. */
-export const RELOAD_MS = 60_000;
+/** How often the hosted map is read again: a backstop, since the bus's `tenantsChanged` reloads it (spec §20.3). */
+export const RELOAD_MS = 600_000;
 
 /** `Host` as the map keys it: lower-cased, without a port, and without a trailing dot. */
 export function hostKey(hostname: string): string {

@@ -1,6 +1,6 @@
 import { afterEach, expect, it } from 'vitest';
 import { auditLogModule } from '../../../src/audit-log/module.js';
-import { SYSTEM_SOURCE, permissiveLicense, type AuditInput } from '../../../src/context.js';
+import { local, SYSTEM_SOURCE, permissiveLicense, type AuditInput } from '../../../src/context.js';
 import { createInvitation } from '../../../src/identity/invitations.js';
 import { insertToken } from '../../../src/identity/repo.js';
 import { mintToken } from '../../../src/identity/tokens.js';
@@ -55,9 +55,11 @@ describeDb('SCIM users (saml-scim spec §3.5, §6.3)', () => {
     ({ token: bearer, id: tokenId } = created.json<{ token: string; id: string }>());
     events = recordingAudit(h.hooks);
     ended = [];
-    h.hooks.sessionEnded.push((event) => {
-      if ('userId' in event) ended.push(event.userId);
-    });
+    h.hooks.sessionEnded.push(
+      local((event) => {
+        if ('userId' in event) ended.push(event.userId);
+      }),
+    );
   };
   afterEach(async () => {
     await h.close();

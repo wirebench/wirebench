@@ -16,7 +16,7 @@ import {
   type SyncPushCommit,
   type SyncPushResponse,
 } from '@wirebench/engine';
-import type { AccessChanged, HeadMoved, SessionEnded } from '../../../src/context.js';
+import { local, type AccessChanged, type HeadMoved, type SessionEnded } from '../../../src/context.js';
 import * as identityRepo from '../../../src/identity/repo.js';
 import { mintToken, newId } from '../../../src/identity/tokens.js';
 import * as teamsRepo from '../../../src/teams/repo.js';
@@ -68,15 +68,21 @@ interface Cast {
 /** Records every announcement; `take` returns what was heard since the last call and starts over. */
 function probe(h: Harness): { take(): Heard[] } {
   const heard: Heard[] = [];
-  h.hooks.headMoved.push((event) => {
-    heard.push({ hook: 'headMoved', event });
-  });
-  h.hooks.accessChanged.push((event) => {
-    heard.push({ hook: 'accessChanged', event });
-  });
-  h.hooks.sessionEnded.push((event) => {
-    heard.push({ hook: 'sessionEnded', event });
-  });
+  h.hooks.headMoved.push(
+    local((event) => {
+      heard.push({ hook: 'headMoved', event });
+    }),
+  );
+  h.hooks.accessChanged.push(
+    local((event) => {
+      heard.push({ hook: 'accessChanged', event });
+    }),
+  );
+  h.hooks.sessionEnded.push(
+    local((event) => {
+      heard.push({ hook: 'sessionEnded', event });
+    }),
+  );
   return { take: () => heard.splice(0) };
 }
 

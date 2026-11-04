@@ -8,8 +8,8 @@
  *   on disk. The wrap is the secret box (AES-256-GCM) under `HKDF(root, salt 'wirebench-tenant-data-key', info
  *   tenantId)`, so a wrapped key copied onto another tenant's row does not open there.
  * - **The cache** ({@link TenantKeys}) holds each unwrapped key for the life of the process, and drops it when
- *   the tenant's row changes in this process (`invalidate`, called on every directory change). Until slice 5's
- *   notification, a change made by another process is not seen.
+ *   the tenant's row changes (`invalidate`): on every directory change in this process, and on another instance's
+ *   `tenantsChanged` or `tenantKeysChanged` through the notification bus (`tenancy.ts`, spec §20.3).
  * - **Lazy creation** is a compare-and-set on the null column; the loser re-reads and uses the winner's key.
  *
  * Nothing here logs, and no error carries a key, a wrapped key or the root (ADR-0004).
@@ -143,6 +143,7 @@ export class TenantKeys {
   readonly #root: KeyRoot | undefined;
   /** The promise, so two callers in this process share one read (and one creation). */
   readonly #cache = new Map<string, Promise<Buffer>>();
+  readonly #written: ((tenantId: string) => void)[] = [];
 
   constructor(db: Querier, root: KeyRoot | undefined) {
     this.#db = db;
@@ -182,6 +183,11 @@ export class TenantKeys {
     else this.#cache.delete(tenantId);
   }
 
+  /** Runs `listener` after this process writes `tenantId`'s data key (spec §20.3's `tenantKeysChanged`). */
+  onWritten(listener: (tenantId: string) => void): void {
+    this.#written.push(listener);
+  }
+
   async #load(tenantId: string): Promise<Buffer> {
     const root = this.#root;
     if (root === undefined) {
@@ -195,7 +201,10 @@ export class TenantKeys {
       'update tenants set data_key = $1 where id = $2::uuid and data_key is null returning id',
       [wrapped, tenantId],
     );
-    if (won.rows.length === 1) return dataKey;
+    if (won.rows.length === 1) {
+      for (const listener of this.#written) listener(tenantId);
+      return dataKey;
+    }
     // Another process made it first, or the row is gone: read again, and use what is there.
     const winner = await this.#read(tenantId);
     if (winner === null) {

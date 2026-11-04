@@ -104,6 +104,19 @@ export async function findUserById(db: TenantQuerier, id: string): Promise<UserR
   return first((await db.query(`select ${USER_COLUMNS} from users where id = $1`, [id])).rows, USER_DATES);
 }
 
+/**
+ * The display names of `ids` that are users here, by id: what live presence shows for another instance's users,
+ * whose ids alone cross the bus (hosted edition spec §20.3). Never the email.
+ */
+export async function displayNamesOf(db: TenantQuerier, ids: readonly string[]): Promise<Map<string, string>> {
+  if (ids.length === 0) return new Map();
+  const rows = await db.query<{ id: string; name: string }>(
+    'select id, display_name as name from users where id = any($1::text[])',
+    [[...ids]],
+  );
+  return new Map(rows.rows.map((row) => [row.id, row.name]));
+}
+
 export async function insertUser(
   db: TenantQuerier,
   input: {
@@ -379,6 +392,21 @@ export async function tokenByHash(
     else token[key] = value;
   }
   return { token: withDates<TokenRow>(token, TOKEN_DATES), user: withDates<UserRow>(user, USER_DATES) };
+}
+
+/**
+ * Which of `ids` are still live sessions here: not revoked, not deleted, and their user not disabled. One query, for
+ * a process that missed `sessionEnded` events and re-validates the sockets it holds (hosted edition spec §20.3).
+ * Expiry by age is not asked: each holder already ends those on its own clock.
+ */
+export async function liveTokenIds(db: TenantQuerier, ids: readonly string[]): Promise<Set<string>> {
+  if (ids.length === 0) return new Set();
+  const rows = await db.query<{ id: string }>(
+    `select t.id from device_tokens t join users u on u.id = t.user_id
+      where t.id = any($1::text[]) and t.revoked_at is null and u.disabled_at is null`,
+    [[...ids]],
+  );
+  return new Set(rows.rows.map((row) => row.id));
 }
 
 export async function touchToken(db: TenantQuerier, id: string, at: Date): Promise<void> {

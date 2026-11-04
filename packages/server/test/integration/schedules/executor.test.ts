@@ -1,4 +1,5 @@
 import { mkdtemp, readdir, rm } from 'node:fs/promises';
+import { local } from '../../../src/context.js';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { SyncFile } from '@wirebench/engine';
@@ -276,7 +277,7 @@ describeDb('executeRun (scheduled-runs spec §3.2)', () => {
 
   it('announces the outcome after the commit, and not for a run a cancel already ended', async () => {
     const heard: unknown[] = [];
-    c.h.hooks.scheduleRunFinished.push((event) => heard.push(event));
+    c.h.hooks.scheduleRunFinished.push(local((event) => heard.push(event)));
     const files = await workspaceSnapshot([probe('Ok', `${server.url}/ok`)]);
     const { scheduleId, runId } = await seedRun(c);
     await executeRun(executorEnv(c, files, tmpRoot), c.h.tdb.scope, runId, never);

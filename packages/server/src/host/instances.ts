@@ -33,6 +33,7 @@ import type { ServerHost } from './host-runtime.js';
 import { isInstanceCap, type InstanceLeases, type LeaseLoss } from './lease.js';
 import { hostDirectories } from './server-platform.js';
 import type { TenantScope } from '../tenancy/scope.js';
+import { holdSession, type HeldSessions } from '../operations/sessions.js';
 
 /** One open host socket, as the instances see it. */
 export interface HostSocketHandle {
@@ -235,6 +236,15 @@ export class HostInstances {
       }
       if (closing.length > 0 || instance.credential === undefined) this.settle(instance);
     }
+  }
+
+  /** The device tokens of the open host sockets, by tenant: what a bus resync re-validates (review I1). */
+  heldSessions(): HeldSessions {
+    const held: HeldSessions = new Map();
+    for (const instance of this.instances.values()) {
+      for (const socket of instance.sockets) holdSession(held, instance.user.tenant, socket.tokenId);
+    }
+    return held;
   }
 
   /**

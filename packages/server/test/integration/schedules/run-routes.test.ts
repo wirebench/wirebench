@@ -1,4 +1,5 @@
 import type { ScheduleRun, ScheduleRunDetail, ScheduleRunPage } from '@wirebench/engine';
+import { local } from '../../../src/context.js';
 import { afterEach, beforeEach, expect, it } from 'vitest';
 import { newId } from '../../../src/identity/tokens.js';
 import * as repo from '../../../src/schedules/repo.js';
@@ -114,7 +115,7 @@ describeDb('the runs API (scheduled-runs spec §3.7)', () => {
 
   it('cancel ends a queued run, aborts a running one, and refuses a finished one', async () => {
     const heard: unknown[] = [];
-    c.h.hooks.scheduleRunFinished.push((event) => heard.push(event));
+    c.h.hooks.scheduleRunFinished.push(local((event) => heard.push(event)));
     const queued = await seedRun(10, 'queued');
     expect((await call(c.h, c.admin, 'DELETE', `${runs()}/${queued}`)).status).toBe(204);
     expect(heard).toEqual([

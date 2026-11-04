@@ -4,7 +4,7 @@
  * modules have no `ctx.db`, and the statement log shows each one after its unit's `set_config`. The seat lock is keyed by schema and tenant.
  */
 import { afterEach, beforeEach, expect, it } from 'vitest';
-import type { AccessChangedEvent } from '../../../src/context.js';
+import { local, type AccessChangedEvent } from '../../../src/context.js';
 import { SEAT_LOCK_KEY, SEAT_LOCK_TENANT_KEY } from '../../../src/licensing/seats.js';
 import { createDatabase } from '../../../src/db/pool.js';
 import { newId } from '../../../src/identity/tokens.js';
@@ -29,9 +29,11 @@ describeDb('teams-access and licensing in a tenant (tenancy Task 9)', () => {
 
   it('runs every statement of every route it serves inside a unit of the request’s tenant', async () => {
     const accessed: AccessChangedEvent[] = [];
-    h.hooks.accessChanged.push((event) => {
-      accessed.push(event);
-    });
+    h.hooks.accessChanged.push(
+      local((event) => {
+        accessed.push(event);
+      }),
+    );
     h.statements.entries.length = 0;
     const ok = async (status: number, request: Promise<{ readonly status: number; readonly body: unknown }>) => {
       const res = await request;

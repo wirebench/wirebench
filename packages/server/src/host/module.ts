@@ -25,14 +25,15 @@
  * attached. So the `Origin` check here is what holds such a page out, and no route may rely on the
  * guard for a `GET` with side effects.
  */
-import { randomUUID } from 'node:crypto';
 import { isWirebenchError, WirebenchError } from '@wirebench/engine';
 import type { FastifyInstance } from 'fastify';
 import type { WebSocket } from 'ws';
-import { auditIp, recordAudit, type AuditInput, type ServerContext, type ServerModule } from '../context.js';
+import { instanceModeOf } from '../config.js';
+import { auditIp, cluster, recordAudit, type AuditInput, type ServerContext, type ServerModule } from '../context.js';
 import { sessionToken } from '../identity/cookies.js';
 import { identitySettings } from '../identity/env.js';
 import { tokenByHash } from '../identity/repo.js';
+import { endGoneSessions } from '../operations/sessions.js';
 import { hashToken } from '../identity/tokens.js';
 import { realTimer } from '../live/module.js';
 import { tenantUrl } from '../tenancy/urls.js';
@@ -171,14 +172,16 @@ export function hostModule(options: HostModuleOptions = {}): ServerModule {
         ctx.log.warn({ err: error }, message);
       };
 
-      // The lease's holder: this process, random at start-up and logged, so a held lease can be traced to it.
-      const holder = randomUUID();
+      // The lease's holder: this process (its instance row's holder too), logged, so a held lease can be traced to it.
+      const holder = ctx.instance.holder;
       ctx.log.info({ holder }, 'browser hosts lease as this holder');
-      await clearLeasesAtStartUp(config.mode, ctx.tenancy, ctx.log);
+      await clearLeasesAtStartUp(instanceModeOf(config), ctx.tenancy, ctx.log);
       const leases = new HostLeases({
         db: ctx.tenancy.db,
         holder,
         setTimer,
+        // Renewed on the instance heartbeat: one 15 s timer per process (spec §20.2).
+        heartbeat: ctx.instance,
         log,
         // Read in the take's unit, from `ctx.license` at that moment: licensing replaces it after registration.
         seatLimit: async (tx) => (await ctx.license.state(tx.scope, tx)).seats.limit,
@@ -354,8 +357,23 @@ export function hostModule(options: HostModuleOptions = {}): ServerModule {
         });
       });
 
-      ctx.hooks.sessionEnded.push((event) => {
-        instances.sessionEnded(event);
+      // `cluster`: a session ended on any instance closes the host instances held here (spec §20.3).
+      ctx.hooks.sessionEnded.push(
+        cluster((event) => {
+          instances.sessionEnded(event);
+        }),
+      );
+      // A bus that missed events may have missed a `sessionEnded` (review I1): the gone tokens' sockets close as if.
+      ctx.bus.onListen(({ reconnected }) => {
+        if (!reconnected) return;
+        void endGoneSessions(
+          ctx.tenancy,
+          instances.heldSessions(),
+          (event) => {
+            instances.sessionEnded(event);
+          },
+          ctx.log,
+        );
       });
       app.addHook('onClose', async () => {
         await instances.closeAll();

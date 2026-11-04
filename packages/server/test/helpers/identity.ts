@@ -92,6 +92,9 @@ export async function identityHarness(
     /** Every route the server registers (`buildServer`'s `onRoute`). */
     readonly onRoute?: (route: RouteOptions) => void;
     readonly beforeBuild?: (db: Awaited<ReturnType<typeof testDatabase>>, ctx: ServerContext) => Promise<void>;
+    /** This process's instance and its bus's signals, for a test of two servers on one schema (spec §20.3). */
+    readonly instance?: ServerContext['instance'];
+    readonly bus?: ServerContext['bus'];
   } = {},
 ): Promise<IdentityHarness> {
   const db = options.db ?? (await testDatabase());
@@ -132,7 +135,16 @@ export async function identityHarness(
   // repository store, so no developer gitconfig or hook reaches a server test. `options.git` still
   // overrides only the store, for tests that force RepoStore.create to fail.
   const { tenancy, log: statements } = loggedTenancy(db, config.secretsKey);
-  const ctx = await testContext({ dataDir, db, config, repos, git: testGit(join(dataDir, NO_HOOKS_DIR)), tenancy });
+  const ctx = await testContext({
+    dataDir,
+    db,
+    config,
+    repos,
+    git: testGit(join(dataDir, NO_HOOKS_DIR)),
+    tenancy,
+    ...(options.instance !== undefined ? { instance: options.instance } : {}),
+    ...(options.bus !== undefined ? { bus: options.bus } : {}),
+  });
   const directory = directoryOf(ctx.tenancy);
   await directory.load();
   await options.beforeBuild?.(db, ctx);

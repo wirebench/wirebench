@@ -29,7 +29,13 @@ import {
   type TenancyStep,
 } from '../../../src/tenancy/file-step.js';
 import { RunningLock, SERVER_DRAIN_MS } from '../../../src/tenancy/running-lock.js';
-import { REVERT_WAIT_MS, revertTenancy, serverSessions, type RevertOptions } from '../../../src/tenancy/revert.js';
+import {
+  LAST_TENANCY_MIGRATION,
+  REVERT_WAIT_MS,
+  revertTenancy,
+  serverSessions,
+  type RevertOptions,
+} from '../../../src/tenancy/revert.js';
 import { loadFixture0019, type Fixture0019 } from '../../fixtures/tenancy/load.js';
 import {
   columnsOf,
@@ -50,6 +56,13 @@ import { canSymlink } from '../../helpers/symlink.js';
 import { workspaceSnapshot } from '../../helpers/schedule-runs.js';
 import { seedSyncWorkspace } from '../../helpers/sync.js';
 import { call, seedTeam } from '../../helpers/teams.js';
+
+/**
+ * The migrations of a slice 4 server, through `0021`: the revert's only starting point. From `0022` on (slice 5) it
+ * refuses, which its own case below shows.
+ */
+const upToTenancy = async () =>
+  (await allMigrations(BUILTIN_MODULES)).filter((m) => m.version <= LAST_TENANCY_MIGRATION);
 
 interface SecretsFile {
   entries: Record<string, { value: string; encrypted: boolean; label?: string }>;
@@ -157,7 +170,7 @@ describeDb('admin tenancy revert on the frozen 0019 fixture (spec §19.10, plan 
     sealedBefore = (await db.owner.query(SEALED)).rows;
     aliceBefore = await blobsOf(oldCheckout(), userSecretsKey(root, alice()));
     // The upgrade, to the end: both migrations, the move, the data key and the re-wrap.
-    await db.migrate(await allMigrations(BUILTIN_MODULES));
+    await db.migrate(await upToTenancy());
     tenantId = (await readTenancyStep(db.owner))!.defaultTenantId;
     expect(await runTenancySteps(db.owner, dataDir, { root })).toBe('done');
   });
@@ -263,7 +276,7 @@ describeDb('admin tenancy revert on the frozen 0019 fixture (spec §19.10, plan 
 
   it('after a revert, the upgrade runs again from files, with a new tenant and a new data key (carried note 7)', async () => {
     expect((await revert()).outcome).toBe('reverted');
-    await db.migrate(await allMigrations(BUILTIN_MODULES));
+    await db.migrate(await upToTenancy());
     const again = await readTenancyStep(db.owner);
     expect(again?.step).toBe('files');
     expect(again?.defaultTenantId).not.toBe(tenantId);
@@ -450,11 +463,30 @@ describeDb('admin tenancy revert on the frozen 0019 fixture (spec §19.10, plan 
     expect(existsSync(newCheckout())).toBe(true);
   });
 
-  it('refuses a migration newer than 0021, changing nothing', async () => {
-    await db.owner.query("insert into schema_migrations (version, name) values (22, 'later')");
-    await expect(revert()).rejects.toMatchObject({ code: 'tenancy-revert-too-new' });
+  it('refuses a database at 0022, naming it, changing nothing (slice 5 Task 1)', async () => {
+    await db.migrate(await allMigrations(BUILTIN_MODULES));
+    const at = await db.owner.query<{ v: number }>('select max(version)::int as v from schema_migrations');
+    expect(at.rows[0]!.v).toBe(22);
+    const error = await revert().catch((caught: unknown) => caught);
+    expect(error).toMatchObject({ code: 'tenancy-revert-too-new' });
+    expect((error as Error).message).toContain('0022');
     expect(await step()).toBe('done');
     expect(existsSync(newCheckout())).toBe(true);
+    expect((await db.owner.query("select to_regclass('server_instances') is not null as has")).rows).toEqual([
+      { has: true },
+    ]);
+    // The command line says the same, and exits non-zero.
+    const seams = { waitMs: 0, serverSessions: () => Promise.resolve([]) };
+    const run = await cli(['admin', 'tenancy', 'revert'], seams);
+    expect(run.code).not.toBe(0);
+    expect(run.err).toContain('tenancy-revert-too-new');
+    expect(run.err).toContain('0022');
+  });
+
+  it('refuses a migration newer than 0022 as well, changing nothing', async () => {
+    await db.owner.query("insert into schema_migrations (version, name) values (22, 'later'), (23, 'later still')");
+    await expect(revert()).rejects.toMatchObject({ code: 'tenancy-revert-too-new' });
+    expect(await step()).toBe('done');
   });
 
   it('refuses while a server holds the running lock, changing nothing', async () => {

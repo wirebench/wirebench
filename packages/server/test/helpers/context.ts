@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { GitCli, detectInText, findGit } from '@wirebench/engine';
 import { egressPolicyOf, loadConfig } from '../../src/config.js';
 import {
@@ -9,6 +10,8 @@ import {
   type ServerHooks,
 } from '../../src/context.js';
 import type { Database } from '../../src/db/querier.js';
+import { BusSignals } from '../../src/operations/bus.js';
+import type { ServerInstance } from '../../src/operations/instances.js';
 import type { TenantQuerier } from '../../src/tenancy/tenant-db.js';
 import type { RepoStore } from '../../src/repos/repo-store.js';
 import type { TenantScope } from '../../src/tenancy/scope.js';
@@ -24,6 +27,25 @@ export function fakeDatabase(options: { failing?: boolean } = {}): Database {
         : Promise.resolve({ rows: [], rowCount: 0 }),
   };
   return { ...querier, transaction: async (fn) => fn(querier), close: () => Promise.resolve() } as Database;
+}
+
+/** A test's `ctx.instance`: no row, and a heartbeat that beats only when the test calls `beat`. */
+export function testInstance(
+  mode: ServerInstance['mode'] = 'single',
+  holder: string = randomUUID(),
+): ServerInstance & { beat(): Promise<void> } {
+  const listeners: (() => Promise<void>)[] = [];
+  return {
+    holder,
+    mode,
+    onBeat: (listener) => {
+      listeners.push(listener);
+    },
+    beat: async () => {
+      await Promise.all(listeners.map((listener) => listener()));
+    },
+    live: () => Promise.resolve([]),
+  };
 }
 
 /** The default tenant a context over no real database serves: its `request.tenant`, read by the moved modules. */
@@ -79,6 +101,8 @@ export async function testContext(
     meta: new MetaRegistry(),
     egress: { denyPrivate: false },
     hooks: serverHooks(),
+    instance: testInstance(),
+    bus: new BusSignals(),
     license: permissiveLicense(),
     ...rest,
     tenancy:

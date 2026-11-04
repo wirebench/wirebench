@@ -70,12 +70,20 @@ describeDb('scoped tables outside a tenant unit (hosted spec §19.4, plan Task 1
     owner = createDatabase(db.ownerUrl);
     const tdb = await defaultTenantDb(db);
     tenantId = tdb.scope.tenantId;
-    // The one table the fixture cannot fill: 0020 made it.
+    // The tables the fixture cannot fill: 0020 made the first.
     const [admin] = (await tdb.query<{ id: string }>('select id from users order by id limit 1')).rows;
     await tdb.query(
       `insert into host_leases (user_id, holder, acquired_at, renewed_at, expires_at)
        values ($1, $2, now(), now(), now() + interval '1 minute')`,
       [admin!.id, newId()],
+    );
+    // 0022's three, which nothing in the fixture fills either.
+    await tdb.query("insert into limiter_buckets (key, tokens, updated_at) values ('sign-in:a@example.com', 5, now())");
+    await tdb.query(
+      "insert into send_slots (slot, holder, expires_at) values (0, gen_random_uuid(), now() + interval '1 minute')",
+    );
+    await tdb.query(
+      "insert into terminal_share_locations (share_id, holder, created_at) values ('share-0022', gen_random_uuid(), now())",
     );
   });
   afterAll(async () => {

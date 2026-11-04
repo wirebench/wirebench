@@ -23,6 +23,7 @@ function stubSession(
       return Promise.reject(new Error(`unexpected ${text}`));
     },
     onLost: () => undefined,
+    onNotification: () => undefined,
     close: () => {
       closed = true;
       return Promise.resolve();

@@ -231,11 +231,14 @@ describe('check:tenant-scope', () => {
     for (const file of [
       'packages/server/src/serve.ts',
       'packages/server/src/identity/cli.ts',
+      'packages/server/src/operations/cli.ts',
       'packages/server/src/db/migrate.ts',
       'packages/server/src/tenancy/tenancy.ts',
     ]) {
       expect(findRawDatabase(file, allowed), file).toEqual([]);
     }
+    // The registry itself takes the pool from the start-up: only `admin instances` opens one in src/operations/.
+    expect(findRawDatabase('packages/server/src/operations/instances.ts', allowed)).toHaveLength(1);
     expect(findRawDatabase('packages/server/src/main.ts', allowed)).toHaveLength(1);
     // A module of another name, and a comment, are not the pool.
     expect(findRawDatabase(route, "import { x } from './db/pool-size.js';\n// import from '../db/pool.js'\n")).toEqual(
@@ -272,6 +275,54 @@ describe('check:tenant-scope', () => {
       ]);
       expect(findRawDatabase(file, 'const for_each_tenant = 1;'), file).toMatchObject([{ rule: 'for-each-tenant' }]);
     }
+  });
+
+  it('keeps server_instances to src/operations/, src/tenancy/ included (slice 5, spec §20.2)', async () => {
+    for (const file of ['packages/server/src/host/lease.ts', 'packages/server/src/tenancy/directory.ts']) {
+      for (const text of [
+        "db.query('select holder, url from server_instances')",
+        'db.query(`update "server_instances" set renewed_at = now()`)',
+        "db.query('INSERT INTO public.server_instances (holder) values ($1)')",
+      ]) {
+        expect(findRawDatabase(file, text), `${file}: ${text}`).toMatchObject([{ rule: 'instances-sql' }]);
+      }
+      // Another name, and a comment, pass.
+      expect(findRawDatabase(file, "db.query('select * from server_instances_old')\n// server_instances")).toEqual([]);
+    }
+    expect(
+      findRawDatabase('packages/server/src/operations/instances.ts', "db.query('select * from server_instances')"),
+    ).toEqual([]);
+    const root = await tree({
+      'packages/server/src/live/hub.ts': "export const SQL = 'select url from server_instances';\n",
+      'packages/server/src/operations/instances.ts': "export const SQL = 'select url from server_instances';\n",
+    });
+    expect((await checkTenantScope(root)).map((hit) => [hit.file, hit.rule])).toEqual([
+      ['packages/server/src/live/hub.ts', 'instances-sql'],
+    ]);
+  });
+
+  it('keeps pg_notify and LISTEN to src/operations/ (slice 5, spec §20.3)', () => {
+    for (const file of ['packages/server/src/live/hub.ts', 'packages/server/src/tenancy/tenancy.ts']) {
+      for (const text of [
+        "db.query('select pg_notify($1, $2)', [channel, payload])",
+        "db.query('SELECT PG_NOTIFY ($1, $2)')",
+        'session.query(`LISTEN "${channel}"`)',
+        "session.query('listen wirebench_bus_1a2b')",
+        "session.query('UNLISTEN *;')",
+      ]) {
+        expect(findRawDatabase(file, text), `${file}: ${text}`).toMatchObject([{ rule: 'notify-sql' }]);
+      }
+      // Prose that starts with the word, and a comment, pass.
+      expect(
+        findRawDatabase(file, "const a = 'Listen address.';\nconst b = 'cannot listen on 8080';\n// pg_notify(x)"),
+      ).toEqual([]);
+    }
+    expect(
+      findRawDatabase(
+        'packages/server/src/operations/bus.ts',
+        "db.query('select pg_notify($1, $2)'); q('LISTEN \"x\"')",
+      ),
+    ).toEqual([]);
   });
 
   it('finds a planted file of each new kind in a tree', async () => {

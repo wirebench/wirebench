@@ -3,7 +3,7 @@ import { AGENT_PAIRING_CODE_PATTERN, agentRedeemMessage, agentRequestMessage } f
 import { afterEach, beforeEach, expect, it } from 'vitest';
 import { agentModule, sweepAgent } from '../../../src/agent/module.js';
 import { AGENT_RATE_LIMITS } from '../../../src/agent/routes.js';
-import type { AgentUnpaired, AuditInput } from '../../../src/context.js';
+import { local, type AgentUnpaired, type AuditInput } from '../../../src/context.js';
 import { recordingAudit } from '../../helpers/context.js';
 import { describeDb } from '../../helpers/database.js';
 import { identityHarness, signedInUser, type IdentityHarness, type SignedInUser } from '../../helpers/identity.js';
@@ -42,9 +42,11 @@ describeDb('local-agent pairing (hosted edition spec §18.2)', () => {
     });
     audits = recordingAudit(h.hooks);
     unpaired = [];
-    h.hooks.agentUnpaired.push((event) => {
-      unpaired.push(event);
-    });
+    h.hooks.agentUnpaired.push(
+      local((event) => {
+        unpaired.push(event);
+      }),
+    );
     alice = await signedInUser(h, { email: 'alice@example.com', kind: 'browser' });
     key = agentKey();
   });

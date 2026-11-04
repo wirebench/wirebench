@@ -4,10 +4,20 @@
  */
 import type { Querier } from '../../src/db/querier.js';
 
-/** The tables without `tenant_id` (spec §19.2). */
-export const UNSCOPED_TABLES: readonly string[] = ['schema_migrations', 'server_identity', 'tenants'];
+/**
+ * The tables without `tenant_id` (spec §19.2): guard 3's allowlist. `server_instances` (0022, spec §20.2) names
+ * processes, not tenants.
+ */
+export const UNSCOPED_TABLES: readonly string[] = [
+  'schema_migrations',
+  'server_identity',
+  'tenants',
+  'server_instances',
+];
 
-/** The 36 scoped tables (spec §19.3), as 0020 and 0021 name them. */
+/**
+ * The scoped tables: the 36 of spec §19.3, as 0020 and 0021 name them, then the three of 0022 (spec §20.6, §20.7).
+ */
 export const SCOPED_TABLES: readonly string[] = [
   'workspaces',
   'users',
@@ -45,6 +55,17 @@ export const SCOPED_TABLES: readonly string[] = [
   'agent_pairing_codes',
   'agent_nonces',
   'host_leases',
+  'limiter_buckets',
+  'send_slots',
+  'terminal_share_locations',
+];
+
+/** The scoped tables 0019 did not have: 0020 creates `host_leases`, 0022 the other three. */
+export const SCOPED_AFTER_0019: readonly string[] = [
+  'host_leases',
+  'limiter_buckets',
+  'send_slots',
+  'terminal_share_locations',
 ];
 
 export type ColumnInfo = {

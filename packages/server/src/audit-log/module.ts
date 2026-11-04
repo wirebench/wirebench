@@ -5,7 +5,7 @@
  */
 import { fileURLToPath } from 'node:url';
 import type { FastifyInstance } from 'fastify';
-import type { ServerContext, ServerModule } from '../context.js';
+import { local, type ServerContext, type ServerModule } from '../context.js';
 import type { SetTimer } from '../hooks/env.js';
 import { CaptureSweeper } from '../hooks/sweep.js';
 import { realTimer } from '../live/module.js';
@@ -48,8 +48,9 @@ export function auditLogModule(options: AuditLogOptions = {}): ServerModule {
       // Written after the license route answers: kept, so shutdown waits for them and a test can.
       const licenseWrites = pendingWrites();
       options.onLicenseWrites?.(licenseWrites);
+      // `local`: one audit row for the change, written by the instance that announced it (spec §20.3).
       ctx.hooks.licenseChanged.push(
-        licenseListener({ tenancy: ctx.tenancy, hooks: ctx.hooks, log: ctx.log, writes: licenseWrites }),
+        local(licenseListener({ tenancy: ctx.tenancy, hooks: ctx.hooks, log: ctx.log, writes: licenseWrites })),
       );
       ctx.meta.addCapability('audit-log');
       // The workspace `recordDesktopActivity` setting (#211); a server without it ignores the field, so the desktop hides the switch.
