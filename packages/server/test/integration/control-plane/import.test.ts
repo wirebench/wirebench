@@ -256,6 +256,34 @@ describeDb('a tenant import (spec §22.10)', () => {
       expect((await back.tdb.query<{ n: string }>('select count(*)::text as n from users')).rows[0]!.n).toBe('0');
     });
 
+    it('refuses an audit event no link vouches for, added to the file after the export', async () => {
+      const file = join(dir, 'x.tar.gz');
+      await exportOf({ h: x.f.h, scope: x.scope, key: CHAIN_KEY }, file);
+      const sources: TarSource[] = [];
+      for await (const entry of readTarGz(file)) {
+        const data = await entry.buffer();
+        const forged = JSON.stringify({ id: '01JFORGED00000000000000000', action: 'user.created', chain_seq: null });
+        sources.push({
+          name: entry.name,
+          data: entry.name === 'tables/audit_events.ndjson' ? Buffer.concat([data, Buffer.from(`${forged}\n`)]) : data,
+        });
+      }
+      const edited = join(dir, 'forged.tar.gz');
+      await writeTarGz(edited, sources);
+      const back = await syncHarness();
+      closing.push(() => back.close());
+      await expect(
+        importSelfHosted(
+          importDeps(back, () => CHAIN_KEY),
+          back.tdb.scope,
+          edited,
+        ),
+      ).rejects.toMatchObject({
+        code: 'import-chain-broken',
+        message: expect.stringContaining('no link of its chain vouches for') as string,
+      });
+    });
+
     it('resumes an import a crash stopped half-way through its tables', async () => {
       const file = join(dir, 'x.tar.gz');
       await exportOf({ h: x.f.h, scope: x.scope, key: CHAIN_KEY }, file);

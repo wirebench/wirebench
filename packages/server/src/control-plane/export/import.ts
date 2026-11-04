@@ -145,6 +145,14 @@ export async function checkExportChain(path: string): Promise<void> {
   if (outcome.kind === 'wrong-key') {
     throw refuse('import-chain-broken', `the export's chain was sealed with another key (${outcome.chainKeyId})`);
   }
+  // The export leaves unsealed events out (spec §22.9): one in the file was put there afterwards, and no link of the
+  // chain vouches for it.
+  if (outcome.unsealed > 0) {
+    throw refuse(
+      'import-chain-broken',
+      `the export holds ${String(outcome.unsealed)} audit events no link of its chain vouches for`,
+    );
+  }
   if (outcome.result === 'broken' || !outcome.checksum) {
     const broken = outcome.broken;
     throw refuse(

@@ -88,6 +88,11 @@ export interface ExportManifest {
     readonly keyHex: string;
     readonly keyId: string;
     readonly anchor: ExportedAnchor | null;
+    /**
+     * Audit events not sealed yet when the tables were read, left out: no link vouches for them. They stay on the
+     * exporting server, and the next export, once they are sealed, holds them.
+     */
+    readonly unsealedLeftOut: number;
   } | null;
   readonly omitted: readonly OmittedItem[];
 }
@@ -181,27 +186,40 @@ async function keyOf(tx: TenantQuerier, table: string): Promise<string[]> {
   return rows.rows.map((row) => row.name);
 }
 
+/**
+ * Which rows of a table an export reads, when not all: with a chain key, only the sealed audit events, in chain
+ * order. An unsealed row carries no link, so nothing in the export could vouch for it, and an import refuses one.
+ */
+interface RowFilter {
+  readonly where: string;
+  readonly key: readonly string[];
+}
+
+const SEALED_ONLY: RowFilter = { where: 'chain_seq is not null', key: ['chain_seq'] };
+
 /** One table's NDJSON at `path`, read page by page in the unit's snapshot. */
 async function writeTable(
   tx: TenantQuerier,
   table: string,
   columns: readonly ExportedColumn[],
   path: string,
+  filter?: RowFilter,
 ): Promise<ExportedTable> {
   const cls = EXPORT_TABLES[table];
   const redacted = cls?.kind === 'redact' ? cls.columns : {};
   const select = columns
     .map((column) => `${render(column.type, redacted[column.name] ?? quoted(column.name))} as ${quoted(column.name)}`)
     .join(', ');
-  const key = await keyOf(tx, table);
+  const key = filter?.key ?? (await keyOf(tx, table));
   const order = key.length > 0 ? `order by ${key.map(quoted).join(', ')}` : '';
+  const where = filter === undefined ? '' : `where ${filter.where}`;
   const hash = createHash('sha256');
   const out = createWriteStream(path, { mode: 0o600 });
   let rows = 0;
   try {
     for (let offset = 0; ; offset += PAGE) {
       const page = await tx.query<Record<string, unknown>>(
-        `select ${select} from ${quoted(table)} ${order} limit ${String(PAGE)} offset ${String(offset)}`,
+        `select ${select} from ${quoted(table)} ${where} ${order} limit ${String(PAGE)} offset ${String(offset)}`,
       );
       for (const row of page.rows) {
         const line = `${JSON.stringify(Object.fromEntries(columns.map((column) => [column.name, row[column.name] ?? null])))}\n`;
@@ -290,12 +308,20 @@ export async function writeExport(deps: ExportDeps, scope: TenantScope, out: str
             table,
             columns.get(table) ?? [],
             join(work, 'tables', `${table}.ndjson`),
+            table === 'audit_events' && deps.chainKey !== undefined ? SEALED_ONLY : undefined,
           );
         }
+        const unsealed =
+          deps.chainKey === undefined
+            ? 0
+            : Number(
+                (await tx.query<{ n: string }>('select count(*)::text as n from audit_events where chain_seq is null'))
+                  .rows[0]?.n ?? 0,
+              );
         const workspaces = (await tx.query<{ id: string }>('select id from workspaces order by id')).rows.map(
           (row) => row.id,
         );
-        return { tenant, written, workspaces, anchor: await readAnchor(tx), omitted: await omittedItems(tx) };
+        return { tenant, written, unsealed, workspaces, anchor: await readAnchor(tx), omitted: await omittedItems(tx) };
       },
       { readOnlySnapshot: true },
     );
@@ -340,6 +366,7 @@ export async function writeExport(deps: ExportDeps, scope: TenantScope, out: str
                       headSeq: anchor.headSeq.toString(),
                       mac: anchor.mac.toString('hex'),
                     },
+              unsealedLeftOut: snapshot.unsealed,
             },
       omitted: snapshot.omitted,
     };

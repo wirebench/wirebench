@@ -49,7 +49,10 @@ describeDb('admin audit verify --export (spec §22.9)', () => {
       expect(result).toMatchObject({ code: 0, stderr: '' });
       expect(result.stdout).toMatch(/checked [1-9]\d* sealed rows, seq 1 to \d+; 0 unsealed\nintact\n/);
       const json = await verify('--export', file, '--json');
-      expect(JSON.parse(json.stdout)).toMatchObject({ result: 'intact', unsealed: 0 });
+      // It says what it proves, and how to check more.
+      expect(result.stdout).toContain('not that a Wirebench server wrote it');
+      expect(result.stdout).toContain('--head <seq>:<hex>');
+      expect(JSON.parse(json.stdout)).toMatchObject({ result: 'intact', unsealed: 0, proves: 'consistency' });
     });
 
     it('names the event one edited byte breaks', async () => {

@@ -12,6 +12,7 @@ import { gunzipSync } from 'node:zlib';
 import { afterEach, beforeEach, expect, it } from 'vitest';
 import type { ExportManifest } from '../../../src/control-plane/export/export.js';
 import { EXPORT_DAYS } from '../../../src/control-plane/export/runner.js';
+import { recordAudit, SYSTEM_SOURCE } from '../../../src/context.js';
 import { readTarGz } from '../../../src/control-plane/export/tar.js';
 import type { ControlMail } from '../../../src/control-plane/mail.js';
 import { tenantRoot } from '../../../src/tenancy/paths.js';
@@ -85,6 +86,15 @@ describeDb('a tenant export (spec §22.9)', () => {
     });
 
     it('records every checksum, the bundles, what was left out and the audit chain block', async () => {
+      // An event not sealed yet: left out, and counted.
+      await x.f.h.tdb.transaction((tx) =>
+        recordAudit(x.f.h.hooks, tx, {
+          ...SYSTEM_SOURCE,
+          action: 'audit.verified',
+          target: { kind: 'server' },
+          details: { marker: 'UNSEALED-EVENT' },
+        }),
+      );
       const runner = x.runner();
       const queued = await runner.request(x.scope, 'operator');
       const done = await runner.runNext(x.scope);
@@ -114,7 +124,12 @@ describeDb('a tenant export (spec §22.9)', () => {
           { table: 'tenant_settings', id: 'oidc', what: 'sealed setting' },
         ]),
       );
-      expect(manifest.chain).toMatchObject({ keyHex: Buffer.from(CHAIN_KEY).toString('hex'), anchor: { seq: '0' } });
+      expect(manifest.chain).toMatchObject({
+        keyHex: Buffer.from(CHAIN_KEY).toString('hex'),
+        anchor: { seq: '0' },
+        unsealedLeftOut: 1,
+      });
+      expect(entries.get('tables/audit_events.ndjson')!.toString()).not.toContain('UNSEALED-EVENT');
       const audit = await x.f.h.tdb.query<{ details: Record<string, unknown> }>(
         "select details from audit_events where action = 'tenant.exported'",
       );

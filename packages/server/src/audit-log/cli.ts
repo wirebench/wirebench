@@ -188,11 +188,22 @@ export async function runVerifyExportCommand(command: VerifyExportCommand, io: S
     return ExitCode.Config;
   }
   const mismatch = "tables/audit_events.ndjson does not match the manifest's checksum";
+  // The key travels in the export, so a consistent chain proves no edit after sealing only to someone who trusts the
+  // file's source: a head from the server's own log, or the deletion record, is the independent check.
+  const scope =
+    'This proves the export is consistent with the chain key it carries, not that a Wirebench server wrote it. ' +
+    'For an independent check, pass --head <seq>:<hex> from the server\'s "audit chain sealed to" log line or its deletion record.';
   if (command.json) {
-    io.stdout.write(summaryJson(outcome, command.head, { checksum: outcome.checksum }));
+    io.stdout.write(
+      summaryJson(outcome, command.head, {
+        checksum: outcome.checksum,
+        proves: command.head === undefined ? 'consistency' : 'consistency and the given head',
+      }),
+    );
   } else {
     io.stdout.write(summaryText(outcome, command.head));
     if (!outcome.checksum) io.stdout.write(`${mismatch}\n`);
+    if (command.head === undefined) io.stdout.write(`${scope}\n`);
   }
   return outcome.result === 'intact' && outcome.checksum ? ExitCode.Ok : ExitCode.Broken;
 }
