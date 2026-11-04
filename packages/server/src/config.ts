@@ -249,6 +249,19 @@ export type ModuleConfig = Omit<
   'publicUrl' | 'databaseUrl' | 'migrationDatabaseUrl' | 'controlDatabaseUrl'
 >;
 
+/**
+ * `config` as `ctx.config` holds it at run time (Part A review): a copy with the three database URLs deleted, so a
+ * module that cast the type away still finds none of them. The public URL stays on the object: `tenancy/urls.ts`
+ * reads it there for `tenantUrl` and `urlWithoutScope`, and `check:tenant-scope` refuses every other read.
+ */
+export function moduleConfigOf(config: ServerConfig): ModuleConfig {
+  const copy: Partial<ServerConfig> = { ...config };
+  delete copy.databaseUrl;
+  delete copy.migrationDatabaseUrl;
+  delete copy.controlDatabaseUrl;
+  return copy as ModuleConfig;
+}
+
 /** One documented environment variable. */
 export interface ConfigVariable {
   readonly env: string;

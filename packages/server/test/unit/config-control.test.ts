@@ -10,6 +10,7 @@ import {
   describeConfig,
   forgetDatabaseUrls,
   loadConfig,
+  moduleConfigOf,
   type ModuleConfig,
 } from '../../src/config.js';
 
@@ -75,5 +76,23 @@ describe('the control role URL', () => {
     process.env[VARIABLE] = CONTROL_URL;
     forgetDatabaseUrls();
     expect(process.env[VARIABLE]).toBeUndefined();
+  });
+});
+
+describe("a module's view of the configuration (Part A review)", () => {
+  it('holds none of the three database URLs at run time, and keeps the public URL for tenantUrl', () => {
+    const config = {
+      ...loadConfig({ ...required, WIREBENCH_SERVER_MIGRATION_DATABASE_URL: 'postgres://o:p@db/wirebench' }, '0.0.0'),
+      controlDatabaseUrl: CONTROL_URL,
+    };
+    const view = moduleConfigOf(config);
+    const keys = Object.keys(view);
+    for (const key of ['databaseUrl', 'migrationDatabaseUrl', 'controlDatabaseUrl']) expect(keys).not.toContain(key);
+    expect(JSON.stringify(view)).not.toContain('postgres://');
+    // `tenancy/urls.ts` reads it there; `check:tenant-scope` refuses every other read.
+    expect(keys).toContain('publicUrl');
+    // A copy: the loaded configuration, which serve.ts still opens the pools from, keeps them.
+    expect(config.databaseUrl).toBe(required.WIREBENCH_SERVER_DATABASE_URL);
+    expect(config.controlDatabaseUrl).toBe(CONTROL_URL);
   });
 });

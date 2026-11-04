@@ -2,9 +2,10 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { WirebenchError } from '@wirebench/engine';
 import type { ServerModule } from '../../src/context.js';
 import { BUILTIN_MODULES } from '../../src/modules.js';
-import { allMigrations, runMigrate, StartupError } from '../../src/serve.js';
+import { allMigrations, isConfigFailure, runMigrate, StartupError } from '../../src/serve.js';
 
 /** The StartupError `allMigrations` rejects with, for asserting its code and message. */
 async function refusal(modules: readonly ServerModule[], hostDir?: string): Promise<StartupError> {
@@ -148,5 +149,28 @@ describe('runMigrate', () => {
     const code = await runMigrate({ [VARIABLE]: url, WIREBENCH_SERVER_PUBLIC_URL: 'https://wirebench.test' }, io, true);
     expect(code).toBe(3); // nothing listens on port 1
     expect(process.env[VARIABLE]).toBeUndefined();
+  });
+});
+
+describe('the refusals that exit with the Config code (Part A review)', () => {
+  it("counts the control role's configuration refusals with the others, and nothing else", () => {
+    for (const code of [
+      'server-postgres-too-old',
+      'tenancy-reverting',
+      'tenancy-files-left-behind',
+      'tenancy-workspaces-missing',
+      'tenancy-control-url-invalid',
+      'tenancy-control-password-missing',
+      'tenancy-control-role-create-refused',
+      'control-plane-role-shared',
+      'control-plane-role-superuser',
+      'control-plane-role-too-broad',
+      'control-plane-role-owns',
+      'control-plane-role-no-bypass',
+    ]) {
+      expect(isConfigFailure(new WirebenchError(code, 'x')), code).toBe(true);
+    }
+    expect(isConfigFailure(new WirebenchError('server-migration-failed', 'x'))).toBe(false);
+    expect(isConfigFailure(Object.assign(new Error('x'), { code: 'control-plane-role-shared' }))).toBe(false);
   });
 });

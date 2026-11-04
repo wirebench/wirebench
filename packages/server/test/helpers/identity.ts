@@ -4,7 +4,8 @@ import type { FastifyInstance, RouteOptions } from 'fastify';
 import type { GitCli } from '@wirebench/engine';
 import { loadConfig, type ServerConfig } from '../../src/config.js';
 import type { ServerContext, ServerHooks, ServerModule } from '../../src/context.js';
-import { controlHandle, openControlDb } from '../../src/control-plane/control-db.js';
+import { openControlDb } from '../../src/control-plane/control-db.js';
+import { withControlPool } from '../../src/control-plane/module.js';
 import { identityModule } from '../../src/identity/module.js';
 import type { OidcProvider } from '../../src/identity/oidc.js';
 import { hashPassword } from '../../src/identity/passwords.js';
@@ -171,13 +172,13 @@ export async function identityHarness(
     tenancy,
     ...(options.instance !== undefined ? { instance: options.instance } : {}),
     ...(options.bus !== undefined ? { bus: options.bus } : {}),
-    ...(control !== undefined ? { control: controlHandle(control) } : {}),
   });
   const directory = directoryOf(ctx.tenancy);
   await directory.load();
   await options.beforeBuild?.(db, ctx);
   const app = await buildServer(ctx, {
-    modules,
+    // The pool goes to the control-plane module's factory, as serve.ts hands it: never on the context.
+    modules: withControlPool(modules, control),
     ...(options.logStream !== undefined ? { logStream: options.logStream } : {}),
     ...(options.onTenantResolver !== undefined ? { onTenantResolver: options.onTenantResolver } : {}),
     ...(options.onRoute !== undefined ? { onRoute: options.onRoute } : {}),

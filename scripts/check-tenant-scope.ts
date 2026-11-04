@@ -44,12 +44,17 @@
  * - **No `pg_notify` and no `LISTEN` outside `src/operations/`** (spec §20.3): the notification bus is the one
  *   sender and listener, so every payload goes through its codec, which carries ids only.
  * - **The control plane's connection stays in `src/control-plane/`** (spec §22.2, ADR-0039): `ControlDb`, the
- *   functions that open, hand over and take back the control pool, and any import of `control-db`, outside it and
- *   `serve.ts` (which opens the pool and puts it on the context); `controlDatabaseUrl` outside `config.ts`, `serve.ts`
+ *   functions that open the control pool and hand it to the control-plane module's factory (`withControlPool`), and
+ *   any import of `control-db`, outside it and `serve.ts` (which opens the pool and hands it over; the pool is never
+ *   on the shared context, and a `control` read off a context, `ctx.control` or `ctx['control']`, is refused
+ *   everywhere); `controlDatabaseUrl` outside `config.ts`, `serve.ts`
  *   and `tenancy/cli.ts` (`admin tenancy role`, which creates the role), in the forms the database URLs are refused
  *   in; and SQL naming `signups`, `billing_events`, `tenant_slugs_retired` or `tenant_deletions` outside
  *   `src/control-plane/` (`tenancy/grants.ts` lists them for the roles). `from tenants` and `join tenants` are allowed
  *   in `src/control-plane/` as in `src/tenancy/`; setting the tenant is not.
+ *
+ * The gate is textual: a name built by string concatenation, or an aliased re-export made from inside an allowed
+ * directory, are known gaps; the type brands (`TenantScope`, `ControlDb`) and code review cover them.
  *
  * `node scripts/check-tenant-scope.ts` prints the result and exits non-zero, listing `file:line`, on any hit.
  * Wired into `pnpm check` as `pnpm check:tenant-scope`. ESLint's config is protected, which is why this is a
@@ -163,10 +168,24 @@ const TENANT_SQL: readonly {
 
 /** The control plane's directory (spec §22.2): the one place its pool, its URL and its tables are named. */
 export const CONTROL_PLANE_DIR = 'packages/server/src/control-plane/';
-/** Outside it, the file that opens the control pool and puts it on the context. */
+/** Outside it, the file that opens the control pool and hands it to the control-plane module's factory. */
 export const CONTROL_DB_ALLOWED: readonly string[] = ['packages/server/src/serve.ts'];
-/** The control pool's type and the functions that open it, hand it over and take it back (`control-db.ts`). */
-const CONTROL_DB_NAMES: readonly string[] = ['ControlDb', 'openControlDb', 'controlHandle', 'controlDbOf'];
+/**
+ * The control pool's type, the function that opens it (`control-db.ts`) and the one that hands it to the control-plane
+ * module (`module.ts`), with the module's options type. The context handle's old names (`ControlHandle`,
+ * `controlHandle`, `controlDbOf`, Part A review) stay refused, so the pool cannot go back on the context unnoticed.
+ */
+const CONTROL_DB_NAMES: readonly string[] = [
+  'ControlDb',
+  'openControlDb',
+  'withControlPool',
+  'ControlPlaneOptions',
+  'ControlHandle',
+  'controlHandle',
+  'controlDbOf',
+];
+/** The names a module's context goes by: a `control` read off one is the old handle (Part A review). */
+const CONTEXT_NAMES: readonly string[] = ['ctx', 'context'];
 /** `control-plane/control-db.ts`, by the end of a module specifier. */
 const CONTROL_DB_MODULE = /(?:^|\/)control-db(?:\.[cm]?[jt]s)?$/;
 /** Where the control role's URL may be read: the config, the start-up and `admin tenancy role`, which creates it. */
@@ -202,6 +221,7 @@ export interface ScopeHit {
     | 'instances-sql'
     | 'notify-sql'
     | 'control-db'
+    | 'context-control'
     | 'control-url'
     | 'control-sql';
 }
@@ -381,7 +401,49 @@ export function findControlPlane(file: string, content: string): ScopeHit[] {
   const poolAllowed = inControlPlane || CONTROL_DB_ALLOWED.includes(file);
   const urlAllowed = CONTROL_URL_ALLOWED.includes(file);
   const sqlAllowed = inControlPlane || CONTROL_SQL_ALLOWED.includes(file);
+  /** `ctx`, `context`, or a property of that name (`server.ctx`), through parentheses, casts and `!`. */
+  const isContext = (expression: ts.Expression): boolean => {
+    let node = expression;
+    while (
+      ts.isParenthesizedExpression(node) ||
+      ts.isAsExpression(node) ||
+      ts.isTypeAssertionExpression(node) ||
+      ts.isNonNullExpression(node) ||
+      ts.isSatisfiesExpression(node)
+    ) {
+      node = node.expression;
+    }
+    return (
+      (ts.isIdentifier(node) && CONTEXT_NAMES.includes(node.text)) ||
+      (ts.isPropertyAccessExpression(node) && CONTEXT_NAMES.includes(node.name.text))
+    );
+  };
   const visit = (node: ts.Node): void => {
+    // Everywhere, `src/control-plane/` and `serve.ts` included: the pool is never on the context.
+    if (ts.isPropertyAccessExpression(node) && node.name.text === 'control' && isContext(node.expression)) {
+      hit(node, 'context-control');
+    } else if (
+      ts.isElementAccessExpression(node) &&
+      ts.isStringLiteralLike(node.argumentExpression) &&
+      node.argumentExpression.text === 'control' &&
+      isContext(node.expression)
+    ) {
+      hit(node, 'context-control');
+    } else if (
+      ts.isVariableDeclaration(node) &&
+      ts.isObjectBindingPattern(node.name) &&
+      node.initializer !== undefined
+    ) {
+      const from = node.initializer;
+      if (isContext(from)) {
+        for (const element of node.name.elements) {
+          const key = element.propertyName ?? element.name;
+          if ((ts.isIdentifier(key) || ts.isStringLiteralLike(key)) && key.text === 'control') {
+            hit(element, 'context-control');
+          }
+        }
+      }
+    }
     if (!poolAllowed) {
       const from = specifier(node);
       if (from !== undefined && ts.isStringLiteralLike(from) && CONTROL_DB_MODULE.test(from.text))
@@ -454,6 +516,7 @@ if (process.argv[1] !== undefined && fileURLToPath(import.meta.url) === process.
       'instances-sql': 'server_instances outside src/operations/',
       'notify-sql': 'pg_notify or LISTEN outside src/operations/',
       'control-db': 'the control pool (ControlDb, control-db) outside src/control-plane/ and serve.ts',
+      'context-control': 'a control pool read off the context; serve.ts hands it to the control-plane module alone',
       'control-url': 'controlDatabaseUrl outside config.ts, serve.ts and tenancy/cli.ts',
       'control-sql':
         'SQL naming signups, billing_events, tenant_slugs_retired or tenant_deletions outside src/control-plane/',

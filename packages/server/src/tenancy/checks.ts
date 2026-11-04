@@ -91,27 +91,53 @@ export interface ControlRoleReport {
   readonly bypassRls: boolean;
   /** Itself, or through a role it may become. */
   readonly superuser: boolean;
-  /** Tables anywhere in the database this role owns, itself or as a member of their owner. */
-  readonly ownedTables: number;
+  /** CREATEROLE or CREATEDB, its own: either reaches past the control plane's grants. */
+  readonly createRole: boolean;
+  readonly createDb: boolean;
+  /**
+   * Objects outside the system schemas this role owns, itself or as a member of their owner: schemas, tables,
+   * sequences, views, materialized views, composite and foreign tables, functions and procedures, and types (the
+   * implicit row and array types aside, which go with their table or element type).
+   */
+  readonly ownedObjects: number;
 }
+
+/** The system schemas, whose objects belong to the bootstrap superuser. */
+const SYSTEM_SCHEMAS = `('pg_catalog'::regnamespace, 'information_schema'::regnamespace, 'pg_toast'::regnamespace)`;
 
 /**
  * The control role's start-up check in hosted mode (spec §22.2), after the app role's: it must be a role of its own
- * (`control-plane-role-shared`), no superuser (`control-plane-role-superuser`), the owner of no table
- * (`control-plane-role-owns`), and have BYPASSRLS (`control-plane-role-no-bypass`). The first that fails refuses
- * start-up with its code. `names` are the app role and the owner of the server's schema.
+ * (`control-plane-role-shared`), no superuser (`control-plane-role-superuser`), unable to create roles or databases
+ * (`control-plane-role-too-broad`), the owner of no object (`control-plane-role-owns`), and have BYPASSRLS
+ * (`control-plane-role-no-bypass`). The first that fails refuses start-up with its code. `names` are the app role and
+ * the owner of the server's schema.
  */
 export async function checkControlRole(
   control: Querier,
   names: { readonly app: string; readonly owner: string },
 ): Promise<ControlRoleReport> {
   const report = (
-    await control.query<{ role: string; superuser: boolean; bypassRls: boolean; ownedTables: number }>(
+    await control.query<{
+      role: string;
+      bypassRls: boolean;
+      superuser: boolean;
+      createRole: boolean;
+      createDb: boolean;
+      ownedObjects: number;
+    }>(
       `select r.rolname as role, r.rolbypassrls as "bypassRls",
+          r.rolcreaterole as "createRole", r.rolcreatedb as "createDb",
           exists (select 1 from pg_roles s where s.rolsuper and pg_has_role(r.oid, s.oid, 'MEMBER')) as superuser,
-          (select count(*)::int from pg_class c
-            where pg_has_role(r.oid, c.relowner, 'MEMBER') and c.relkind in ('r', 'p')
-              and c.relnamespace not in ('pg_catalog'::regnamespace, 'information_schema'::regnamespace)) as "ownedTables"
+          ((select count(*) from pg_namespace n
+              where pg_has_role(r.oid, n.nspowner, 'MEMBER') and n.oid not in ${SYSTEM_SCHEMAS})
+            + (select count(*) from pg_class c
+              where pg_has_role(r.oid, c.relowner, 'MEMBER') and c.relkind in ('r', 'p', 'S', 'v', 'm', 'c', 'f')
+                and c.relnamespace not in ${SYSTEM_SCHEMAS})
+            + (select count(*) from pg_proc p
+              where pg_has_role(r.oid, p.proowner, 'MEMBER') and p.pronamespace not in ${SYSTEM_SCHEMAS})
+            + (select count(*) from pg_type t
+              where pg_has_role(r.oid, t.typowner, 'MEMBER') and t.typnamespace not in ${SYSTEM_SCHEMAS}
+                and t.typrelid = 0 and t.typelem = 0))::int as "ownedObjects"
         from pg_roles r where r.rolname = current_user`,
     )
   ).rows[0]!;
@@ -122,7 +148,15 @@ export async function checkControlRole(
     refuse('control-plane-role-shared', 'is the app role or the owner, and must be a role of its own');
   }
   if (report.superuser) refuse('control-plane-role-superuser', 'is a superuser');
-  if (report.ownedTables > 0) refuse('control-plane-role-owns', `owns ${String(report.ownedTables)} tables`);
+  if (report.createRole || report.createDb) {
+    refuse('control-plane-role-too-broad', `has ${report.createRole ? 'CREATEROLE' : 'CREATEDB'}`);
+  }
+  if (report.ownedObjects > 0) {
+    refuse(
+      'control-plane-role-owns',
+      `owns ${String(report.ownedObjects)} objects (tables, schemas, functions, types)`,
+    );
+  }
   if (!report.bypassRls) refuse('control-plane-role-no-bypass', 'does not have BYPASSRLS');
   return report;
 }

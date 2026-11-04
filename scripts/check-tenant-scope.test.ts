@@ -392,8 +392,11 @@ describe('check:tenant-scope', () => {
         "export * from '../control-plane/control-db.js';",
         'let pool: ControlDb | undefined;',
         'const db = openControlDb(url);',
-        'const db = controlDbOf(ctx.control!);',
+        'const modules = withControlPool(BUILTIN_MODULES, pool);',
+        'const options: ControlPlaneOptions = {};',
+        'const db = controlDbOf(handle);',
         'const handle = controlHandle(db);',
+        'let h: ControlHandle;',
         "type C = import('../control-plane/control-db.js').ControlDb;",
       ]) {
         const hits = findControlPlane(route, text);
@@ -410,6 +413,27 @@ describe('check:tenant-scope', () => {
       // src/tenancy/ is no exception, and a comment or another module of a similar name is not the pool.
       expect(findControlPlane('packages/server/src/tenancy/roles.ts', allowed)).not.toEqual([]);
       expect(findControlPlane(route, "// ControlDb\nimport { x } from './control-dbs.js';\n")).toEqual([]);
+    });
+
+    it('refuses a control pool read off the context anywhere, src/control-plane/ and serve.ts included', () => {
+      for (const text of [
+        'const db = ctx.control;',
+        'const db = ctx?.control;',
+        "const db = ctx['control'];",
+        'const db = (ctx as unknown as { control: unknown }).control;',
+        'const db = ctx!.control;',
+        'const db = server.ctx.control;',
+        'const db = this.context.control;',
+        'const { control } = ctx;',
+        'const { control: pool } = env.ctx;',
+      ]) {
+        for (const file of [route, inside, 'packages/server/src/serve.ts']) {
+          expect(findControlPlane(file, text), `${file}: ${text}`).toMatchObject([{ rule: 'context-control' }]);
+        }
+      }
+      // Another object's `control` is not the context's: the terminal shares' controller, say.
+      expect(findControlPlane(route, 'const who = share.control?.who;')).toEqual([]);
+      expect(findControlPlane(route, "json({ type: 'control' })")).toEqual([]);
     });
 
     it('keeps controlDatabaseUrl to config.ts, serve.ts and the admin role command', () => {

@@ -193,6 +193,39 @@ describeDb('the control role (hosted spec §22.2)', () => {
     });
   });
 
+  it('refuses a control role that owns a schema, a sequence, a view, a function or a type', async () => {
+    const owned = [
+      (role: string) => `create schema "${role}_s" authorization "${role}"`,
+      (role: string) => `create sequence "${role}_q"; alter sequence "${role}_q" owner to "${role}"`,
+      (role: string) => `create view "${role}_v" as select 1 as x; alter view "${role}_v" owner to "${role}"`,
+      (role: string) =>
+        `create materialized view "${role}_m" as select 1 as x; alter materialized view "${role}_m" owner to "${role}"`,
+      (role: string) =>
+        `create function "${role}_f"() returns int language sql as 'select 1'; alter function "${role}_f"() owner to "${role}"`,
+      (role: string) =>
+        `create procedure "${role}_p"() language sql as 'select 1'; alter procedure "${role}_p"() owner to "${role}"`,
+      (role: string) => `create type "${role}_t" as enum ('a'); alter type "${role}_t" owner to "${role}"`,
+    ];
+    for (const make of owned) {
+      const role = freshRole();
+      await admin.query(`create role "${role}" login bypassrls noinherit password 'ctl-pw'`);
+      for (const statement of make(role).split('; ')) await admin.query(statement);
+      await expect(checkControlRole(poolAs(role, 'ctl-pw'), NAMES), make(role)).rejects.toMatchObject({
+        code: 'control-plane-role-owns',
+      });
+    }
+  });
+
+  it('refuses a control role that may create roles or databases', async () => {
+    for (const attribute of ['createrole', 'createdb']) {
+      const role = freshRole();
+      await admin.query(`create role "${role}" login bypassrls noinherit ${attribute} password 'ctl-pw'`);
+      await expect(checkControlRole(poolAs(role, 'ctl-pw'), NAMES), attribute).rejects.toMatchObject({
+        code: 'control-plane-role-too-broad',
+      });
+    }
+  });
+
   it('refuses a control role without BYPASSRLS', async () => {
     const role = freshRole();
     await admin.query(`create role "${role}" login nobypassrls noinherit password 'ctl-pw'`);

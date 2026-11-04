@@ -16,6 +16,7 @@ import {
   instanceModeOf,
   loadConfig,
   migrationUrlOf,
+  moduleConfigOf,
   MULTI_NEEDS_ENTERPRISE,
   type ServerConfig,
 } from './config.js';
@@ -33,7 +34,8 @@ import { APPLICATION_NAME, createDatabase, createLockPool, openSession } from '.
 import { BusSignals, NotificationBus } from './operations/bus.js';
 import { DatabaseRepoLock, guardGit, REPO_LOCK_POOL_MAX, REPO_LOCK_WAIT_MS } from './operations/repo-lock.js';
 import { checkAppRole, checkControlRole, checkPostgresVersion } from './tenancy/checks.js';
-import { controlHandle, openControlDb, type ControlDb } from './control-plane/control-db.js';
+import { openControlDb, type ControlDb } from './control-plane/control-db.js';
+import { withControlPool } from './control-plane/module.js';
 import { allowsMultipleInstances, drainWithin, InstanceRegistry, licenseLapseWatch } from './operations/instances.js';
 import { limiterSweep } from './operations/limiter.js';
 import { OPERATIONS_MIGRATIONS_DIR } from './operations/migrations.js';
@@ -358,7 +360,13 @@ export async function runMigrate(
     }
     const applied =
       mode === 'two-roles'
-        ? await migrateAndGrant(db, config.databaseUrl, migrations)
+        ? // In hosted mode `migrate` grants the control role too, as a start-up does (spec §22.2).
+          await migrateAndGrant(
+            db,
+            config.databaseUrl,
+            migrations,
+            config.mode === 'hosted' ? config.controlDatabaseUrl : undefined,
+          )
         : (await migrate(db, migrations)).applied;
     io.stdout.write(
       applied.length === 0 ? 'migrations: nothing to apply\n' : `migrations: applied ${applied.join(', ')}\n`,
@@ -412,11 +420,40 @@ export async function runMigrate(
     }
     return ExitCode.Ok;
   } catch (error) {
+    if (isConfigFailure(error)) {
+      io.stderr.write(`${error.code}: ${error.message}\n`);
+      return ExitCode.Config;
+    }
     io.stderr.write(`${error instanceof StartupError ? error.message : migrationFailure(error)}\n`);
     return ExitCode.Migration;
   } finally {
     await db.close();
   }
+}
+
+/**
+ * The refusals before or while migrating that an operator fixes in the configuration or the database's roles, not
+ * in a migration: they exit with `ExitCode.Config`, as a refused check does. The control role's (spec §22.2) are
+ * among them: a URL naming the app role or the owner, a missing password or role, a role that is too broad.
+ */
+const CONFIG_FAILURES: ReadonlySet<string> = new Set([
+  'server-postgres-too-old',
+  'tenancy-reverting',
+  'tenancy-files-left-behind',
+  'tenancy-workspaces-missing',
+  'tenancy-control-url-invalid',
+  'tenancy-control-password-missing',
+  'tenancy-control-role-create-refused',
+  'control-plane-role-shared',
+  'control-plane-role-superuser',
+  'control-plane-role-too-broad',
+  'control-plane-role-owns',
+  'control-plane-role-no-bypass',
+]);
+
+/** Whether `error` is one of {@link CONFIG_FAILURES}. */
+export function isConfigFailure(error: unknown): error is WirebenchError {
+  return error instanceof WirebenchError && CONFIG_FAILURES.has(error.code);
 }
 
 /** What the bus's listening connection is called in `pg_stat_activity`: a server's, so a revert waits for it. */
@@ -441,8 +478,8 @@ export async function startServer(
   // The pool's errors are logged once the logger exists; a connection failing before then fails a query too.
   const dbLog: { warn?: (error: Error) => void } = {};
   // The control plane's pool on the control role, hosted mode only (spec §22.2): the one connection past the policy,
-  // at most two, handed to the control-plane module on `ctx.control` and to no other. `controlPlaneProblems` makes
-  // the URL required in hosted mode; a config built without it still refuses here.
+  // at most two, handed to the control-plane module's factory (`withControlPool`) and to no other: never on the
+  // context. `controlPlaneProblems` makes the URL required in hosted mode; a config built without it still refuses here.
   const controlUrl = config.mode === 'hosted' ? config.controlDatabaseUrl : undefined;
   if (config.mode === 'hosted' && controlUrl === undefined) {
     throw new StartupError(
@@ -505,13 +542,7 @@ export async function startServer(
     }
   } catch (error) {
     if (error instanceof StartupError) return fail(error);
-    if (
-      error instanceof WirebenchError &&
-      (error.code === 'server-postgres-too-old' ||
-        error.code === 'tenancy-reverting' ||
-        error.code === 'tenancy-files-left-behind' ||
-        error.code === 'tenancy-workspaces-missing')
-    ) {
+    if (isConfigFailure(error)) {
       return fail(new StartupError(ExitCode.Config, `${error.code}: ${error.message}`));
     }
     return fail(new StartupError(ExitCode.Migration, migrationFailure(error)));
@@ -633,7 +664,8 @@ export async function startServer(
   // The modules register on these before the bus exists; the bus is attached to them once made.
   const busSignals = new BusSignals();
   const ctx: ServerContext = {
-    config,
+    // A copy without the database URLs (Part A review): `ModuleConfig` drops them from the type, this from the object.
+    config: moduleConfigOf(config),
     tenancy,
     repos,
     git,
@@ -644,12 +676,11 @@ export async function startServer(
     instance: registry,
     bus: busSignals,
     license: permissiveLicense(),
-    ...(control !== undefined ? { control: controlHandle(control) } : {}),
   };
   let app: FastifyInstance;
   try {
     app = await buildServer(ctx, {
-      modules,
+      modules: withControlPool(modules, control),
       ...(options.logStream !== undefined ? { logStream: options.logStream } : {}),
     });
   } catch (error) {
