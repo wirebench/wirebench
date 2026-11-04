@@ -13,20 +13,21 @@
  * Nothing here runs on the control role: the deletion goes through `TenantLifecycle`, as the operator's does, and
  * every read is a unit of the request's tenant.
  */
-import { createReadStream } from 'node:fs';
+import { open } from 'node:fs/promises';
 import type { FastifyInstance } from 'fastify';
-import { auditSource } from '../context.js';
+import { auditSource, recordAudit, type ServerHooks } from '../context.js';
 import { requireServerAdmin } from '../identity/guard.js';
 import { problem } from '../problem.js';
 import type { TenantDbFactory } from '../tenancy/tenant-db.js';
 import { DAY_MS, GRACE_DAYS } from './billing/sweep.js';
-import { exportFileSize } from './export/export.js';
 import type { ExportRow, ExportRunner } from './export/runner.js';
 import type { TenantLifecycle } from './tenants.js';
 
 export interface TenantRoutesDeps {
   readonly db: TenantDbFactory;
   readonly runner: ExportRunner;
+  /** Where `tenant.export_downloaded` is recorded. */
+  readonly hooks: ServerHooks;
   /** Hosted mode only: the billing and deletion routes are not registered without it. */
   readonly lifecycle?: TenantLifecycle;
   readonly now: () => Date;
@@ -73,15 +74,47 @@ export function tenantRoutes(deps: TenantRoutesDeps) {
     app.get('/tenant/exports/:id/file', { preHandler: requireServerAdmin }, async (request, reply) => {
       const { id } = request.params as { id: string };
       const { row, path } = await deps.runner.ready(request.tenant, id);
-      // A file the sweep removed under a row not yet marked: as gone as the row says it is not.
-      const size = await exportFileSize(path);
-      if (size === undefined) throw problem('control-plane-export-unknown', 'no export has that id', 404);
+      // Opened before anything is sent: a file the sweep removed under a row not yet marked is a 404, and once open it
+      // stays readable to the end, whatever the sweep does.
+      let file: Awaited<ReturnType<typeof open>>;
+      try {
+        file = await open(path, 'r');
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+          throw problem('control-plane-export-unknown', 'no export has that id', 404);
+        }
+        throw error;
+      }
+      let size: number;
+      try {
+        size = (await file.stat()).size;
+        // Who took the tenant's data away, and when (spec §22.9): it holds every password hash.
+        await deps.db(request.tenant).transaction((tx) =>
+          recordAudit(deps.hooks, tx, {
+            ...auditSource(request),
+            action: 'tenant.export_downloaded',
+            target: { kind: 'tenant', id: request.tenant.tenantId },
+            details: { exportId: row.id, sizeBytes: size, by: request.caller!.id },
+          }),
+        );
+      } catch (error) {
+        await file.close();
+        throw error;
+      }
+      const stream = file.createReadStream();
+      stream.on('error', (error) => {
+        // Headers are out by now: the connection is cut, and the reason logged without the path.
+        request.log.warn(
+          { exportId: row.id, code: (error as NodeJS.ErrnoException).code },
+          'an export download failed',
+        );
+      });
       void reply
         .header('content-type', 'application/gzip')
         .header('content-disposition', `attachment; filename="${fileName(request.tenant.slug, row.readyAt)}"`)
         .header('cache-control', 'no-store')
         .header('content-length', String(size));
-      return reply.send(createReadStream(path));
+      return reply.send(stream);
     });
 
     if (lifecycle === undefined) return;

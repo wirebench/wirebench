@@ -4,9 +4,10 @@
  * own slug), and read their own billing; a member who is no server admin, and nobody signed in, reach none of it. On
  * a self-hosted server the export routes are served and the hosted-only ones are not.
  */
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { auditHook } from '../../../../src/audit-log/hook.js';
 import { controlPlaneModule } from '../../../../src/control-plane/module.js';
 import { tenantRoot } from '../../../../src/tenancy/paths.js';
 import { ensureControlRole } from '../../../../src/tenancy/roles.js';
@@ -40,6 +41,8 @@ describeDb('the tenant routes, two tenants (spec §22.9, §22.11)', () => {
   beforeAll(async () => {
     t = await twoTenants({ modules: () => [controlPlaneModule({ startLoop: false })] });
     await ensureControlRole(t.h.db.owner, t.h.db.controlUrl, t.h.db.url);
+    // The audit module is not in this server: its hook records what the routes audit.
+    t.h.hooks.audit.push(auditHook(() => new Date()));
     adminA = await t.a.user({ email: 'admin@acme.example', serverAdmin: true });
     adminB = await t.b.user({ email: 'admin@beta.example', serverAdmin: true });
     memberA = await t.a.user({ email: 'member@acme.example' });
@@ -64,6 +67,13 @@ describeDb('the tenant routes, two tenants (spec §22.9, §22.11)', () => {
     });
     expect(own.statusCode).toBe(200);
     expect(own.body).toBe('acme export bytes');
+    // Recorded in A's chain, by whom.
+    const audited = await t.a.tdb.query<{ details: Record<string, unknown> }>(
+      "select details from audit_events where action = 'tenant.export_downloaded'",
+    );
+    expect(audited.rows.map((row) => row.details)).toEqual([
+      expect.objectContaining({ exportId: EXPORT_A, by: adminA.user.id }) as unknown,
+    ]);
     expect(own.headers['content-disposition']).toMatch(
       /^attachment; filename="wirebench-export-acme-\d{8}T\d{6}Z\.tar\.gz"$/,
     );
@@ -82,6 +92,28 @@ describeDb('the tenant routes, two tenants (spec §22.9, §22.11)', () => {
       headers: adminA.headers,
     });
     expect(wrongHost.statusCode).toBe(401);
+  });
+
+  it('answers 404 for an export past its seven days, and for one whose file is gone', async () => {
+    const expired = '0c0c0c0c-0000-4000-8000-00000000000c';
+    await readyExport(t.h.dataDir, t.a, expired, 'old bytes');
+    await t.a.tdb.query("update tenant_exports set expires_at = now() - interval '1 minute' where id = $1", [expired]);
+    const old = await t.a.inject({
+      method: 'GET',
+      url: `/api/v1/tenant/exports/${expired}/file`,
+      headers: adminA.headers,
+    });
+    expect(old.statusCode).toBe(404);
+    const gone = '0d0d0d0d-0000-4000-8000-00000000000d';
+    await readyExport(t.h.dataDir, t.a, gone, 'gone bytes');
+    await unlink(join(tenantRoot(t.h.dataDir, t.a.scope), 'exports', `${gone}.tar.gz`));
+    const missing = await t.a.inject({
+      method: 'GET',
+      url: `/api/v1/tenant/exports/${gone}/file`,
+      headers: adminA.headers,
+    });
+    expect(missing.statusCode).toBe(404);
+    await t.a.tdb.query('delete from tenant_exports where id = any($1::text[])', [[expired, gone]]);
   });
 
   it('serves server admins only, behind a session', async () => {

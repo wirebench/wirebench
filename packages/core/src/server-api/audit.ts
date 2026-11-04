@@ -96,7 +96,7 @@ export const AUDIT_ACTIONS = [
   'agent.request_refused',
   /**
    * A hosted tenant's lifecycle (hosted edition spec §22.14), in its own chain: created, its edition set, suspended,
-   * resumed, renamed, its deletion asked for or cancelled, exported and imported (§22.9, §22.10, any server). `details.by` is `operator` or
+   * resumed, renamed, its deletion asked for or cancelled, exported, an export downloaded, and imported (§22.9, §22.10, any server). `details.by` is `operator` or
    * a user id.
    */
   'tenant.created',
@@ -107,6 +107,7 @@ export const AUDIT_ACTIONS = [
   'tenant.deletion_requested',
   'tenant.deletion_cancelled',
   'tenant.exported',
+  'tenant.export_downloaded',
   'tenant.imported',
   /**
    * A custom name's check moved it (hosted edition spec §23.2): by name only, never its token. The routes' `claimed`

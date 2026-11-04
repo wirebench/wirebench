@@ -531,7 +531,7 @@ export async function fill(t: TwoTenants, tenant: Tenant): Promise<Filled> {
   await writeFile(join(exports, `${exportId}.tar.gz`), `the export of ${slug}`);
   await tenant.tdb.query(
     `insert into tenant_exports (id, requested_by, status, size_bytes, requested_at, ready_at, expires_at)
-     values ($1, $2, 'ready', $3, $4, $4, $4::timestamptz + interval '7 days')`,
+     values ($1, $2, 'ready', $3, $4, $4, greatest($4::timestamptz, now()) + interval '7 days')`,
     [exportId, browser.user.id, Buffer.byteLength(`the export of ${slug}`), at],
   );
   await tenant.tdb.query(

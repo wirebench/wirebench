@@ -140,7 +140,8 @@ export class ExportRunner {
   }
 
   /**
-   * A ready export's row and file.
+   * A ready export's row and file, while it has not expired: one past `expires_at` is gone even before the sweep
+   * removes its file.
    *
    * @throws WirebenchError `control-plane-export-unknown` (404) for an id this tenant has no ready export of
    */
@@ -149,7 +150,10 @@ export class ExportRunner {
     const row = (
       await this.#deps
         .db(scope)
-        .query<ExportRow>(`select ${COLUMNS} from tenant_exports where id = $1 and status = 'ready'`, [id])
+        .query<ExportRow>(
+          `select ${COLUMNS} from tenant_exports where id = $1 and status = 'ready' and expires_at > $2::timestamptz`,
+          [id, this.#now()],
+        )
     ).rows[0];
     if (row === undefined) throw problem('control-plane-export-unknown', 'no export has that id', 404);
     return { row, path };

@@ -190,6 +190,7 @@ export function controlPlaneModule(options: ControlPlaneOptions = {}): ServerMod
       tenantRoutes({
         db: ctx.tenancy.db,
         runner: runnerOf(ctx),
+        hooks: ctx.hooks,
         ...(control !== undefined ? { lifecycle: lifecycleOf(ctx, control) } : {}),
         now: options.now ?? (() => new Date()),
       })(app);
