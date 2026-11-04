@@ -4,6 +4,7 @@
  * `scripts/docs-server-config.ts` (the README's table) and for the zod schema, so the three can
  * never disagree. Values are never echoed: a problem names the variable and the rule it broke.
  */
+import { readFileSync } from 'node:fs';
 import { isIP } from 'node:net';
 import { isAbsolute, resolve } from 'node:path';
 import { isCanonicalBase64, type EgressPolicy } from '@wirebench/engine';
@@ -18,6 +19,10 @@ export type ServerMode = (typeof SERVER_MODES)[number];
 /** One process, or several on one database and one data volume (spec §20.1); hosted mode is always `multi`. */
 export const INSTANCE_MODES = ['single', 'multi'] as const;
 export type InstanceMode = (typeof INSTANCE_MODES)[number];
+
+/** Paddle's two environments (hosted edition spec §22.5): which Paddle.js talks to, and which token prefix fits. */
+export const PADDLE_ENVIRONMENTS = ['sandbox', 'production'] as const;
+export type PaddleEnvironment = (typeof PADDLE_ENVIRONMENTS)[number];
 
 /** Why `loadConfig` refuses `hosted` (spec §19.1). */
 export const HOSTED_REFUSED = 'hosted mode arrives with the control plane';
@@ -262,6 +267,17 @@ const inputSchema = z.object({
   appDomain: domainText.optional(),
   siteDomain: domainText.optional(),
   dnsServers: dnsServersText.optional(),
+  // Paddle (hosted edition spec §22.5): hosted mode only, and required there (`paddleProblems`).
+  paddleEnvironment: z.enum(PADDLE_ENVIRONMENTS).optional(),
+  paddleClientToken: z
+    .string()
+    .regex(/^(?:test|live)_[A-Za-z0-9_]{1,200}$/, 'must be a Paddle client-side token (test_… or live_…)')
+    .optional(),
+  paddleTeamPriceId: z
+    .string()
+    .regex(/^pri_[A-Za-z0-9_]{1,200}$/, 'must be a Paddle price id (pri_…)')
+    .optional(),
+  paddleWebhookSecret: z.string().min(16, 'must be the notification destination’s secret key').optional(),
 });
 
 type ConfigKey = keyof z.input<typeof inputSchema>;
@@ -278,11 +294,12 @@ export interface ServerConfig extends Omit<z.output<typeof inputSchema>, 'tenant
  * mode is no tenant's. A module takes the tenant's URL from `tenantUrl(config, request)`; only `tenancy/urls.ts`
  * reads the field, and `check:tenant-scope` refuses any other read. Nor the database URLs (Task 17 review M3): a
  * module that opened a pool of its own, as the owner above all, would be past every policy; it has `ctx.tenancy`. Nor
- * the control role's (spec §22.2): only `serve.ts` opens that pool, and hands it to the control plane alone.
+ * the control role's (spec §22.2): only `serve.ts` opens that pool, and hands it to the control plane alone. Nor
+ * the Paddle webhook secret (spec §22.5, §22.16): `serve.ts` hands it to the control plane the same way.
  */
 export type ModuleConfig = Omit<
   ServerConfig,
-  'publicUrl' | 'databaseUrl' | 'migrationDatabaseUrl' | 'controlDatabaseUrl'
+  'publicUrl' | 'databaseUrl' | 'migrationDatabaseUrl' | 'controlDatabaseUrl' | 'paddleWebhookSecret'
 >;
 
 /**
@@ -295,6 +312,7 @@ export function moduleConfigOf(config: ServerConfig): ModuleConfig {
   delete copy.databaseUrl;
   delete copy.migrationDatabaseUrl;
   delete copy.controlDatabaseUrl;
+  delete copy.paddleWebhookSecret;
   return copy as ModuleConfig;
 }
 
@@ -307,6 +325,8 @@ export interface ConfigVariable {
   readonly defaultText?: string;
   /** Never printed, never logged. */
   readonly secret: boolean;
+  /** `<env>_FILE` may name a file holding the value instead (a mounted secret); its content, trimmed, is the value. */
+  readonly file?: boolean;
   readonly description: string;
 }
 
@@ -810,6 +830,39 @@ export const CONFIG_VARIABLES: readonly ConfigVariable[] = [
     description:
       'Hosted mode only: the DNS servers that check a team’s custom domain, as IP addresses with an optional port, comma-separated (`192.0.2.53, [2001:db8::53]:53`). Unset, the system’s resolver. Unused on a self-hosted server.',
   },
+  {
+    env: 'WIREBENCH_SERVER_PADDLE_ENVIRONMENT',
+    key: 'paddleEnvironment',
+    required: false,
+    secret: false,
+    description:
+      'Hosted mode only, and required there: `sandbox` or `production`, the Paddle environment the checkout talks to. Refused on a self-hosted server.',
+  },
+  {
+    env: 'WIREBENCH_SERVER_PADDLE_CLIENT_TOKEN',
+    key: 'paddleClientToken',
+    required: false,
+    secret: false,
+    description:
+      'Hosted mode only, and required there: the checkout’s client-side token, public by design; `test_…` with the sandbox, `live_…` in production. Refused on a self-hosted server.',
+  },
+  {
+    env: 'WIREBENCH_SERVER_PADDLE_TEAM_PRICE_ID',
+    key: 'paddleTeamPriceId',
+    required: false,
+    secret: false,
+    description:
+      'Hosted mode only, and required there: the Team seat price (`pri_…`). A subscription’s seats are its quantity of this price. Refused on a self-hosted server.',
+  },
+  {
+    env: 'WIREBENCH_SERVER_PADDLE_WEBHOOK_SECRET',
+    key: 'paddleWebhookSecret',
+    required: false,
+    secret: true,
+    file: true,
+    description:
+      'Hosted mode only, and required there: the secret key of the Paddle notification destination that posts to `https://app.<app-domain>/billing/paddle`, which every webhook’s signature is checked with. `WIREBENCH_SERVER_PADDLE_WEBHOOK_SECRET_FILE` may name a file holding it instead. Refused on a self-hosted server.',
+  },
 ];
 
 /** One thing wrong with the environment, phrased without the offending value. */
@@ -830,15 +883,36 @@ export class ConfigError extends Error {
   }
 }
 
-function inputFrom(env: NodeJS.ProcessEnv): Partial<Record<ConfigKey, string>> {
+interface ReadInput {
+  readonly input: Partial<Record<ConfigKey, string>>;
+  /** A `_FILE` variable that could not be read, or set beside its variable. Never the value or the file's text. */
+  readonly problems: ConfigProblem[];
+}
+
+function inputFrom(env: NodeJS.ProcessEnv): ReadInput {
   const input: Partial<Record<ConfigKey, string>> = {};
+  const problems: ConfigProblem[] = [];
   for (const variable of CONFIG_VARIABLES) {
     const value = env[variable.env];
     if (value !== undefined && value !== '') {
       input[variable.key] = value;
     }
+    const file = variable.file === true ? env[`${variable.env}_FILE`] : undefined;
+    if (file === undefined || file === '') continue;
+    if (input[variable.key] !== undefined) {
+      problems.push({ variable: `${variable.env}_FILE`, message: `is set beside ${variable.env}; set one of them` });
+      continue;
+    }
+    try {
+      const text = readFileSync(file, 'utf8').trim();
+      if (text !== '') input[variable.key] = text;
+      else problems.push({ variable: `${variable.env}_FILE`, message: 'names an empty file' });
+    } catch {
+      // The path is the operator's own; the error could quote the file, so only the rule is said.
+      problems.push({ variable: `${variable.env}_FILE`, message: 'names a file that cannot be read' });
+    }
   }
-  return input;
+  return { input, problems };
 }
 
 function envOf(key: string): string {
@@ -895,9 +969,42 @@ export function controlPlaneProblems(config: Pick<ServerConfig, 'mode' | 'contro
     : [{ variable, message: 'control-plane-hosted-only: is for hosted mode only; unset it on a self-hosted server' }];
 }
 
+/** The Paddle settings, in the table's order (spec §22.5). */
+const PADDLE_KEYS = ['paddleEnvironment', 'paddleClientToken', 'paddleTeamPriceId', 'paddleWebhookSecret'] as const;
+
+/**
+ * The Paddle settings' rules (spec §22.1, §22.5): all four required in hosted mode, each refused on a self-hosted
+ * server, and the client token's prefix matching the environment (`test_` in the sandbox, `live_` in production).
+ * `loadConfig` runs it; tests that build a hosted config directly call it too. Never a value, only the variable.
+ */
+export function paddleProblems(config: Pick<ServerConfig, 'mode' | (typeof PADDLE_KEYS)[number]>): ConfigProblem[] {
+  const problems: ConfigProblem[] = [];
+  for (const key of PADDLE_KEYS) {
+    const set = config[key] !== undefined;
+    if (config.mode === 'hosted' && !set)
+      problems.push({ variable: envOf(key), message: 'control-plane-paddle-missing: hosted mode needs it' });
+    if (config.mode !== 'hosted' && set)
+      problems.push({
+        variable: envOf(key),
+        message: 'control-plane-hosted-only: is for hosted mode only; unset it on a self-hosted server',
+      });
+  }
+  const { paddleEnvironment: environment, paddleClientToken: token } = config;
+  if (environment !== undefined && token !== undefined) {
+    const prefix = environment === 'sandbox' ? 'test_' : 'live_';
+    if (!token.startsWith(prefix))
+      problems.push({
+        variable: 'WIREBENCH_SERVER_PADDLE_CLIENT_TOKEN',
+        message: `control-plane-paddle-token-environment: a ${environment} token starts with ${prefix}`,
+      });
+  }
+  return problems;
+}
+
 /** Parses `env` into a config or throws a {@link ConfigError} naming every problem at once. */
 export function loadConfig(env: NodeJS.ProcessEnv, version: string): ServerConfig {
-  const input = inputFrom(env);
+  const { input, problems: fileProblems } = inputFrom(env);
+  if (fileProblems.length > 0) throw new ConfigError(fileProblems);
   const parsed = inputSchema.safeParse(input);
   if (!parsed.success) {
     const problems = parsed.error.issues.map((issue) => {
@@ -922,7 +1029,11 @@ export function loadConfig(env: NodeJS.ProcessEnv, version: string): ServerConfi
   // Cross-field rules zod cannot express per key: the two IdP credentials travel with the issuer,
   // an http:// issuer is a development-only choice like an http:// public URL, and a server with
   // no way to sign in at all is a misconfiguration, not a quiet server (identity spec §4.1).
-  const problems: ConfigProblem[] = [...domainProblems(config), ...controlPlaneProblems(config)];
+  const problems: ConfigProblem[] = [
+    ...domainProblems(config),
+    ...controlPlaneProblems(config),
+    ...paddleProblems(config),
+  ];
   if (config.oidcIssuer !== undefined) {
     for (const [key, variable] of [
       ['oidcClientId', 'WIREBENCH_SERVER_OIDC_CLIENT_ID'],
@@ -1034,6 +1145,8 @@ export function forgetDatabaseUrls(): void {
   delete process.env.WIREBENCH_SERVER_DATABASE_URL;
   delete process.env.WIREBENCH_SERVER_MIGRATION_DATABASE_URL;
   delete process.env.WIREBENCH_SERVER_CONTROL_DATABASE_URL;
+  // The Paddle webhook secret too (spec §22.16), for the same reason.
+  delete process.env.WIREBENCH_SERVER_PADDLE_WEBHOOK_SECRET;
 }
 
 /**
@@ -1062,8 +1175,10 @@ export type ConfigStatus = 'set' | 'defaulted' | 'missing' | 'invalid';
 
 /** What `config check` prints: one row per variable, never a value. */
 export function describeConfig(env: NodeJS.ProcessEnv): readonly { variable: string; status: ConfigStatus }[] {
-  const input = inputFrom(env);
+  const { input, problems } = inputFrom(env);
+  const unreadable = new Set(problems.map((problem) => problem.variable));
   return CONFIG_VARIABLES.map((variable) => {
+    if (unreadable.has(`${variable.env}_FILE`)) return { variable: variable.env, status: 'invalid' as const };
     const raw = input[variable.key];
     if (raw === undefined) {
       return {

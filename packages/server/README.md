@@ -72,6 +72,10 @@ database, one data directory; run it behind TLS. Design: `docs/specs/2026-09-24-
 | `WIREBENCH_SERVER_APP_DOMAIN` | no | — | Hosted mode only: the product’s domain. Each team is `https://<slug>.<domain>`, and `app.<domain>` mails a person their teams’ links. Unused on a self-hosted server. |
 | `WIREBENCH_SERVER_SITE_DOMAIN` | no | — | Hosted mode only: the public site’s domain, which the server links to and never serves. It must not be, or sit under, the app domain. Unused on a self-hosted server. |
 | `WIREBENCH_SERVER_DNS_SERVERS` | no | — | Hosted mode only: the DNS servers that check a team’s custom domain, as IP addresses with an optional port, comma-separated (`192.0.2.53, [2001:db8::53]:53`). Unset, the system’s resolver. Unused on a self-hosted server. |
+| `WIREBENCH_SERVER_PADDLE_ENVIRONMENT` | no | — | Hosted mode only, and required there: `sandbox` or `production`, the Paddle environment the checkout talks to. Refused on a self-hosted server. |
+| `WIREBENCH_SERVER_PADDLE_CLIENT_TOKEN` | no | — | Hosted mode only, and required there: the checkout’s client-side token, public by design; `test_…` with the sandbox, `live_…` in production. Refused on a self-hosted server. |
+| `WIREBENCH_SERVER_PADDLE_TEAM_PRICE_ID` | no | — | Hosted mode only, and required there: the Team seat price (`pri_…`). A subscription’s seats are its quantity of this price. Refused on a self-hosted server. |
+| `WIREBENCH_SERVER_PADDLE_WEBHOOK_SECRET` | no | — | Hosted mode only, and required there: the secret key of the Paddle notification destination that posts to `https://app.<app-domain>/billing/paddle`, which every webhook’s signature is checked with. `WIREBENCH_SERVER_PADDLE_WEBHOOK_SECRET_FILE` may name a file holding it instead. Refused on a self-hosted server. Never logged. |
 <!-- config:end -->
 <!-- prettier-ignore-end -->
 
