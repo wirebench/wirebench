@@ -1,6 +1,8 @@
 import type { ModuleConfig } from '../config.js';
 import type { ServerContext } from '../context.js';
+import type { TenantScope } from '../tenancy/scope.js';
 import { tenantUrl, type ScopeSource } from '../tenancy/urls.js';
+import { methodDisabled, oidcFailed } from './errors.js';
 import type { OidcProvider } from './oidc.js';
 import type { TenantRateLimiter } from './rate-limit.js';
 
@@ -20,9 +22,9 @@ export interface IdentitySettings {
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
- * Hosted mode has no OIDC (spec §19.1): the configured provider is the operator's one, which until slice 7
- * gives each tenant its own would sign people into any tenant with a matching email. So the OIDC routes answer
- * `404`, as they do on a server without OIDC, and nothing reports it.
+ * `oidc` is the environment's provider, self-hosted only. Hosted mode never uses it (spec §22.1 refuses the
+ * variables there): the operator's one provider would sign people into any tenant with a matching email. Each
+ * tenant's own comes from its settings instead (`tenant-oidc.ts`).
  */
 export function identitySettings(config: ModuleConfig): IdentitySettings {
   return {
@@ -45,7 +47,11 @@ export interface IdentityEnv {
   readonly settings: IdentitySettings;
   readonly now: () => Date;
   readonly limiter: TenantRateLimiter;
-  readonly provider: OidcProvider | undefined;
+  /**
+   * The OIDC client of `scope`'s tenant: the environment's self-hosted, the tenant's own in hosted mode. `undefined`
+   * answers as a server without OIDC (`identity-method-disabled`).
+   */
+  readonly providerFor: (scope: TenantScope) => Promise<OidcProvider | undefined>;
 }
 
 /** What the invitation functions need: the CLI builds one without a Fastify app or a provider. */
@@ -53,4 +59,28 @@ export interface InvitationEnv {
   readonly ctx: Pick<ServerContext, 'tenancy' | 'config' | 'hooks' | 'license'>;
   readonly settings: Pick<IdentitySettings, 'invitationMs' | 'local' | 'oidc'>;
   readonly now: () => Date;
+  /** Whether `scope`'s tenant offers OIDC, when that is a tenant's setting (hosted); `settings.oidc` otherwise. */
+  readonly oidcOffered?: (scope: TenantScope) => Promise<boolean>;
+}
+
+/**
+ * The OIDC client for `request`'s tenant, or `identity-method-disabled` when it has none. A discovery that fails (the
+ * tenant's IdP down, or refused by the egress rule) is `identity-oidc-failed`, logged with the tenant only.
+ */
+export async function requireProvider(
+  env: Pick<IdentityEnv, 'providerFor'>,
+  request: { readonly tenant: TenantScope; readonly log: { warn(details: object, message: string): void } },
+): Promise<OidcProvider> {
+  let provider: OidcProvider | undefined;
+  try {
+    provider = await env.providerFor(request.tenant);
+  } catch (error) {
+    request.log.warn(
+      { tenantId: request.tenant.tenantId, reason: error instanceof Error ? error.message : 'error' },
+      'oidc discovery failed',
+    );
+    throw oidcFailed();
+  }
+  if (provider === undefined) throw methodDisabled();
+  return provider;
 }

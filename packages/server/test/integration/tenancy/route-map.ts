@@ -4,7 +4,8 @@
  * host with A's ids, where it must answer as its class says:
  * - **refused**: one of `statuses` (404 by default), or a 2xx empty list;
  * - **own**: 2xx, B's own data;
- * - **federated**: 404 in hosted mode on both hosts (spec §19.1), so no control applies;
+ * - **federated**: a sign-in method that is a tenant's own setting (spec §22.12), which neither tenant of the world
+ *   has, so `404` on both hosts and no control applies (`settings/sign-in.test.ts` runs them with a provider each);
  * - **entry**: an entry route (spec §21.4), which only `app.<app-domain>` serves, so 404 on both tenant hosts too;
  * - **hosted-off**: a self-hosted write hosted mode refuses on every host, `409` on both (the license file, §22.4);
  * - **socket**: a WebSocket route, which the socket sweep covers.
@@ -77,6 +78,22 @@ const SENT = {
 
 const api = (path: string) => `/api/v1${path}`;
 const ws = (ctx: Ctx, rest = '') => api(`/workspaces/${ctx.a.workspaceId}${rest}`);
+const SCIM_USER = 'urn:ietf:params:scim:schemas:core:2.0:User';
+const SCIM_GROUP = 'urn:ietf:params:scim:schemas:core:2.0:Group';
+const SCIM_PATCH = 'urn:ietf:params:scim:api:messages:2.0:PatchOp';
+/** One SCIM call as the sender's token. */
+const scim = (
+  ctx: Ctx,
+  method: NonNullable<InjectOptions['method']>,
+  path: string,
+  payload?: object,
+): InjectOptions => ({
+  method,
+  url: `/scim/v2${path}`,
+  headers: { authorization: `Bearer ${ctx.from.scimToken}`, 'content-type': 'application/scim+json' },
+  ...(payload !== undefined ? { payload } : {}),
+});
+
 /** The sender's admin, by bearer token. */
 const asAdmin = (ctx: Ctx) => bearer(ctx.from.admin);
 /** The sender's browser session. */
@@ -687,6 +704,143 @@ export const ROUTE_MAP: Readonly<Record<string, RouteCase>> = {
       url: api(`/agent/pairings/${(await fresh.pairing(ctx.a)).pairingId}`),
       headers: asTab(ctx),
     }),
+  },
+
+  // ---- SAML: a tenant's own setting (spec §22.12), which neither world tenant has
+  'POST /api/v1/auth/saml/start': {
+    cls: 'federated',
+    request: () => ({
+      method: 'POST',
+      url: api('/auth/saml/start'),
+      payload: { device: { name: 'probe' }, codeChallenge: pkceChallenge(VERIFIER), loopbackPort: 49152 },
+    }),
+  },
+  'POST /api/v1/auth/saml/acs': {
+    cls: 'federated',
+    request: () => ({
+      method: 'POST',
+      url: api('/auth/saml/acs'),
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      payload: 'SAMLResponse=x&RelayState=y',
+    }),
+  },
+  'POST /api/v1/auth/saml/browser-acs': {
+    cls: 'federated',
+    request: () => ({
+      method: 'POST',
+      url: api('/auth/saml/browser-acs'),
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      payload: 'SAMLResponse=x&RelayState=y',
+    }),
+  },
+  'POST /api/v1/auth/saml/complete': {
+    cls: 'federated',
+    request: () => ({
+      method: 'POST',
+      url: api('/auth/saml/complete'),
+      payload: { flowId: newId(), grant: mintSecret().secret, codeVerifier: VERIFIER },
+    }),
+  },
+  'GET /api/v1/auth/saml/metadata': {
+    cls: 'federated',
+    request: () => ({ method: 'GET', url: api('/auth/saml/metadata') }),
+  },
+  'GET /sign-in/saml': { cls: 'federated', request: () => ({ method: 'GET', url: '/sign-in/saml' }) },
+  // The sender's own URLs, and no IdP.
+  'GET /api/v1/auth/saml/info': { cls: 'own', request: (ctx) => json(ctx, 'GET', api('/auth/saml/info')) },
+
+  // ---- SCIM: the admin routes, then the base, by the sender's own token
+  'GET /api/v1/scim-tokens': { cls: 'own', request: (ctx) => json(ctx, 'GET', api('/scim-tokens')) },
+  'POST /api/v1/scim-tokens': {
+    cls: 'own',
+    request: (ctx) => json(ctx, 'POST', api('/scim-tokens'), { name: `${ctx.from.tenant.slug} probe` }),
+  },
+  'DELETE /api/v1/scim-tokens/:id': {
+    cls: 'refused',
+    request: async (ctx) => json(ctx, 'DELETE', api(`/scim-tokens/${await fresh.scimTokenId(ctx.a)}`)),
+  },
+  'GET /api/v1/scim-groups': { cls: 'own', request: (ctx) => json(ctx, 'GET', api('/scim-groups')) },
+  'PUT /api/v1/scim-groups/:id/team': {
+    cls: 'refused',
+    request: async (ctx) =>
+      json(ctx, 'PUT', api(`/scim-groups/${await fresh.scimGroup(ctx.a)}/team`), { teamId: ctx.from.teamId }),
+  },
+  'DELETE /api/v1/scim-groups/:id/team': {
+    cls: 'refused',
+    request: async (ctx) => json(ctx, 'DELETE', api(`/scim-groups/${await fresh.scimGroup(ctx.a)}/team`)),
+  },
+  'GET /scim/v2/ServiceProviderConfig': { cls: 'own', request: (ctx) => scim(ctx, 'GET', '/ServiceProviderConfig') },
+  'GET /scim/v2/ResourceTypes': { cls: 'own', request: (ctx) => scim(ctx, 'GET', '/ResourceTypes') },
+  'GET /scim/v2/Schemas': { cls: 'own', request: (ctx) => scim(ctx, 'GET', '/Schemas') },
+  'GET /scim/v2/Users': { cls: 'own', request: (ctx) => scim(ctx, 'GET', '/Users') },
+  'GET /scim/v2/Users/:id': {
+    cls: 'refused',
+    request: async (ctx) => scim(ctx, 'GET', `/Users/${await fresh.scimUser(ctx.a)}`),
+  },
+  'POST /scim/v2/Users': {
+    cls: 'own',
+    request: (ctx) => {
+      const email = `p-${newId().toLowerCase()}@${ctx.from.tenant.slug}.example`;
+      return scim(ctx, 'POST', '/Users', {
+        schemas: [SCIM_USER],
+        userName: email,
+        emails: [{ value: email, primary: true }],
+        active: true,
+      });
+    },
+  },
+  'PUT /scim/v2/Users/:id': {
+    cls: 'refused',
+    request: async (ctx) => {
+      const id = await fresh.scimUser(ctx.a);
+      return scim(ctx, 'PUT', `/Users/${id}`, {
+        schemas: [SCIM_USER],
+        userName: `r-${id.toLowerCase()}@acme.example`,
+        active: true,
+      });
+    },
+  },
+  'PATCH /scim/v2/Users/:id': {
+    cls: 'refused',
+    request: async (ctx) =>
+      scim(ctx, 'PATCH', `/Users/${await fresh.scimUser(ctx.a)}`, {
+        schemas: [SCIM_PATCH],
+        Operations: [{ op: 'replace', path: 'displayName', value: 'Patched' }],
+      }),
+  },
+  'DELETE /scim/v2/Users/:id': {
+    cls: 'refused',
+    request: async (ctx) => scim(ctx, 'DELETE', `/Users/${await fresh.scimUser(ctx.a)}`),
+  },
+  'GET /scim/v2/Groups': { cls: 'own', request: (ctx) => scim(ctx, 'GET', '/Groups') },
+  'GET /scim/v2/Groups/:id': {
+    cls: 'refused',
+    request: async (ctx) => scim(ctx, 'GET', `/Groups/${await fresh.scimGroup(ctx.a)}`),
+  },
+  'POST /scim/v2/Groups': {
+    cls: 'own',
+    request: (ctx) =>
+      scim(ctx, 'POST', '/Groups', { schemas: [SCIM_GROUP], displayName: `${ctx.from.tenant.slug} p-${newId()}` }),
+  },
+  'PUT /scim/v2/Groups/:id': {
+    cls: 'refused',
+    request: async (ctx) =>
+      scim(ctx, 'PUT', `/Groups/${await fresh.scimGroup(ctx.a)}`, {
+        schemas: [SCIM_GROUP],
+        displayName: `acme r-${newId()}`,
+      }),
+  },
+  'PATCH /scim/v2/Groups/:id': {
+    cls: 'refused',
+    request: async (ctx) =>
+      scim(ctx, 'PATCH', `/Groups/${await fresh.scimGroup(ctx.a)}`, {
+        schemas: [SCIM_PATCH],
+        Operations: [{ op: 'replace', path: 'displayName', value: `acme q-${newId()}` }],
+      }),
+  },
+  'DELETE /scim/v2/Groups/:id': {
+    cls: 'refused',
+    request: async (ctx) => scim(ctx, 'DELETE', `/Groups/${await fresh.scimGroup(ctx.a)}`),
   },
 
   // ---- sockets: the socket sweep's, one case each (`SOCKET_ROUTES`)

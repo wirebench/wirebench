@@ -11,7 +11,7 @@ import { toProblem } from '../../problem.js';
 import { tenantUrl } from '../../tenancy/urls.js';
 import { endPresentedSession, finishBrowserSignIn, safeRedirectPath, startBrowserFlow } from '../browser-flows.js';
 import { clearSessionCookie } from '../cookies.js';
-import type { IdentityEnv } from '../env.js';
+import { requireProvider, type IdentityEnv } from '../env.js';
 import { methodDisabled, originRefused } from '../errors.js';
 import { chargeKeys, emailKey, ipKey, rateLimit } from '../rate-limit.js';
 import { sendSignInPage } from '../sign-in-page.js';
@@ -97,8 +97,7 @@ export const browserSignInRoutes =
       '/sign-in/oidc',
       { preHandler: [rateLimit(env, (request) => [ipKey(request)])] },
       async (request, reply) => {
-        const provider = env.provider;
-        if (provider === undefined) throw methodDisabled();
+        const provider = await requireProvider(env, request);
         const nonce = mintSecret().secret;
         // 43 base64url characters: a valid RFC 7636 verifier.
         const codeVerifier = mintSecret().secret;

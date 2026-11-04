@@ -11,6 +11,7 @@
 import type { FastifyInstance, InjectOptions, LightMyRequestResponse, RouteOptions } from 'fastify';
 import type { ServerConfig } from '../../../../src/config.js';
 import type { ServerModule } from '../../../../src/context.js';
+import type { IdentityOptions } from '../../../../src/identity/module.js';
 import type { OidcProvider } from '../../../../src/identity/oidc.js';
 import { TenantAdmin } from '../../../../src/tenancy/directory.js';
 import type { TenantScope } from '../../../../src/tenancy/scope.js';
@@ -85,6 +86,8 @@ export async function twoTenants(
   options: {
     readonly env?: Record<string, string>;
     readonly provider?: OidcProvider;
+    /** More of identity's options: a suite's `oidcEgress` for its loopback issuers. */
+    readonly identity?: Pick<IdentityOptions, 'oidcEgress'>;
     readonly modules?: (clock: TestClock) => readonly ServerModule[];
     readonly logStream?: NodeJS.WritableStream;
     /** Every route the server registers. */
@@ -98,6 +101,7 @@ export async function twoTenants(
   const h = await identityHarness({
     ...(options.env !== undefined ? { env: options.env } : {}),
     ...(options.provider !== undefined ? { provider: options.provider } : {}),
+    ...(options.identity !== undefined ? { identity: options.identity } : {}),
     ...(options.logStream !== undefined ? { logStream: options.logStream } : {}),
     ...(options.onRoute !== undefined ? { onRoute: options.onRoute } : {}),
     ...(options.db !== undefined ? { db: options.db } : {}),

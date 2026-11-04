@@ -948,6 +948,33 @@ export function controlPlaneProblems(config: Pick<ServerConfig, 'mode' | 'contro
     : [{ variable, message: 'control-plane-hosted-only: is for hosted mode only; unset it on a self-hosted server' }];
 }
 
+/** The variables a hosted tenant sets for itself (spec §22.1, §22.12), by prefix. */
+export const PER_TENANT_PREFIXES: readonly string[] = [
+  'WIREBENCH_SERVER_OIDC_',
+  'WIREBENCH_SERVER_SAML_',
+  'WIREBENCH_SERVER_AUDIT_FORWARD_',
+];
+
+/**
+ * Hosted mode refuses the identity-provider and forwarding variables (spec §22.1): each is a tenant's setting there,
+ * and an operator's one provider would sign people into every tenant with a matching email. Each set one is named
+ * with `control-plane-setting-per-tenant`, never its value. `loadConfig` runs it once hosted mode is accepted; tests
+ * that build a hosted config directly call it with their environment.
+ */
+export function perTenantSettingProblems(config: Pick<ServerConfig, 'mode'>, env: NodeJS.ProcessEnv): ConfigProblem[] {
+  if (config.mode !== 'hosted') return [];
+  return CONFIG_VARIABLES.filter(
+    (variable) =>
+      PER_TENANT_PREFIXES.some((prefix) => variable.env.startsWith(prefix)) &&
+      env[variable.env] !== undefined &&
+      env[variable.env] !== '',
+  ).map((variable) => ({
+    variable: variable.env,
+    message:
+      'control-plane-setting-per-tenant: is a tenant’s own setting in hosted mode; unset it and set it per tenant',
+  }));
+}
+
 /** Parses `env` into a config or throws a {@link ConfigError} naming every problem at once. */
 export function loadConfig(env: NodeJS.ProcessEnv, version: string): ServerConfig {
   const input = inputFrom(env);
@@ -975,7 +1002,11 @@ export function loadConfig(env: NodeJS.ProcessEnv, version: string): ServerConfi
   // Cross-field rules zod cannot express per key: the two IdP credentials travel with the issuer,
   // an http:// issuer is a development-only choice like an http:// public URL, and a server with
   // no way to sign in at all is a misconfiguration, not a quiet server (identity spec §4.1).
-  const problems: ConfigProblem[] = [...domainProblems(config), ...controlPlaneProblems(config)];
+  const problems: ConfigProblem[] = [
+    ...domainProblems(config),
+    ...controlPlaneProblems(config),
+    ...perTenantSettingProblems(config, env),
+  ];
   if (config.oidcIssuer !== undefined) {
     for (const [key, variable] of [
       ['oidcClientId', 'WIREBENCH_SERVER_OIDC_CLIENT_ID'],

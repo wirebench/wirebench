@@ -10,7 +10,8 @@ import type { ServerContext, ServerModule } from '../context.js';
 import { TenantRateLimiter } from '../identity/rate-limit.js';
 import type { TenantQuerier } from '../tenancy/tenant-db.js';
 import { tenantUrl, urlWithoutScope } from '../tenancy/urls.js';
-import { samlSettings, ssoUrls, type SsoEnv } from './env.js';
+import type { ScopeSource } from '../tenancy/urls.js';
+import { samlSettings, ssoUrls, type SamlState, type SsoEnv, type SsoUrls } from './env.js';
 import * as repo from './repo.js';
 import { authSamlRoutes, browserSamlStartRoutes } from './routes/auth-saml.js';
 import { scimGroupRoutes } from './routes/scim-groups.js';
@@ -18,6 +19,7 @@ import { scimTokenRoutes } from './routes/scim-tokens.js';
 import { scimPlugin } from './scim/plugin.js';
 import { loadIdpMetadata, type IdpMetadata } from './saml-metadata.js';
 import { samlProvider } from './saml.js';
+import { TenantSamlProviders } from './tenant-saml.js';
 
 export const SSO_MIGRATIONS_DIR = fileURLToPath(new URL('../../migrations/sso/', import.meta.url));
 
@@ -48,11 +50,11 @@ export function ssoModule(options: SsoOptions = {}): ServerModule {
     name: 'sso',
     migrationsDir: SSO_MIGRATIONS_DIR,
     async register(app: FastifyInstance, ctx: ServerContext): Promise<void> {
-      // The SAML provider is the server-wide one, configured from the environment: the default tenant's
-      // until slice 7 moves it into per-tenant settings. Hosted mode has none (spec §19.1).
+      // Self-hosted, the SAML provider is the server-wide one, configured from the environment: the default
+      // tenant's. Hosted mode has no server-wide one (spec §22.1); each tenant's comes from its settings.
       const serverWide = urlWithoutScope(ctx.config);
       const settings = serverWide === undefined ? undefined : samlSettings(ctx.config);
-      let saml: SsoEnv['saml'];
+      let saml: SamlState | undefined;
       if (settings !== undefined && serverWide !== undefined) {
         const urls = ssoUrls(serverWide);
         // Read once at start-up; a failure is a start-up failure (exit 2 through serve.ts).
@@ -83,6 +85,17 @@ export function ssoModule(options: SsoOptions = {}): ServerModule {
           'saml sign-in on',
         );
       }
+      const urlsFor = (of: ScopeSource): SsoUrls => ssoUrls(tenantUrl(ctx.config, of));
+      const tenants =
+        ctx.config.mode === 'hosted'
+          ? new TenantSamlProviders({ settings: ctx.settings, urlsFor, log: () => ctx.log })
+          : undefined;
+      if (tenants !== undefined) {
+        ctx.meta.addSignInResolver(async (scope) => {
+          const own = await ctx.settings.of(scope, 'saml');
+          return own === undefined ? { saml: false } : { saml: true, samlDisplayName: own.displayName };
+        });
+      }
       const env: SsoEnv = {
         ctx,
         now,
@@ -93,19 +106,15 @@ export function ssoModule(options: SsoOptions = {}): ServerModule {
           db: ctx.tenancy.db,
           ...(options.now !== undefined ? { now: () => now().getTime() } : {}),
         }),
-        urlsFor: (of) => ssoUrls(tenantUrl(ctx.config, of)),
-        saml,
+        urlsFor,
+        samlFor: tenants === undefined ? () => Promise.resolve(saml) : (scope) => tenants.samlFor(scope),
       };
       shared = env;
-      // Hosted mode serves no SAML route, desktop or browser, and no SCIM base, for any tenant (spec §19.1): the
-      // operator's one identity provider would sign people into every tenant. They answer `404`, as unknown routes.
-      // So do the SCIM token and group admin routes, which manage a base nobody can reach (Task 15 review M2); they
-      // come back with per-tenant SSO in slice 7.
-      if (ctx.config.mode !== 'hosted') {
-        authSamlRoutes(env)(app);
-        scimTokenRoutes(env)(app);
-        scimGroupRoutes(env)(app);
-      }
+      // Every mode serves them (spec §22.12): in hosted mode each tenant's SAML is its own setting, and a tenant
+      // without one answers as a server without SAML. SCIM is a tenant's own tokens and rows either way.
+      authSamlRoutes(env)(app);
+      scimTokenRoutes(env)(app);
+      scimGroupRoutes(env)(app);
 
       const interval = options.sweepIntervalMs ?? DAY_MS;
       if (interval > 0) {
@@ -122,7 +131,6 @@ export function ssoModule(options: SsoOptions = {}): ServerModule {
     },
 
     async registerPublic(root: FastifyInstance, ctx: ServerContext): Promise<void> {
-      if (ctx.config.mode === 'hosted') return;
       // Beside `/api/v1`, never inside it: a SCIM token must not reach the device-token routes (§6.2).
       await root.register(scimPlugin(shared!), { prefix: '/scim/v2' });
       // Hosted spec §17.2: the browser's SAML start sits beside identity's `/sign-in` page.

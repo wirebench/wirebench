@@ -539,8 +539,21 @@ function callListeners<E>(listeners: readonly Listener<E>[], event: E, log: Fast
   }
 }
 
+/** The sign-in methods `/api/v1/meta` reports. */
+export interface SignInMethods {
+  readonly local: boolean;
+  readonly oidc: boolean;
+  readonly oidcDisplayName?: string;
+  readonly saml?: boolean;
+  readonly samlDisplayName?: string;
+}
+
+/** A tenant's own methods (hosted mode, spec §22.12): what its settings offer, over the server-wide ones. */
+export type SignInResolver = (scope: TenantScope) => Promise<Partial<Omit<SignInMethods, 'local'>>>;
+
 /** What `/api/v1/meta` reports; modules fill it at registration. */
 export class MetaRegistry {
+  private readonly resolvers: SignInResolver[] = [];
   private readonly methods = { local: false, oidc: false };
   private readonly capabilityNames = new Set<string>();
   private oidcName: string | undefined;
@@ -562,6 +575,24 @@ export class MetaRegistry {
     // saml-scim §3.1: reported only by a server that has the sso module and SAML configured.
     if (update.saml !== undefined) this.saml = update.saml;
     if (update.samlDisplayName !== undefined) this.samlName = update.samlDisplayName;
+  }
+  /** Hosted mode: a module whose method is a tenant's setting answers it per tenant (spec §22.12). */
+  addSignInResolver(resolver: SignInResolver): void {
+    this.resolvers.push(resolver);
+  }
+  /**
+   * The methods `of`'s tenant offers: the server-wide ones, with each resolver's answer over them. `of.tenant` is read
+   * only when a resolver is registered (hosted): a self-hosted `/meta` answers with no tenant loaded at all.
+   */
+  async signInMethodsFor(of: { readonly tenant: TenantScope }): Promise<SignInMethods> {
+    let methods: Record<string, unknown> = { ...this.signInMethods() };
+    for (const resolver of this.resolvers) methods = { ...methods, ...(await resolver(of.tenant)) };
+    if (methods.oidc !== true) delete methods.oidcDisplayName;
+    if (methods.saml !== true) {
+      delete methods.saml;
+      delete methods.samlDisplayName;
+    }
+    return methods as unknown as SignInMethods;
   }
   addCapability(name: string): void {
     this.capabilityNames.add(name);
