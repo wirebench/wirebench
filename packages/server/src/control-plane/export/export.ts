@@ -59,7 +59,7 @@ export interface ExportedAnchor {
 export interface OmittedItem {
   readonly table: string;
   readonly id: string;
-  readonly what: 'signature secret' | 'schedule secrets' | 'alert targets' | 'sealed setting';
+  readonly what: 'catch URL secret' | 'signature secret' | 'schedule secrets' | 'alert targets' | 'sealed setting';
 }
 
 export interface ExportManifest {
@@ -224,6 +224,8 @@ async function omittedItems(tx: TenantQuerier): Promise<OmittedItem[]> {
   const add = async (sql: string, table: string, what: OmittedItem['what']): Promise<void> => {
     for (const row of (await tx.query<{ id: string }>(sql)).rows) items.push({ table, id: row.id, what });
   };
+  // Every catch URL: its secret is its address, and the import mints a new one.
+  await add('select id from catch_urls order by id', 'catch_urls', 'catch URL secret');
   await add(
     'select id from catch_urls where signature_secret is not null order by id',
     'catch_urls',

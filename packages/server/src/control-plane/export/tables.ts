@@ -4,8 +4,8 @@
  * (§19.13): a new table is never exported, or left out, by accident.
  *
  * - **`export`**: every row, every column but `tenant_id` (the import's unit sets its own).
- * - **`redact`**: every row, with the named columns replaced by the SQL given for each, so a sealed value never
- *   leaves the server (§3.6). Most become `null`; a `not null` column becomes its empty value, and a column a check
+ * - **`redact`**: every row, with the named columns replaced by the SQL given for each, so no secret, sealed or not,
+ *   ever leaves the server (§3.6). Most become `null`; a `not null` column becomes its empty value, and a column a check
  *   ties to a sealed one goes with it (a catch URL's scheme with its secret), so the row still inserts.
  * - **`skip`**: no file at all: short-lived rows, a queue, the control plane's own, and what names this server.
  *
@@ -41,8 +41,15 @@ export const EXPORT_TABLES: Readonly<Record<string, TableClass>> = {
   ci_tokens: exported,
   catch_urls: {
     kind: 'redact',
-    // The secret is sealed; its scheme, hint and the reject flag are tied to it by the table's checks.
-    columns: { signature: 'null', signature_secret: 'null', signature_hint: 'null', reject_unverified: 'false' },
+    // The URL's own secret is its only credential: blanked, and minted again on import, so the old address stops
+    // working. The signature secret is sealed; its scheme, hint and reject flag are tied to it by the table's checks.
+    columns: {
+      secret: "''",
+      signature: 'null',
+      signature_secret: 'null',
+      signature_hint: 'null',
+      reject_unverified: 'false',
+    },
   },
   captures: exported,
   schedules: {

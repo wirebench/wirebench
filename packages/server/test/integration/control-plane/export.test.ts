@@ -62,6 +62,8 @@ describeDb('a tenant export (spec §22.9)', () => {
         expect(raw.includes(Buffer.from(marker).toString('base64').slice(0, 16)), `${marker} in base64`).toBe(false);
       }
       expect(raw.includes(x.f.admin.token)).toBe(false);
+      // A catch URL's own secret is its address: never exported either.
+      expect(raw.includes('C'.repeat(26))).toBe(false);
       // The redacted rows are still there, without what was sealed.
       const catchUrl = JSON.parse(entries.get('tables/catch_urls.ndjson')!.toString().trim()) as Record<
         string,
@@ -69,6 +71,7 @@ describeDb('a tenant export (spec §22.9)', () => {
       >;
       expect(catchUrl).toMatchObject({
         id: x.catchUrlId,
+        secret: '',
         signature: null,
         signature_secret: null,
         reject_unverified: false,
@@ -104,6 +107,7 @@ describeDb('a tenant export (spec §22.9)', () => {
       expect(bundle.toString('latin1')).toContain(`${x.head} refs/heads/main`);
       expect(manifest.omitted).toEqual(
         expect.arrayContaining([
+          { table: 'catch_urls', id: x.catchUrlId, what: 'catch URL secret' },
           { table: 'catch_urls', id: x.catchUrlId, what: 'signature secret' },
           { table: 'schedules', id: x.scheduleId, what: 'schedule secrets' },
           { table: 'schedules', id: x.scheduleId, what: 'alert targets' },

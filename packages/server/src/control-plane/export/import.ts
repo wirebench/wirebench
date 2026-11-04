@@ -36,6 +36,7 @@ import {
   type RowSeal,
 } from '../../audit-log/repo.js';
 import { recordAudit, SYSTEM_SOURCE, type ServerHooks } from '../../context.js';
+import { mintCatchSecret } from '../../hooks/secret.js';
 import { isWorkspaceId, type RepoStore } from '../../repos/repo-store.js';
 import { tenantPaths } from '../../tenancy/paths.js';
 import type { TenantScope } from '../../tenancy/scope.js';
@@ -54,6 +55,16 @@ const BATCH_CHARS = 8 * 1024 * 1024;
 const CHAIN_COLUMNS = new Set(['chain_seq', 'chain_hash']);
 /** Tables the import writes no rows of: the re-key makes the target's anchor. */
 const NOT_INSERTED = new Set(['audit_chain_anchor']);
+
+/**
+ * What the import writes in place of an exported value, per table: a catch URL's secret, which the export blanks
+ * (spec §22.9), is minted fresh, so the catch URL gets a new address and the old one never answers again.
+ */
+const REWRITES: Readonly<Record<string, (row: Record<string, unknown>) => void>> = {
+  catch_urls: (row) => {
+    row['secret'] = mintCatchSecret();
+  },
+};
 
 const refuse = (code: string, message: string): WirebenchError => new WirebenchError(code, message);
 
@@ -257,8 +268,15 @@ async function insertTable(
     chars = 0;
   };
   const lines = createInterface({ input: createReadStream(file, { encoding: 'utf8' }), crlfDelay: Infinity });
-  for await (const line of lines) {
-    if (line === '') continue;
+  const rewrite = REWRITES[table];
+  for await (const read of lines) {
+    if (read === '') continue;
+    let line = read;
+    if (rewrite !== undefined) {
+      const row = JSON.parse(read) as Record<string, unknown>;
+      rewrite(row);
+      line = JSON.stringify(row);
+    }
     batch.push(line);
     chars += line.length;
     if (batch.length >= BATCH || chars >= BATCH_CHARS) await flush();

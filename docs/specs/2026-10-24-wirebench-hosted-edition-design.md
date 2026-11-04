@@ -2907,7 +2907,8 @@ Routes on the entry host, server-rendered in the entry page's style, no cookie a
   (§19.13). Skipped: the short-lived tables (flows, nonces, `device_tokens`, `agent_pairing_codes`, `agent_nonces`,
   `host_leases`, `limiter_buckets`, `send_slots`, `terminal_share_locations`, `audit_forward_queue`) and the control
   plane's own (`subscriptions`, `tenant_exports`). Redacted to null: every sealed value (`catch_urls.signature_secret`,
-  `schedules.secrets`, `schedules.alerts`, `tenant_settings.sealed`). **Sealed secrets are never exported** (§3.6),
+  `schedules.secrets`, `schedules.alerts`, `tenant_settings.sealed`). Blanked: `catch_urls.secret`, a catch URL's only
+  credential, which the import mints again. **Secrets are never exported**, sealed or not (§3.6),
   and neither are checkouts or the users' sealed `secrets.json`. Password and token hashes are exported, so people
   sign in after an import; the export is therefore as sensitive as the database, and is said so on the screen.
 - **The audit chain verifies on its own** (§13 criterion 6). `audit_events` is exported with its chain columns and
@@ -2935,8 +2936,8 @@ Routes on the entry host, server-rendered in the entry page's style, no cookie a
   re-seal the audit chain under the target tenant's key from the first event, then write `tenant.imported` with the
   source tenant id, key id, last sequence and hash. Re-keying is how §19.12's promise is met: a hosted tenant's chain
   is always under its derived key, and the source chain's seal is kept in that event (amends ADR-0036's note).
-- **What does not come back:** sealed values (so a schedule that held secrets is imported disabled, and a catch URL
-  with a signature secret is imported without one), sessions and device tokens (people sign in again), pairings and
+- **What does not come back:** secrets (so a schedule that held secrets is imported disabled, a catch URL with a
+  signature secret is imported without one, and every catch URL gets a new address), sessions and device tokens (people sign in again), pairings and
   checkouts. The command prints each such item by id.
 - **`admin tenant migrate-self-hosted` is not a command** (amends §8): the migration of an installation is its own
   export (`admin tenant export` on the self-hosted server) followed by `admin tenant import` on the hosted one, as

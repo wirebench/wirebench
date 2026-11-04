@@ -173,6 +173,12 @@ describeDb('a tenant import (spec §22.10)', () => {
         (await hostedDb.query<{ enabled: boolean }>('select enabled from schedules where id = $1', [x.scheduleId]))
           .rows,
       ).toEqual([{ enabled: false }]);
+      // The catch URL came back at a new address: a fresh secret, never the old one, never blank.
+      const secret = (
+        await hostedDb.query<{ secret: string }>('select secret from catch_urls where id = $1', [x.catchUrlId])
+      ).rows[0]!.secret;
+      expect(secret).toMatch(/^[0-7][0-9A-HJKMNP-TV-Z]{25}$/);
+      expect(secret).not.toBe('C'.repeat(26));
       // The chain, sealed again under the hosted tenant's key from the first event, verifies; the source's seal is kept.
       const verified = await verifyChain(hostedDb, keyOf(into.scope));
       expect(verified).toMatchObject({ kind: 'checked', result: 'intact', firstSeq: 1n });
