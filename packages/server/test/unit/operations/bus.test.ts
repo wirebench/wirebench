@@ -31,6 +31,7 @@ function fake(
     query?: (payload: string) => Promise<unknown>;
     scopeFor?: (tenantId: string) => Promise<TenantScope | undefined>;
     inboxLimit?: number;
+    lag?: (ms: number) => void;
   } = {},
 ) {
   const sent: string[] = [];
@@ -61,14 +62,17 @@ function fake(
     log,
     sendRetryDelaysMs: [1, 1],
     ...(options.inboxLimit !== undefined ? { inboxLimit: options.inboxLimit } : {}),
+    ...(options.lag !== undefined ? { lag: options.lag } : {}),
   });
   const listened: Listened[] = [];
   bus.onListen((event) => listened.push(event));
   /** A notification from the peer. */
-  const from = (kind: Parameters<typeof encode>[1], event: object): void => {
-    for (const payload of encode(PEER, kind, event) ?? []) heard?.(CHANNEL, payload);
+  const from = (kind: Parameters<typeof encode>[1], event: object, at?: number): void => {
+    for (const payload of encode(PEER, kind, event, 0, at) ?? []) heard?.(CHANNEL, payload);
   };
-  return { bus, hooks, sent, scopeFor, listened, from };
+  /** A payload as it came off the wire, the process's own included. */
+  const raw = (payload: string): void => heard?.(CHANNEL, payload);
+  return { bus, hooks, sent, scopeFor, listened, from, raw };
 }
 
 describe('the bus’s stop (review M4)', () => {
@@ -162,5 +166,26 @@ describe('the bus’s inbox (review M5)', () => {
       expect(resyncs).toEqual([{ tenantId: TENANT.tenantId }]);
     });
     expect(f.listened).toHaveLength(2);
+  });
+});
+
+describe('the bus’s lag (spec §20.8)', () => {
+  it('tells each peer notification’s age from its send time, and never its own or one not understood', async () => {
+    const lags: number[] = [];
+    const f = fake({ lag: (ms) => lags.push(ms) });
+    await f.bus.start();
+    f.from('headMoved', head(1), Date.now() - 250);
+    expect(lags).toHaveLength(1);
+    expect(lags[0]).toBeGreaterThanOrEqual(250);
+    expect(lags[0]).toBeLessThan(5_000);
+    // Its own echo, and a payload out of shape, are dropped before anything is measured.
+    f.bus.send('headMoved', head(2));
+    await vi.waitFor(() => {
+      expect(f.sent).toHaveLength(1);
+    });
+    f.raw(f.sent[0]!);
+    f.raw('not json');
+    expect(lags).toHaveLength(1);
+    await f.bus.stop(0);
   });
 });

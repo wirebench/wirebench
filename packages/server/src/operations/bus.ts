@@ -69,6 +69,8 @@ export interface BusDeps {
   /** The tenant's scope by id, `undefined` for none: how `accessChanged` and `licenseChanged` get theirs back. */
   readonly scopeFor: (tenantId: string) => Promise<TenantScope | undefined>;
   readonly log: FastifyBaseLogger;
+  /** Told each heard notification's lag, its send time to now: `wirebench.bus.lag` (spec §20.8). */
+  readonly lag?: (ms: number) => void;
   readonly queueLimit?: number;
   readonly inboxLimit?: number;
   readonly retryDelayMs?: number;
@@ -345,6 +347,7 @@ export class NotificationBus {
       return;
     }
     if (message.from === this.#deps.holder) return;
+    this.#deps.lag?.(Date.now() - message.at);
     this.#inbox.push(message);
     const limit = this.#deps.inboxLimit ?? INBOX_LIMIT;
     while (this.#inbox.length > limit) {

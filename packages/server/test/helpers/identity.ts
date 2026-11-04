@@ -99,6 +99,8 @@ export async function identityHarness(
     readonly bus?: ServerContext['bus'];
     /** The share relay of a `multi` server (spec §20.6). */
     readonly relay?: ServerContext['relay'];
+    /** The server's instruments, for a test that collects what was recorded (spec §20.8). */
+    readonly metrics?: ServerContext['metrics'];
     /**
      * The database repository lock the server always has (spec §20.4), on a lock pool of the harness's own, with
      * the git clients guarded as the server's are; `waitMs` shortens the 30 s wait. Off by default.
@@ -167,6 +169,7 @@ export async function identityHarness(
     ...(options.instance !== undefined ? { instance: options.instance } : {}),
     ...(options.bus !== undefined ? { bus: options.bus } : {}),
     ...(options.relay !== undefined ? { relay: options.relay } : {}),
+    ...(options.metrics !== undefined ? { metrics: options.metrics } : {}),
   });
   const directory = directoryOf(ctx.tenancy);
   await directory.load();

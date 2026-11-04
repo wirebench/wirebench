@@ -17,6 +17,7 @@ import { requireFeature } from './licensing/gate.js';
 import type { BusEvents } from './operations/bus.js';
 import type { ServerInstance } from './operations/instances.js';
 import type { InstanceRelay } from './operations/internal-server.js';
+import type { ServerMetrics } from './operations/metrics/instruments.js';
 import type { RepoStore } from './repos/repo-store.js';
 import type { TenantScope } from './tenancy/scope.js';
 import { outsideTenantUnit, type TenantQuerier } from './tenancy/tenant-db.js';
@@ -610,6 +611,11 @@ export interface ServerContext {
    * share routes on it. Set in `multi` only; a `single` server has no internal listener and never dials.
    */
   readonly relay?: InstanceRelay;
+  /**
+   * The server's instruments (spec §20.8): on the no-op meter unless the operator set an OTLP endpoint, so a module
+   * records without asking whether metrics are on.
+   */
+  readonly metrics: ServerMetrics;
   /** Replaced by the licensing module in `register()`; the one field a module may assign (licensing spec §5.1). */
   license: LicenseService;
 }

@@ -296,6 +296,32 @@ The per-workspace lock and the live-updates hub live in the server process. Run 
 directory: two would interleave pushes and miss each other's events.
 </Aside>
 
+## Metrics
+
+The server sends no metrics unless you point it at a collector. Set `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT`
+(the full URL, such as `http://collector:4318/v1/metrics`) or `OTEL_EXPORTER_OTLP_ENDPOINT` (the base URL;
+`/v1/metrics` is added), and the server pushes OpenTelemetry metrics there over OTLP/HTTP (JSON). With neither
+set, nothing is collected or sent. These are OpenTelemetry's own variables, read by its SDK; `config check` does
+not list them.
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `OTEL_EXPORTER_OTLP_HEADERS` | — | Headers for the collector, `key=value,…` (an API key, say). |
+| `OTEL_EXPORTER_OTLP_TIMEOUT` | `10000` | How long one export may take, in milliseconds. |
+| `OTEL_METRIC_EXPORT_INTERVAL` | `60000` | How often the numbers are pushed, in milliseconds. |
+| `OTEL_METRIC_EXPORT_TIMEOUT` | `30000` | How long one collection may take, in milliseconds; at most the interval. |
+| `OTEL_SERVICE_NAME` | `wirebench-server` | The `service.name` resource attribute. |
+| `OTEL_RESOURCE_ATTRIBUTES` | — | More resource attributes, `key=value,…`. |
+
+Each process is `service.instance.id` (its instance id, as `admin instances` lists it) with its version as
+`service.version`. The instruments are `wirebench.http.requests`, `wirebench.http.duration`,
+`wirebench.live.sockets`, `wirebench.host.instances`, `wirebench.sends`, `wirebench.budget.refusals`,
+`wirebench.schedules.runs`, `wirebench.repo.lock.wait`, `wirebench.bus.dropped`, `wirebench.bus.lag`,
+`wirebench.instances` and `wirebench.db.pool.waiting`. A team appears only by its id
+(`wirebench.tenant.id`, or `none`), a request only by its route template, method and status class: never a
+URL, a name, an email or anything a request carried. On shutdown the server pushes its last numbers, waiting
+at most 5 seconds for the collector.
+
 ## Upgrading
 
 The server applies pending migrations when it starts. To apply them ahead of a restart, run its
