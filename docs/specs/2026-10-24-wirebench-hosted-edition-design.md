@@ -2551,8 +2551,9 @@ Owner rulings (popup, 2026-11-04):
   `select` on every scoped table, for the deletion check (§22.11); nothing else. It needs no write on a scoped table:
   every per-tenant write runs in that tenant's unit on the app role.
 - **Checked at start-up in hosted mode,** after the app role's check of §19.4: the control role must have
-  `rolbypassrls`, must not be a superuser (`control-plane-role-superuser`), must own no table, and must differ from
-  both the app role and the owner. Any failure refuses start-up with its code.
+  `rolbypassrls`, must not be a superuser (`control-plane-role-superuser`), must have neither `rolcreaterole` nor
+  `rolcreatedb` (`control-plane-role-too-broad`), must own no table, schema, sequence, view, function or type
+  (`control-plane-role-owns`), and must differ from both the app role and the owner. Any failure refuses start-up with its code.
 - **Confined in code.** `controlDatabaseUrl` is not in `ModuleConfig`; `serve.ts` opens a pool of at most two
   connections and hands it to the control plane as a branded `ControlDb`, which only `src/control-plane/` may name.
   `check:tenant-scope` gains the rule, and allows `from tenants`, the control tables and `bypass` SQL in

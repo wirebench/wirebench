@@ -674,7 +674,7 @@ describeDb('migration 0021 on the frozen 0019 fixture: forced isolation (hosted 
     const started = performance.now();
     const { applied } = await migrate(db.owner, await allMigrations(BUILTIN_MODULES));
     console.info(`[tenancy] 0020 and 0021 on the 0019 fixture: ${(performance.now() - started).toFixed(0)} ms`);
-    expect(applied).toEqual([20, 21, 22]);
+    expect(applied).toEqual([20, 21, 22, 23]);
     await db.grant();
     tenantId = (await db.owner.query<{ id: string }>('select default_tenant_id as id from server_identity')).rows[0]!
       .id;
@@ -685,7 +685,7 @@ describeDb('migration 0021 on the frozen 0019 fixture: forced isolation (hosted 
     await removeTempDir(dataDir);
   });
 
-  it("enables and forces row-level security on the 36 scoped tables and 0022's three, and on no other", async () => {
+  it("enables and forces row-level security on the 36 scoped tables, 0022's three and 0023's three, and on no other", async () => {
     const security = await rowSecurityOf(db.owner);
     const on = security.filter((row) => row.enabled && row.forced).map((row) => row.table);
     expect(on).toEqual([...SCOPED_TABLES].sort());
@@ -712,7 +712,15 @@ describeDb('migration 0021 on the frozen 0019 fixture: forced isolation (hosted 
   });
 
   it('defaults every tenant_id to the setting, so an insert outside a unit has no tenant', async () => {
-    const tenantColumns = (await columnsOf(db.owner)).filter((column) => column.column === 'tenant_id');
+    const all = (await columnsOf(db.owner)).filter((column) => column.column === 'tenant_id');
+    // 0023's unscoped tenant_slugs_retired, signups and tenant_deletions name a tenant too, with no default and no
+    // policy: they are the control plane's, on the allowlist (spec §22.3).
+    const tenantColumns = all.filter((column) => SCOPED_TABLES.includes(column.table));
+    expect(all.filter((column) => !SCOPED_TABLES.includes(column.table)).map((column) => column.default)).toEqual([
+      null,
+      null,
+      null,
+    ]);
     expect(tenantColumns.map((column) => column.table).sort()).toEqual([...SCOPED_TABLES].sort());
     for (const column of tenantColumns) {
       expect(column, column.table).toMatchObject({ type: 'uuid', notNull: true, default: SETTING_EXPRESSION });

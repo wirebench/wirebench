@@ -43,6 +43,18 @@
  *   touch it.
  * - **No `pg_notify` and no `LISTEN` outside `src/operations/`** (spec §20.3): the notification bus is the one
  *   sender and listener, so every payload goes through its codec, which carries ids only.
+ * - **The control plane's connection stays in `src/control-plane/`** (spec §22.2, ADR-0039): `ControlDb`, the
+ *   functions that open the control pool and hand it to the control-plane module's factory (`withControlPool`), and
+ *   any import of `control-db`, outside it and `serve.ts` (which opens the pool and hands it over; the pool is never
+ *   on the shared context, and a `control` read off a context, `ctx.control` or `ctx['control']`, is refused
+ *   everywhere); `controlDatabaseUrl` outside `config.ts`, `serve.ts`
+ *   and `tenancy/cli.ts` (`admin tenancy role`, which creates the role), in the forms the database URLs are refused
+ *   in; and SQL naming `signups`, `billing_events`, `tenant_slugs_retired` or `tenant_deletions` outside
+ *   `src/control-plane/` (`tenancy/grants.ts` lists them for the roles). `from tenants` and `join tenants` are allowed
+ *   in `src/control-plane/` as in `src/tenancy/`; setting the tenant is not.
+ *
+ * The gate is textual: a name built by string concatenation, or an aliased re-export made from inside an allowed
+ * directory, are known gaps; the type brands (`TenantScope`, `ControlDb`) and code review cover them.
  *
  * `node scripts/check-tenant-scope.ts` prints the result and exits non-zero, listing `file:line`, on any hit.
  * Wired into `pnpm check` as `pnpm check:tenant-scope`. ESLint's config is protected, which is why this is a
@@ -119,6 +131,9 @@ export const RAW_DB_ALLOWED: readonly string[] = [
   'packages/server/src/identity/cli.ts',
   // `admin instances` (spec §20.10): it opens the pool to read the unscoped instance table, and no tenant.
   'packages/server/src/operations/cli.ts',
+  // The control role's pool (spec §22.2): `openControlDb` builds it, and only `serve.ts` calls that. The control-plane
+  // rules below keep `ControlDb` and the control URL to `src/control-plane/`.
+  'packages/server/src/control-plane/control-db.ts',
 ];
 const RAW_DB_DIRS: readonly string[] = ['packages/server/src/db/', TENANCY_DIR];
 /** The raw pool and its types (`db/pool.ts`, `db/querier.ts`), by the end of a module specifier. */
@@ -126,15 +141,64 @@ const RAW_DB_MODULE = /(?:^|\/)db\/(?:pool|querier)(?:\.[cm]?[jt]s)?$/;
 /** The PostgreSQL driver and its kin (`pg`, `pg-pool`, `pg/lib/…`, `postgres`): a pool a module could open itself. */
 const DRIVER_MODULE = /^(?:pg(?:-[\w-]+)?|postgres)(?:\/.*)?$/;
 
-/** SQL that picks a tenant, or reads the tenants, itself. */
-const TENANT_SQL: readonly { readonly pattern: RegExp; readonly rule: ScopeHit['rule'] }[] = [
+/**
+ * SQL that picks a tenant, or reads the tenants, itself. `tenantsTable` marks the reads of the tenants table, which
+ * `src/control-plane/` may make too (spec §22.2).
+ */
+const TENANT_SQL: readonly {
+  readonly pattern: RegExp;
+  readonly rule: ScopeHit['rule'];
+  readonly tenantsTable?: true;
+}[] = [
   { pattern: /\bset_config\b/i, rule: 'tenant-sql' },
   { pattern: /\bwirebench\.tenant_id\b/i, rule: 'tenant-sql' },
-  { pattern: /\b(?:from|join)\s+(?:only\s+)?(?:"?\w+"?\.)?"?tenants"?(?![\w"])/i, rule: 'tenant-sql' },
+  {
+    pattern: /\b(?:from|join)\s+(?:only\s+)?(?:"?\w+"?\.)?"?tenants"?(?![\w"])/i,
+    rule: 'tenant-sql',
+    tenantsTable: true,
+  },
   // A comma join: `from users u, tenants t`.
-  { pattern: /\bfrom\b[^;]*?,\s*(?:only\s+)?(?:"?\w+"?\.)?"?tenants"?(?![\w"])/i, rule: 'tenant-sql' },
+  {
+    pattern: /\bfrom\b[^;]*?,\s*(?:only\s+)?(?:"?\w+"?\.)?"?tenants"?(?![\w"])/i,
+    rule: 'tenant-sql',
+    tenantsTable: true,
+  },
   { pattern: /\bfor_each_tenant\b/i, rule: 'for-each-tenant' },
 ];
+
+/** The control plane's directory (spec §22.2): the one place its pool, its URL and its tables are named. */
+export const CONTROL_PLANE_DIR = 'packages/server/src/control-plane/';
+/** Outside it, the file that opens the control pool and hands it to the control-plane module's factory. */
+export const CONTROL_DB_ALLOWED: readonly string[] = ['packages/server/src/serve.ts'];
+/**
+ * The control pool's type, the function that opens it (`control-db.ts`) and the one that hands it to the control-plane
+ * module (`module.ts`), with the module's options type. The context handle's old names (`ControlHandle`,
+ * `controlHandle`, `controlDbOf`, Part A review) stay refused, so the pool cannot go back on the context unnoticed.
+ */
+const CONTROL_DB_NAMES: readonly string[] = [
+  'ControlDb',
+  'openControlDb',
+  'withControlPool',
+  'ControlPlaneOptions',
+  'ControlHandle',
+  'controlHandle',
+  'controlDbOf',
+];
+/** The names a module's context goes by: a `control` read off one is the old handle (Part A review). */
+const CONTEXT_NAMES: readonly string[] = ['ctx', 'context'];
+/** `control-plane/control-db.ts`, by the end of a module specifier. */
+const CONTROL_DB_MODULE = /(?:^|\/)control-db(?:\.[cm]?[jt]s)?$/;
+/** Where the control role's URL may be read: the config, the start-up and `admin tenancy role`, which creates it. */
+export const CONTROL_URL_ALLOWED: readonly string[] = [
+  'packages/server/src/config.ts',
+  'packages/server/src/serve.ts',
+  'packages/server/src/tenancy/cli.ts',
+];
+const CONTROL_URL = 'controlDatabaseUrl';
+/** The control plane's own unscoped tables (migration `0023`, spec §22.3), by name, in SQL text. */
+const CONTROL_SQL = /(?<![\w"])"?(?:signups|billing_events|tenant_slugs_retired|tenant_deletions)"?(?![\w"])/i;
+/** Outside `src/control-plane/`, the list the roles' grants read them from. */
+export const CONTROL_SQL_ALLOWED: readonly string[] = ['packages/server/src/tenancy/grants.ts'];
 
 export interface ScopeHit {
   readonly file: string;
@@ -155,7 +219,11 @@ export interface ScopeHit {
     | 'tenant-sql'
     | 'for-each-tenant'
     | 'instances-sql'
-    | 'notify-sql';
+    | 'notify-sql'
+    | 'control-db'
+    | 'context-control'
+    | 'control-url'
+    | 'control-sql';
 }
 
 const PUBLIC_URL = 'publicUrl';
@@ -251,6 +319,17 @@ export function findScopeMints(file: string, content: string): ScopeHit[] {
   return hits;
 }
 
+/** The module an import, a re-export, a dynamic import, a `require` or an `import()` type names. */
+function specifier(node: ts.Node): ts.Expression | undefined {
+  if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) return node.moduleSpecifier;
+  if (ts.isImportEqualsDeclaration(node) && ts.isExternalModuleReference(node.moduleReference)) {
+    return node.moduleReference.expression;
+  }
+  if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword) return node.arguments[0];
+  if (ts.isImportTypeNode(node) && ts.isLiteralTypeNode(node.argument)) return node.argument.literal;
+  return undefined;
+}
+
 /**
  * Every import of the raw pool outside the files that hold it, and every piece of SQL text that sets the tenant,
  * names the tenants table, calls `for_each_tenant` or names `server_instances` outside `src/operations/`. Strings and template text are read from the syntax tree, so
@@ -267,15 +346,7 @@ export function findRawDatabase(file: string, content: string): ScopeHit[] {
   const holdsPool = RAW_DB_ALLOWED.includes(file) || RAW_DB_DIRS.some((dir) => file.startsWith(dir));
   const inTenancy = file.startsWith(TENANCY_DIR);
   const inOperations = file.startsWith(OPERATIONS_DIR);
-  const specifier = (node: ts.Node): ts.Expression | undefined => {
-    if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) return node.moduleSpecifier;
-    if (ts.isImportEqualsDeclaration(node) && ts.isExternalModuleReference(node.moduleReference)) {
-      return node.moduleReference.expression;
-    }
-    if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword) return node.arguments[0];
-    if (ts.isImportTypeNode(node) && ts.isLiteralTypeNode(node.argument)) return node.argument.literal;
-    return undefined;
-  };
+  const inControlPlane = file.startsWith(CONTROL_PLANE_DIR);
   const visit = (node: ts.Node): void => {
     const from = specifier(node);
     if (
@@ -293,9 +364,12 @@ export function findRawDatabase(file: string, content: string): ScopeHit[] {
     if (text !== undefined) {
       // One hit per piece of text and rule, however many of its patterns it matches.
       const rules = new Set(
-        TENANT_SQL.filter(({ pattern, rule }) => (rule === 'for-each-tenant' || !inTenancy) && pattern.test(text)).map(
-          ({ rule }) => rule,
-        ),
+        TENANT_SQL.filter(
+          ({ pattern, rule, tenantsTable }) =>
+            (rule === 'for-each-tenant' || !inTenancy) &&
+            !(tenantsTable === true && inControlPlane) &&
+            pattern.test(text),
+        ).map(({ rule }) => rule),
       );
       for (const rule of rules) hit(node, rule);
       if (!inOperations && INSTANCES_SQL.test(text)) hit(node, 'instances-sql');
@@ -303,6 +377,93 @@ export function findRawDatabase(file: string, content: string): ScopeHit[] {
     }
     if (ts.isIdentifier(node) && node.text === 'for_each_tenant') {
       hit(node, 'for-each-tenant');
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return hits;
+}
+
+/**
+ * The control plane's rules (spec §22.2): its pool's names and module outside `src/control-plane/` and `serve.ts`, its
+ * URL outside {@link CONTROL_URL_ALLOWED}, and SQL text naming its tables outside `src/control-plane/`. Read from the
+ * syntax tree, as the other rules are, so a comment never counts.
+ */
+export function findControlPlane(file: string, content: string): ScopeHit[] {
+  const source = ts.createSourceFile(file, content, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+  const hits: ScopeHit[] = [];
+  const lines = content.split('\n');
+  const hit = (node: ts.Node, rule: ScopeHit['rule']): void => {
+    const line = source.getLineAndCharacterOfPosition(node.getStart(source)).line;
+    hits.push({ file, line: line + 1, text: (lines[line] ?? '').trim(), rule });
+  };
+  const inControlPlane = file.startsWith(CONTROL_PLANE_DIR);
+  const poolAllowed = inControlPlane || CONTROL_DB_ALLOWED.includes(file);
+  const urlAllowed = CONTROL_URL_ALLOWED.includes(file);
+  const sqlAllowed = inControlPlane || CONTROL_SQL_ALLOWED.includes(file);
+  /** `ctx`, `context`, or a property of that name (`server.ctx`), through parentheses, casts and `!`. */
+  const isContext = (expression: ts.Expression): boolean => {
+    let node = expression;
+    while (
+      ts.isParenthesizedExpression(node) ||
+      ts.isAsExpression(node) ||
+      ts.isTypeAssertionExpression(node) ||
+      ts.isNonNullExpression(node) ||
+      ts.isSatisfiesExpression(node)
+    ) {
+      node = node.expression;
+    }
+    return (
+      (ts.isIdentifier(node) && CONTEXT_NAMES.includes(node.text)) ||
+      (ts.isPropertyAccessExpression(node) && CONTEXT_NAMES.includes(node.name.text))
+    );
+  };
+  const visit = (node: ts.Node): void => {
+    // Everywhere, `src/control-plane/` and `serve.ts` included: the pool is never on the context.
+    if (ts.isPropertyAccessExpression(node) && node.name.text === 'control' && isContext(node.expression)) {
+      hit(node, 'context-control');
+    } else if (
+      ts.isElementAccessExpression(node) &&
+      ts.isStringLiteralLike(node.argumentExpression) &&
+      node.argumentExpression.text === 'control' &&
+      isContext(node.expression)
+    ) {
+      hit(node, 'context-control');
+    } else if (
+      ts.isVariableDeclaration(node) &&
+      ts.isObjectBindingPattern(node.name) &&
+      node.initializer !== undefined
+    ) {
+      const from = node.initializer;
+      if (isContext(from)) {
+        for (const element of node.name.elements) {
+          const key = element.propertyName ?? element.name;
+          if ((ts.isIdentifier(key) || ts.isStringLiteralLike(key)) && key.text === 'control') {
+            hit(element, 'context-control');
+          }
+        }
+      }
+    }
+    if (!poolAllowed) {
+      const from = specifier(node);
+      if (from !== undefined && ts.isStringLiteralLike(from) && CONTROL_DB_MODULE.test(from.text))
+        hit(node, 'control-db');
+      if (ts.isIdentifier(node) && CONTROL_DB_NAMES.includes(node.text)) hit(node, 'control-db');
+    }
+    if (!urlAllowed) {
+      if (ts.isPropertyAccessExpression(node) && node.name.text === CONTROL_URL) hit(node.name, 'control-url');
+      else if (ts.isStringLiteralLike(node) && node.text === CONTROL_URL) hit(node, 'control-url');
+      else if (ts.isBindingElement(node) && ts.isObjectBindingPattern(node.parent)) {
+        const key = node.propertyName ?? node.name;
+        if ((ts.isIdentifier(key) || ts.isStringLiteralLike(key)) && key.text === CONTROL_URL) hit(node, 'control-url');
+      }
+    }
+    if (!sqlAllowed) {
+      const text =
+        ts.isStringLiteralLike(node) || ts.isTemplateHead(node) || ts.isTemplateMiddle(node) || ts.isTemplateTail(node)
+          ? node.text
+          : undefined;
+      if (text !== undefined && CONTROL_SQL.test(text)) hit(node, 'control-sql');
     }
     ts.forEachChild(node, visit);
   };
@@ -322,7 +483,12 @@ export async function checkTenantScope(repoRoot: string): Promise<ScopeHit[]> {
   for (const path of await sourceFiles(join(repoRoot, SOURCE_ROOT))) {
     const file = relative(repoRoot, path).split(sep).join('/');
     const content = await readFile(path, 'utf8');
-    hits.push(...findScopeMints(file, content), ...findUrlReads(file, content), ...findRawDatabase(file, content));
+    hits.push(
+      ...findScopeMints(file, content),
+      ...findUrlReads(file, content),
+      ...findRawDatabase(file, content),
+      ...findControlPlane(file, content),
+    );
   }
   return hits;
 }
@@ -349,6 +515,11 @@ if (process.argv[1] !== undefined && fileURLToPath(import.meta.url) === process.
       'for-each-tenant': 'for_each_tenant is for migrations only',
       'instances-sql': 'server_instances outside src/operations/',
       'notify-sql': 'pg_notify or LISTEN outside src/operations/',
+      'control-db': 'the control pool (ControlDb, control-db) outside src/control-plane/ and serve.ts',
+      'context-control': 'a control pool read off the context; serve.ts hands it to the control-plane module alone',
+      'control-url': 'controlDatabaseUrl outside config.ts, serve.ts and tenancy/cli.ts',
+      'control-sql':
+        'SQL naming signups, billing_events, tenant_slugs_retired or tenant_deletions outside src/control-plane/',
     } as const;
     for (const hit of hits) console.error(`${hit.file}:${String(hit.line)}: ${WHAT[hit.rule]}: ${hit.text}`);
     console.error('A module takes its scope, and its URL, from the request or the job loop (spec §19.5, §19.8).');

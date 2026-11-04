@@ -16,6 +16,7 @@ import {
   instanceModeOf,
   loadConfig,
   migrationUrlOf,
+  moduleConfigOf,
   MULTI_NEEDS_ENTERPRISE,
   type ServerConfig,
 } from './config.js';
@@ -32,7 +33,9 @@ import { loadMigrations, migrate, MIGRATIONS_DIR, pendingMigrations, type Migrat
 import { APPLICATION_NAME, createDatabase, createLockPool, openSession } from './db/pool.js';
 import { BusSignals, NotificationBus } from './operations/bus.js';
 import { DatabaseRepoLock, guardGit, REPO_LOCK_POOL_MAX, REPO_LOCK_WAIT_MS } from './operations/repo-lock.js';
-import { checkAppRole, checkPostgresVersion } from './tenancy/checks.js';
+import { checkAppRole, checkControlRole, checkPostgresVersion } from './tenancy/checks.js';
+import { openControlDb, type ControlDb } from './control-plane/control-db.js';
+import { withControlPool } from './control-plane/module.js';
 import { allowsMultipleInstances, drainWithin, InstanceRegistry, licenseLapseWatch } from './operations/instances.js';
 import { limiterSweep } from './operations/limiter.js';
 import { OPERATIONS_MIGRATIONS_DIR } from './operations/migrations.js';
@@ -44,7 +47,7 @@ import { RunningLock, SERVER_DRAIN_MS, serverRunning, type RunningLockOptions } 
 import { operatorPublicUrl } from './tenancy/urls.js';
 import { environmentKeyRoot } from './tenancy/keys.js';
 import { createTenancy, directoryOf } from './tenancy/tenancy.js';
-import { ensureAppRole, roleMode } from './tenancy/roles.js';
+import { ensureAppRole, ensureControlRole, roleMode, roleNameOf } from './tenancy/roles.js';
 import { ExitCode, packageVersion, type ServerIo } from './io.js';
 import { NO_HOOKS_DIR, RepoStore } from './repos/repo-store.js';
 import {
@@ -170,9 +173,19 @@ async function checkAppSignIn(db: Database, appUrl: string): Promise<void> {
  * As the owner: the pending migrations, then the app role and its grants (`ensureAppRole`), every time,
  * so a table a migration just created is granted before the app role connects.
  */
-async function migrateAndGrant(owner: Database, appUrl: string, migrations: readonly Migration[]): Promise<number[]> {
+/**
+ * Migrates as the owner, then grants the app role, and in hosted mode the control role (spec §22.2): at every start,
+ * so a table a migration scoped since is read by the control role from this start on.
+ */
+async function migrateAndGrant(
+  owner: Database,
+  appUrl: string,
+  migrations: readonly Migration[],
+  controlUrl?: string,
+): Promise<number[]> {
   const { applied } = await migrate(owner, migrations);
   await ensureAppRole(owner, appUrl);
+  if (controlUrl !== undefined) await ensureControlRole(owner, controlUrl, appUrl);
   return applied;
 }
 
@@ -347,7 +360,13 @@ export async function runMigrate(
     }
     const applied =
       mode === 'two-roles'
-        ? await migrateAndGrant(db, config.databaseUrl, migrations)
+        ? // In hosted mode `migrate` grants the control role too, as a start-up does (spec §22.2).
+          await migrateAndGrant(
+            db,
+            config.databaseUrl,
+            migrations,
+            config.mode === 'hosted' ? config.controlDatabaseUrl : undefined,
+          )
         : (await migrate(db, migrations)).applied;
     io.stdout.write(
       applied.length === 0 ? 'migrations: nothing to apply\n' : `migrations: applied ${applied.join(', ')}\n`,
@@ -401,11 +420,40 @@ export async function runMigrate(
     }
     return ExitCode.Ok;
   } catch (error) {
+    if (isConfigFailure(error)) {
+      io.stderr.write(`${error.code}: ${error.message}\n`);
+      return ExitCode.Config;
+    }
     io.stderr.write(`${error instanceof StartupError ? error.message : migrationFailure(error)}\n`);
     return ExitCode.Migration;
   } finally {
     await db.close();
   }
+}
+
+/**
+ * The refusals before or while migrating that an operator fixes in the configuration or the database's roles, not
+ * in a migration: they exit with `ExitCode.Config`, as a refused check does. The control role's (spec §22.2) are
+ * among them: a URL naming the app role or the owner, a missing password or role, a role that is too broad.
+ */
+const CONFIG_FAILURES: ReadonlySet<string> = new Set([
+  'server-postgres-too-old',
+  'tenancy-reverting',
+  'tenancy-files-left-behind',
+  'tenancy-workspaces-missing',
+  'tenancy-control-url-invalid',
+  'tenancy-control-password-missing',
+  'tenancy-control-role-create-refused',
+  'control-plane-role-shared',
+  'control-plane-role-superuser',
+  'control-plane-role-too-broad',
+  'control-plane-role-owns',
+  'control-plane-role-no-bypass',
+]);
+
+/** Whether `error` is one of {@link CONFIG_FAILURES}. */
+export function isConfigFailure(error: unknown): error is WirebenchError {
+  return error instanceof WirebenchError && CONFIG_FAILURES.has(error.code);
 }
 
 /** What the bus's listening connection is called in `pg_stat_activity`: a server's, so a revert waits for it. */
@@ -429,7 +477,24 @@ export async function startServer(
   const migrationUrl = migrationUrlOf(config);
   // The pool's errors are logged once the logger exists; a connection failing before then fails a query too.
   const dbLog: { warn?: (error: Error) => void } = {};
+  // The control plane's pool on the control role, hosted mode only (spec §22.2): the one connection past the policy,
+  // at most two, handed to the control-plane module's factory (`withControlPool`) and to no other: never on the
+  // context. `controlPlaneProblems` makes the URL required in hosted mode; a config built without it still refuses here.
+  const controlUrl = config.mode === 'hosted' ? config.controlDatabaseUrl : undefined;
+  if (config.mode === 'hosted' && controlUrl === undefined) {
+    throw new StartupError(
+      ExitCode.Config,
+      'control-plane-control-url-missing: hosted mode needs WIREBENCH_SERVER_CONTROL_DATABASE_URL',
+    );
+  }
   const db = createDatabase(config.databaseUrl, { onError: (error) => dbLog.warn?.(error) });
+  const control: ControlDb | undefined =
+    controlUrl === undefined ? undefined : openControlDb(controlUrl, { onError: (error) => dbLog.warn?.(error) });
+  /** Both pools, on every path that ends the start or the server: the control pool first, then the app's. */
+  const closePools = async (): Promise<void> => {
+    await control?.close();
+    await db.close();
+  };
   // Set once the server can stop itself. Losing the lock before then is recorded, and fails the start.
   const lockLost: { stop?: (error: Error) => void; early?: Error } = {};
   const lockOptions = {
@@ -450,7 +515,7 @@ export async function startServer(
   const fail = async (error: StartupError): Promise<never> => {
     await runningLock?.release();
     await owner?.close();
-    await db.close();
+    await closePools();
     throw error;
   };
   try {
@@ -471,19 +536,13 @@ export async function startServer(
       await refuseWhileReverting(owner);
       // Before anything is migrated: the refusal then leaves the database as it was too.
       await checkNothingLeftBehind(owner, config.dataDir);
-      if (mode === 'two-roles') await migrateAndGrant(owner, config.databaseUrl, migrations);
+      if (mode === 'two-roles') await migrateAndGrant(owner, config.databaseUrl, migrations, controlUrl);
       else await migrate(owner, migrations);
       if (mode === 'two-roles') await checkAppSignIn(db, config.databaseUrl);
     }
   } catch (error) {
     if (error instanceof StartupError) return fail(error);
-    if (
-      error instanceof WirebenchError &&
-      (error.code === 'server-postgres-too-old' ||
-        error.code === 'tenancy-reverting' ||
-        error.code === 'tenancy-files-left-behind' ||
-        error.code === 'tenancy-workspaces-missing')
-    ) {
+    if (isConfigFailure(error)) {
       return fail(new StartupError(ExitCode.Config, `${error.code}: ${error.message}`));
     }
     return fail(new StartupError(ExitCode.Migration, migrationFailure(error)));
@@ -549,7 +608,11 @@ export async function startServer(
     config.secretsKey !== undefined ? { keyRoot: environmentKeyRoot(config.secretsKey) } : {},
   );
   try {
-    await checkAppRole(db, config.mode, (message, details) => warnings.push({ message, details }));
+    const appRole = await checkAppRole(db, config.mode, (message, details) => warnings.push({ message, details }));
+    // After the app role's, as spec §22.2 orders them; the first query on the control pool.
+    if (control !== undefined) {
+      await checkControlRole(control, { app: appRole.role, owner: roleNameOf(migrationUrl) ?? appRole.role });
+    }
     // A module list that stops short of 0019 leaves 0020 out (`allMigrations`), and with it every tenant.
     tenantsLoaded = await directoryOf(tenancy).load();
     if (!tenantsLoaded && options.allowNoTenants !== true) {
@@ -601,7 +664,8 @@ export async function startServer(
   // The modules register on these before the bus exists; the bus is attached to them once made.
   const busSignals = new BusSignals();
   const ctx: ServerContext = {
-    config,
+    // A copy without the database URLs (Part A review): `ModuleConfig` drops them from the type, this from the object.
+    config: moduleConfigOf(config),
     tenancy,
     repos,
     git,
@@ -616,12 +680,12 @@ export async function startServer(
   let app: FastifyInstance;
   try {
     app = await buildServer(ctx, {
-      modules,
+      modules: withControlPool(modules, control),
       ...(options.logStream !== undefined ? { logStream: options.logStream } : {}),
     });
   } catch (error) {
     await heldLock.release();
-    await db.close(); // a module that fails to register must not leave the pool holding the process open
+    await closePools(); // a module that fails to register must not leave the pool holding the process open
     if (error instanceof StartupError) throw error;
     // Discovery against the IdP, a duplicate decorator, a bad route: all configuration-shaped
     // failures of a module's register(), reported as exit 2 with the module's own message.
@@ -643,7 +707,7 @@ export async function startServer(
     await app.close();
     await registry.stop();
     await heldLock.release();
-    await db.close();
+    await closePools();
     throw lostDuringStart();
   }
   // Spec §20.1, ruling 3: several instances of a self-hosted server need Enterprise, valid or in grace. Hosted mode
@@ -654,7 +718,7 @@ export async function startServer(
     if (!allowsMultipleInstances(state)) {
       await app.close();
       await heldLock.release();
-      await db.close();
+      await closePools();
       throw new StartupError(
         ExitCode.Config,
         `server-instances-need-enterprise: ${MULTI_NEEDS_ENTERPRISE}; the license here is ${
@@ -699,7 +763,7 @@ export async function startServer(
   } catch (error) {
     await app.close();
     await heldLock.release();
-    await db.close();
+    await closePools();
     throw new StartupError(ExitCode.Migration, `the notification bus could not listen: ${migrationFailure(error)}`);
   }
   try {
@@ -708,7 +772,7 @@ export async function startServer(
     await app.close();
     await bus.stop(0);
     await heldLock.release();
-    await db.close();
+    await closePools();
     throw new StartupError(ExitCode.Migration, `the instance row could not be written: ${migrationFailure(error)}`);
   }
   app.log.info({ holder: registry.holder, instances }, 'running as this instance');
@@ -719,7 +783,7 @@ export async function startServer(
     await bus.stop(0);
     await registry.stop();
     await heldLock.release();
-    await db.close();
+    await closePools();
     const code = (error as { readonly code?: unknown }).code;
     throw new StartupError(
       ExitCode.Config,
@@ -775,7 +839,7 @@ export async function startServer(
       // A clean stop deletes its own row; a crash leaves it to the next renew's sweep.
       await registry.stop();
       await heldLock.release();
-      await db.close();
+      await closePools();
     })();
     return closing;
   };

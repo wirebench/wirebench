@@ -1,6 +1,6 @@
 /**
  * The upgrade the owner ruling of 2026-10-29 protects (Part A review m6): an installation at `0019` whose one
- * URL is the database's bootstrap superuser. It keeps starting, migrates to the latest (`0022`), warns that row-level security
+ * URL is the database's bootstrap superuser. It keeps starting, migrates to the latest (`0023`), warns that row-level security
  * cannot be relied on for its role, and its accounts still sign in.
  */
 import { directoryOf } from '../../../src/tenancy/tenancy.js';
@@ -55,13 +55,13 @@ describeDb('a 0019 installation on one superuser URL (spec §19.4, owner ruling 
     await removeTempDir(dataDir);
   });
 
-  it('listens, at 0022, with the default tenant loaded', async () => {
+  it('listens, at 0023, with the default tenant loaded', async () => {
     const health = await fetch(`http://127.0.0.1:${String(server.port)}/healthz`);
     expect(health.status).toBe(200);
     const applied = await db.owner.query<{ version: number }>(
       'select max(version)::int as version from schema_migrations',
     );
-    expect(applied.rows[0]!.version).toBe(22);
+    expect(applied.rows[0]!.version).toBe(23);
     expect(directoryOf(server.ctx.tenancy).defaultScope().slug).toBe('default');
   });
 

@@ -11,6 +11,7 @@ import { markStepsDone } from '../../helpers/tenancy.js';
 import { createHash, generateKeyPairSync, randomBytes, randomUUID, sign } from 'node:crypto';
 import type { RouteOptions } from 'fastify';
 import { expect } from 'vitest';
+import { controlPlaneModule } from '../../../src/control-plane/module.js';
 import { entryModule } from '../../../src/entry/module.js';
 import { agentModule } from '../../../src/agent/module.js';
 import { chainKeys } from '../../../src/audit-log/chain/keys.js';
@@ -185,6 +186,7 @@ export async function isolationWorld(options: { readonly policiesDisabled?: bool
         hostModule({ now, setTimer: timers.setTimer, browserRoot: build.root }),
         agentModule({ now, sweepIntervalMs: 0 }),
         entryModule(),
+        controlPlaneModule(),
       ];
       modules.push('identity', ...list.map((module) => module.name));
       return list;
@@ -504,6 +506,21 @@ export async function fill(t: TwoTenants, tenant: Tenant): Promise<Filled> {
     holder,
     at,
   ]);
+
+  // ---- 0023's tables (slice 7), used from its later tasks: a row each by hand, each carrying the slug.
+  await tenant.tdb.query(
+    `insert into subscriptions (provider, provider_ref, plan, seats, status, last_event_at)
+     values ('paddle', $1, 'team', 5, 'active', $2)`,
+    [`sub_${slug}`, at],
+  );
+  await tenant.tdb.query(
+    "insert into tenant_exports (id, requested_by, status, requested_at) values ($1, $2, 'ready', $3)",
+    [`export-${slug}`, browser.user.id, at],
+  );
+  await tenant.tdb.query(
+    "insert into tenant_settings (section, value, updated_at, updated_by) values ('mail', $1, $2, $3)",
+    [JSON.stringify({ from: `@${slug}` }), at, browser.user.id],
+  );
 
   // ---- the audit log: forward one recorded event (no sink is configured), so the queue holds a row too
   // Named by tenant: the negative run's schema has the policy off.

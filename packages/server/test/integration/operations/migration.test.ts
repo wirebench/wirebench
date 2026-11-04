@@ -98,11 +98,13 @@ describeDb(
       await db?.close();
     });
 
-    it('is the last migration, from its own folder, after the tenancy ones', async () => {
+    it('comes from its own folder, right after the tenancy ones', async () => {
       const migrations = await allMigrations(BUILTIN_MODULES);
-      expect(migrations.at(-1)).toMatchObject({ version: 22, name: 'operations' });
-      const ledger = await db.owner.query<{ v: number }>('select max(version)::int as v from schema_migrations');
-      expect(ledger.rows[0]!.v).toBe(22);
+      expect(migrations.find((m) => m.version === 22)).toMatchObject({ name: 'operations' });
+      const ledger = await db.owner.query<{ v: number }>(
+        'select count(*)::int as v from schema_migrations where version = 22',
+      );
+      expect(ledger.rows[0]!.v).toBe(1);
     });
 
     it('creates server_instances as spec §20.2 has it, unscoped and on the allowlist', async () => {
