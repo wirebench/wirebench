@@ -85,6 +85,7 @@ describe('the plumbing allow-list', () => {
       'write-tree',
       'commit-tree',
       'update-ref',
+      'bundle',
     ]);
     expect(GIT_PLUMBING_SUBCOMMANDS.filter((name) => (GIT_SUBCOMMANDS as readonly string[]).includes(name))).toEqual(
       [],

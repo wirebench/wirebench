@@ -47,8 +47,9 @@ export const GIT_SUBCOMMANDS = [
 export type GitSubcommand = (typeof GIT_SUBCOMMANDS)[number];
 
 /**
- * Git plumbing, for Wirebench Server's commit store only (server-sync spec §3.3, R1): it builds
- * commits in a bare repository, with no working tree. This is a second list rather than a longer
+ * Git plumbing, for Wirebench Server only (server-sync spec §3.3, R1): the commit store builds
+ * commits in a bare repository, with no working tree, and a tenant's export and import bundle its
+ * repositories (hosted edition spec §22.9). This is a second list rather than a longer
  * {@link GIT_SUBCOMMANDS}, so the desktop's allow-list does not grow. Only a `GitCli` constructed
  * with `{ plumbing: true }`, or returned by {@link GitCli.withPlumbing}, accepts these.
  */
@@ -63,6 +64,9 @@ export const GIT_PLUMBING_SUBCOMMANDS = [
   'write-tree',
   'commit-tree',
   'update-ref',
+  // A tenant's export and import (hosted edition spec §22.9, §22.10): `bundle create … --all` under the repository
+  // lock, and `bundle verify` before an import fetches from one (with `fetch`, already on the ordinary list).
+  'bundle',
 ] as const;
 
 /** One of the subcommands {@link GIT_PLUMBING_SUBCOMMANDS} allows. */
