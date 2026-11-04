@@ -12,6 +12,8 @@ import { createHash, generateKeyPairSync, randomBytes, randomUUID, sign } from '
 import type { RouteOptions } from 'fastify';
 import { expect } from 'vitest';
 import { controlPlaneModule } from '../../../src/control-plane/module.js';
+import type { DnsLookup } from '../../../src/custom-domains/dns.js';
+import { customDomainsModule } from '../../../src/custom-domains/module.js';
 import { entryModule } from '../../../src/entry/module.js';
 import { agentModule } from '../../../src/agent/module.js';
 import { chainKeys } from '../../../src/audit-log/chain/keys.js';
@@ -110,6 +112,14 @@ export interface World {
   close(): Promise<void>;
 }
 
+/** The world's DNS: no name has a record, so no claim passes its check. */
+const noDns: DnsLookup = {
+  cname: () => Promise.reject(Object.assign(new Error('not found'), { code: 'ENOTFOUND' })),
+  a: () => Promise.reject(Object.assign(new Error('not found'), { code: 'ENOTFOUND' })),
+  aaaa: () => Promise.reject(Object.assign(new Error('not found'), { code: 'ENOTFOUND' })),
+  txt: () => Promise.reject(Object.assign(new Error('not found'), { code: 'ENOTFOUND' })),
+};
+
 /** The license key pair the world's licensing module trusts. */
 export const LICENSE_KEYS = testKeys();
 const keys = LICENSE_KEYS;
@@ -187,6 +197,15 @@ export async function isolationWorld(options: { readonly policiesDisabled?: bool
         agentModule({ now, sweepIntervalMs: 0 }),
         entryModule(),
         controlPlaneModule(),
+        // No DNS: every lookup answers ENOTFOUND, so a check leaves the claim pending.
+        customDomainsModule({
+          now,
+          lookup: noDns,
+          probe: null,
+          mail: null,
+          setTimer: timers.setTimer,
+          allowTestNames: true,
+        }),
       ];
       modules.push('identity', ...list.map((module) => module.name));
       return list;
@@ -518,7 +537,7 @@ export async function fill(t: TwoTenants, tenant: Tenant): Promise<Filled> {
     [JSON.stringify({ from: `@${slug}` }), at, browser.user.id],
   );
 
-  // ---- 0024's claim (slice 8), by hand until its routes land: the name carries the slug, the token stays per tenant.
+  // ---- 0024's claim (slice 8), by hand: the name carries the slug, the token stays per tenant.
   await tenant.tdb.query('insert into custom_domains (name, token, created_by, created_at) values ($1, $2, $3, $4)', [
     `${slug}.customer.test`,
     `token-${slug}`,

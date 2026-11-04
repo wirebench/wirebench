@@ -74,6 +74,8 @@ describe('audit labels and ranges (audit-log spec §3.6)', () => {
   it('custom-domain events read as words and name the domain', () => {
     expect(ACTION_GROUP_LABELS['custom_domain']).toBe('Custom domain');
     expect(actionLabel('custom_domain.activated')).toBe('Activated');
+    expect(actionLabel('custom_domain.claimed')).toBe('Claimed');
+    expect(actionLabel('custom_domain.removed')).toBe('Removed');
     expect(
       targetLabel({
         action: 'custom_domain.verified',

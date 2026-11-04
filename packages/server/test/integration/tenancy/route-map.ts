@@ -98,6 +98,16 @@ async function headOf(ctx: Ctx): Promise<string | null> {
   return res.body.head;
 }
 
+/** Removes the sender's custom-domain claim and, with `claimAgain`, claims `<slug>.customer.test` again. */
+async function reclaim(ctx: Ctx, claimAgain: boolean): Promise<void> {
+  const removed = await ctx.from.tenant.call(ctx.from.admin, 'DELETE', '/tenant/domain');
+  if (removed.status !== 204) throw new Error(`the claim's removal answered ${removed.status}`);
+  if (!claimAgain) return;
+  const name = `${ctx.from.tenant.slug}.customer.test`;
+  const claimed = await ctx.from.tenant.call(ctx.from.admin, 'PUT', '/tenant/domain', { name });
+  if (claimed.status !== 200) throw new Error(`the claim answered ${claimed.status}`);
+}
+
 /** An agent-signed request of `pairingId`, by `key`, on the tenant `ctx.from` is (the path is the server's). */
 function signedAgent(
   ctx: Ctx,
@@ -695,6 +705,27 @@ export const ROUTE_MAP: Readonly<Record<string, RouteCase>> = {
       url: api(`/agent/pairings/${(await fresh.pairing(ctx.a)).pairingId}`),
       headers: asTab(ctx),
     }),
+  },
+
+  // ---- custom domains (slice 8): the sender's own claim, which fill made (`<slug>.customer.test`)
+  'GET /api/v1/tenant/domain': { cls: 'own', request: (ctx) => json(ctx, 'GET', api('/tenant/domain')) },
+  'PUT /api/v1/tenant/domain': {
+    cls: 'own',
+    // One claim per tenant: the sender's goes first, and the claim made again is the one fill made.
+    request: async (ctx) => {
+      await reclaim(ctx, false);
+      return json(ctx, 'PUT', api('/tenant/domain'), { name: `${ctx.from.tenant.slug}.customer.test` });
+    },
+  },
+  'POST /api/v1/tenant/domain/check': {
+    cls: 'own',
+    request: (ctx) => json(ctx, 'POST', api('/tenant/domain/check')),
+  },
+  'DELETE /api/v1/tenant/domain': {
+    cls: 'own',
+    request: (ctx) => json(ctx, 'DELETE', api('/tenant/domain')),
+    // The table sweeps need the sender's claim back.
+    after: (ctx) => reclaim(ctx, true),
   },
 
   // ---- sockets: the socket sweep's, one case each (`SOCKET_ROUTES`)
