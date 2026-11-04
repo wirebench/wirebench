@@ -8,6 +8,11 @@
  *   `trustProxy`), lower-cased and without its port. It must be one label followed by `.<appDomain>`, naming an
  *   active tenant other than the default one. Anything else answers `404` with an empty body and
  *   `cache-control: no-store`, so the answer names nothing. WebSocket upgrades pass through the same hook.
+ * - **Suspended tenants** (spec §22.7) stay on the map with their reason, and answer before any module route:
+ *   `GET /sign-in` (and `HEAD`) the sign-in page with the reason and no form; `/hooks/…` (catch URLs, every method)
+ *   `503` with an empty body; everything else, the API and both WebSocket upgrades included, `403`
+ *   `{ code: "tenant-suspended", message, reason }`. No one signs in, server admins included. `/healthz` and
+ *   `/readyz` stay unscoped; a deleting tenant is off the map, so `404`.
  * - **Retired slugs** (spec §22.8). An old slug's host whose redirect lives answers `308` to the same path and query
  *   on the new slug's host, `cache-control: no-store`; after `redirect_until` it is `404` like any unknown name.
  * - **The apex and the entry** (spec §21.3). In hosted mode `<appDomain>` itself redirects to the entry, and
@@ -16,11 +21,12 @@
  */
 import { WirebenchError } from '@wirebench/engine';
 import type { IncomingMessage } from 'node:http';
-import type { FastifyBaseLogger, FastifyInstance, FastifyRequest } from 'fastify';
+import type { FastifyBaseLogger, FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { ServerConfig } from '../config.js';
-import type { TenantDirectory } from './directory.js';
+import { sendSuspendedSignInPage, SUSPENDED_REASON_TEXT } from '../identity/sign-in-page.js';
+import type { HostedTenant, SuspendedReason, TenantDirectory } from './directory.js';
 import type { TenantScope } from './scope.js';
-import { appDomainOf } from './urls.js';
+import { appDomainOf, tenantUrl } from './urls.js';
 
 declare module 'fastify' {
   interface FastifyContextConfig {
@@ -90,7 +96,7 @@ export function hostKey(hostname: string): string {
 export interface ResolverOptions {
   readonly appDomain: string;
   /** `redirects` is optional for a test's directory: without it no host redirects. */
-  readonly directory: Pick<TenantDirectory, 'resolvable' | 'onChange'> & Partial<Pick<TenantDirectory, 'redirects'>>;
+  readonly directory: Pick<TenantDirectory, 'hosted' | 'onChange'> & Partial<Pick<TenantDirectory, 'redirects'>>;
   /** The clock a redirect's end is read against; the real one by default. */
   readonly now?: () => number;
   readonly log: Pick<FastifyBaseLogger, 'warn'>;
@@ -100,12 +106,22 @@ export interface ResolverOptions {
 }
 
 /**
- * What a host name names in the hosted map: a tenant. Whatever is the tenant's own (its scope; its status in a later
- * part) lives here, in the value, so a second name for the same tenant (slice 8's custom names) is one more key on
- * an equal value, and nothing is read from the host string itself.
+ * What a host name names in the hosted map: a tenant. Whatever is the tenant's own (its scope, its status and why it
+ * is suspended) lives here, in the value, so a second name for the same tenant (slice 8's custom names) is one more
+ * key on the same value, and nothing is read from the host string itself.
  */
-export interface TenantEntry {
-  readonly scope: TenantScope;
+export type TenantEntry = HostedTenant;
+
+/** The code every route of a suspended tenant but its sign-in page and its catch URLs answers (spec §22.7). */
+export const TENANT_SUSPENDED = 'tenant-suspended';
+
+/** The `403` body of a suspended tenant's routes: `reason` beside the usual `{ code, message }`. */
+export function suspendedBody(reason: SuspendedReason): {
+  readonly code: typeof TENANT_SUSPENDED;
+  readonly message: string;
+  readonly reason: SuspendedReason;
+} {
+  return { code: TENANT_SUSPENDED, message: SUSPENDED_REASON_TEXT[reason], reason };
 }
 
 /** An old slug's host (spec §22.8): the new host it redirects to, until when (ms since the epoch). */
@@ -128,9 +144,15 @@ export class TenantResolver {
 
   constructor(private readonly options: ResolverOptions) {}
 
-  /** The scope `hostname` names, or `undefined`. */
+  /** The scope `hostname` names when its tenant serves (active), or `undefined`. */
   resolve(hostname: string): TenantScope | undefined {
-    return this.hosts.get(hostKey(hostname))?.scope;
+    const entry = this.entryOf(hostname);
+    return entry?.status === 'active' ? entry.scope : undefined;
+  }
+
+  /** The tenant `hostname` names, active or suspended, or `undefined`. */
+  entryOf(hostname: string): TenantEntry | undefined {
+    return this.hosts.get(hostKey(hostname));
   }
 
   /** The host `hostname` redirects to while its retired slug's redirect lives, or `undefined`. */
@@ -151,11 +173,11 @@ export class TenantResolver {
         do {
           this.again = false;
           const domain = this.options.appDomain.toLowerCase();
-          const [scopes, redirects] = await Promise.all([
-            this.options.directory.resolvable(),
+          const [tenants, redirects] = await Promise.all([
+            this.options.directory.hosted(),
             this.options.directory.redirects?.() ?? Promise.resolve([]),
           ]);
-          this.hosts = new Map(scopes.map((scope) => [`${scope.slug}.${domain}`, { scope }]));
+          this.hosts = new Map(tenants.map((tenant) => [`${tenant.scope.slug}.${domain}`, tenant]));
           this.redirects = new Map(
             redirects.map((redirect) => [
               `${redirect.slug}.${domain}`,
@@ -256,8 +278,8 @@ export async function registerTenantResolution(
       void reply.code(404).header('cache-control', 'no-store').send();
       return reply;
     }
-    const scope = resolver.resolve(host);
-    if (scope === undefined) {
+    const entry = resolver.entryOf(host);
+    if (entry === undefined) {
       // A renamed tenant's old host (spec §22.8): the same path and query on the new one, while the redirect lives.
       const to = resolver.redirectOf(host);
       if (to !== undefined) {
@@ -268,8 +290,35 @@ export async function registerTenantResolution(
       void reply.code(404).header('cache-control', 'no-store').send();
       return reply;
     }
-    resolved.set(request, scope);
+    if (entry.status === 'suspended') return answerSuspended(request, reply, config, entry);
+    resolved.set(request, entry.scope);
     return undefined;
   });
   return resolver;
+}
+
+/** The request's path, without its query. */
+function pathOf(url: string): string {
+  const query = url.indexOf('?');
+  return query === -1 ? url : url.slice(0, query);
+}
+
+/** A suspended tenant's answer (spec §22.7), on every route but the unscoped ones: no module route runs. */
+function answerSuspended(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  config: Pick<ServerConfig, 'mode' | 'appDomain'>,
+  entry: Extract<TenantEntry, { status: 'suspended' }>,
+): FastifyReply {
+  const path = pathOf(request.url);
+  if (path === '/sign-in' && (request.method === 'GET' || request.method === 'HEAD')) {
+    return sendSuspendedSignInPage(reply, { serverUrl: tenantUrl(config, entry.scope), reason: entry.reason });
+  }
+  // A catch URL's sender learns nothing but "not now" (spec §3.6), and tries again as it would after any 503.
+  if (path === '/hooks' || path.startsWith('/hooks/')) {
+    void reply.code(503).header('cache-control', 'no-store').send();
+    return reply;
+  }
+  void reply.code(403).header('cache-control', 'no-store').send(suspendedBody(entry.reason));
+  return reply;
 }

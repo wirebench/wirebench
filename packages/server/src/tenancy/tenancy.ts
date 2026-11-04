@@ -2,7 +2,7 @@
  * `ctx.tenancy` (hosted edition spec §19.8 guard 2): the tenant databases and the job loop, the modules' only way
  * to the database.
  *
- * The tenant directory is not on it (Task 6 review m2): its `list()`, `get(id)` and `resolvable()` hand out
+ * The tenant directory is not on it (Task 6 review m2): its `list()`, `get(id)` and `hosted()` hand out
  * branded scopes, which a module must only ever get from a request or the job loop. `directoryOf` gives it to
  * the files `check:tenant-scope` lets name it: the start-up, the resolver's registration and the admin
  * command line.

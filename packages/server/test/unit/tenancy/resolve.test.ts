@@ -24,7 +24,7 @@ const DEFAULT = scopeOf({ id: '00000000-0000-4000-8000-000000000001', slug: 'def
 function fakeDirectory(scopes: TenantScope[]) {
   const listeners: (() => void)[] = [];
   const directory = {
-    resolvable: vi.fn(() => Promise.resolve([...scopes])),
+    hosted: vi.fn(() => Promise.resolve(scopes.map((scope) => ({ scope, status: 'active' as const })))),
     onChange: vi.fn((listener: () => void) => {
       listeners.push(listener);
       return () => listeners.splice(listeners.indexOf(listener), 1);
@@ -92,12 +92,14 @@ describe('the hosted map', () => {
     resolver.start();
     const beta = scopeOf({ id: '00000000-0000-4000-8000-00000000000b', slug: 'beta' });
     scopes.push(beta);
-    fake.directory.resolvable.mockImplementation(() => Promise.resolve([...scopes]));
+    fake.directory.hosted.mockImplementation(() =>
+      Promise.resolve(scopes.map((scope) => ({ scope, status: 'active' as const }))),
+    );
     const first = resolver.invalidate();
     const second = resolver.invalidate();
     expect(second).toBe(first);
     await first;
-    expect(fake.directory.resolvable).toHaveBeenCalledTimes(3);
+    expect(fake.directory.hosted).toHaveBeenCalledTimes(3);
     expect(resolver.resolve('beta.example.test')).toBe(beta);
     scopes.splice(0);
     fake.change();
@@ -126,7 +128,7 @@ describe('the hosted map', () => {
     });
     await resolver.invalidate();
     resolver.start();
-    fake.directory.resolvable.mockImplementation(() => Promise.reject(new Error('db down')));
+    fake.directory.hosted.mockImplementation(() => Promise.reject(new Error('db down')));
     tick!();
     await vi.waitFor(() => {
       expect(warn).toHaveBeenCalledOnce();

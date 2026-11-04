@@ -6,6 +6,7 @@
  */
 import type { FastifyReply } from 'fastify';
 import type { ServerContext } from '../context.js';
+import type { SuspendedReason } from '../tenancy/directory.js';
 import { tenantUrl } from '../tenancy/urls.js';
 import { escapeHtml } from './invite-page.js';
 
@@ -31,6 +32,55 @@ const STYLE =
   'button,a.method{display:block;box-sizing:border-box;width:100%;margin-top:1rem;padding:.5rem;font:inherit;text-align:center}' +
   '.message{color:#a00}code{word-break:break-all}';
 
+/**
+ * Why a suspended tenant's page says no one signs in (hosted edition spec §22.7): one paragraph per reason, and the
+ * `message` of the `403 tenant-suspended` every other route answers, so the desktop, the CLI and the MCP server say
+ * the same.
+ */
+export const SUSPENDED_REASON_TEXT: Readonly<Record<SuspendedReason, string>> = Object.freeze({
+  unpaid: "This team's subscription is unpaid. Its billing contact can pay from the email Paddle sent.",
+  canceled: "This team's subscription was canceled. Its data is kept until someone asks for its deletion.",
+  operator: 'This team has been suspended by the operator. Contact support.',
+  importing: 'This team is being imported. Try again shortly.',
+});
+
+/** The page a suspended tenant's host shows (spec §22.7): the sign-in page's frame, the reason, and no form. */
+export function renderSuspendedSignInPage(input: {
+  readonly serverUrl: string;
+  readonly reason: SuspendedReason;
+}): string {
+  return page(
+    input.serverUrl,
+    `<p class="message" role="alert">${escapeHtml(SUSPENDED_REASON_TEXT[input.reason])}</p>`,
+  );
+}
+
+function page(serverUrl: string, body: string): string {
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Sign in · Wirebench Server</title>
+<style>${STYLE}</style>
+</head><body><h1>Sign in</h1><p>Wirebench Server at <code>${escapeHtml(serverUrl)}</code></p>${body}</body></html>`;
+}
+
+/** Sends {@link renderSuspendedSignInPage} with the sign-in page's headers. */
+export function sendSuspendedSignInPage(
+  reply: FastifyReply,
+  input: { readonly serverUrl: string; readonly reason: SuspendedReason },
+): FastifyReply {
+  return signInHeaders(reply.code(200)).send(renderSuspendedSignInPage(input));
+}
+
+/**
+ * The sign-in page's headers. Not `no-referrer`: under it a browser sends `Origin: null` on the form's own POST,
+ * which the login-CSRF check must refuse. `same-origin` still keeps the URL from every other site.
+ */
+function signInHeaders(reply: FastifyReply): FastifyReply {
+  return reply
+    .header('content-security-policy', SIGN_IN_PAGE_CSP)
+    .header('referrer-policy', 'same-origin')
+    .header('cache-control', 'no-store')
+    .type('text/html; charset=utf-8');
+}
+
 export function renderSignInPage(input: SignInPageInput): string {
   const onward = input.redirectTo === '/' ? '' : `?redirect_to=${encodeURIComponent(input.redirectTo)}`;
   const parts: string[] = [];
@@ -53,9 +103,7 @@ ${input.redirectTo === '/' ? '' : `<input type="hidden" name="redirect_to" value
     );
   if (!input.local && input.oidc === undefined && input.saml === undefined)
     parts.push('<p>This server offers no way to sign in from a browser. Ask a server admin.</p>');
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Sign in · Wirebench Server</title>
-<style>${STYLE}</style>
-</head><body><h1>Sign in</h1><p>Wirebench Server at <code>${escapeHtml(input.serverUrl)}</code></p>${parts.join('\n')}</body></html>`;
+  return page(input.serverUrl, parts.join('\n'));
 }
 
 /**
@@ -78,13 +126,5 @@ export async function sendSignInPage(
     redirectTo: options.redirectTo ?? '/',
     ...(options.message !== undefined ? { message: options.message } : {}),
   });
-  // Not `no-referrer`: under it a browser sends `Origin: null` on the form's own POST, which the
-  // login-CSRF check must refuse. `same-origin` still keeps the URL from every other site.
-  return reply
-    .code(options.status ?? 200)
-    .header('content-security-policy', SIGN_IN_PAGE_CSP)
-    .header('referrer-policy', 'same-origin')
-    .header('cache-control', 'no-store')
-    .type('text/html; charset=utf-8')
-    .send(html);
+  return signInHeaders(reply.code(options.status ?? 200)).send(html);
 }
