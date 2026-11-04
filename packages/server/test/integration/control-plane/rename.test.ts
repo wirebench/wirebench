@@ -114,7 +114,7 @@ describeDb('rename and retired redirects (hosted spec §22.8)', () => {
     const stale = new TenantResolver({
       appDomain: APP_DOMAIN,
       directory: {
-        resolvable: () => Promise.resolve([]),
+        hosted: () => Promise.resolve([]),
         onChange: () => () => undefined,
         redirects: () => Promise.resolve([{ slug: 'acme', to: 'acme-gmbh', until: loaded.rows[0]!.until }]),
       },

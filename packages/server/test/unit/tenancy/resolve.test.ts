@@ -9,7 +9,7 @@ import {
   type ServerConfig,
 } from '../../../src/config.js';
 import { main } from '../../../src/main.js';
-import type { TenantDirectory } from '../../../src/tenancy/directory.js';
+import type { HostedTenant, TenantDirectory } from '../../../src/tenancy/directory.js';
 import { hostKey, registerTenantResolution, RELOAD_MS, TenantResolver } from '../../../src/tenancy/resolve.js';
 import { scopeOf, type TenantScope } from '../../../src/tenancy/scope.js';
 import { operatorPublicUrl, tenantUrl, urlWithoutScope } from '../../../src/tenancy/urls.js';
@@ -24,7 +24,9 @@ const DEFAULT = scopeOf({ id: '00000000-0000-4000-8000-000000000001', slug: 'def
 function fakeDirectory(scopes: TenantScope[]) {
   const listeners: (() => void)[] = [];
   const directory = {
-    resolvable: vi.fn(() => Promise.resolve([...scopes])),
+    hosted: vi.fn((): Promise<HostedTenant[]> =>
+      Promise.resolve(scopes.map((scope) => ({ scope, status: 'active' as const }))),
+    ),
     onChange: vi.fn((listener: () => void) => {
       listeners.push(listener);
       return () => listeners.splice(listeners.indexOf(listener), 1);
@@ -92,12 +94,14 @@ describe('the hosted map', () => {
     resolver.start();
     const beta = scopeOf({ id: '00000000-0000-4000-8000-00000000000b', slug: 'beta' });
     scopes.push(beta);
-    fake.directory.resolvable.mockImplementation(() => Promise.resolve([...scopes]));
+    fake.directory.hosted.mockImplementation(() =>
+      Promise.resolve(scopes.map((scope) => ({ scope, status: 'active' as const }))),
+    );
     const first = resolver.invalidate();
     const second = resolver.invalidate();
     expect(second).toBe(first);
     await first;
-    expect(fake.directory.resolvable).toHaveBeenCalledTimes(3);
+    expect(fake.directory.hosted).toHaveBeenCalledTimes(3);
     expect(resolver.resolve('beta.example.test')).toBe(beta);
     scopes.splice(0);
     fake.change();
@@ -126,7 +130,7 @@ describe('the hosted map', () => {
     });
     await resolver.invalidate();
     resolver.start();
-    fake.directory.resolvable.mockImplementation(() => Promise.reject(new Error('db down')));
+    fake.directory.hosted.mockImplementation(() => Promise.reject(new Error('db down')));
     tick!();
     await vi.waitFor(() => {
       expect(warn).toHaveBeenCalledOnce();
@@ -134,6 +138,49 @@ describe('the hosted map', () => {
     expect(resolver.resolve('acme.example.test')).toBe(ACME);
     resolver.stop();
     expect(cleared).toHaveBeenCalledOnce();
+  });
+
+  it('tells its listeners the stopped tenants after every read that succeeds, the poll after a failed one included (spec §22.7)', async () => {
+    let tick: (() => void) | undefined;
+    const BETA = scopeOf({ id: '00000000-0000-4000-8000-00000000000b', slug: 'beta' });
+    const fake = fakeDirectory([ACME, BETA]);
+    const warn = vi.fn();
+    const resolver = new TenantResolver({
+      appDomain: 'example.test',
+      directory: fake.directory,
+      log: { warn },
+      setInterval: (fn) => {
+        tick = fn;
+        return {};
+      },
+      clearInterval: () => undefined,
+    });
+    const told: string[][] = [];
+    resolver.onReloaded((ids) => told.push([...ids].sort()));
+    await resolver.invalidate();
+    resolver.start();
+    // All active: nothing to tell.
+    expect(told).toEqual([]);
+    // Acme is suspended, but the read after the write fails: the map keeps it active and nothing is told.
+    fake.directory.hosted.mockImplementationOnce(() => Promise.reject(new Error('db down')));
+    fake.change();
+    await vi.waitFor(() => {
+      expect(warn).toHaveBeenCalledOnce();
+    });
+    expect(told).toEqual([]);
+    expect(resolver.resolve('acme.example.test')).toBe(ACME);
+    // The poll's read succeeds: acme suspended, beta gone (deleting) — both told, after the map is the new one.
+    fake.directory.hosted.mockImplementation(() =>
+      Promise.resolve<HostedTenant[]>([{ scope: ACME, status: 'suspended', reason: 'unpaid' }]),
+    );
+    resolver.onReloaded(() => {
+      expect(resolver.resolve('acme.example.test')).toBeUndefined();
+    });
+    tick!();
+    await vi.waitFor(() => {
+      expect(told).toEqual([[ACME.tenantId, BETA.tenantId].sort()]);
+    });
+    resolver.stop();
   });
 });
 

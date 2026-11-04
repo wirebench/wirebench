@@ -17,11 +17,15 @@ import type { FastifyBaseLogger } from 'fastify';
 import type { RawData } from 'ws';
 import type { TokenCaller } from '../identity/guard.js';
 import type { LiveHub, LiveHubDeps, LiveSocket } from './hub.js';
+import { TENANT_SUSPENDED } from '../tenancy/resolve.js';
 import type { TenantScope } from '../tenancy/scope.js';
 
 export interface SocketLoopDeps {
   readonly hub: LiveHub;
-  /** Identity's `callerForToken`, bound to the module's database, settings and clock (§5.1). */
+  /**
+   * Identity's `callerForToken`, bound to the module's database, settings and clock (§5.1). Throws
+   * `tenant-suspended` when the tenant stopped since the upgrade (hosted edition spec §22.7): closed `4403`.
+   */
   readonly authenticate: (token: string) => Promise<TokenCaller>;
   /** Identity's `tokenMaxMs`: a session ends at its token's `createdAt` plus this (§3.3). */
   readonly tokenMaxMs: number;
@@ -109,6 +113,9 @@ export function runLiveSocket(ws: LiveConnection, deps: SocketLoopDeps): void {
       authTimer.cancel();
       if (error instanceof WirebenchError && REFUSED_SESSION.has(error.code)) {
         end(LIVE_CLOSE.unauthenticated, 'unauthenticated');
+      } else if (error instanceof WirebenchError && error.code === TENANT_SUSPENDED) {
+        // The tenant stopped since the upgrade resolved it (spec §22.7, review I1).
+        end(LIVE_CLOSE.tenantSuspended, TENANT_SUSPENDED);
       } else {
         deps.log.warn({ err: error }, 'live socket authentication failed');
         end(LIVE_CLOSE.serverError, 'server error');

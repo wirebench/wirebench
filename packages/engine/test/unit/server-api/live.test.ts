@@ -37,6 +37,7 @@ describe('server-api live protocol (live-updates §3.1, §4)', () => {
       serviceRestart: 1012,
       badMessage: 4400,
       unauthenticated: 4401,
+      tenantSuspended: 4403,
       authTimeout: 4408,
       tooManySockets: 4429,
     });
