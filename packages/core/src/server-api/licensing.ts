@@ -25,6 +25,7 @@ export const FEATURES = [
   'sso-provisioning',
   'session-logs',
   'terminal-sharing',
+  'custom-domains',
 ] as const;
 export const featureSchema = z.enum(FEATURES);
 export type Feature = z.infer<typeof featureSchema>;

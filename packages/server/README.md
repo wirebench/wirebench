@@ -71,6 +71,7 @@ database, one data directory; run it behind TLS. Design: `docs/specs/2026-09-24-
 | `WIREBENCH_SERVER_TENANT_RUN_SLOTS` | no | `WIREBENCH_SERVER_SCHEDULES_CONCURRENCY` | Scheduled runs one tenant runs at once, every instance together (1–1000). Unset, the schedules concurrency, so a one-tenant server runs as many as before. Its further runs wait their turn, never refused; WIREBENCH_SERVER_SCHEDULES_CONCURRENCY still caps each instance. |
 | `WIREBENCH_SERVER_APP_DOMAIN` | no | — | Hosted mode only: the product’s domain. Each team is `https://<slug>.<domain>`, and `app.<domain>` mails a person their teams’ links. Unused on a self-hosted server. |
 | `WIREBENCH_SERVER_SITE_DOMAIN` | no | — | Hosted mode only: the public site’s domain, which the server links to and never serves. It must not be, or sit under, the app domain. Unused on a self-hosted server. |
+| `WIREBENCH_SERVER_DNS_SERVERS` | no | — | Hosted mode only: the DNS servers that check a team’s custom domain, as IP addresses with an optional port, comma-separated (`192.0.2.53, [2001:db8::53]:53`). Unset, the system’s resolver. Unused on a self-hosted server. |
 <!-- config:end -->
 <!-- prettier-ignore-end -->
 

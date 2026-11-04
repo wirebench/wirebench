@@ -95,6 +95,8 @@ describeDb('scoped tables outside a tenant unit (hosted spec §19.4, plan Task 1
     await tdb.query(
       "insert into tenant_settings (section, value, updated_by) values ('mail', '{}'::jsonb, 'operator')",
     );
+    // 0024's claim.
+    await tdb.query("insert into custom_domains (name, token) values ('app.customer.test', 'token-0024')");
   });
   afterAll(async () => {
     await app.close();

@@ -71,6 +71,18 @@ describe('audit labels and ranges (audit-log spec §3.6)', () => {
     ).toBe('Schedule Smoke');
   });
 
+  it('custom-domain events read as words and name the domain', () => {
+    expect(ACTION_GROUP_LABELS['custom_domain']).toBe('Custom domain');
+    expect(actionLabel('custom_domain.activated')).toBe('Activated');
+    expect(
+      targetLabel({
+        action: 'custom_domain.verified',
+        target: { kind: 'custom-domain', id: null },
+        details: { name: 'app.customer.test' },
+      }),
+    ).toBe('Custom domain app.customer.test');
+  });
+
   it('a desktop event on a workspace shows "Workspace", never the suite or request name', () => {
     expect(
       targetLabel({

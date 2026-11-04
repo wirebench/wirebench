@@ -46,6 +46,7 @@ const EXPECTED_GRANTS: Readonly<Record<string, readonly string[]>> = {
   captures: DML,
   catch_urls: DML,
   ci_tokens: DML,
+  custom_domains: DML,
   device_tokens: DML,
   host_leases: DML,
   invitations: DML,
@@ -82,6 +83,8 @@ const EXPECTED_GRANTS: Readonly<Record<string, readonly string[]>> = {
   tenant_settings: DML,
   tenant_slugs_retired: NONE,
   terminal_share_locations: DML,
+  // Unscoped (spec §23.3): the custom-domains module holds, marks live and releases its tenant's name.
+  tenant_hosts: DML,
   tenants: DML,
   users: DML,
   workspace_grants: DML,

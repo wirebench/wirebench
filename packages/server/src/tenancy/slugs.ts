@@ -62,6 +62,8 @@ export const RESERVED_SLUGS: ReadonlySet<string> = new Set([
   'staging',
   'test',
   'default',
+  // the CNAME target of every custom name (spec §23.1)
+  'custom',
   // brand
   'wirebench',
   'verathic',

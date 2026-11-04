@@ -100,6 +100,45 @@ describe('the app and site domains', () => {
   });
 });
 
+describe('the DNS servers of the custom-name check (spec §23.2)', () => {
+  it('reads IP addresses, each with an optional port, comma-separated', () => {
+    const config = loadConfig(
+      {
+        ...required,
+        WIREBENCH_SERVER_DNS_SERVERS: ' 192.0.2.53, 192.0.2.54:5353,[2001:db8::53]:53 , 2001:db8::54,[2001:db8::55]',
+      },
+      '0.0.0',
+    );
+    expect(config.dnsServers).toEqual([
+      '192.0.2.53',
+      '192.0.2.54:5353',
+      '[2001:db8::53]:53',
+      '2001:db8::54',
+      '[2001:db8::55]',
+    ]);
+  });
+
+  it('leaves it unset by default: the system resolver', () => {
+    expect(loadConfig(required, '0.0.0').dnsServers).toBeUndefined();
+  });
+
+  it.each([
+    ['dns.test', 'a host name'],
+    ['dns.test:53', 'a host name with a port'],
+    ['192.0.2.53:0', 'port 0'],
+    ['192.0.2.53:65536', 'a port past 65535'],
+    ['192.0.2.53:', 'an empty port'],
+    ['999.0.2.53', 'not an IPv4 address'],
+    ['[dns.test]:53', 'a name in brackets'],
+    ['udp://192.0.2.53', 'a scheme'],
+    [',', 'no server at all'],
+  ])('refuses %s (%s), naming the variable', (value) => {
+    expect(problemsOf({ WIREBENCH_SERVER_DNS_SERVERS: value }).map((problem) => problem.variable)).toEqual([
+      'WIREBENCH_SERVER_DNS_SERVERS',
+    ]);
+  });
+});
+
 describe('config check', () => {
   async function check(env: Record<string, string>): Promise<{ code: number; out: string }> {
     let out = '';
