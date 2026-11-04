@@ -55,6 +55,8 @@ export const SERVED_GROUPS: ReadonlySet<string> = new Set([
   'ciTokens',
   'issuedTokens',
   'provisioning',
+  // A hosted tenant's custom name (spec §23.6), on the user's own session like `provisioning`.
+  'domain',
   // Sealed secrets.
   'secrets',
   // The save-time secret scan (controller ruling, Task 10 review): every channel takes an open project's

@@ -56,6 +56,7 @@ describe('buildApi', () => {
       'currentValues',
       'definition',
       'dialogs',
+      'domain',
       'env',
       'exchanges',
       'forward',
