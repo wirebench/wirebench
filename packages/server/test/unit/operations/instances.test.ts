@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { formatAge, formatInstances } from '../../../src/operations/cli.js';
 import {
   allowsMultipleInstances,
+  drainWithin,
   HEARTBEAT_MS,
   InstanceRegistry,
   LICENSE_CHECK_MS,
@@ -257,5 +258,32 @@ describe('readiness and draining (spec §20.5, §20.9)', () => {
     await Promise.all([draining, again]);
     expect(order).toEqual(['host started', 'live', 'host done']);
     expect(logged).toEqual(['a drain listener failed']);
+  });
+});
+
+describe('drainWithin (spec §20.5 review)', () => {
+  const never = new Promise<void>(() => undefined);
+
+  it('waits for a drain that ends in time, and says nothing', async () => {
+    const warn = vi.fn();
+    await drainWithin(Promise.resolve(), 1_000, warn);
+    await drainWithin(Promise.reject(new Error('a listener')), 1_000, warn);
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('gives up on a drain that hangs once the drain time is out, and warns', async () => {
+    const warn = vi.fn();
+    const started = performance.now();
+    await drainWithin(never, 100, warn);
+    expect(performance.now() - started).toBeLessThan(1_000);
+    expect(warn).toHaveBeenCalledWith('the drain did not finish within the drain time; the shutdown goes on');
+  });
+
+  it('waits not at all once the running lock is lost', async () => {
+    const warn = vi.fn();
+    const started = performance.now();
+    await drainWithin(never, 0, warn);
+    expect(performance.now() - started).toBeLessThan(50);
+    expect(warn).not.toHaveBeenCalled();
   });
 });

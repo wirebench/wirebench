@@ -271,6 +271,12 @@ export class ExchangeRegistry {
     return this.kept.has(sendId);
   }
 
+  /** Whether the send `token` reserved was cancelled before it had a handle. */
+  cancelRequested(sendId: string, token: object): boolean {
+    const kept = this.kept.get(sendId);
+    return kept?.token === token && kept.ending === true;
+  }
+
   /**
    * Aborts the send `sendId`. `false` when no such send is in flight, or it has already settled. A
    * WebSocket session that has opened is not aborted: it ends only through a close, with a close
@@ -390,7 +396,28 @@ export interface SendThroughEngineDeps extends DesktopSendDeps {
   readonly confirmProtected?: (environmentNames: readonly string[]) => Promise<boolean>;
   /** Where this host's sends go out from (`HostOptions.sendOrigin`): each summary says so. Absent on the desktop. */
   readonly sendOrigin?: 'server';
+  /** Asked before each request reaches the wire (`HostOptions.sendGate`). Absent on the desktop. */
+  readonly sendGate?: SendGate;
 }
+
+/**
+ * What {@link SendGate} is told of one send: its protocol kind, whether the person drives it (an open
+ * WebSocket session), and whether it was cancelled while the gate held it.
+ */
+export interface SendGateRequest {
+  readonly kind: string;
+  readonly interactive: boolean;
+  cancelled(): boolean;
+}
+
+/**
+ * The embedder's say before each request a send, a run's step or one environment of a fan-out puts on
+ * the wire (`HostOptions.sendGate`, hosted edition spec §20.7): it may wait (a run paced by its tenant's
+ * budget) or throw (the send fails as one that could not start). It answers what to tell it later:
+ * `opened` once an interactive session's handshake has opened it. A send cancelled while the gate
+ * waits is cancelled as soon as it has a handle, as any send still being prepared is.
+ */
+export type SendGate = (send: SendGateRequest) => Promise<{ readonly opened?: () => void } | undefined>;
 
 /**
  * The name of the environment a send runs under when it is protected (#345) — the workspace's
@@ -560,8 +587,16 @@ async function sendReserved(
     scripts.kind === 'on' && deps.scripts !== undefined
       ? scriptedSend(deps.hostState.redactor, deps.scripts, scripts.request, context)
       : undefined;
+  // Last before the wire: the embedder may hold the send here (a run paced by its tenant's budget).
+  const gate = await deps.sendGate?.({
+    kind: item.kind,
+    interactive: options.interactive === true,
+    cancelled: () => deps.registry.cancelRequested(sendId, token),
+  });
   // An interactive session's events are always read: its frames are checked, its handshake opens it.
-  const session = isInteractive(item.kind) ? wsSessionOf(deps, sendId, requestId, send, options.onLive) : undefined;
+  const session = isInteractive(item.kind)
+    ? wsSessionOf(deps, sendId, requestId, send, options.onLive, gate?.opened)
+    : undefined;
   const handle = openExchange(item, host, {
     scope,
     interactive: options.interactive === true,

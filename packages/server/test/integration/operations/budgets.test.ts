@@ -5,11 +5,11 @@
  * on the paired agent's path is never charged; and two tenants' budgets are apart.
  */
 import { randomUUID } from 'node:crypto';
-import { afterAll, beforeAll, expect, it } from 'vitest';
+import { afterAll, beforeAll, expect, it, vi } from 'vitest';
 import type { Database } from '../../../src/db/querier.js';
 import { createDatabase } from '../../../src/db/pool.js';
 import type { HostReplyFrame } from '../../../src/host/host-runtime.js';
-import { SendBudgets, sendsBucket, type SendBudgetSettings } from '../../../src/operations/budgets.js';
+import { SENDS_BUCKET, SendBudgets, sendsBucket, type SendBudgetSettings } from '../../../src/operations/budgets.js';
 import { scopeOf, type TenantScope } from '../../../src/tenancy/scope.js';
 import { tenantDbFactory, type TenantDbFactory } from '../../../src/tenancy/tenant-db.js';
 import { describeDb, testDatabase, type TestDatabase } from '../../helpers/database.js';
@@ -159,4 +159,126 @@ describeDb('the per-tenant send budgets (hosted spec §20.7)', () => {
     });
     expect(served).toBe(6);
   });
+
+  it('takes the slot first: a send refused for concurrency spends no token', async () => {
+    const scope = await tenant();
+    // Six a minute is a burst of one: a token spent by the refused send would leave the next one refused too.
+    const budgets = new SendBudgets({ db: a, settings: { sendsPerMinute: 6, concurrentSends: 1 }, now: () => T0 });
+    const held = await budgets.take(scope, { token: false });
+    expect(held.ok).toBe(true);
+    expect(await budgets.take(scope)).toMatchObject({ ok: false, refusal: { code: 'tenant-send-concurrency' } });
+    if (held.ok) await held.release();
+    const next = await budgets.take(scope);
+    expect(next.ok).toBe(true);
+    if (next.ok) await next.release();
+    // Refused for the budget, the slot it took is given back.
+    expect(await budgets.take(scope)).toMatchObject({ ok: false, refusal: { code: 'tenant-send-budget' } });
+    expect(await slotsOf(scope)).toBe(0);
+  });
+
+  it('charges every request of a run, pausing it while the bucket is empty, under one slot', async () => {
+    const scope = await tenant();
+    // Sixty a minute: a burst of ten, then one a second.
+    const budgets = new SendBudgets({ db: a, settings: { sendsPerMinute: 60, concurrentSends: 16 } });
+    const live = { kind: 'rest', interactive: false, cancelled: () => false };
+    const sent: number[] = [];
+    // Outside any charged call the gate does nothing: a single send was charged as its call.
+    expect(await budgets.gate(live)).toBeUndefined();
+    const started = performance.now();
+    for (const channel of ['runner.run', 'sequence.run', 'request.sendToEnvironments']) {
+      const reply = await budgets.around(scope, { id: 1, channel, request: {} }, async () => {
+        // One slot for the whole call, and no token for it.
+        expect(await slotsOf(scope)).toBe(1);
+        for (let n = 0; n < 4; n++) {
+          await budgets.gate(live);
+          sent.push(Math.round(performance.now() - started));
+        }
+        return { id: 1, ok: true, value: null };
+      });
+      expect(reply).toEqual({ id: 1, ok: true, value: null });
+    }
+    // Twelve requests: ten from the burst, then the run paused for the bucket instead of failing.
+    expect(sent).toHaveLength(12);
+    expect(sent[11]!).toBeGreaterThanOrEqual(1_500);
+    expect(await slotsOf(scope)).toBe(0);
+    // The single sends now find the bucket spent by the runs' requests.
+    expect(await budgets.around(scope, { id: 2, channel: 'request.sendRest', request: {} }, () => ok(2))).toMatchObject(
+      {
+        ok: false,
+        error: { code: 'tenant-send-budget' },
+      },
+    );
+  });
+
+  it('stops pacing a run on its cancel and on its socket’s close', async () => {
+    const scope = await tenant();
+    const budgets = new SendBudgets({ db: a, settings: { sendsPerMinute: 6, concurrentSends: 16 } });
+    // Spends the burst of one.
+    const first = await budgets.take(scope);
+    if (first.ok) await first.release();
+    let cancelled = false;
+    const gone = new AbortController();
+    const reply = budgets.around(
+      scope,
+      { id: 1, channel: 'runner.run', request: {} },
+      async () => {
+        const started = performance.now();
+        setTimeout(() => {
+          cancelled = true;
+        }, 200);
+        // The bucket refills in 10 s; the cancel ends the wait well before.
+        expect(await budgets.gate({ kind: 'rest', interactive: false, cancelled: () => cancelled })).toBeUndefined();
+        expect(performance.now() - started).toBeLessThan(2_000);
+        setTimeout(() => gone.abort(), 100);
+        await expect(budgets.gate({ kind: 'rest', interactive: false, cancelled: () => false })).rejects.toMatchObject({
+          code: 'cancelled',
+        });
+        return { id: 1, ok: true, value: null };
+      },
+      gone.signal,
+    );
+    expect(await reply).toEqual({ id: 1, ok: true, value: null });
+  });
+
+  it('a WebSocket open spends one token and holds a slot only while it opens: 17 open sessions block no send', async () => {
+    const scope = await tenant();
+    // A fixed clock: no refill between the opens, so the tokens left count them.
+    const budgets = new SendBudgets({ db: a, settings: DEFAULTS, now: () => T0 });
+    const ends: (() => void)[] = [];
+    const opened: Promise<void>[] = [];
+    const sessions = Array.from({ length: 17 }, (_, n) => {
+      let open!: () => void;
+      opened.push(
+        new Promise<void>((resolve) => {
+          open = resolve;
+        }),
+      );
+      return budgets.around(scope, { id: n, channel: 'request.openWs', request: {} }, async () => {
+        // The host's open: the gate answers what to tell once the handshake is done.
+        const gate = await budgets.gate({ kind: 'websocket', interactive: true, cancelled: () => false });
+        gate?.opened?.();
+        open();
+        // The call stays pending for the session's life.
+        await new Promise<void>((resolve) => ends.push(resolve));
+        return { id: n, ok: true, value: null };
+      });
+    });
+    await Promise.all(opened);
+    await vi.waitFor(async () => expect(await slotsOf(scope)).toBe(0));
+    // An HTTP send goes while all 17 sessions stay open.
+    expect(await budgets.around(scope, { id: 99, channel: 'request.sendRest', request: {} }, () => ok(99))).toEqual({
+      id: 99,
+      ok: true,
+      value: null,
+    });
+    // Each open spent one token: 17 + 1 of the burst of 100.
+    const { rows } = await a(scope).query<{ tokens: number }>('select tokens from limiter_buckets where key = $1', [
+      SENDS_BUCKET,
+    ]);
+    expect(rows[0]!.tokens).toBe(82);
+    for (const end of ends) end();
+    await Promise.all(sessions);
+  });
 });
+
+const ok = (id: number): Promise<HostReplyFrame> => Promise.resolve({ id, ok: true, value: null });

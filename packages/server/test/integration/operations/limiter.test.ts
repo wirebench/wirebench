@@ -9,7 +9,15 @@ import { afterAll, beforeAll, expect, it } from 'vitest';
 import type { Database } from '../../../src/db/querier.js';
 import { createDatabase } from '../../../src/db/pool.js';
 import { RateLimiter } from '../../../src/identity/rate-limit.js';
-import { charge, peek } from '../../../src/operations/limiter.js';
+import {
+  charge,
+  limiterSweep,
+  peek,
+  registerBucket,
+  sweepAgeMs,
+  sweepBuckets,
+  SWEEP_MIN_AGE_MS,
+} from '../../../src/operations/limiter.js';
 import { TenantDirectory } from '../../../src/tenancy/directory.js';
 import { scopeOf, type TenantScope } from '../../../src/tenancy/scope.js';
 import { tenantDbFactory, type TenantDb } from '../../../src/tenancy/tenant-db.js';
@@ -133,5 +141,54 @@ describeDb('the shared limiter (hosted spec §20.7)', () => {
 
   it('refuses a charge larger than the bucket', async () => {
     await expect(charge(a, 'k', { ...SIGN_IN, cost: 11 })).rejects.toThrow(RangeError);
+  });
+
+  it('sweeps rows unspent past the longest refill window, which leaves every decision as it was', async () => {
+    const HOUR = 60 * 60_000;
+    expect(sweepAgeMs()).toBeGreaterThanOrEqual(SWEEP_MIN_AGE_MS);
+    // A limiter that takes three hours to refill from empty: its rows are kept that long.
+    registerBucket({ capacity: 3, refillPerMs: 3 / (3 * HOUR) });
+    expect(sweepAgeMs()).toBe(3 * HOUR);
+    const now = Date.now();
+    const old = `sweep/${randomUUID()}`;
+    const young = `sweep/${randomUUID()}`;
+    const elsewhere = `sweep/${randomUUID()}`;
+    // Spent empty four hours ago: full again by now, as a missing row is.
+    for (let n = 0; n < 3; n++)
+      await charge(a, old, { capacity: 3, refillPerMs: 3 / (3 * HOUR), cost: 1, at: new Date(now - 4 * HOUR) });
+    await charge(a, young, { ...SIGN_IN, at: new Date(now - 2 * HOUR) });
+    await charge(aOther, elsewhere, { ...SIGN_IN, at: new Date(now - 4 * HOUR) });
+    const keys = async (tdb: TenantDb): Promise<string[]> =>
+      (await tdb.query<{ key: string }>("select key from limiter_buckets where key like 'sweep/%'")).rows.map(
+        (r) => r.key,
+      );
+
+    let passes = 0;
+    let clock = 0;
+    const sweep = limiterSweep({
+      forEachTenant: async (_job, fn) => {
+        passes++;
+        // One statement per tenant, each in the tenant's own scope.
+        for (const tdb of [a, aOther]) await fn(tdb);
+      },
+      now: () => clock,
+      everyMs: 600_000,
+    });
+    await sweep();
+    expect(await keys(a)).toEqual([young]);
+    expect(await keys(aOther)).toEqual([]);
+    // The swept bucket is full: the same decision a full row would give.
+    expect(await peek(a, old, { capacity: 3, refillPerMs: 3 / (3 * HOUR), cost: 3 })).toMatchObject({
+      ok: true,
+      tokens: 3,
+    });
+    // Throttled: at most once in ten minutes.
+    clock = 599_999;
+    await sweep();
+    clock = 600_000;
+    await sweep();
+    expect(passes).toBe(2);
+    await sweepBuckets(a, 60_000);
+    expect(await keys(a)).toEqual([]);
   });
 });

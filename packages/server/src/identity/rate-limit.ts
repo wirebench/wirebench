@@ -8,7 +8,7 @@
  *   address scan cannot make it grow without bound.
  */
 import type { FastifyReply, FastifyRequest, preHandlerHookHandler } from 'fastify';
-import { charge, peek } from '../operations/limiter.js';
+import { charge, peek, registerBucket } from '../operations/limiter.js';
 import type { TenantScope } from '../tenancy/scope.js';
 import { outsideTenantUnit, type TenantDbFactory } from '../tenancy/tenant-db.js';
 
@@ -104,6 +104,8 @@ export class TenantRateLimiter {
     this.refillPerMs = options.refillPerMs;
     this.db = options.db;
     this.now = options.now;
+    // Its rows are swept only once older than its refill from empty (`limiter.ts`).
+    registerBucket(options);
   }
 
   async take(scope: TenantScope, key: string): Promise<RateLimitDecision> {

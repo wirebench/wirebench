@@ -6,11 +6,18 @@
  * and `drain()` waits for a held lock.
  */
 import { randomUUID } from 'node:crypto';
+import { createServer, connect, type Server, type Socket } from 'node:net';
 import { join } from 'node:path';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { SyncPushResponse } from '@wirebench/engine';
 import { createLockPool, openSession, type LockPool } from '../../../src/db/pool.js';
-import { assertRepoLockHeld, DatabaseRepoLock, guardGit, REPO_LOCK_CLASS } from '../../../src/operations/repo-lock.js';
+import {
+  assertRepoLockHeld,
+  DatabaseRepoLock,
+  guardGit,
+  REPO_LOCK_CLASS,
+  REPO_LOCK_PROBE_MS,
+} from '../../../src/operations/repo-lock.js';
 import { NO_HOOKS_DIR, RepoStore } from '../../../src/repos/repo-store.js';
 import { scopeOf } from '../../../src/tenancy/scope.js';
 import { describeDb, testDatabase, type TestDatabase } from '../../helpers/database.js';
@@ -23,6 +30,51 @@ const OTHER_TENANT = scopeOf({ id: randomUUID(), slug: 'globex' });
 const WS = '01J8ZC5Q0V7R3T9XK2M4N6P8QA';
 const OTHER_WS = '01J8ZC5Q0V7R3T9XK2M4N6P8QB';
 const APP = 'wirebench-server-repo-lock-test';
+
+/**
+ * A TCP proxy to the test database whose `freeze()` black-holes both directions without closing anything: a
+ * failover's half-open socket, which gives the client no error.
+ */
+async function freezingProxy(target: string): Promise<{
+  readonly url: string;
+  freeze(): void;
+  close(): Promise<void>;
+}> {
+  const upstream = new URL(target);
+  let frozen = false;
+  const sockets = new Set<Socket>();
+  const server: Server = createServer((client) => {
+    const remote = connect(Number(upstream.port || 5432), upstream.hostname);
+    for (const socket of [client, remote]) {
+      sockets.add(socket);
+      socket.on('error', () => undefined);
+      socket.on('close', () => sockets.delete(socket));
+    }
+    client.on('data', (chunk) => {
+      if (!frozen) remote.write(chunk);
+    });
+    remote.on('data', (chunk) => {
+      if (!frozen) client.write(chunk);
+    });
+    client.on('end', () => remote.end());
+    remote.on('end', () => client.end());
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const { port } = server.address() as { port: number };
+  const url = new URL(target);
+  url.hostname = '127.0.0.1';
+  url.port = String(port);
+  return {
+    url: url.toString(),
+    freeze: () => {
+      frozen = true;
+    },
+    close: async () => {
+      for (const socket of sockets) socket.destroy();
+      await new Promise((resolve) => server.close(resolve));
+    },
+  };
+}
 
 /** A promise and its resolver, for holding `fn` open. */
 function gate(): { readonly open: () => void; readonly wait: Promise<void> } {
@@ -146,6 +198,61 @@ describeDb('the advisory repository lock (hosted spec §20.4)', () => {
     expect(await held()).toBe(0);
     // The store takes the lock again on a fresh connection.
     expect(await a.withLock(TENANT, WS, () => Promise.resolve('again'))).toBe('again');
+  });
+
+  it('a half-open lock connection (a failover) fails the next git step repo-lock-lost within seconds', async () => {
+    const proxy = await freezingProxy(db.url);
+    const pool = createLockPool(proxy.url, { max: 8, applicationName: APP, waitMs: 5_000 });
+    pools.push(pool);
+    const warned: string[] = [];
+    const lock = new DatabaseRepoLock({ pool, warn: (_error, message) => warned.push(message) });
+    const store = new RepoStore({ git: guardGit(testGit(join(dataDir, NO_HOOKS_DIR))), dataDir, lock });
+    const git = guardGit(testGit(join(dataDir, NO_HOOKS_DIR)));
+    try {
+      // An ordinary step after the probe interval: the probe finds no answer.
+      const ordinary = store.withLock(TENANT, WS, async () => {
+        await git.run(dataDir, ['--version']);
+        proxy.freeze();
+        await new Promise((resolve) => setTimeout(resolve, REPO_LOCK_PROBE_MS + 50));
+        const started = performance.now();
+        const step = await git.run(dataDir, ['--version']).catch((error: unknown) => error);
+        return { step, ms: performance.now() - started };
+      });
+      const { step, ms } = await ordinary;
+      expect(step).toMatchObject({ code: 'repo-lock-lost', details: { status: 503 } });
+      expect(ms).toBeLessThan(4_000);
+      expect(warned).toEqual(['a repository lock connection was lost while its operation ran']);
+    } finally {
+      await proxy.close();
+    }
+    // The frozen connection is gone, so is its lock: another instance takes it.
+    await vi.waitFor(async () => expect(await held()).toBe(0), { timeout: 10_000 });
+    expect(await instance().withLock(TENANT, WS, () => Promise.resolve('taken'))).toBe('taken');
+  });
+
+  it('a ref update is always probed first, even within the probe interval', async () => {
+    const proxy = await freezingProxy(db.url);
+    const pool = createLockPool(proxy.url, { max: 8, applicationName: APP, waitMs: 5_000 });
+    pools.push(pool);
+    const store = new RepoStore({
+      git: guardGit(testGit(join(dataDir, NO_HOOKS_DIR))),
+      dataDir,
+      lock: new DatabaseRepoLock({ pool, probeTimeoutMs: 500 }),
+    });
+    const git = guardGit(testGit(join(dataDir, NO_HOOKS_DIR)));
+    try {
+      const outcome = store.withLock(TENANT, WS, async () => {
+        proxy.freeze();
+        // Within the interval an ordinary step is not probed; the ref update is, and never runs.
+        await git.run(dataDir, ['--version']);
+        await git.run(dataDir, ['update-ref', 'refs/heads/main', 'HEAD']);
+        return 'moved';
+      });
+      await expect(outcome).rejects.toMatchObject({ code: 'repo-lock-lost' });
+    } finally {
+      await proxy.close();
+    }
+    await vi.waitFor(async () => expect(await held()).toBe(0), { timeout: 10_000 });
   });
 
   it('the lock is never left held after fn throws', async () => {

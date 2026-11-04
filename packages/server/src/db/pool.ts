@@ -228,6 +228,8 @@ export function createLockPool(connectionString: string, options: LockPoolOption
     application_name: options.applicationName,
     connectionTimeoutMillis: options.waitMs,
     lock_timeout: options.waitMs,
+    // `pg` (over `net.Socket.setKeepAlive`) sets only the first probe's delay; the probe interval and count are the
+    // operating system's. A half-open connection is caught sooner by the lock's own probe (`repo-lock.ts`).
     keepAlive: true,
     keepAliveInitialDelayMillis: 10_000,
   });

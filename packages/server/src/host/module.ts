@@ -189,6 +189,9 @@ export function hostModule(options: HostModuleOptions = {}): ServerModule {
         seatLimit: async (tx) => (await ctx.license.state(tx.scope, tx)).seats.limit,
       });
 
+      // Every send channel a tab calls is charged to its user's tenant, across every instance (spec §20.7); each
+      // request of a run is charged as the host puts it on the wire (its `sendGate`).
+      const budgets = new SendBudgets({ db: ctx.tenancy.db, settings: sendBudgetSettings(config), log });
       const instances = new HostInstances({
         dataDir: config.dataDir,
         idleMs: config.hostIdleMinutes * 60_000,
@@ -228,6 +231,7 @@ export function hostModule(options: HostModuleOptions = {}): ServerModule {
                 ),
               credential,
             },
+            sendGate: (send) => budgets.gate(send),
             // In the user's tenant: the audit row is that tenant's.
             onSecret: (event) => {
               secretWrites.track(
@@ -243,8 +247,6 @@ export function hostModule(options: HostModuleOptions = {}): ServerModule {
         },
       });
       options.onInstances?.(instances);
-      // Every send channel a tab calls is charged to its user's tenant, across every instance (spec §20.7).
-      const budgets = new SendBudgets({ db: ctx.tenancy.db, settings: sendBudgetSettings(config), log });
       const { tokenMaxMs } = identitySettings(config);
       let nextCallerId = 1;
 
@@ -301,6 +303,8 @@ export function hostModule(options: HostModuleOptions = {}): ServerModule {
         // The session ends at its token's creation plus the maximum age, as a live socket's does.
         let deadline: { cancel(): void } | undefined;
         let closed = false;
+        // Aborted when the socket closes: a run paced by the tenant's budget stops waiting (spec §20.7).
+        const gone = new AbortController();
         const checked = tokenByHash(ctx.tenancy.db(request.tenant), hashToken(token))
           .then((found) => {
             if (closed) return;
@@ -357,10 +361,11 @@ export function hostModule(options: HostModuleOptions = {}): ServerModule {
           host,
           callerId: nextCallerId++,
           allowed: isServedChannel,
-          around: (frame, serve) => budgets.around(request.tenant, frame, serve),
+          around: (frame, serve) => budgets.around(request.tenant, frame, serve, gone.signal),
           log,
           onClosed: () => {
             closed = true;
+            gone.abort();
             deadline?.cancel();
             instances.release(user, handle);
           },

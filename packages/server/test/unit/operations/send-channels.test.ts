@@ -7,10 +7,12 @@ import { readFile } from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
 import { isServedChannel } from '../../../src/host/allowlist.js';
 import {
+  chargeOf,
   isSendChannel,
   looksLikeSend,
   NOT_SENDS,
   SEND_CHANNELS,
+  SENDS_WHEN_FETCHED,
   unclassifiedSends,
 } from '../../../src/operations/send-channels.js';
 
@@ -37,12 +39,13 @@ describe('the server host send channels (§20.7)', () => {
 
   it('lists only served registry channels, each once, and none both ways', async () => {
     const channels = await registry();
-    for (const channel of [...SEND_CHANNELS, ...Object.keys(NOT_SENDS)]) {
+    for (const channel of [...SEND_CHANNELS, ...Object.keys(SENDS_WHEN_FETCHED), ...Object.keys(NOT_SENDS)]) {
       expect(channels, channel).toContain(channel);
       expect(isServedChannel(channel), channel).toBe(true);
     }
     for (const channel of Object.keys(NOT_SENDS)) {
       expect(SEND_CHANNELS.has(channel), channel).toBe(false);
+      expect(Object.hasOwn(SENDS_WHEN_FETCHED, channel), channel).toBe(false);
       // An exclusion means something only for a name the rule would flag.
       expect(looksLikeSend(channel), channel).toBe(true);
     }
@@ -80,5 +83,34 @@ describe('the server host send channels (§20.7)', () => {
     }
     // `agent.send` is never served on the server host at all.
     expect(isServedChannel('agent.send')).toBe(false);
+  });
+
+  it('catches fetch, refresh and import channels too', () => {
+    for (const channel of ['oauth2.fetchToken', 'api.refreshMcpCatalogue', 'api.grpcRefresh', 'definition.import']) {
+      expect(looksLikeSend(channel), channel).toBe(true);
+    }
+    expect(unclassifiedSends(['api.importSomething', 'x.fetchAll'], () => true)).toEqual([
+      'api.importSomething',
+      'x.fetchAll',
+    ]);
+  });
+
+  it('charges a run per request, a WebSocket open as a session, and an import only when it fetches', () => {
+    for (const channel of ['runner.run', 'sequence.run', 'request.sendToEnvironments']) {
+      expect(chargeOf(channel), channel).toBe('run');
+    }
+    expect(chargeOf('request.openWs')).toBe('session');
+    for (const channel of ['request.sendRest', 'oauth2.fetchToken', 'issuedTokens.fetch', 'api.grpcRefresh']) {
+      expect(chargeOf(channel), channel).toBe('send');
+    }
+    expect(chargeOf('api.refreshMcpCatalogue', { apiId: 'a' })).toBe('send');
+    expect(chargeOf('definition.import', { source: { kind: 'url', url: 'https://x.test/?wsdl' } })).toBe('send');
+    expect(chargeOf('definition.import', { source: { kind: 'file', path: '/p/x.wsdl' } })).toBeUndefined();
+    expect(chargeOf('api.importOpenApi', { source: { kind: 'text', text: '{}' } })).toBeUndefined();
+    expect(chargeOf('api.importProto', { source: { kind: 'reflection', target: 'h:1' } })).toBe('send');
+    expect(chargeOf('api.importProto', { source: { kind: 'folder', path: '/p' } })).toBeUndefined();
+    expect(chargeOf('api.importPostman', { source: { kind: 'file', path: '/p' } })).toBeUndefined();
+    expect(chargeOf('sync.fetch')).toBeUndefined();
+    expect(chargeOf('app.version')).toBeUndefined();
   });
 });

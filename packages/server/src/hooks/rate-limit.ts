@@ -3,7 +3,7 @@
  * `burst`. The buckets live in the shared limiter's table (hosted edition spec §20.7), so every instance spends the
  * same one; a bucket with no row is full.
  */
-import { charge } from '../operations/limiter.js';
+import { charge, registerBucket } from '../operations/limiter.js';
 import type { TenantScope } from '../tenancy/scope.js';
 import { outsideTenantUnit, type TenantDbFactory } from '../tenancy/tenant-db.js';
 
@@ -32,6 +32,7 @@ export class CatchBuckets {
     this.burst = options.burst;
     this.db = options.db;
     this.now = options.now;
+    registerBucket({ capacity: this.burst, refillPerMs: this.perMs });
   }
 
   /**

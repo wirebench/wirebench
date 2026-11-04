@@ -10,10 +10,15 @@
  *   and the backend never goes on to take the lock. A connection in any doubt (a failed lock or unlock, a lost
  *   connection) is destroyed, which drops whatever it held: a lock is never left behind.
  * - **A lost connection** is seen at `fn`'s next git step: the server's `GitCli` is wrapped by {@link guardGit},
- *   which asks {@link assertRepoLockHeld} first. The operation's state rides in an `AsyncLocalStorage`, so every
+ *   which asks {@link checkRepoLock} first. The operation's state rides in an `AsyncLocalStorage`, so every
  *   git call `fn` makes, through whichever module, is checked without the callers changing. A git step that
  *   already started runs to completion, as a crash would; the repository's own lock files and the push's
  *   compare-and-swap of the head keep it consistent.
+ * - **A half-open connection** (a failover: the old primary's socket gives no error, and another instance takes
+ *   the lock on the new one) is seen by a probe: `select 1` on the held connection, answered within
+ *   {@link REPO_LOCK_PROBE_TIMEOUT_MS}, at most once every {@link REPO_LOCK_PROBE_MS} before a git step, and always
+ *   right before a step that moves a ref or the head (`update-ref`, `symbolic-ref`: the push's final step). A probe
+ *   that fails or times out marks the lock lost and destroys the connection.
  */
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { GitCli, WirebenchError } from '@wirebench/engine';
@@ -30,6 +35,13 @@ export const REPO_LOCK_WAIT_MS = 30_000;
 export const REPO_LOCK_POOL_MAX = 8;
 /** The `Retry-After` of both 503s; the desktop already retries a 503 push. */
 export const REPO_LOCK_RETRY_AFTER_S = 5;
+/** A held lock's connection is probed at most this often before an ordinary git step. */
+export const REPO_LOCK_PROBE_MS = 1_000;
+/** A probe unanswered for this long is a lost connection. */
+export const REPO_LOCK_PROBE_TIMEOUT_MS = 2_000;
+/** The git steps that move a ref or the head: the lock is always probed right before one. */
+const REF_STEPS: ReadonlySet<string> = new Set(['update-ref', 'symbolic-ref']);
+const PROBE = 'select 1';
 
 const KEY = `hashtext((${SERVER_SCHEMA}) || ':' || $2 || ':' || $3)`;
 const LOCK = `select pg_advisory_lock($1, ${KEY})`;
@@ -63,6 +75,14 @@ export const repoLockLost = (): WirebenchError =>
 /** One held lock's state, for the git steps of its operation. */
 interface Held {
   lost: WirebenchError | undefined;
+  /** When the connection last answered (`performance.now`): the lock, or the last probe. */
+  answeredAt: number;
+  /** The probe in flight, which every step meanwhile waits for. */
+  probing: Promise<void> | undefined;
+  /** The held connection's probe: resolves when it answered in time, rejects otherwise. */
+  readonly probe: () => Promise<void>;
+  /** Marks the lock lost and destroys its connection; the first call wins. */
+  readonly lose: (error: Error) => void;
 }
 
 const current = new AsyncLocalStorage<Held>();
@@ -76,17 +96,65 @@ export function assertRepoLockHeld(): void {
   if (held?.lost !== undefined) throw held.lost;
 }
 
+/** The git subcommand of `args`: the first argument that is not an option. */
+const subcommandOf = (args: readonly string[]): string | undefined => args.find((arg) => !arg.startsWith('-'));
+
 /**
- * `git`, with every `run` asking {@link assertRepoLockHeld} first, and `withPlumbing()` wrapped the same way, so
+ * {@link assertRepoLockHeld}, after probing the held connection when the last answer is older than
+ * {@link REPO_LOCK_PROBE_MS}, or whatever its age when `args` moves a ref or the head.
+ */
+export async function checkRepoLock(args: readonly string[] = []): Promise<void> {
+  const held = current.getStore();
+  if (held === undefined) return;
+  if (held.lost !== undefined) throw held.lost;
+  const subcommand = subcommandOf(args);
+  const moves = subcommand !== undefined && REF_STEPS.has(subcommand);
+  if (!moves && performance.now() - held.answeredAt < REPO_LOCK_PROBE_MS) return;
+  held.probing ??= (async () => {
+    const started = performance.now();
+    try {
+      await held.probe();
+      held.answeredAt = started;
+    } catch (error) {
+      held.lose(error instanceof Error ? error : new Error(String(error)));
+    } finally {
+      held.probing = undefined;
+    }
+  })();
+  await held.probing;
+  // Read again: the probe may have lost it.
+  assertRepoLockHeld();
+}
+
+/** `select 1` on `connection`, refused once {@link REPO_LOCK_PROBE_TIMEOUT_MS} passed without an answer. */
+async function probeOf(connection: RepoLockConnection, timeoutMs: number): Promise<void> {
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    await Promise.race([
+      connection.query(PROBE),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          reject(new Error(`the repository lock connection did not answer within ${String(timeoutMs)} ms`));
+        }, timeoutMs);
+        timer.unref();
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * `git`, with every `run` asking {@link checkRepoLock} first, and `withPlumbing()` wrapped the same way, so
  * the commit store's plumbing copy is checked too.
  */
 export function guardGit(git: GitCli): GitCli {
   return new Proxy(git, {
     get(target, property) {
       if (property === 'run') {
-        return (...args: Parameters<GitCli['run']>) => {
-          assertRepoLockHeld();
-          return target.run(...args);
+        return async (...args: Parameters<GitCli['run']>) => {
+          await checkRepoLock(args[1]);
+          return await target.run(...args);
         };
       }
       if (property === 'withPlumbing') return () => guardGit(target.withPlumbing());
@@ -101,10 +169,17 @@ const codeOf = (error: unknown): unknown => (error as { readonly code?: unknown 
 export class DatabaseRepoLock {
   readonly #pool: RepoLockPool;
   readonly #warn: (error: Error, message: string) => void;
+  readonly #probeTimeoutMs: number;
 
-  constructor(deps: { readonly pool: RepoLockPool; readonly warn?: (error: Error, message: string) => void }) {
+  constructor(deps: {
+    readonly pool: RepoLockPool;
+    readonly warn?: (error: Error, message: string) => void;
+    /** {@link REPO_LOCK_PROBE_TIMEOUT_MS} unless a test shortens it. */
+    readonly probeTimeoutMs?: number;
+  }) {
     this.#pool = deps.pool;
     this.#warn = deps.warn ?? (() => undefined);
+    this.#probeTimeoutMs = deps.probeTimeoutMs ?? REPO_LOCK_PROBE_TIMEOUT_MS;
   }
 
   /** Runs `fn` holding the lock for `scope`'s `workspaceId`; `503 repo-busy` when the wait runs out. */
@@ -117,19 +192,42 @@ export class DatabaseRepoLock {
       if (codeOf(error) === 'pool-timeout') throw repoBusy();
       throw error;
     }
-    const held: Held = { lost: undefined };
+    let released = false;
+    const release = (destroy: boolean): void => {
+      if (released) return;
+      released = true;
+      connection.release(destroy);
+    };
+    const held: Held = {
+      lost: undefined,
+      answeredAt: 0,
+      probing: undefined,
+      probe: () => probeOf(connection, this.#probeTimeoutMs),
+      lose: (error) => {
+        if (held.lost !== undefined) return;
+        held.lost = repoLockLost();
+        this.#warn(error, 'a repository lock connection was lost while its operation ran');
+        // Closed now: whatever it still holds on its server is dropped with it.
+        release(true);
+      },
+    };
+    // Before the lock is asked for (review fix): a loss in between would go unheard otherwise.
+    connection.onLost((error) => {
+      held.lose(error);
+    });
     try {
       await connection.query(LOCK, params);
     } catch (error) {
       // Destroyed whatever went wrong: a wait cut short on the client side could still be granted later.
-      connection.release(true);
+      release(true);
       if (codeOf(error) === '55P03') throw repoBusy(); // lock_not_available: `lock_timeout` ran out
       throw error;
     }
-    connection.onLost((error) => {
-      held.lost ??= repoLockLost();
-      this.#warn(error, 'a repository lock connection was lost while its operation ran');
-    });
+    if (held.lost !== undefined) {
+      release(true);
+      throw held.lost;
+    }
+    held.answeredAt = performance.now();
     try {
       return await current.run(held, fn);
     } finally {
@@ -143,7 +241,7 @@ export class DatabaseRepoLock {
           destroy = true;
         }
       }
-      connection.release(destroy);
+      release(destroy);
     }
   }
 }

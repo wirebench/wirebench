@@ -61,9 +61,66 @@ const PEEK = `select ${refilled('coalesce($4::timestamptz, statement_timestamp()
 const retryAfter = (tokens: number, options: ChargeOptions): number =>
   Math.max(1, Math.ceil((options.cost - tokens) / options.refillPerMs));
 
+/** A sweep never removes a row younger than this, whatever the limiters' windows. */
+export const SWEEP_MIN_AGE_MS = 60 * 60_000;
+
+let longestRefillMs = 0;
+
+/**
+ * Records a limiter's bucket size: {@link sweepAgeMs} is never shorter than the time any registered bucket takes to
+ * refill from empty. Each limiter registers when it is built, and every charge registers its size again.
+ */
+export function registerBucket(size: BucketSize): void {
+  longestRefillMs = Math.max(longestRefillMs, Math.ceil(size.capacity / size.refillPerMs));
+}
+
+/**
+ * How long a bucket row must go unspent before a sweep removes it: the longest refill from empty of every
+ * registered limiter, and at least {@link SWEEP_MIN_AGE_MS}. A row that old is full, and a bucket with no row is
+ * full, so the sweep changes no decision.
+ */
+export function sweepAgeMs(): number {
+  return Math.max(SWEEP_MIN_AGE_MS, longestRefillMs);
+}
+
+/** `$1` the age in ms. One tenant's rows, in its unit. */
+const SWEEP = `delete from limiter_buckets
+  where updated_at < statement_timestamp() - $1::float8 * interval '1 millisecond'`;
+
+/** Removes the rows of `tx`'s tenant not spent for `ageMs` ({@link sweepAgeMs} by default). */
+export async function sweepBuckets(tx: TenantQuerier, ageMs: number = sweepAgeMs()): Promise<void> {
+  await tx.query(SWEEP, [ageMs]);
+}
+
+/** How often the heartbeat sweeps `limiter_buckets`: at most this often per instance. */
+export const LIMITER_SWEEP_MS = 10 * 60_000;
+
+/**
+ * A heartbeat listener (`ctx.instance.onBeat`) that sweeps every tenant's unspent bucket rows, one unit per tenant
+ * through `forEachTenant`, at most once every {@link LIMITER_SWEEP_MS}. The first beat sweeps.
+ */
+export function limiterSweep(deps: {
+  readonly forEachTenant: (job: string, fn: (tx: TenantQuerier) => Promise<void>) => Promise<unknown>;
+  /** Milliseconds, monotonic; `performance.now` by default. */
+  readonly now?: () => number;
+  readonly everyMs?: number;
+}): () => Promise<void> {
+  const now = deps.now ?? (() => performance.now());
+  const every = deps.everyMs ?? LIMITER_SWEEP_MS;
+  let last: number | undefined;
+  return async () => {
+    const at = now();
+    if (last !== undefined && at - last < every) return;
+    last = at;
+    const ageMs = sweepAgeMs();
+    await deps.forEachTenant('limiter-sweep', (tx) => sweepBuckets(tx, ageMs));
+  };
+}
+
 function paramsOf(key: string, options: ChargeOptions): unknown[] {
   if (!(options.cost > 0 && options.cost <= options.capacity))
     throw new RangeError(`a charge of ${String(options.cost)} does not fit a bucket of ${String(options.capacity)}`);
+  registerBucket(options);
   return [key, options.capacity, options.refillPerMs, options.cost, options.at ?? null];
 }
 

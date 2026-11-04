@@ -33,7 +33,8 @@ import { APPLICATION_NAME, createDatabase, createLockPool, openSession } from '.
 import { BusSignals, NotificationBus } from './operations/bus.js';
 import { DatabaseRepoLock, guardGit, REPO_LOCK_POOL_MAX, REPO_LOCK_WAIT_MS } from './operations/repo-lock.js';
 import { checkAppRole, checkPostgresVersion } from './tenancy/checks.js';
-import { allowsMultipleInstances, InstanceRegistry, licenseLapseWatch } from './operations/instances.js';
+import { allowsMultipleInstances, drainWithin, InstanceRegistry, licenseLapseWatch } from './operations/instances.js';
+import { limiterSweep } from './operations/limiter.js';
 import { OPERATIONS_MIGRATIONS_DIR } from './operations/migrations.js';
 import { realTimer } from './live/module.js';
 import { STOP_PASS } from './tenancy/jobs.js';
@@ -672,6 +673,15 @@ export async function startServer(
       }),
     );
   }
+  // The shared limiter's unspent rows (spec §20.7): a missing row is a full bucket, so this changes no decision.
+  if (tenantsLoaded) {
+    registry.onBeat(
+      limiterSweep({
+        forEachTenant: (job, fn) => tenancy.forEachTenant(job, (tx) => fn(tx), app.log),
+        ...(options.now !== undefined ? { now: options.now } : {}),
+      }),
+    );
+  }
   // The notification bus (spec §20.3): on the running lock's URL, a direct connection that can hold `LISTEN`.
   const bus = new NotificationBus({
     db,
@@ -732,7 +742,11 @@ export async function startServer(
       // Spec §20.5, first: `/readyz` answers 503 and the socket routes refuse upgrades; each host runs its quit path,
       // gives its lease back and only then closes its sockets `4503 host-draining`; live sockets close `1012`. HTTP
       // keeps serving until `app.close()` below.
-      await registry.drain();
+      // Bounded by the drain time (a host whose quit path hangs must not hold the shutdown), and not waited for at
+      // all once the running lock is lost.
+      await drainWithin(registry.drain(), lost ? 0 : (options.drainMs ?? SERVER_DRAIN_MS), (message) => {
+        app.log.warn(message);
+      });
       const timer = setTimeout(() => app.server.closeAllConnections(), lost ? 0 : (options.drainMs ?? SERVER_DRAIN_MS));
       timer.unref();
       // Node's server.close() drops only the connections idle at that moment; a keep-alive

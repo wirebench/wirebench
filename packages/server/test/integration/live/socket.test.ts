@@ -347,4 +347,28 @@ describeDb('live-updates at shutdown (live-updates §5.1, host spec §3.7)', () 
       await server.close();
     }
   });
+
+  it('a drain listener that never ends holds the shutdown no longer than the drain time', async () => {
+    const modules: ServerModule[] = BUILTIN_MODULES.map((m) =>
+      m.name !== 'live-updates'
+        ? m
+        : {
+            ...m,
+            register: async (app, ctx) => {
+              await m.register(app, ctx);
+              // A host whose quit path hangs.
+              ctx.instance.onDrain(() => new Promise<void>(() => undefined));
+            },
+          },
+    );
+    const server = await startServer(env(), io(), {
+      signals: new EventEmitter(),
+      exit: vi.fn(),
+      modules,
+      drainMs: 300,
+    });
+    const started = performance.now();
+    await server.close();
+    expect(performance.now() - started).toBeLessThan(5_000);
+  });
 });

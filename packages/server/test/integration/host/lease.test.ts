@@ -660,6 +660,35 @@ describeDb('the host-instance lease (spec §19.9)', () => {
     expect(hostOf(one, alice)?.disposed).toBe(1);
   });
 
+  it('a drain whose lease release throws still closes the sockets 4503 host-draining and ends', async () => {
+    const order: string[] = [];
+    // The release statement throws before it is sent: `leases.release` rejects.
+    const failing: TenantDbFactory = (scope) => {
+      const real = tenancy.db(scope);
+      return {
+        ...real,
+        query: (text: string, params?: readonly unknown[]) => {
+          if (text.startsWith('delete from host_leases where user_id')) throw new Error('the pool is gone');
+          return real.query(text, params);
+        },
+      } as unknown as ReturnType<TenantDbFactory>;
+    };
+    const one = serverProcess('holder-one', failing, order);
+    const closed: string[] = [];
+    const made = socket('a1');
+    await one.instances.open(alice, {
+      ...made,
+      close: (code, reason) => {
+        closed.push(`${String(code)} ${reason}`);
+        made.close(code, reason);
+      },
+    });
+    await one.instances.drain();
+    expect(closed).toEqual(['4503 host-draining']);
+    expect(order).toContain(`disposed ${alice.id}`);
+    await one.instances.closeAll();
+  });
+
   it('a take is one unit: the lock, the expired delete and the insert (and the remaining time when refused)', async () => {
     const one = serverProcess('holder-one');
     const two = serverProcess('holder-two');

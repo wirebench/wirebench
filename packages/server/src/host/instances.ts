@@ -415,16 +415,23 @@ export class HostInstances {
           });
         // After the quit path (spec §19.9), and before a socket waiting on this eviction takes the lease again.
         // A host that was never built took no lease, or gave it back already.
-        if (
-          await instance.host.then(
-            () => true,
-            () => false,
+        try {
+          if (
+            await instance.host.then(
+              () => true,
+              () => false,
+            )
           )
-        )
-          instance.released = await this.deps.leases?.release(instance.user);
-        // Only now (Review Focus 3): a tab that reconnected sooner would find the lease still held, and wait it out.
-        if (draining) {
-          for (const socket of instance.sockets.splice(0)) socket.close(HOST_CLOSE.unavailable, HOST_DRAINING_REASON);
+            instance.released = await this.deps.leases?.release(instance.user);
+        } catch (error) {
+          // The lease expires on its own; the drain still closes the sockets below.
+          this.deps.log("a host's lease could not be given back", error);
+        } finally {
+          // Only now (Review Focus 3): a tab that reconnected sooner would find the lease still held, and wait it out.
+          // In a `finally`, so a release that throws still closes them and the drain still ends.
+          if (draining) {
+            for (const socket of instance.sockets.splice(0)) socket.close(HOST_CLOSE.unavailable, HOST_DRAINING_REASON);
+          }
         }
       })
       .finally(() => {

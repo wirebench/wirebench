@@ -60,7 +60,19 @@ export interface ServerHostInput extends ServerPlatformInput {
   };
   /** Told of every secret written or resolved, by name (`HostOptions.onSecret`). */
   readonly onSecret?: (event: HostSecretEvent) => void;
+  /** Asked before each request reaches the wire (`HostOptions.sendGate`): the tenant's budgets pace runs here. */
+  readonly sendGate?: HostSendGate;
 }
+
+/** What the host tells its send gate of one send (`SendGateRequest`, structurally). */
+export interface HostSendGateRequest {
+  readonly kind: string;
+  readonly interactive: boolean;
+  cancelled(): boolean;
+}
+
+/** `SendGate` of `@wirebench/host`, structurally. */
+export type HostSendGate = (send: HostSendGateRequest) => Promise<{ readonly opened?: () => void } | undefined>;
 
 /** One user's host, as the server sees it. */
 export interface ServerHost {

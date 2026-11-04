@@ -252,6 +252,28 @@ export class InstanceRegistry implements ServerInstance {
   }
 }
 
+/**
+ * Waits for `drain` (spec §20.5) at most `ms`: past it, the shutdown goes on and says so, and the drain's listeners
+ * run on while the app closes. `0` waits not at all (the running lock is lost). Never rejects.
+ */
+export async function drainWithin(drain: Promise<void>, ms: number, warn: (message: string) => void): Promise<void> {
+  const settled = drain.then(
+    () => true,
+    () => true,
+  );
+  if (ms <= 0) return;
+  let timer: NodeJS.Timeout | undefined;
+  const done = await Promise.race([
+    settled,
+    new Promise<false>((resolve) => {
+      timer = setTimeout(() => resolve(false), ms);
+      timer.unref();
+    }),
+  ]);
+  clearTimeout(timer);
+  if (!done) warn('the drain did not finish within the drain time; the shutdown goes on');
+}
+
 /** The live rows, for the registry and for `admin instances`, which reads them without a registry of its own. */
 export async function listLive(db: InstanceQuerier): Promise<InstanceRow[]> {
   const result = await db.query<{
