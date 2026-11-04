@@ -19,7 +19,40 @@ export const GRACE_MS = GRACE_DAYS * 24 * 60 * 60 * 1000;
 /** §2: an explicit list grants exactly those; otherwise Enterprise grants all and Team none. */
 export function grantedFeatures(license: LicensePayload): Feature[] {
   if (license.features !== undefined) return FEATURES.filter((feature) => license.features!.includes(feature));
-  return license.edition === 'enterprise' ? [...FEATURES] : [];
+  return editionFeatures(license.edition);
+}
+
+/** An edition's own features, with no list to narrow them: Enterprise all, Team and Community none. */
+export function editionFeatures(edition: LicensePayload['edition'] | 'community'): Feature[] {
+  return edition === 'enterprise' ? [...FEATURES] : [];
+}
+
+/**
+ * A hosted tenant's state (hosted edition spec §22.4): its row's edition and seats, never a license. A hosted
+ * edition is Team or Enterprise and always `active`: suspension changes reachability, not the edition (§22.7). A
+ * Community row (the default tenant, which no host names) reads as a server without a license.
+ */
+export function hostedLicenseState(
+  row: { readonly edition: LicensePayload['edition'] | 'community'; readonly seats: number | null },
+  seatsUsed: number,
+  serverId: string,
+): LicenseState {
+  if (row.edition === 'community') {
+    return {
+      edition: 'community',
+      status: 'none',
+      seats: { used: seatsUsed, limit: COMMUNITY_SEATS },
+      features: [],
+      serverId,
+    };
+  }
+  return {
+    edition: row.edition,
+    status: 'active',
+    seats: { used: seatsUsed, limit: row.seats },
+    features: editionFeatures(row.edition),
+    serverId,
+  };
 }
 
 export function licenseState(

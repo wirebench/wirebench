@@ -67,6 +67,12 @@ export function licensingHarness(
     readonly extra?: (clock: TestClock) => readonly ServerModule[];
     /** Restarts over an earlier harness's schema; see {@link identityHarness}. */
     readonly db?: IdentityHarness['db'];
+    /** A hosted configuration, which `loadConfig` refuses; see {@link identityHarness}. */
+    readonly configure?: Parameters<typeof identityHarness>[0] extends infer O
+      ? O extends { readonly configure?: infer C }
+        ? C
+        : never
+      : never;
   } = {},
 ): Promise<IdentityHarness> {
   return identityHarness({
@@ -74,6 +80,7 @@ export function licensingHarness(
     ...(options.provider !== undefined ? { provider: options.provider } : {}),
     ...(options.logStream !== undefined ? { logStream: options.logStream } : {}),
     ...(options.db !== undefined ? { db: options.db } : {}),
+    ...(options.configure !== undefined ? { configure: options.configure } : {}),
     modules: (clock) => {
       const extra = options.extra?.(clock) ?? [];
       return [

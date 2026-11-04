@@ -16,6 +16,7 @@ import {
 } from '../context.js';
 import type { TenantScope } from '../tenancy/scope.js';
 import { ExitCode, type ServerIo } from '../io.js';
+import { licensingHosted } from './errors.js';
 import { installLicense, removeLicense, type LicenseEnv } from './service.js';
 
 export type LicenseCommand = Extract<ServerCommand, { command: `admin-license-${string}` }>;
@@ -44,6 +45,8 @@ export async function runLicenseCommand(
   scope: TenantScope,
   io: ServerIo,
 ): Promise<number> {
+  // Hosted mode (spec §22.4): the edition is the tenant row's, set by `admin tenant set-edition` or a subscription.
+  if (env.hosted === true) throw licensingHosted();
   // The command line's own audit rows, recorded in its tenant like the change they describe.
   const audit = (event: AuditInput) => env.tenancy.db(scope).transaction((tx) => recordAudit(env.hooks, tx, event));
   switch (command.command) {

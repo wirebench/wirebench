@@ -14,7 +14,7 @@ import { describeDb } from '../../helpers/database.js';
 import { identityHarness, signedInUser, type IdentityHarness, type SignedInUser } from '../../helpers/identity.js';
 import { license, testKeys } from '../../helpers/licensing.js';
 import { manualTimers } from '../../helpers/timers.js';
-import { APP_DOMAIN, twoTenants, type Tenant, type TwoTenants } from '../tenancy/modules/two-tenants.js';
+import { APP_DOMAIN, setEdition, twoTenants, type Tenant, type TwoTenants } from '../tenancy/modules/two-tenants.js';
 
 const KEY = 'test-chain-key-0123456789abcdefghij';
 const NAME = 'app.customer.test';
@@ -72,10 +72,8 @@ describeDb('the custom-domain routes, hosted (spec §23.6)', () => {
   const admins: Partial<Record<'acme' | 'beta', SignedInUser>> = {};
   const members: Partial<Record<'acme' | 'beta', SignedInUser>> = {};
   const admin = (tenant: Tenant) => admins[tenant.slug]!;
-  const install = async (tenant: Tenant, edition: 'team' | 'enterprise') => {
-    const res = await tenant.call(admin(tenant), 'PUT', '/license', { license: license(keys, { edition }) });
-    expect(res.status).toBe(200);
-  };
+  // Hosted: the tenant row is the edition (spec §22.4), as `admin tenant set-edition` writes it.
+  const install = (tenant: Tenant, edition: 'team' | 'enterprise') => setEdition(t, tenant, edition);
   const call = (tenant: Tenant, method: 'GET' | 'PUT' | 'POST' | 'DELETE', payload?: object) =>
     tenant.call<Wire>(admin(tenant), method, method === 'POST' ? '/tenant/domain/check' : '/tenant/domain', payload);
   const events = async (tenant: Tenant) =>

@@ -6,7 +6,7 @@
  * the web entry point and its redirect to https, and the certificate probe sees the name.
  *
  * Traefik's image is the recipe's own, so the test runs what ships. It needs Docker and pulls three images, so it runs
- * only on CI (`CI` set) or with `WIREBENCH_SERVER_PEBBLE=1`, never with `WIREBENCH_SERVER_PEBBLE=0` (which wins on CI
+ * only on Linux CI (`CI` set) or with `WIREBENCH_SERVER_PEBBLE=1`, never with `WIREBENCH_SERVER_PEBBLE=0` (which wins on CI
  * too), and skips where Docker does not answer: a plain local `pnpm test` starts no containers. Traefik's version and
  * usage reporting are off, so nothing but the image pulls leaves the machine.
  */
@@ -34,7 +34,9 @@ const TIMEOUT = 240_000;
 
 const wanted = process.env.WIREBENCH_SERVER_PEBBLE;
 async function dockerAnswers(): Promise<boolean> {
-  if (wanted === '0' || (wanted !== '1' && (process.env.CI ?? '') === '')) return false;
+  // On CI only on Linux: the Windows runners' Docker runs Windows containers and cannot pull these images.
+  const onCi = (process.env.CI ?? '') !== '' && process.platform === 'linux';
+  if (wanted === '0' || (wanted !== '1' && !onCi)) return false;
   try {
     await run('docker', ['compose', 'version'], { timeout: 20_000 });
     return true;

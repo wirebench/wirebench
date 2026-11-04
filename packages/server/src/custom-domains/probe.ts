@@ -14,6 +14,12 @@ import { checkServerIdentity, connect } from 'node:tls';
 import { parseHostPort, type ServerConfig } from '../config.js';
 import type { CertificateProbe, ProbeResult } from './job.js';
 
+/**
+ * The handshake refusals that are about the certificate rather than the connection: OpenSSL's verification codes
+ * (`CERT_HAS_EXPIRED`, `DEPTH_ZERO_SELF_SIGNED_CERT`, `UNABLE_TO_VERIFY_LEAF_SIGNATURE`, `INVALID_PURPOSE`, …) and Node's name check.
+ */
+const CERTIFICATE_ERROR = /CERT|SELF_SIGNED|ISSUER|SIGNATURE|CHAIN|PURPOSE|INVALID_CA|PATH_LENGTH|NAME_CONSTRAINT/;
+
 /** How long a probe waits for the proxy's handshake (spec §23.4). */
 export const PROBE_TIMEOUT_MS = 5_000;
 
@@ -39,12 +45,12 @@ export function certificateProbe(options: ProbeOptions): CertificateProbe {
         socket.destroy();
         resolve(result);
       };
-      // Verified below rather than refused in the handshake, so a certificate that fails is told from none at all.
+      // Node verifies the chain and the name in the handshake (validation stays on); a refusal there carries an
+      // OpenSSL or TLS code naming the certificate, which is how a wrong certificate is told from none at all.
       const socket = connect({
         host: options.host,
         port: options.port,
         servername: name,
-        rejectUnauthorized: false,
         ...(options.ca !== undefined ? { ca: options.ca } : {}),
         ALPNProtocols: ['http/1.1'],
       });
@@ -53,32 +59,30 @@ export function certificateProbe(options: ProbeOptions): CertificateProbe {
       }, timeoutMs);
       socket.once('secureConnect', () => {
         const certificate = socket.getPeerCertificate();
-        if (Object.keys(certificate).length === 0) {
+        if (!socket.authorized || Object.keys(certificate).length === 0) {
           finish({ verdict: 'missing', message: 'The proxy sent no certificate for this name.' });
           return;
         }
-        // Node reports a name the certificate does not cover as an authorization error too, since the probe sends
-        // the name as SNI; anything else it reports is the chain.
-        const failure = socket.authorizationError as (Error & { readonly code?: string }) | string | null;
-        const reason = typeof failure === 'string' ? failure : (failure?.code ?? failure?.message);
-        const notCovering = reason === 'ERR_TLS_CERT_ALTNAME_INVALID';
-        if (!socket.authorized && !notCovering) {
-          finish({
-            verdict: 'wrong',
-            message: `The proxy's certificate for this name is not trusted yet (${reason ?? 'unverified'}).`,
-          });
-          return;
-        }
-        if (notCovering || checkServerIdentity(name, certificate) !== undefined) {
+        // Belt and braces: the handshake has checked the name already.
+        if (checkServerIdentity(name, certificate) !== undefined) {
           finish({ verdict: 'wrong', message: "The proxy's certificate does not cover this name yet." });
           return;
         }
         finish({ verdict: 'ok', message: 'The certificate for this name is live.' });
       });
       socket.once('error', (error: NodeJS.ErrnoException) => {
+        const code = error.code;
+        if (code === 'ERR_TLS_CERT_ALTNAME_INVALID') {
+          finish({ verdict: 'wrong', message: "The proxy's certificate does not cover this name yet." });
+          return;
+        }
+        if (code !== undefined && CERTIFICATE_ERROR.test(code)) {
+          finish({ verdict: 'wrong', message: `The proxy's certificate for this name is not trusted yet (${code}).` });
+          return;
+        }
         finish({
           verdict: 'missing',
-          message: `The proxy could not be reached for a certificate${error.code !== undefined ? ` (${error.code})` : ''}.`,
+          message: `The proxy could not be reached for a certificate${code !== undefined ? ` (${code})` : ''}.`,
         });
       });
     });

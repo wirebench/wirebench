@@ -95,6 +95,17 @@ export const AUDIT_ACTIONS = [
   'agent.nonce_refused',
   'agent.request_refused',
   /**
+   * A hosted tenant's lifecycle (hosted edition spec §22.14), in its own chain: created, its edition set, suspended,
+   * resumed, renamed, its deletion asked for or cancelled. `details.by` is `operator` or a user id.
+   */
+  'tenant.created',
+  'tenant.edition_set',
+  'tenant.suspended',
+  'tenant.resumed',
+  'tenant.renamed',
+  'tenant.deletion_requested',
+  'tenant.deletion_cancelled',
+  /**
    * A custom name was claimed or removed through the routes or the admin command (hosted edition spec §23.6), or its
    * check moved it (§23.2): by name only, never its token.
    */
@@ -127,6 +138,7 @@ export const AUDIT_ACTION_GROUPS = [
   'session_log',
   'terminal_share',
   'agent',
+  'tenant',
   'custom_domain',
 ] as const;
 export type AuditActionGroup = (typeof AUDIT_ACTION_GROUPS)[number];
@@ -149,6 +161,7 @@ export const AUDIT_TARGET_KINDS = [
   'session-log',
   'terminal-share',
   'agent-pairing',
+  'tenant',
   'custom-domain',
 ] as const;
 export type AuditTargetKind = (typeof AUDIT_TARGET_KINDS)[number];

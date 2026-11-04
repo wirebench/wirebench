@@ -26,6 +26,7 @@ import { sessionCookieName } from '../../../src/identity/cookies.js';
 import * as identityRepo from '../../../src/identity/repo.js';
 import { mintToken, newId } from '../../../src/identity/tokens.js';
 import { licensingModule } from '../../../src/licensing/module.js';
+import * as licensingRepo from '../../../src/licensing/repo.js';
 import { liveModule } from '../../../src/live/module.js';
 import type { AlertOutbox, DeliverAlert } from '../../../src/schedules/alerts/outbox.js';
 import { schedulesModule } from '../../../src/schedules/module.js';
@@ -46,7 +47,7 @@ import { license, testKeys } from '../../helpers/licensing.js';
 import { workspaceSnapshot } from '../../helpers/schedule-runs.js';
 import { SCHEDULES_KEY } from '../../helpers/schedules.js';
 import { manualTimers, type ManualTimers } from '../../helpers/timers.js';
-import { countIn, twoTenants, type Tenant, type TwoTenants } from './modules/two-tenants.js';
+import { countIn, setEdition, twoTenants, type Tenant, type TwoTenants } from './modules/two-tenants.js';
 
 export const PASSWORD = 'isolation password 0019';
 export const CHAIN_KEY = 'test-chain-key-0123456789abcdefghij';
@@ -301,7 +302,14 @@ export async function fill(t: TwoTenants, tenant: Tenant): Promise<Filled> {
     tenant.call<T>(admin, method, path, payload);
 
   // ---- licensing, identity
-  await ok(call('PUT', '/license', { license: license(keys, { edition: 'enterprise', seats: 500 }) }), 'license');
+  // Hosted mode's edition is the tenant row (spec §22.4); the license table still gets a row of the tenant's.
+  await setEdition(t, tenant, 'enterprise', 500);
+  await licensingRepo.putLicense(tenant.tdb, {
+    text: license(keys, { edition: 'enterprise', seats: 500 }),
+    licenseId: note(newId()),
+    installedBy: admin.user.id,
+    at,
+  });
   const invitation = await ok(
     call<{ id: string; url: string }>('POST', '/invitations', { email: `invitee@${slug}.example` }),
     'invitation',

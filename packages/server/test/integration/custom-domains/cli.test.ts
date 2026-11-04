@@ -3,8 +3,6 @@
  * checked at and never a token; `check --tenant` checks now; `remove --tenant` releases the name, audited. Hosted
  * only, through `runAdmin`'s test seam since `loadConfig` refuses hosted mode (§19.1). DNS is a fake: no real DNS.
  */
-import { writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import type { ServerConfig } from '../../../src/config.js';
 import type { DnsLookup } from '../../../src/custom-domains/dns.js';
@@ -15,7 +13,7 @@ import type { TenantScope } from '../../../src/tenancy/scope.js';
 import { createTenancy, directoryOf, type Tenancy } from '../../../src/tenancy/tenancy.js';
 import { describeDb, testDatabase } from '../../helpers/database.js';
 import { mkTempDir, removeTempDir } from '../../helpers/git.js';
-import { license, testKeys } from '../../helpers/licensing.js';
+import { testKeys } from '../../helpers/licensing.js';
 
 const APP = 'example.test';
 const NAME = 'app.customer.test';
@@ -84,9 +82,10 @@ describeDb('admin domains (spec §23.6)', () => {
     tokenBeta = (
       await tenancy.db(beta).transaction((tx) => claim(tx, { name: 'beta.customer.test', createdBy: null, now: at }))
     ).token;
-    const path = join(dir, 'enterprise.lic');
-    await writeFile(path, `${license(keys, { edition: 'enterprise' })}\n`);
-    expect(await runAdmin({ command: 'admin-license-install', file: path, tenant: 'acme' }, io().io, options)).toBe(0);
+    // Hosted: the tenant row is the edition (spec §22.4).
+    await db.query("update tenants set edition = 'enterprise', edition_source = 'operator' where id = $1::uuid", [
+      acme.tenantId,
+    ]);
   });
   afterAll(async () => {
     await db.close();

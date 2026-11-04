@@ -14,6 +14,8 @@
  *   start-up, the resolver's registration and the admin command line reach it.
  * - **No `stateWithoutScope` at all** (tenancy Tasks 9 and 14): a route or a job that read the license without
  *   its tenant would read another's in hosted mode. Every job reads its tenant's in the job loop.
+ * - **No `tenantWritesOf` outside `tenancy/tenancy.ts` and `control-plane/tenants.ts`** (slice 7 Task 6): the control
+ *   plane's way to `TenantAdmin.create` and the directory's change, which no other module may reach.
  * - **No `TenantDirectory` or `TenantAdmin` outside `src/tenancy/`** (Task 8 review I2), in an import, a `new`,
  *   a type or an alias: `new TenantDirectory(ctx.db).list()` would hand a module every tenant's scope, the hole
  *   `directoryOf` closes.
@@ -50,10 +52,11 @@
  *   functions that open the control pool and hand it to the control-plane module's factory (`withControlPool`), and
  *   any import of `control-db`, outside it and `serve.ts` (which opens the pool and hands it over; the pool is never
  *   on the shared context, and a `control` read off a context, `ctx.control` or `ctx['control']`, is refused
- *   everywhere); `controlDatabaseUrl` outside `config.ts`, `serve.ts`
- *   and `tenancy/cli.ts` (`admin tenancy role`, which creates the role), in the forms the database URLs are refused
+ *   everywhere); `controlDatabaseUrl` outside `config.ts`, `serve.ts`, `tenancy/cli.ts` (`admin tenancy role`, which
+ *   creates the role) and `control-plane/cli.ts` (`admin tenant`, which opens the pool), in the forms the database URLs are refused
  *   in; and SQL naming `signups`, `billing_events`, `tenant_slugs_retired` or `tenant_deletions` outside
- *   `src/control-plane/` (`tenancy/grants.ts` lists them for the roles). `from tenants` and `join tenants` are allowed
+ *   `src/control-plane/` (`tenancy/grants.ts` lists them for the roles, and `tenancy/redirects.ts` reads
+ *   `tenant_slugs_retired`'s redirects for the resolver, that table only). `from tenants` and `join tenants` are allowed
  *   in `src/control-plane/` as in `src/tenancy/`; setting the tenant is not.
  *
  * The gate is textual: a name built by string concatenation, or an aliased re-export made from inside an allowed
@@ -76,7 +79,7 @@ export const URLS_FILE = 'packages/server/src/tenancy/urls.ts';
 
 /** The two ways to get a `TenantScope` without a request or the job loop, and the only files that may name them. */
 export const SCOPE_MINTS: Readonly<
-  Record<'defaultScope' | 'scopeOf' | 'directoryOf' | 'stateWithoutScope', readonly string[]>
+  Record<'defaultScope' | 'scopeOf' | 'directoryOf' | 'stateWithoutScope' | 'tenantWritesOf', readonly string[]>
 > = {
   defaultScope: [
     'packages/server/src/tenancy/directory.ts',
@@ -93,6 +96,8 @@ export const SCOPE_MINTS: Readonly<
   // Nowhere: the license without a scope (tenancy Task 9) was removed once its last job, the audit forwarder,
   // read each tenant's in the job loop (Task 14). The name stays refused, so it does not come back.
   stateWithoutScope: [],
+  // The control plane's writes of the tenants (spec §22.2): its lifecycle service alone, so no module creates a tenant.
+  tenantWritesOf: ['packages/server/src/tenancy/tenancy.ts', 'packages/server/src/control-plane/tenants.ts'],
 };
 
 /** The tenant directory's classes, which only `src/tenancy/` may name (Task 8 review I2). */
@@ -144,6 +149,8 @@ export const RAW_DB_ALLOWED: readonly string[] = [
   // The control role's pool (spec §22.2): `openControlDb` builds it, and only `serve.ts` calls that. The control-plane
   // rules below keep `ControlDb` and the control URL to `src/control-plane/`.
   'packages/server/src/control-plane/control-db.ts',
+  // `admin tenant` (spec §22.14): it opens the app pool for the tenants' units and the bus, as `admin` does.
+  'packages/server/src/control-plane/cli.ts',
 ];
 const RAW_DB_DIRS: readonly string[] = ['packages/server/src/db/', TENANCY_DIR];
 /** The raw pool and its types (`db/pool.ts`, `db/querier.ts`), by the end of a module specifier. */
@@ -203,12 +210,20 @@ export const CONTROL_URL_ALLOWED: readonly string[] = [
   'packages/server/src/config.ts',
   'packages/server/src/serve.ts',
   'packages/server/src/tenancy/cli.ts',
+  // `admin tenant` (spec §22.14): the operator's lifecycle commands open the control pool themselves.
+  'packages/server/src/control-plane/cli.ts',
 ];
 const CONTROL_URL = 'controlDatabaseUrl';
 /** The control plane's own unscoped tables (migration `0023`, spec §22.3), by name, in SQL text. */
 const CONTROL_SQL = /(?<![\w"])"?(?:signups|billing_events|tenant_slugs_retired|tenant_deletions)"?(?![\w"])/i;
 /** Outside `src/control-plane/`, the list the roles' grants read them from. */
 export const CONTROL_SQL_ALLOWED: readonly string[] = ['packages/server/src/tenancy/grants.ts'];
+/**
+ * The resolver's read of the retired slugs' redirects (spec §22.8): this one file may name `tenant_slugs_retired`, and
+ * no other control table.
+ */
+export const RETIRED_SLUGS_READER = 'packages/server/src/tenancy/redirects.ts';
+const CONTROL_SQL_NAMES = new RegExp(CONTROL_SQL.source, 'gi');
 
 export interface ScopeHit {
   readonly file: string;
@@ -221,6 +236,7 @@ export interface ScopeHit {
     | 'directory-of'
     | 'tenant-directory'
     | 'license-without-scope'
+    | 'tenant-writes'
     | 'public-url'
     | 'database-url'
     | 'operator-url'
@@ -298,6 +314,7 @@ const MINT_RULES = {
   scopeOf: 'scope-of',
   directoryOf: 'directory-of',
   stateWithoutScope: 'license-without-scope',
+  tenantWritesOf: 'tenant-writes',
 } as const satisfies Record<keyof typeof SCOPE_MINTS, ScopeHit['rule']>;
 
 /**
@@ -479,7 +496,11 @@ export function findControlPlane(file: string, content: string): ScopeHit[] {
         ts.isStringLiteralLike(node) || ts.isTemplateHead(node) || ts.isTemplateMiddle(node) || ts.isTemplateTail(node)
           ? node.text
           : undefined;
-      if (text !== undefined && CONTROL_SQL.test(text)) hit(node, 'control-sql');
+      if (text !== undefined && CONTROL_SQL.test(text)) {
+        const named = [...text.matchAll(CONTROL_SQL_NAMES)].map((match) => match[0].replaceAll('"', '').toLowerCase());
+        const retiredOnly = named.every((name) => name === 'tenant_slugs_retired');
+        if (!(file === RETIRED_SLUGS_READER && retiredOnly)) hit(node, 'control-sql');
+      }
     }
     ts.forEachChild(node, visit);
   };
@@ -521,6 +542,7 @@ if (process.argv[1] !== undefined && fileURLToPath(import.meta.url) === process.
       'directory-of': 'directoryOf outside the files that may name it',
       'tenant-directory': 'TenantDirectory or TenantAdmin outside src/tenancy/',
       'license-without-scope': 'stateWithoutScope is gone; use state(request.tenant), or state(scope, tx) in a job',
+      'tenant-writes': 'tenantWritesOf outside tenancy.ts and control-plane/tenants.ts',
       'public-url': 'a read of the configured public URL; use tenantUrl(config, request)',
       'database-url':
         'a read of a database URL outside config.ts, src/db/, src/tenancy/ and the start-up; use ctx.tenancy',
@@ -534,7 +556,7 @@ if (process.argv[1] !== undefined && fileURLToPath(import.meta.url) === process.
       'hosts-sql': 'tenant_hosts outside src/custom-domains/ and src/tenancy/directory.ts',
       'control-db': 'the control pool (ControlDb, control-db) outside src/control-plane/ and serve.ts',
       'context-control': 'a control pool read off the context; serve.ts hands it to the control-plane module alone',
-      'control-url': 'controlDatabaseUrl outside config.ts, serve.ts and tenancy/cli.ts',
+      'control-url': 'controlDatabaseUrl outside config.ts, serve.ts, tenancy/cli.ts and control-plane/cli.ts',
       'control-sql':
         'SQL naming signups, billing_events, tenant_slugs_retired or tenant_deletions outside src/control-plane/',
     } as const;
