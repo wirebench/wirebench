@@ -1,6 +1,12 @@
 import { createHash, createHmac, pbkdf2Sync } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { appRoleGrants, READ_ONLY_TABLES } from '../../../src/tenancy/grants.js';
+import {
+  appRoleGrants,
+  CONTROL_ONLY_TABLES,
+  CONTROL_TABLES,
+  controlRoleGrants,
+  READ_ONLY_TABLES,
+} from '../../../src/tenancy/grants.js';
 import {
   appRoleOf,
   roleMode,
@@ -70,6 +76,11 @@ describe('appRoleGrants', () => {
       `alter default privileges for role "own er" in schema "we""ird" grant select, insert, update, delete on tables to "o'app"`,
     );
     expect(READ_ONLY_TABLES).toEqual(['schema_migrations', 'server_identity']);
+    // The control plane's unscoped tables (spec §22.2, §22.3): the app role holds nothing on them.
+    expect(statements[1]).toContain(
+      `array['tenant_slugs_retired', 'signups', 'billing_events', 'tenant_deletions']::text[]`,
+    );
+    expect(statements[1]).toContain(`'revoke all on %I.%I from %I'`);
     expect(statements.join('\n')).not.toMatch(/\bexecute on\b|\bcreate on\b|\bon all tables\b/);
   });
 
@@ -117,6 +128,21 @@ describe('roleMode', () => {
     );
     expect(() => roleMode({ databaseUrl: 'host=db user=app', migrationDatabaseUrl: owner })).toThrow(
       /WIREBENCH_SERVER_DATABASE_URL must be a postgres:\/\/ URL/,
+    );
+  });
+});
+
+describe('the control tables (spec §22.2, §22.3)', () => {
+  it('are tenants and the four unscoped control-plane tables, none of them read-only', () => {
+    expect(CONTROL_ONLY_TABLES).toEqual(['tenant_slugs_retired', 'signups', 'billing_events', 'tenant_deletions']);
+    expect(CONTROL_TABLES).toEqual(['tenants', ...CONTROL_ONLY_TABLES]);
+    for (const table of CONTROL_TABLES) expect(READ_ONLY_TABLES).not.toContain(table);
+  });
+
+  it('grant the control role DML on each of them', () => {
+    const block = controlRoleGrants({ schema: 's', control: 'c' })[1]!;
+    expect(block).toContain(
+      `array['tenants', 'tenant_slugs_retired', 'signups', 'billing_events', 'tenant_deletions']::text[]`,
     );
   });
 });

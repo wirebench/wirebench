@@ -7,11 +7,16 @@
  *
  * `admin tenancy role` runs the same statements, or prints them with `--print-sql` for an operator whose
  * owner may not create roles.
+ *
+ * In hosted mode a third role (spec §22.2): the control role of `WIREBENCH_SERVER_CONTROL_DATABASE_URL`,
+ * `login nosuperuser bypassrls noinherit`, the one role past the policy. `ensureControlRole` creates it the same
+ * way, with a verifier and never the password, when the connected role may give BYPASSRLS (a superuser, or a
+ * CREATEROLE role that has it itself), and re-applies its grants every time.
  */
 import { createHash, createHmac, pbkdf2Sync, randomBytes } from 'node:crypto';
 import { WirebenchError } from '@wirebench/engine';
 import type { Database, Querier } from '../db/querier.js';
-import { appRoleGrants } from './grants.js';
+import { appRoleGrants, controlRoleGrants } from './grants.js';
 
 /** PostgreSQL's own default (`scram_iterations`), so a verifier made here costs what one made there does. */
 export const SCRAM_ITERATIONS = 4096;
@@ -84,27 +89,32 @@ export function roleMode(config: {
 }
 
 /** The role and password a connection string names. Only the URL form is read; values are never echoed. */
-export function appRoleOf(url: string): {
+export interface UrlRole {
   readonly role: string;
   readonly password?: string;
   /** A client certificate in the URL (`sslcert`): a way to sign in that needs no password. */
   readonly certificate: boolean;
-} {
+}
+
+export function appRoleOf(url: string): UrlRole {
+  return urlRoleOf(url, 'WIREBENCH_SERVER_DATABASE_URL', 'the app role', 'tenancy-app-url-invalid');
+}
+
+/** The control role a connection string names (spec §22.2). */
+export function controlRoleOf(url: string): UrlRole {
+  return urlRoleOf(url, 'WIREBENCH_SERVER_CONTROL_DATABASE_URL', 'the control role', 'tenancy-control-url-invalid');
+}
+
+function urlRoleOf(url: string, variable: string, what: string, code: string): UrlRole {
   let parsed: URL;
   try {
     parsed = new URL(url);
   } catch {
-    throw new WirebenchError(
-      'tenancy-app-url-invalid',
-      'WIREBENCH_SERVER_DATABASE_URL is not a postgres:// URL; the app role is read from its user name',
-    );
+    throw new WirebenchError(code, `${variable} is not a postgres:// URL; ${what} is read from its user name`);
   }
   const role = decodeURIComponent(parsed.username);
   if (role === '') {
-    throw new WirebenchError(
-      'tenancy-app-url-invalid',
-      'WIREBENCH_SERVER_DATABASE_URL names no user; it must name the app role',
-    );
+    throw new WirebenchError(code, `${variable} names no user; it must name ${what}`);
   }
   const certificate = parsed.searchParams.has('sslcert');
   return parsed.password === ''
@@ -204,6 +214,108 @@ export async function ensureAppRole(owner: Database, appUrl: string): Promise<Ap
       } catch (error) {
         if ((error as { readonly code?: unknown }).code !== '42710') throw error;
         await tx.query('rollback to savepoint wirebench_create_role');
+      }
+    }
+    for (const statement of plan.exists ? plan.statements : grants) await tx.query(statement);
+    return plan;
+  });
+}
+
+export interface ControlRolePlan {
+  /** The control role, from the control URL. */
+  readonly role: string;
+  /** The connected owner (`current_user`). */
+  readonly owner: string;
+  /** The schema the grants are for: the owner's `current_schema()`. */
+  readonly schema: string;
+  readonly exists: boolean;
+  /** `create role …` when the role is missing (for a superuser to run), then the grants. Idempotent, in order. */
+  readonly statements: readonly string[];
+}
+
+/**
+ * What `ensureControlRole` would run, read-only (spec §22.2). The control role must be a role of its own: one that
+ * is the app role or the owner is refused with `control-plane-role-shared`, the start-up check's code.
+ */
+export async function controlRolePlan(owner: Querier, controlUrl: string, appUrl: string): Promise<ControlRolePlan> {
+  const { role, password, certificate } = controlRoleOf(controlUrl);
+  const who = (
+    await owner.query<{ owner: string; schema: string | null }>(
+      'select current_user::text as owner, current_schema() as schema',
+    )
+  ).rows[0]!;
+  if (who.schema === null) {
+    throw new WirebenchError(
+      'tenancy-no-schema',
+      'the migration URL has no current schema; set a search_path whose first schema exists',
+    );
+  }
+  // The schema's owner as well as the connected role: a superuser may run this for an owner it is not.
+  const schemaOwner = (
+    await owner.query<{ owner: string }>(
+      'select nspowner::regrole::text as owner from pg_namespace where nspname = $1',
+      [who.schema],
+    )
+  ).rows[0]?.owner;
+  if (role === who.owner || role === schemaOwner || role === roleNameOf(appUrl)) {
+    throw new WirebenchError(
+      'control-plane-role-shared',
+      `WIREBENCH_SERVER_CONTROL_DATABASE_URL names ${role}, which is the app role or the owner; the control role must be a role of its own`,
+    );
+  }
+  const exists = ((await owner.query('select 1 from pg_roles where rolname = $1', [role])).rowCount ?? 0) > 0;
+  if (!exists && password === undefined && !certificate) {
+    throw new WirebenchError(
+      'tenancy-control-password-missing',
+      `WIREBENCH_SERVER_CONTROL_DATABASE_URL names no password for the control role ${role}, which does not exist yet; put the password it should have in the URL`,
+    );
+  }
+  const statements: string[] = [];
+  if (!exists) {
+    const created = await owner.query<{ sql: string }>(
+      password === undefined
+        ? "select format('create role %I login nosuperuser bypassrls noinherit', $1::text) as sql"
+        : "select format('create role %I login nosuperuser bypassrls noinherit password %L', $1::text, $2::text) as sql",
+      password === undefined ? [role] : [role, scramVerifier(password)],
+    );
+    statements.push(created.rows[0]!.sql);
+  }
+  statements.push(...controlRoleGrants({ schema: who.schema, control: role }));
+  return { role, owner: who.owner, schema: who.schema, exists, statements };
+}
+
+const CONTROL_ROLE_LOCK = "select pg_advisory_xact_lock(hashtext('wirebench.tenancy.control-role'))";
+
+/**
+ * Creates the control role when it is missing, then (re-)applies its grants, in one transaction as the owner (spec
+ * §22.2). PostgreSQL lets only a superuser, or a CREATEROLE role that has BYPASSRLS itself, create a BYPASSRLS role:
+ * any other owner that finds the role missing gets `tenancy-control-role-create-refused`, pointing at `--print-sql`.
+ */
+export async function ensureControlRole(owner: Database, controlUrl: string, appUrl: string): Promise<ControlRolePlan> {
+  return owner.transaction(async (tx) => {
+    await tx.query(CONTROL_ROLE_LOCK);
+    const plan = await controlRolePlan(tx, controlUrl, appUrl);
+    if (!plan.exists) {
+      const may = await tx.query<{ may: boolean }>(
+        'select (rolsuper or (rolcreaterole and rolbypassrls)) as may from pg_roles where rolname = current_user',
+      );
+      if (may.rows[0]?.may !== true) {
+        throw new WirebenchError(
+          'tenancy-control-role-create-refused',
+          `the control role ${plan.role} does not exist and ${plan.owner} may not create a BYPASSRLS role; run wirebench-server admin tenancy role --print-sql, apply its create role as a superuser, and the rest as the owner`,
+        );
+      }
+    }
+    const [first, ...grants] = plan.statements;
+    if (!plan.exists) {
+      // Roles are cluster-wide, the lock per database: `duplicate_object` means another database made it meanwhile.
+      await tx.query('savepoint wirebench_create_control_role');
+      try {
+        await tx.query(first!);
+        await tx.query('release savepoint wirebench_create_control_role');
+      } catch (error) {
+        if ((error as { readonly code?: unknown }).code !== '42710') throw error;
+        await tx.query('rollback to savepoint wirebench_create_control_role');
       }
     }
     for (const statement of plan.exists ? plan.statements : grants) await tx.query(statement);

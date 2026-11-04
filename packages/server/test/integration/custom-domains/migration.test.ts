@@ -1,5 +1,5 @@
 /**
- * Slice 8 Task 2 (hosted edition spec §23.3): migration `0023`. `custom_domains` is a tenant table and passes guard 3
+ * Slice 8 Task 2 (hosted edition spec §23.3): migration `0024`. `custom_domains` is a tenant table and passes guard 3
  * as every scoped table does (§19.8); `tenant_hosts` is unscoped, the custom-name counterpart of `tenants.slug`, and
  * joins the allowlist with the app role's four privileges. Each refusal has its positive control.
  */
@@ -27,7 +27,7 @@ const CLAIM = "insert into custom_domains (name, token) values ('app.customer.te
 const STATES = ['pending', 'verified', 'active', 'failing', 'lapsed', 'paused', 'expired'];
 const ROLLED_BACK = 'rolled back on purpose';
 
-describeDb('migration 0023: custom domains and tenant hosts (hosted spec §23.3)', () => {
+describeDb('migration 0024: custom domains and tenant hosts (hosted spec §23.3)', () => {
   let db: TestDatabase;
   let tdb: TenantDb;
   let tenantId: string;
@@ -76,11 +76,14 @@ describeDb('migration 0023: custom domains and tenant hosts (hosted spec §23.3)
     await db?.close();
   });
 
-  it('is the last migration, from its own folder, after the operations one', async () => {
+  it("is the last migration, from its own folder, after the control plane's 0023", async () => {
     const migrations = await allMigrations(BUILTIN_MODULES);
-    expect(migrations.slice(-2).map((m) => `${m.version}_${m.name}`)).toEqual(['22_operations', '23_custom-domains']);
+    expect(migrations.slice(-2).map((m) => `${m.version}_${m.name}`)).toEqual([
+      '23_control-plane',
+      '24_custom-domains',
+    ]);
     const ledger = await db.owner.query<{ v: number }>('select max(version)::int as v from schema_migrations');
-    expect(ledger.rows[0]!.v).toBe(23);
+    expect(ledger.rows[0]!.v).toBe(24);
   });
 
   describe('custom_domains, a tenant table (guard 3, spec §19.8)', () => {
@@ -186,7 +189,7 @@ describeDb('migration 0023: custom domains and tenant hosts (hosted spec §23.3)
     }
 
     it("keeps two tenants' claims apart, the same name included", async () => {
-      const other = await newTenant('cd-0023-b');
+      const other = await newTenant('cd-0024-b');
       try {
         await other.tdb.query(CLAIM.replace('token-a', 'token-b'));
         const tokens = async (t: TenantDb) =>
@@ -244,7 +247,7 @@ describeDb('migration 0023: custom domains and tenant hosts (hosted spec §23.3)
     });
 
     it('holds a name once: a second tenant cannot insert the same host', async () => {
-      const other = await newTenant('cd-0023-c');
+      const other = await newTenant('cd-0024-c');
       try {
         await app.query("insert into tenant_hosts (host, tenant_id) values ('site.customer.test', $1)", [tenantId]);
         expect(
@@ -289,7 +292,7 @@ describeDb('migration 0023: custom domains and tenant hosts (hosted spec §23.3)
     });
 
     it('goes with its tenant: deleting the tenant deletes its hosts', async () => {
-      const other = await newTenant('cd-0023-d');
+      const other = await newTenant('cd-0024-d');
       await app.query("insert into tenant_hosts (host, tenant_id) values ('gone.customer.test', $1)", [other.id]);
       await db.owner.query('delete from tenants where id = $1', [other.id]);
       expect(

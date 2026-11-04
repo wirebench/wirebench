@@ -92,6 +92,30 @@ describeDb('startServer', () => {
     }
   });
 
+  it('gives modules a config with none of the database URLs on the object, not only off its type', async () => {
+    let keys: string[] = [];
+    const module: ServerModule = {
+      name: 'identity',
+      register: (_app, ctx) => {
+        keys = Object.keys(ctx.config);
+        return Promise.resolve();
+      },
+    };
+    const server = await startServer(env(), io(), {
+      signals: new EventEmitter(),
+      exit: vi.fn(),
+      modules: [module],
+      allowNoTenants: true,
+    });
+    try {
+      expect(keys).toContain('mode');
+      for (const key of ['databaseUrl', 'migrationDatabaseUrl', 'controlDatabaseUrl']) expect(keys).not.toContain(key);
+      expect(Object.keys(server.ctx)).not.toContain('control');
+    } finally {
+      await server.close();
+    }
+  });
+
   it('shuts down on SIGTERM after draining an in-flight request', async () => {
     const signals = new EventEmitter();
     const exit = vi.fn();

@@ -1,4 +1,4 @@
--- Wirebench Server 0023: custom domains (hosted edition spec §23.3). One custom name per tenant, and the routing
+-- Wirebench Server 0024: custom domains (hosted edition spec §23.3). One custom name per tenant, and the routing
 -- table that says which tenant holds which name.
 --
 -- - `custom_domains` is scoped as 0021 scopes its tables: `tenant_id uuid not null` defaulting to the setting and

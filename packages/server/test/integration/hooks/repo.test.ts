@@ -40,6 +40,7 @@ describeDb('webhook-capture repository (§3.2, §3.4)', () => {
       'host',
       'agent',
       'entry',
+      'control-plane',
     ]);
   });
 
