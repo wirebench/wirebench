@@ -7,6 +7,8 @@
 import Fastify from 'fastify';
 import { afterAll, beforeAll, expect, it, vi } from 'vitest';
 import type { DnsLookup } from '../../../src/custom-domains/dns.js';
+import { openControlDb } from '../../../src/control-plane/control-db.js';
+import { TenantLifecycle } from '../../../src/control-plane/tenants.js';
 import { customDomainsModule } from '../../../src/custom-domains/module.js';
 import { claim, removeClaim } from '../../../src/custom-domains/repo.js';
 import { onPrimaryHost } from '../../../src/identity/browser-flows.js';
@@ -14,7 +16,7 @@ import { identitySettings } from '../../../src/identity/env.js';
 import { sessionCookieName } from '../../../src/identity/cookies.js';
 import { licensingModule } from '../../../src/licensing/module.js';
 import { ssoUrls } from '../../../src/sso/env.js';
-import { tenantHostsChanged } from '../../../src/tenancy/tenancy.js';
+import { ensureControlRole } from '../../../src/tenancy/roles.js';
 import { primaryUrl } from '../../../src/tenancy/urls.js';
 import { describeDb } from '../../helpers/database.js';
 import type { SignedInUser } from '../../helpers/identity.js';
@@ -173,21 +175,41 @@ describeDb('two names, one tenant (spec §23.5)', () => {
     expect((await write(CUSTOM_URL)).statusCode).toBe(303);
   });
 
-  it('a suspended tenant: the custom name answers as the slug does, since both are one entry', async () => {
-    await t.h.db.query("update tenants set status = 'suspended' where id = $1::uuid", [t.a.scope.tenantId]);
-    tenantHostsChanged(t.h.ctx.tenancy);
-    await vi.waitFor(async () => {
-      const slug = await t.h.app.inject({ method: 'GET', url: '/api/v1/meta', headers: { host: t.a.host } });
-      const custom = await t.h.app.inject({ method: 'GET', url: '/api/v1/meta', headers: { host: NAME } });
-      expect(slug.statusCode).not.toBe(200);
-      expect(custom.statusCode).toBe(slug.statusCode);
-    });
-    await t.h.db.query("update tenants set status = 'active' where id = $1::uuid", [t.a.scope.tenantId]);
-    tenantHostsChanged(t.h.ctx.tenancy);
-    await vi.waitFor(async () => {
-      const custom = await t.h.app.inject({ method: 'GET', url: '/api/v1/meta', headers: { host: NAME } });
-      expect(custom.statusCode).toBe(200);
-    });
+  it("a suspended tenant's custom name answers exactly as its slug does, through slice 7's suspension", async () => {
+    await ensureControlRole(t.h.db.owner, t.h.db.controlUrl, t.h.db.url);
+    const control = openControlDb(t.h.db.controlUrl);
+    const lifecycle = new TenantLifecycle({ control, tenancy: t.h.ctx.tenancy, hooks: t.h.hooks });
+    try {
+      await lifecycle.suspend('acme', 'unpaid');
+      const both = (method: 'GET' | 'POST', url: string, headers: Record<string, string> = {}) =>
+        Promise.all([
+          t.h.app.inject({ method, url, headers: { host: t.a.host, ...headers } }),
+          t.h.app.inject({ method, url, headers: { host: NAME, ...headers } }),
+        ]);
+      await vi.waitFor(async () => {
+        const [slug, custom] = await both('GET', '/api/v1/me', root.headers);
+        expect(slug.statusCode).toBe(403);
+        expect(custom.statusCode).toBe(403);
+        expect(custom.json()).toEqual(slug.json());
+        expect(custom.json()).toMatchObject({ code: 'tenant-suspended', reason: 'unpaid' });
+      });
+      const [slugPage, customPage] = await both('GET', '/sign-in');
+      expect(customPage.statusCode).toBe(slugPage.statusCode);
+      expect(customPage.headers['content-type']).toBe(slugPage.headers['content-type']);
+      expect(customPage.body).not.toMatch(/<form/i);
+      const [slugHook, customHook] = await both('POST', '/hooks/anything');
+      expect(slugHook.statusCode).toBe(503);
+      expect(customHook.statusCode).toBe(503);
+      expect(customHook.body).toBe('');
+
+      await lifecycle.resume('acme');
+      await vi.waitFor(async () => {
+        const [, custom] = await both('GET', '/api/v1/me', root.headers);
+        expect(custom.statusCode).toBe(200);
+      });
+    } finally {
+      await control.close();
+    }
   });
 
   it('removing the claim drops the name from the map and moves the primary back to the slug', async () => {

@@ -45,6 +45,9 @@ import {
 } from './fill.js';
 import { openSocket, type Tenant, type TestSocket } from './modules/two-tenants.js';
 import { ROUTE_MAP, routeKey, SOCKET_ROUTES, type Ctx } from './route-map.js';
+import { escapeHtml } from '../../../src/identity/invite-page.js';
+import { SUSPENDED_REASON_TEXT } from '../../../src/identity/sign-in-page.js';
+import { directoryOf } from '../../../src/tenancy/tenancy.js';
 
 void _fill;
 
@@ -670,6 +673,102 @@ describeDb('the cross-tenant isolation suite (spec §19.13)', () => {
       expect(() => open(userSecretsKey(keyB, w.b.browser.user.id), sealed)).toThrow();
       expect(() => open(userSecretsKey(keyA, w.a.admin.user.id), sealed)).toThrow();
     });
+  });
+
+  // Last, since it suspends B for its run (spec §22.7): every registered route answers a suspended tenant as the
+  // resolver says, before any module route, and an active tenant's is unaffected.
+  describe('a suspended tenant', () => {
+    it('answers every route with its page, a 503, a 303 to sign in or 403 tenant-suspended; A is unaffected', async () => {
+      const db = w.t.h.db;
+      const setStatus = async (status: 'active' | 'suspended', reason: string | null): Promise<void> => {
+        await db.query('update tenants set status = $2, suspended_reason = $3 where id = $1::uuid', [
+          w.b.tenant.scope.tenantId,
+          status,
+          reason,
+        ]);
+        directoryOf(w.t.h.ctx.tenancy).changed();
+        await expect
+          .poll(async () => (await w.b.tenant.inject({ method: 'GET', url: '/api/v1/meta' })).statusCode)
+          .toBe(status === 'active' ? 200 : 403);
+      };
+      await setStatus('suspended', 'unpaid');
+      const wrong: string[] = [];
+      try {
+        const urls = new Map<string, string>();
+        for (const registered of w.routes) {
+          const key = routeKey(registered);
+          if (key !== undefined && !urls.has(key)) urls.set(key, registered.url);
+        }
+        for (const [key, url] of urls) {
+          const route = ROUTE_MAP[key];
+          if (route === undefined) {
+            wrong.push(`${key}: unmapped`);
+            continue;
+          }
+          if (route.cls === 'socket') {
+            const path = url;
+            const refused = w.t.api.injectWS(path, { headers: { host: w.b.tenant.host } });
+            await expect(refused, key).rejects.toThrow('403');
+            continue;
+          }
+          const ctx: Ctx = { w, url, from: w.b, a: w.a };
+          const request = await route.request!(ctx);
+          const res = await w.b.tenant.inject(request);
+          const path = (request.url as string).split('?')[0]!;
+          if (path === '/healthz' || path === '/readyz') {
+            if (res.statusCode === 403) wrong.push(`${key}: unscoped, but answered 403`);
+          } else if (path === '/sign-in' && request.method === 'GET') {
+            if (
+              res.statusCode !== 200 ||
+              !res.body.includes(escapeHtml(SUSPENDED_REASON_TEXT.unpaid)) ||
+              res.body.includes('<form')
+            )
+              wrong.push(`${key}: not the suspended page: ${res.statusCode}`);
+          } else if (path.startsWith('/hooks/')) {
+            if (res.statusCode !== 503 || res.body !== '') wrong.push(`${key}: ${res.statusCode}, not an empty 503`);
+          } else if (res.statusCode !== 403 || res.json<{ code?: string; reason?: string }>().reason !== 'unpaid') {
+            wrong.push(`${key}: ${res.statusCode} ${res.body.slice(0, 200)}`);
+          } else if (res.json<{ code: string }>().code !== 'tenant-suspended') {
+            wrong.push(`${key}: ${res.body.slice(0, 200)}`);
+          }
+          // A browser's page load (review M5): `303` to the sign-in page, but never on the API, which keeps its 403.
+          const isPage =
+            request.method === 'GET' &&
+            path !== '/healthz' &&
+            path !== '/readyz' &&
+            path !== '/sign-in' &&
+            !path.startsWith('/hooks/');
+          if (isPage) {
+            const headers = { ...(request.headers as Record<string, string> | undefined), accept: 'text/html' };
+            const page = await w.b.tenant.inject({ ...request, headers });
+            if (path === '/api' || path.startsWith('/api/')) {
+              if (page.statusCode !== 403) wrong.push(`${key}: the API answered a page load ${page.statusCode}`);
+            } else if (page.statusCode !== 303 || page.headers.location !== '/sign-in') {
+              wrong.push(`${key}: a page load answered ${page.statusCode} ${String(page.headers.location)}`);
+            }
+          }
+          // A, active, on the same route: never the suspension's answer. Reads only, so A's rows stay as they are.
+          if (key.startsWith('GET ')) {
+            const control = await w.a.tenant.inject(await route.request!({ w, url, from: w.a, a: w.a }));
+            if (control.body.includes('tenant-suspended')) wrong.push(`${key}: A, active, was answered as suspended`);
+          }
+        }
+      } finally {
+        await setStatus('active', null);
+        await w.quiet();
+      }
+      expect(wrong).toEqual([]);
+      // Deleting stays 404 (slice 4).
+      await db.query("update tenants set status = 'deleting' where id = $1::uuid", [w.b.tenant.scope.tenantId]);
+      directoryOf(w.t.h.ctx.tenancy).changed();
+      try {
+        await expect
+          .poll(async () => (await w.b.tenant.inject({ method: 'GET', url: '/api/v1/meta' })).statusCode)
+          .toBe(404);
+      } finally {
+        await setStatus('active', null);
+      }
+    }, 120_000);
   });
 });
 

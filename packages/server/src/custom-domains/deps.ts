@@ -7,6 +7,7 @@
 import type { FastifyBaseLogger } from 'fastify';
 import type { ModuleConfig } from '../config.js';
 import type { LicenseService, ServerHooks } from '../context.js';
+import { tenantStopped } from '../tenancy/directory.js';
 import type { Tenancy } from '../tenancy/tenancy.js';
 import { systemLookup, type DnsLookup } from './dns.js';
 import type { CertificateProbe, CheckDeps } from './job.js';
@@ -53,6 +54,7 @@ export async function checkDepsOf(input: CheckDepsInput, overrides: CheckDepsOve
     now: overrides.now ?? (() => new Date()),
     hooks: input.hooks,
     features: async (scope) => (await input.license().state(scope)).features,
+    stopped: tenantStopped,
     ...(probe !== undefined ? { probe } : {}),
     ...(mail !== undefined ? { mail } : {}),
     log: input.log,

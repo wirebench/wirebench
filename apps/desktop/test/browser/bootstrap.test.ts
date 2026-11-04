@@ -238,6 +238,19 @@ describe('startBrowserClient', () => {
     expect(h.assign).toHaveBeenCalledWith(SIGN_IN);
   });
 
+  it('sends the tab to the sign-in page, which says why, on a 4403 tenant-suspended, and stops reconnecting', async () => {
+    const h = start();
+    FakeSocket.last().hello();
+    await h.started;
+
+    FakeSocket.last().drop(4403, 'tenant-suspended');
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    // No redirect_to: no one signs in to a suspended team, and its sign-in page shows the reason (spec §22.7).
+    expect(h.assign).toHaveBeenCalledWith('/sign-in');
+    expect(FakeSocket.all).toHaveLength(1);
+  });
+
   it('asks /api/v1/me after a socket fails before its hello, and signs in again on 401', async () => {
     const h = start(401);
     FakeSocket.last().drop(1006);

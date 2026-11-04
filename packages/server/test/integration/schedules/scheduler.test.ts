@@ -5,6 +5,7 @@ import { permissiveLicense, type LicenseService } from '../../../src/context.js'
 import { newId } from '../../../src/identity/tokens.js';
 import * as teamsRepo from '../../../src/teams/repo.js';
 import { scopeOf } from '../../../src/tenancy/scope.js';
+import { directoryOf } from '../../../src/tenancy/tenancy.js';
 import type { TenantQuerier } from '../../../src/tenancy/tenant-db.js';
 import * as repo from '../../../src/schedules/repo.js';
 import { SCHEDULER_TICK_MS, Scheduler, type SchedulerEnv } from '../../../src/schedules/scheduler.js';
@@ -89,7 +90,89 @@ async function runsOf(scheduleId: string) {
   return rows.rows;
 }
 
+/** Suspends or resumes the harness's tenant on its row, as the lifecycle's status write leaves it (spec §22.7). */
+async function setSuspended(suspended: boolean): Promise<void> {
+  await c.h.db.query('update tenants set status = $2, suspended_reason = $3 where id = $1::uuid', [
+    directoryOf(c.h.ctx.tenancy).defaultScope().tenantId,
+    suspended ? 'suspended' : 'active',
+    suspended ? 'unpaid' : null,
+  ]);
+}
+
 describeDb('the scheduler (scheduled-runs spec §3.1)', () => {
+  it('a suspended tenant fires nothing; on its resume the next run is computed from then, never caught up', async () => {
+    const id = await seedSchedule('Hourly', 60_000);
+    await setSuspended(true);
+    const held = heldRuns();
+    const s = scheduler({ execute: held.execute });
+    expect(await s.runOnce()).toEqual({ fired: 0, started: 0 });
+    const nextAt = async () => new Date((await repo.scheduleById(c.h.tdb, c.workspaceId, id))!.nextRunAt!).getTime();
+    expect(await nextAt()).toBeGreaterThan(c.h.clock.now.getTime());
+    // Hours suspended: every fire in between passes without a run.
+    for (let hour = 0; hour < 5; hour++) {
+      c.h.clock.advance(60 * 60_000);
+      expect(await s.runOnce()).toEqual({ fired: 0, started: 0 });
+    }
+    expect(await runsOf(id)).toEqual([]);
+    // Resumed between two fires: nothing is caught up, and the next run is the first fire after the resume.
+    c.h.clock.advance(20 * 60_000);
+    await setSuspended(false);
+    const resumedAt = c.h.clock.now.getTime();
+    expect(await s.runOnce()).toEqual({ fired: 0, started: 0 });
+    expect(await runsOf(id)).toEqual([]);
+    const next = await nextAt();
+    expect(next).toBeGreaterThan(resumedAt);
+    expect(next - resumedAt).toBeLessThanOrEqual(60 * 60_000);
+    c.h.clock.set(new Date(next));
+    expect((await s.runOnce()).fired).toBe(1);
+    expect(await runsOf(id)).toEqual([{ status: 'running', reason: null, trigger: 'schedule' }]);
+    await s.stop();
+  });
+
+  it('a run queued before the suspension never starts as a catch-up: it ends skipped, suspended (review M2)', async () => {
+    const id = await seedSchedule('Hourly', -60 * 60_000);
+    await repo.insertRun(c.h.tdb, {
+      id: newId(),
+      scheduleId: id,
+      trigger: 'manual',
+      status: 'queued',
+      at: c.h.clock.now,
+    });
+    await setSuspended(true);
+    const held = heldRuns();
+    const s = scheduler({ execute: held.execute });
+    expect(await s.runOnce()).toEqual({ fired: 0, started: 0 });
+    expect(held.started).toHaveLength(0);
+    await setSuspended(false);
+    expect((await s.runOnce()).started).toBe(0);
+    expect(held.started).toHaveLength(0);
+    expect(await runsOf(id)).toEqual([{ status: 'skipped', reason: 'suspended', trigger: 'manual' }]);
+    await s.stop();
+  });
+
+  it('a run ending in the stale window starts no queued run of a tenant suspended since the pass (review M1)', async () => {
+    const id = await seedSchedule('Hourly', -60 * 60_000);
+    for (let n = 0; n < 2; n++) {
+      await repo.insertRun(c.h.tdb, {
+        id: newId(),
+        scheduleId: id,
+        trigger: 'manual',
+        status: 'queued',
+        at: new Date(c.h.clock.now.getTime() + n),
+      });
+    }
+    const held = heldRuns();
+    // One run at a time on this server, two slots for the tenant: the second waits for the first to end.
+    const s = scheduler({ execute: held.execute, settings: testSettings({ concurrency: 1, runSlots: 2 }) });
+    expect((await s.runOnce()).started).toBe(1);
+    await setSuspended(true);
+    // The first run ends before the next pass: its freed slot must not start the suspended tenant's next run.
+    held.started[0]!.release();
+    await s.idle();
+    expect(held.started).toHaveLength(1);
+    await s.stop();
+  });
+
   it('fires a due schedule once, even with two servers passing at the same time', async () => {
     const id = await seedSchedule('Hourly');
     const held = heldRuns();

@@ -14,6 +14,7 @@
  */
 import { agentRedeemMessage, agentRequestMessage, LIVE_PATH, TERMINAL_SHARE_PATH } from '@wirebench/engine';
 import type { InjectOptions, LightMyRequestResponse } from 'fastify';
+import { claim, removeClaim } from '../../../src/custom-domains/repo.js';
 import { mintSecret, newId, pkceChallenge } from '../../../src/identity/tokens.js';
 import { license } from '../../helpers/licensing.js';
 import {
@@ -99,14 +100,16 @@ async function headOf(ctx: Ctx): Promise<string | null> {
   return res.body.head;
 }
 
-/** Removes the sender's custom-domain claim and, with `claimAgain`, claims `<slug>.customer.test` again. */
+/**
+ * Removes the sender's custom-domain claim and, with `claimAgain`, claims `<slug>.customer.test` again, pending. Through
+ * the repository, not the routes: the suspended sweep builds every template as a tenant whose routes refuse it.
+ */
 async function reclaim(ctx: Ctx, claimAgain: boolean): Promise<void> {
-  const removed = await ctx.from.tenant.call(ctx.from.admin, 'DELETE', '/tenant/domain');
-  if (removed.status !== 204) throw new Error(`the claim's removal answered ${removed.status}`);
-  if (!claimAgain) return;
   const name = `${ctx.from.tenant.slug}.customer.test`;
-  const claimed = await ctx.from.tenant.call(ctx.from.admin, 'PUT', '/tenant/domain', { name });
-  if (claimed.status !== 200) throw new Error(`the claim answered ${claimed.status}`);
+  await ctx.from.tenant.tdb.transaction(async (tx) => {
+    await removeClaim(tx);
+    if (claimAgain) await claim(tx, { name, createdBy: null, now: ctx.w.t.h.clock.now });
+  });
 }
 
 /** An agent-signed request of `pairingId`, by `key`, on the tenant `ctx.from` is (the path is the server's). */

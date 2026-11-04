@@ -13,7 +13,9 @@ import type { ServerModule } from '../../../src/context.js';
 import { requireUser } from '../../../src/identity/guard.js';
 import type { OidcProvider } from '../../../src/identity/oidc.js';
 import { mintSecret, newId, pkceChallenge } from '../../../src/identity/tokens.js';
-import { TenantAdmin } from '../../../src/tenancy/directory.js';
+import { escapeHtml } from '../../../src/identity/invite-page.js';
+import { SIGN_IN_PAGE_CSP, SUSPENDED_REASON_TEXT } from '../../../src/identity/sign-in-page.js';
+import { TenantAdmin, type SuspendedReason } from '../../../src/tenancy/directory.js';
 import type { TenantResolver } from '../../../src/tenancy/resolve.js';
 import { describeDb } from '../../helpers/database.js';
 import { OIDC_ENV, identityHarness, signedInUser, type IdentityHarness } from '../../helpers/identity.js';
@@ -33,6 +35,14 @@ const provider: OidcProvider = {
   exchange: () => Promise.reject(new Error('hosted mode reached the provider')),
 };
 const VERIFIER = 'v'.repeat(43);
+
+/** A suspended tenant per reason (spec §22.7). */
+const SUSPENDED = [
+  ['unpaid-co', 'unpaid'],
+  ['canceled-co', 'canceled'],
+  ['held-co', 'operator'],
+  ['importing-co', 'importing'],
+] as const satisfies readonly (readonly [string, SuspendedReason])[];
 
 /** Every OIDC route, desktop and browser: the starts, the callbacks and the completion. */
 const OIDC_ROUTES: readonly { readonly method: 'GET' | 'POST'; readonly url: string; readonly payload?: object }[] = [
@@ -176,7 +186,16 @@ describeDb('tenant resolution (spec §19.5)', () => {
             const created = await new TenantAdmin(db, directoryOf(ctx.tenancy)).create({ slug, name: slug });
             ids[slug] = created.scope.tenantId;
           }
+          // `paused` has no reason, as a row written before `0023`: the operator's.
           await db.query(`update tenants set status = 'suspended' where slug = 'paused'`);
+          for (const [slug, reason] of SUSPENDED) {
+            await new TenantAdmin(db, directoryOf(ctx.tenancy)).create({
+              slug,
+              name: slug,
+              status: 'suspended',
+              suspendedReason: reason,
+            });
+          }
           await db.query(`update tenants set status = 'deleting' where slug = 'gone'`);
           ids.default = directoryOf(ctx.tenancy).defaultScope().tenantId;
         },
@@ -204,7 +223,6 @@ describeDb('tenant resolution (spec §19.5)', () => {
         // The apex redirects to the entry (spec §21.3), and the entry 404s every route but its own.
         'app.example.test',
         'default.example.test',
-        'paused.example.test',
         'gone.example.test',
         'wirebench.test',
         'acme',
@@ -299,7 +317,120 @@ describeDb('tenant resolution (spec §19.5)', () => {
       expect(res.json<{ url: string }>().url).toMatch(/^https:\/\/acme\.example\.test\/invite\//);
     });
 
-    it('picks up a tenant written behind the directory on invalidate(), and drops a suspended one', async () => {
+    describe('a suspended tenant (spec §22.7)', () => {
+      it('shows the sign-in page with the reason and no form, on GET and HEAD', async () => {
+        for (const [slug, reason] of [...SUSPENDED, ['paused', 'operator'] as const]) {
+          const host = `${slug}.example.test`;
+          const res = await h.app.inject({ method: 'GET', url: '/sign-in?redirect_to=%2Fx', headers: { host } });
+          expect(res.statusCode, slug).toBe(200);
+          expect(res.headers['content-type'], slug).toBe('text/html; charset=utf-8');
+          expect(res.headers['content-security-policy'], slug).toBe(SIGN_IN_PAGE_CSP);
+          expect(res.headers['cache-control'], slug).toBe('no-store');
+          expect(res.body, slug).toContain(escapeHtml(SUSPENDED_REASON_TEXT[reason]));
+          expect(res.body, slug).toContain(`https://${host}`);
+          expect(res.body, slug).not.toMatch(/<form|<input|href="\/sign-in\//);
+          const head = await h.app.inject({ method: 'HEAD', url: '/sign-in', headers: { host } });
+          expect(head.statusCode, slug).toBe(200);
+        }
+        expect(SUSPENDED_REASON_TEXT.importing).toBe('This team is being imported. Try again shortly.');
+      });
+
+      it('answers a catch URL 503 with an empty, uncached body, on every method', async () => {
+        for (const method of ['GET', 'POST', 'PUT', 'DELETE'] as const) {
+          for (const url of ['/hooks/some-secret', '/hooks/some-secret/sub/path?x=1']) {
+            const res = await h.app.inject({ method, url, headers: { host: 'unpaid-co.example.test' } });
+            expect(res.statusCode, `${method} ${url}`).toBe(503);
+            expect(res.body, `${method} ${url}`).toBe('');
+            expect(res.headers['cache-control'], `${method} ${url}`).toBe('no-store');
+          }
+        }
+      });
+
+      it('answers every other route 403 tenant-suspended with the reason, signing in included', async () => {
+        const requests = [
+          { method: 'GET', url: '/api/v1/probe/tenant' },
+          { method: 'GET', url: '/api/v1/meta' },
+          { method: 'GET', url: '/hooks-probe' },
+          { method: 'GET', url: '/no-such-route' },
+          { method: 'POST', url: '/sign-in/local', payload: { email: 'a@b.test', password: 'x' } },
+          { method: 'POST', url: '/api/v1/auth/local/sign-in', payload: { email: 'a@b.test', password: 'x' } },
+          { method: 'GET', url: '/sign-in/oidc' },
+        ] as const;
+        for (const request of requests) {
+          const res = await h.app.inject({ ...request, headers: { host: 'canceled-co.example.test' } });
+          expect(res.statusCode, request.url).toBe(403);
+          expect(res.headers['cache-control'], request.url).toBe('no-store');
+          expect(res.json(), request.url).toEqual({
+            code: 'tenant-suspended',
+            message: SUSPENDED_REASON_TEXT.canceled,
+            reason: 'canceled',
+          });
+        }
+        await expect(firstMessage(h.app, 'canceled-co.example.test')).rejects.toThrow('403');
+        const health = await h.app.inject({
+          method: 'GET',
+          url: '/healthz',
+          headers: { host: 'canceled-co.example.test' },
+        });
+        expect([200, 503]).toContain(health.statusCode);
+      });
+
+      it('sends a page load (GET or HEAD for text/html) to its sign-in page with 303; the API stays 403 JSON (review M5)', async () => {
+        const html = { host: 'canceled-co.example.test', accept: 'text/html,application/xhtml+xml,*/*;q=0.8' };
+        for (const method of ['GET', 'HEAD'] as const) {
+          for (const url of ['/', '/w/team?tab=1', '/no-such-route', '/sign-in/oidc']) {
+            const res = await h.app.inject({ method, url, headers: html });
+            expect(res.statusCode, `${method} ${url}`).toBe(303);
+            expect(res.headers.location, `${method} ${url}`).toBe('/sign-in');
+            expect(res.headers['cache-control'], `${method} ${url}`).toBe('no-store');
+          }
+        }
+        // The API, a POST, and a request that does not ask for HTML keep the 403 body that says why.
+        for (const request of [
+          { method: 'GET', url: '/api/v1/meta', headers: html },
+          { method: 'POST', url: '/sign-in/local', headers: html, payload: { email: 'a@b.test', password: 'x' } },
+          { method: 'GET', url: '/', headers: { host: html.host, accept: 'application/json' } },
+          { method: 'GET', url: '/', headers: { host: html.host } },
+        ] as const) {
+          const res = await h.app.inject(request);
+          expect(res.statusCode, `${request.method} ${request.url}`).toBe(403);
+          expect(res.json(), `${request.method} ${request.url}`).toMatchObject({ code: 'tenant-suspended' });
+        }
+        // The sign-in page itself is never redirected.
+        const page = await h.app.inject({ method: 'GET', url: '/sign-in?redirect_to=%2F', headers: html });
+        expect(page.statusCode).toBe(200);
+      });
+
+      it('gives a second host name of the same tenant the same answer: the status is on the entry', async () => {
+        const hosts = (resolver as unknown as { hosts: Map<string, unknown> }).hosts;
+        hosts.set('alias.custom.test', resolver!.entryOf('importing-co.example.test'));
+        try {
+          const page = await h.app.inject({ method: 'GET', url: '/sign-in', headers: { host: 'alias.custom.test' } });
+          expect(page.body).toContain(escapeHtml(SUSPENDED_REASON_TEXT.importing));
+          expect(page.body).not.toContain('<form');
+          const api = await h.app.inject({
+            method: 'GET',
+            url: '/api/v1/meta',
+            headers: { host: 'alias.custom.test' },
+          });
+          expect(api.statusCode).toBe(403);
+          expect(api.json()).toMatchObject({ code: 'tenant-suspended', reason: 'importing' });
+        } finally {
+          hosts.delete('alias.custom.test');
+        }
+      });
+
+      it('leaves an active tenant as it was, and a deleting one 404', async () => {
+        expect((await tenantOf(h.app, 'acme.example.test')).json()).toEqual({ tenantId: ids.acme });
+        const signIn = await h.app.inject({ method: 'GET', url: '/sign-in', headers: { host: 'acme.example.test' } });
+        expect(signIn.body).toContain('<form');
+        const gone = await h.app.inject({ method: 'GET', url: '/sign-in', headers: { host: 'gone.example.test' } });
+        expect(gone.statusCode).toBe(404);
+        expect(gone.body).toBe('');
+      });
+    });
+
+    it('picks up a tenant written behind the directory on invalidate(), and keeps a suspended one', async () => {
       expect(resolver).toBeDefined();
       expect((await tenantOf(h.app, 'later.example.test')).statusCode).toBe(404);
       await h.db.query(`insert into tenants (id, slug, name) values (gen_random_uuid(), 'later', 'Later')`);
@@ -311,7 +442,12 @@ describeDb('tenant resolution (spec §19.5)', () => {
       const id = (await h.db.query<{ id: string }>(`select id::text as id from tenants where slug = 'later'`)).rows[0]!
         .id;
       expect(later.json()).toEqual({ tenantId: id });
-      await h.db.query(`update tenants set status = 'suspended' where slug = 'later'`);
+      await h.db.query(`update tenants set status = 'suspended', suspended_reason = 'unpaid' where slug = 'later'`);
+      await resolver!.invalidate();
+      const suspended = await tenantOf(h.app, 'later.example.test');
+      expect(suspended.statusCode).toBe(403);
+      expect(suspended.json()).toMatchObject({ code: 'tenant-suspended', reason: 'unpaid' });
+      await h.db.query(`update tenants set status = 'deleting' where slug = 'later'`);
       await resolver!.invalidate();
       expect((await tenantOf(h.app, 'later.example.test')).statusCode).toBe(404);
     });

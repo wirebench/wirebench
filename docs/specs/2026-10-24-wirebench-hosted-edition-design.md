@@ -2851,13 +2851,21 @@ Routes on the entry host, server-rendered in the entry page's style, no cookie a
     subscription is unpaid. Its billing contact can pay from the email Paddle sent."), canceled, operator ("… by the
     operator. Contact support."), importing ("… being imported. Try again shortly.");
   - `/hooks/…` (catch URLs) answers `503` with an empty body (§3.6);
+  - a browser's page load elsewhere (`GET` or `HEAD` accepting `text/html`, outside `/api/`) answers `303` to
+    `/sign-in`, so a bookmarked page shows why;
   - every other route, the API and both WebSocket upgrades answer `403` with `{ code: "tenant-suspended", reason }`,
     so the desktop, the CLI and the MCP server say why;
   - no one signs in, server admins included (my call): paying, and asking for an export or a deletion, go through
     Paddle and the operator while suspended.
 - **At the moment of suspension** the status write announces `tenantsChanged` over the bus (§20.3). Every instance
   then closes that tenant's live sockets (`4403 tenant-suspended`), disposes its host instances and releases their
-  leases, and ends its terminal shares.
+  leases, and ends its terminal shares. It does so after each successful reload of its tenant map (the write, the bus,
+  a bus that listens again, the poll), so a failed reload or a missed event is made good by the next one; and a live
+  socket's `auth`, a host socket's open and a terminal share's `auth` read the tenant's status afresh, so a client that
+  reconnects onto a map not yet reloaded is refused the same way. The desktop's live client and the browser tab stop
+  reconnecting on `4403 tenant-suspended`; the tab goes to the sign-in page, which says why.
+- **Queued runs** of a suspended tenant end `skipped` with reason `suspended` at the scheduler's next pass, and each
+  claim reads the status again, so none starts during the suspension or as a catch-up on the resume.
 - **Jobs** (§19.8, guard 6): `forEachTenant` still visits suspended tenants, so retention ages their data out as
   before. The scheduler does not fire their schedules, and when a tenant resumes each schedule's next run is computed
   from then, never caught up. The alert outbox holds their alerts. The audit sealer and forwarder keep running.
@@ -3156,9 +3164,12 @@ Owner rulings (2026-11-04, popup):
   A pass from `lapsed` or `paused` goes back through `verified`, since both released the name, so an attacker who
   takes over a lapsed name has to prove it again. A pass from `failing` returns the name to `active` while it is
   still live: it never released the name, so it needs no fresh proof and is never taken offline. A name that failed
-  before it went live goes to `verified` and waits for its certificate. `paused` is set by the check job, which reads the feature through the tenant's scope.
-  A suspended tenant keeps its name. The resolver drops every host of a tenant that is not `active` in
-  `tenants.status` (§19.5), so a suspension takes effect at the next map reload, and resuming needs no new check.
+  before it went live goes to `verified` and waits for its certificate. `paused` is set by the check job, which reads
+  the feature through the tenant's scope.
+  A suspended tenant keeps its name. The check job leaves a stopped tenant (suspended or deleting) alone: no DNS
+  check, no move and no mail, so a failing name does not age toward `lapsed` while its tenant is suspended. Its
+  custom host stays on the map on the slug's entry, so it answers as the slug does (§22.7, §23.5), and resuming needs
+  no new check.
 - **Mail.** The tenant's server admins get one plain-text mail, through the tenant's SMTP sender (slice 7), when a
   name becomes `active`, `failing` or `lapsed`. Nothing is mailed without SMTP. Each change is an audit event in the
   tenant's chain: `custom-domain.claimed|verified|activated|failing|lapsed|paused|removed`. The token never appears in
