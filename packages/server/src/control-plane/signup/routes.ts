@@ -129,6 +129,9 @@ export function signupStatus(row: SignupRow | undefined, now: Date, appDomain: s
  */
 export const CREATED_PER_CLIENT = { capacity: 10, refillPerMs: 10 / (24 * 60 * 60 * 1000) } as const;
 
+/** Password-step posts per client address: each one hashes a password, so it is bounded before the lookup. */
+export const PASSWORD_STEP_PER_CLIENT = { capacity: 10, refillPerMs: 10 / 60_000 } as const;
+
 /** A link's token as `newSignupToken` makes it: 43 base64url characters. Anything else is unknown at once. */
 const TOKEN = /^[A-Za-z0-9_-]{43}$/;
 
@@ -165,6 +168,7 @@ export function registerSignupRoutes(app: FastifyInstance, options: SignupRoutes
   const clients = new RateLimiter({ ...PER_CLIENT, ...clock });
   const addresses = new RateLimiter({ ...PER_ADDRESS, ...clock });
   const created = new RateLimiter({ ...CREATED_PER_CLIENT, ...clock });
+  const passwordSteps = new RateLimiter({ ...PASSWORD_STEP_PER_CLIENT, ...clock });
   // A key that lives as long as the process, so the per-address buckets never hold an address in the clear.
   const bucketKey = randomBytes(32);
 
@@ -299,6 +303,14 @@ export function registerSignupRoutes(app: FastifyInstance, options: SignupRoutes
       { ...ENTRY_ROUTE, bodyLimit: SIGNUP_BODY_LIMIT },
       async (request, reply) => {
         if (request.headers.origin !== origin) return reply.code(403).header('cache-control', 'no-store').send();
+        const step = passwordSteps.take(`ip:${request.ip}`);
+        if (!step.allowed) {
+          return reply
+            .code(429)
+            .header('cache-control', 'no-store')
+            .header('retry-after', String(step.retryAfterSeconds))
+            .send();
+        }
         const { token } = request.params;
         const row = await lookup(token);
         if (!passwordStepOpen(row, now())) return expired(reply);

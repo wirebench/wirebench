@@ -10,6 +10,7 @@ import type { ServerConfig } from '../../../src/config.js';
 import type { ControlMail } from '../../../src/control-plane/mail.js';
 import { controlPlaneModule } from '../../../src/control-plane/module.js';
 import { PADDLE_JS } from '../../../src/control-plane/signup/page.js';
+import { PASSWORD_STEP_PER_CLIENT } from '../../../src/control-plane/signup/routes.js';
 import type { EntryQueue } from '../../../src/entry/queue.js';
 import { ensureControlRole } from '../../../src/tenancy/roles.js';
 import { describeDb } from '../../helpers/database.js';
@@ -137,6 +138,24 @@ describeDb('the signup password and checkout steps (spec §22.6)', () => {
     expect(pages[0]!.body).toContain('This link has expired');
   });
 
+  it('answers 429 once a client address posts the password step too often, before any lookup', async () => {
+    const from = '10.2.9.9';
+    const post = () =>
+      h.app.inject({
+        method: 'POST',
+        url: `/signup/${'A'.repeat(43)}`,
+        headers: FORM,
+        remoteAddress: from,
+        payload: new URLSearchParams({ password: PASSWORD }).toString(),
+      });
+    const codes: number[] = [];
+    for (let i = 0; i < PASSWORD_STEP_PER_CLIENT.capacity + 1; i++) codes.push((await post()).statusCode);
+    expect(codes.slice(0, PASSWORD_STEP_PER_CLIENT.capacity).every((code) => code === 404)).toBe(true);
+    const last = await post();
+    expect(last.statusCode).toBe(429);
+    expect(last.headers['retry-after']).toBeDefined();
+  });
+
   it('refuses a password under the minimum and keeps the link open', async () => {
     const { token } = await signup();
     const res = await postPassword(token, 'x'.repeat(MIN_PASSWORD_LENGTH - 1));
@@ -193,7 +212,7 @@ describeDb('the signup password and checkout steps (spec §22.6)', () => {
     );
     expect(csp).not.toMatch(/script-src[^;]*unsafe-inline/);
     // Two scripts, both under the nonce: Paddle.js from its CDN, and the page's own.
-    const scripts = [...res.body.matchAll(/<script\b[^>]*>/g)].map((m) => m[0]);
+    const scripts = [...res.body.matchAll(/<script\b[^>]*>/gi)].map((m) => m[0]);
     expect(scripts).toEqual([`<script src="${PADDLE_JS}" nonce="${nonce}">`, `<script nonce="${nonce}">`]);
     expect(res.body).toContain('data-environment="sandbox"');
     expect(res.body).toContain('data-token="test_placeholdertoken"');
