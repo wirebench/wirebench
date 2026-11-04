@@ -17,7 +17,7 @@ const hosted = { mode: 'hosted', appDomain: 'app.test', siteDomain: 'site.test',
 
 function directory(): TenantDirectory {
   return {
-    resolvable: vi.fn(() => Promise.resolve([ACME])),
+    hosted: vi.fn(() => Promise.resolve([{ scope: ACME, status: 'active' }])),
     onChange: vi.fn(() => () => undefined),
     defaultScope: () => DEFAULT,
   } as unknown as TenantDirectory;

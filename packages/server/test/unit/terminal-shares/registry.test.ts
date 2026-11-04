@@ -132,6 +132,23 @@ describe('ReplayBuffer', () => {
 });
 
 describe('ShareRegistry (team sessions spec B1)', () => {
+  it('ends a stopped tenant’s shares with its close code, and leaves another tenant’s (hosted spec §22.7)', () => {
+    const s = setup();
+    s.attachOwner();
+    const bob = s.join(BOB, 'bob');
+    expect(bob.outcome).toBe('viewer');
+    s.registry.endTenants(new Set([OTHER_TENANT.tenantId]), 4403, 'tenant-suspended');
+    expect(s.owner.closed).toBeUndefined();
+    expect(s.registry.holds(TENANT.tenantId, s.shareId)).toBe(true);
+    s.registry.endTenants(new Set([TENANT.tenantId]), 4403, 'tenant-suspended');
+    expect(s.owner.last('ended')).toEqual({ type: 'ended', reason: 'server' });
+    expect(s.owner.closed).toEqual({ code: 4403, reason: 'tenant-suspended' });
+    expect(bob.peer.closed).toEqual({ code: 4403, reason: 'tenant-suspended' });
+    expect(s.registry.holds(TENANT.tenantId, s.shareId)).toBe(false);
+    expect(s.ended).toEqual([{ tenantId: TENANT.tenantId, shareId: s.shareId }]);
+    expect(s.actions()).toContain('terminal_share.ended');
+  });
+
   it('says once when a share ends, whatever ended it, so its location row goes (hosted spec §20.6)', () => {
     const s = setup();
     s.attachOwner();

@@ -11,6 +11,7 @@ import {
 import type { AlertPayload } from '../../../src/schedules/alerts/render.js';
 import * as repo from '../../../src/schedules/repo.js';
 import { sealAlertTargets } from '../../../src/schedules/seal.js';
+import { directoryOf } from '../../../src/tenancy/tenancy.js';
 import { describeDb } from '../../helpers/database.js';
 import { testSettings } from '../../helpers/schedule-runs.js';
 import { schedulesHarness, type SchedulesCast } from '../../helpers/schedules.js';
@@ -196,6 +197,25 @@ describeDb('schedule alerts: state, outbox and delivery (scheduled-runs spec §3
     ]);
     expect(await c.outbox().runOnce()).toEqual({ delivered: 1, failed: 1 });
     expect((await rows())[1]).toMatchObject({ state: 'pending', lastError: 'the alert target was removed' });
+  });
+
+  it('holds a suspended tenant’s alerts, neither sent nor dropped, and sends them once it resumes (hosted spec §22.7)', async () => {
+    await finish('failed');
+    const setStatus = (status: 'active' | 'suspended') =>
+      c.h.db.query('update tenants set status = $2 where id = $1::uuid', [
+        directoryOf(c.h.ctx.tenancy).defaultScope().tenantId,
+        status,
+      ]);
+    await setStatus('suspended');
+    c.h.clock.advance(3_600_000);
+    expect(await c.outbox().runOnce()).toEqual({ delivered: 0, failed: 0 });
+    expect(c.deliveries).toHaveLength(0);
+    expect((await rows()).map((row) => [row.state, row.attempts])).toEqual([
+      ['pending', 0],
+      ['pending', 0],
+    ]);
+    await setStatus('active');
+    expect(await c.outbox().runOnce()).toEqual({ delivered: 2, failed: 0 });
   });
 
   it('rechecks the license before each pass: without the feature nothing goes out', async () => {

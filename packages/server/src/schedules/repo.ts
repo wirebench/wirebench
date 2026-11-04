@@ -10,6 +10,7 @@ import type {
   ScheduleTarget,
 } from '@wirebench/engine';
 import type { TenantQuerier } from '../tenancy/tenant-db.js';
+import type { RunReason } from './outcome.js';
 import type { StoredAlerts, StoredSecrets } from './seal.js';
 
 export interface ScheduleRow {
@@ -424,6 +425,15 @@ export async function runById(db: TenantQuerier, scheduleId: string, runId: stri
     ])
   ).rows[0];
   return raw === undefined ? undefined : runOf(raw);
+}
+
+/** Ends every queued run of the unit's tenant `skipped` with `reason` (a suspended tenant's, spec §22.7); how many. */
+export async function skipQueuedRuns(db: TenantQuerier, reason: RunReason, at: Date): Promise<number> {
+  const rows = await db.query(
+    `update schedule_runs set status = 'skipped', reason = $1, finished_at = $2 where status = 'queued'`,
+    [reason, at],
+  );
+  return rows.rowCount ?? 0;
 }
 
 /**

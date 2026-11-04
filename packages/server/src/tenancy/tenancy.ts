@@ -2,7 +2,7 @@
  * `ctx.tenancy` (hosted edition spec §19.8 guard 2): the tenant databases and the job loop, the modules' only way
  * to the database.
  *
- * The tenant directory is not on it (Task 6 review m2): its `list()`, `get(id)` and `resolvable()` hand out
+ * The tenant directory is not on it (Task 6 review m2): its `list()`, `get(id)` and `hosted()` hand out
  * branded scopes, which a module must only ever get from a request or the job loop. `directoryOf` gives it to
  * the files `check:tenant-scope` lets name it: the start-up, the resolver's registration and the admin
  * command line.
@@ -42,6 +42,15 @@ export interface Tenancy {
     fn: (tx: TenantQuerier, scope: TenantScope, name: string) => Promise<JobOutcome>,
     log: Pick<FastifyBaseLogger, 'error'>,
   ): Promise<JobPass>;
+  /**
+   * Runs `listener` with the ids of every tenant that serves nothing now, suspended or deleting (spec §22.7), after
+   * each read of the hosted tenant map that succeeded: a write here, another instance's `tenantsChanged`, a bus that
+   * listens again after a loss, or the poll (review I1: the map is already the new one when it runs, so no socket
+   * upgraded later is let through by a stale one). What the live hub, the host instances and the terminal shares
+   * close that tenant's sockets, hosts and shares by, on every instance. Only told when there is at least one such
+   * tenant. Ids, never scopes.
+   */
+  onTenantsStopped(listener: (tenantIds: ReadonlySet<string>) => void): void;
   /** `/healthz`: whether the database answers `select 1`, which reads no table and needs no tenant. */
   reachable(): Promise<void>;
   /**
@@ -61,6 +70,8 @@ export interface Tenancy {
 const directories = new WeakMap<Tenancy, TenantDirectory>();
 const tenantKeys = new WeakMap<Tenancy, TenantKeys>();
 const shared = new WeakSet<Tenancy>();
+/** Each tenancy's {@link Tenancy.onTenantsStopped} listeners, which {@link tellTenantsStopped} runs. */
+const stoppedListenersOf = new WeakMap<Tenancy, ((tenantIds: ReadonlySet<string>) => void)[]>();
 
 export function createTenancy(db: Database, options: TenancyOptions = {}): Tenancy {
   const factory = tenantDbFactory(db, options);
@@ -70,8 +81,12 @@ export function createTenancy(db: Database, options: TenancyOptions = {}): Tenan
   directory.onChange(() => {
     keys.invalidate();
   });
+  const stoppedListeners: ((tenantIds: ReadonlySet<string>) => void)[] = [];
   const tenancy: Tenancy = {
     db: factory,
+    onTenantsStopped: (listener) => {
+      stoppedListeners.push(listener);
+    },
     forEachTenant: (job, fn, log) => forEachTenant({ directory, db: factory, log }, job, fn),
     forEachResolvableTenant: async (job, fn, log) => {
       const named = await directory.resolvableNamed();
@@ -92,6 +107,7 @@ export function createTenancy(db: Database, options: TenancyOptions = {}): Tenan
   };
   directories.set(tenancy, directory);
   tenantKeys.set(tenancy, keys);
+  stoppedListenersOf.set(tenancy, stoppedListeners);
   return tenancy;
 }
 
@@ -105,7 +121,8 @@ export function createTenancy(db: Database, options: TenancyOptions = {}): Tenan
  *   this process just wrote is the right one, which dropping would only make it read back.
  * - A bus that listens again after a loss may have missed either, so every key is dropped then too.
  *
- * The tenant map's own listeners are `server.ts`'s, where the resolver is made. Idempotent per `tenancy`.
+ * The tenant map's own listeners are `server.ts`'s, where the resolver is made, and so is what tells
+ * {@link Tenancy.onTenantsStopped}'s listeners: each read of the map. Idempotent per `tenancy`.
  */
 export function shareTenancyCaches(tenancy: Tenancy, hooks: ServerHooks, bus: BusEvents, log: FastifyBaseLogger): void {
   if (shared.has(tenancy)) return;
@@ -129,8 +146,29 @@ export function shareTenancyCaches(tenancy: Tenancy, hooks: ServerHooks, bus: Bu
     }),
   );
   bus.onListen(({ reconnected }) => {
-    if (reconnected) keys.invalidate();
+    if (!reconnected) return;
+    keys.invalidate();
   });
+}
+
+/**
+ * Tells `tenancy`'s {@link Tenancy.onTenantsStopped} listeners that the tenants in `tenantIds` serve nothing now (spec
+ * §22.7): what the hosted resolver's reloads run on every instance, the writing one included. A listener that throws
+ * is logged, and the rest still run.
+ */
+export function tellTenantsStopped(
+  tenancy: Tenancy,
+  tenantIds: ReadonlySet<string>,
+  log: Pick<FastifyBaseLogger, 'warn'>,
+): void {
+  if (tenantIds.size === 0) return;
+  for (const listener of stoppedListenersOf.get(tenancy) ?? []) {
+    try {
+      listener(tenantIds);
+    } catch (error) {
+      log.warn({ err: error }, "a stopped tenant's sockets could not all be closed");
+    }
+  }
 }
 
 /** The directory behind `tenancy`; only the files `check:tenant-scope` names may call it. */

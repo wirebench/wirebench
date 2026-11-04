@@ -311,6 +311,26 @@ describeDb('the host-instance lease (spec §19.9)', () => {
     ]);
   });
 
+  it('a stopped tenant’s instances close their sockets 4403, run the quit path and give their leases back', async () => {
+    const order: string[] = [];
+    const one = serverProcess('holder-one', watching(order), order);
+    const first = socket('c1');
+    await one.instances.open(carol, first);
+    const kept = socket('a1');
+    await one.instances.open(alice, kept);
+    expect(await leaseRows(acme)).toEqual([{ user_id: carol.id, holder: 'holder-one' }]);
+    await one.instances.stopTenants(new Set([acme.tenantId]), 4403, 'tenant-suspended');
+    expect(first.closed).toEqual([{ code: 4403, reason: 'tenant-suspended' }]);
+    expect(hostOf(one, carol)?.disposed).toBe(1);
+    expect(order).toEqual([`disposed ${carol.id}`, `released ${carol.id}`]);
+    expect(await leaseRows(acme)).toEqual([]);
+    // The default tenant's instance, socket and lease stay.
+    expect(kept.closed).toEqual([]);
+    expect(hostOf(one, alice)?.disposed).toBe(0);
+    expect(one.instances.size).toBe(1);
+    expect(await leaseRows(home)).toEqual([{ user_id: alice.id, holder: 'holder-one' }]);
+  });
+
   it('a renew that cannot reach the database stops the instance at half a lease, before anyone could take it', async () => {
     let reachable = true;
     const broken: TenantDbFactory = (scope) => {

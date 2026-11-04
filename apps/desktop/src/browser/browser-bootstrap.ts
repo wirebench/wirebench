@@ -7,7 +7,8 @@
  *
  * Afterwards it owns two things outside React:
  *
- * - The session. A `4401` close sends the tab to `/sign-in`, with `redirect_to` the page it was on. A server answers the upgrade of a disabled
+ * - The session. A `4401` close sends the tab to `/sign-in`, with `redirect_to` the page it was on; a `4403
+ *   tenant-suspended` (spec §22.7) to `/sign-in` alone, which on a suspended team's host says why and stops there. A server answers the upgrade of a disabled
  *   user with HTTP 403, which a page sees only as a close (`1006`) before any hello; so after such a close
  *   it asks `/api/v1/me`, and a 401 or 403 there sends the tab to `/sign-in` too.
  * - The reconnect bar, a plain element shown while the socket is down, hidden by the next hello. Before
@@ -31,6 +32,8 @@ import { createSocketTransport, hostSocketUrl, type Hello, type SocketLike } fro
 /** The close codes the bootstrap reads (the server's `HOST_CLOSE`). */
 export const CLOSE_CODE = {
   unauthenticated: 4401,
+  /** With {@link TENANT_SUSPENDED_REASON}: the team is suspended (spec §22.7). Other `4403`s are retried. */
+  forbidden: 4403,
   /** Another server process holds the user's host lease (spec §19.9). */
   leaseHeld: 4409,
   /** Too many: the user's tabs (`too many host sockets`), or the team's seats (`host-instance-cap`, spec §19.9). */
@@ -41,6 +44,8 @@ export const CLOSE_CODE = {
 } as const;
 
 export const SIGN_IN_PATH = '/sign-in';
+/** The reason of a suspended team's `4403` close (the server's `TENANT_SUSPENDED`). */
+export const TENANT_SUSPENDED_REASON = 'tenant-suspended';
 /** The root sign-out (spec §17.2): a form post, so the browser sends the page's Origin, which it checks. */
 export const SIGN_OUT_PATH = '/sign-out';
 
@@ -234,6 +239,15 @@ export async function startBrowserClient(deps: BootstrapDeps): Promise<void> {
     onClosed(code, helloSeen, reason) {
       if (code === CLOSE_CODE.unauthenticated) {
         toSignIn();
+        return;
+      }
+      // The team is suspended: every reconnect would be refused. Its sign-in page says why (no form, no redirect).
+      if (code === CLOSE_CODE.forbidden && reason === TENANT_SUSPENDED_REASON) {
+        if (leaving) return;
+        leaving = true;
+        agent.close();
+        transport.close();
+        deps.location.assign(SIGN_IN_PATH);
         return;
       }
       // Reachable, but another process has this user's host until its lease ends: wait that long at least.

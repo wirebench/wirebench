@@ -494,6 +494,23 @@ describe('LiveClient (live-updates §3.4)', () => {
     expect((await next('auth')).message).toEqual({ type: 'auth', token: NEW_TOKEN });
   });
 
+  it('on 4403 tenant-suspended reports ended without a token check, and stays down until reconnect', async () => {
+    const { client, timers, refresh, log } = makeClient();
+    const a = recorder();
+    client.subscribe(WS_A, a.listener);
+    const peer = await accept();
+    await a.inbox.take(isState('connected'));
+    peer.close(4403, 'tenant-suspended');
+    await a.inbox.take(isState('ended'));
+    expect(client.state).toBe('ended');
+    expect(refresh).not.toHaveBeenCalled();
+    // Nothing armed: no back-off, no retry.
+    expect(timers.live()).toEqual([]);
+    expect(log.mock.calls.flat().join('\n')).toContain('suspended');
+    client.reconnect();
+    await next('auth');
+  });
+
   it('close() closes 1000 and nothing reconnects, even for a later subscribe', async () => {
     const { client, sockets, timers } = makeClient();
     const a = recorder();

@@ -48,6 +48,14 @@ export interface TenantRow {
   readonly deletingAt: Date | null;
 }
 
+/**
+ * A tenant on the hosted map (spec §22.7): its scope, and whether it serves or is suspended, with why. What the
+ * resolver keeps per tenant, shared by every host name of it.
+ */
+export type HostedTenant =
+  | { readonly scope: TenantScope; readonly status: 'active' }
+  | { readonly scope: TenantScope; readonly status: 'suspended'; readonly reason: SuspendedReason };
+
 export interface NewTenant {
   readonly slug: string;
   readonly name: string;
@@ -135,15 +143,25 @@ export class TenantDirectory {
   }
 
   /**
-   * The tenants a hosted `Host` may name (spec §19.5): active, and never the default tenant, whose slug no
-   * name matches. A suspended or deleting tenant answers `404` in slice 4.
+   * The tenants a hosted `Host` names (spec §19.5, §22.7): active and suspended, with the status and the reason, and
+   * never the default tenant, whose slug no name matches. A deleting tenant is not here, so it answers `404`. A
+   * suspended row without a reason (written before `0023` named one) counts as the operator's.
    */
-  async resolvable(): Promise<TenantScope[]> {
-    const rows = await this.#db.query<{ id: string; slug: string; customHost: string | null }>(
-      `select t.id::text as id, t.slug, ${await this.#customHost()} from tenants t
-       where t.status = 'active' and t.id is distinct from (select default_tenant_id from server_identity)`,
+  async hosted(): Promise<HostedTenant[]> {
+    const rows = await this.#db.query<{
+      id: string;
+      slug: string;
+      status: 'active' | 'suspended';
+      reason: SuspendedReason | null;
+    }>(
+      `select t.id::text as id, t.slug, t.status, t.suspended_reason as reason from tenants t
+       where t.status in ('active', 'suspended') and t.id is distinct from (select default_tenant_id from server_identity)`,
     );
-    return rows.rows.map(scopeOf);
+    return rows.rows.map((row) =>
+      row.status === 'active'
+        ? { scope: scopeOf(row), status: 'active' }
+        : { scope: scopeOf(row), status: 'suspended', reason: row.reason ?? 'operator' },
+    );
   }
 
   /**
@@ -163,7 +181,10 @@ export class TenantDirectory {
       : `null::text as "customHost"`;
   }
 
-  /** {@link resolvable}, with each tenant's name: what the entry's message lists (spec §21.4). */
+  /**
+   * The tenants the entry lists (spec §21.4), with each one's name: active only, and never the default tenant. A
+   * suspended tenant is on the hosted map (it answers why it is suspended) but never in the entry's message.
+   */
   async resolvableNamed(): Promise<{ readonly scope: TenantScope; readonly name: string }[]> {
     const rows = await this.#db.query<{ id: string; slug: string; name: string; customHost: string | null }>(
       `select t.id::text as id, t.slug, t.name, ${await this.#customHost()} from tenants t
@@ -219,6 +240,19 @@ export async function hostedEdition(
   const row = rows.rows[0];
   if (row === undefined) throw new WirebenchError('tenancy-tenant-unknown', 'the unit’s tenant has no row');
   return row;
+}
+
+/**
+ * Whether the unit's own tenant serves nothing now, suspended or deleting (spec §22.7): what the scheduler and the
+ * alert outbox hold a tenant's work by, while retention and the audit jobs keep running. A tenant with no row is not
+ * stopped here: the job loop never visits one. Reads only the unit's tenant, like {@link hostedEdition}.
+ */
+export async function tenantStopped(tx: TenantQuerier): Promise<boolean> {
+  const rows = await tx.query<{ status: TenantStatus }>('select status from tenants where id = $1::uuid', [
+    tx.scope.tenantId,
+  ]);
+  const status = rows.rows[0]?.status;
+  return status !== undefined && status !== 'active';
 }
 
 /** Each directory's data keys, kept off the class so nothing outside this file reaches them through it. */
