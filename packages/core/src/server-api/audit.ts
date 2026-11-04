@@ -94,6 +94,16 @@ export const AUDIT_ACTIONS = [
   'agent.nonce_redeemed',
   'agent.nonce_refused',
   'agent.request_refused',
+  /**
+   * A hosted tenant's lifecycle (hosted edition spec §22.14), in its own chain: created, its edition set, suspended,
+   * resumed, its deletion asked for or cancelled. `details.by` is `operator` or a user id.
+   */
+  'tenant.created',
+  'tenant.edition_set',
+  'tenant.suspended',
+  'tenant.resumed',
+  'tenant.deletion_requested',
+  'tenant.deletion_cancelled',
 ] as const;
 export const auditActionSchema = z.enum(AUDIT_ACTIONS);
 export type AuditAction = z.infer<typeof auditActionSchema>;
@@ -115,6 +125,7 @@ export const AUDIT_ACTION_GROUPS = [
   'session_log',
   'terminal_share',
   'agent',
+  'tenant',
 ] as const;
 export type AuditActionGroup = (typeof AUDIT_ACTION_GROUPS)[number];
 
@@ -136,6 +147,7 @@ export const AUDIT_TARGET_KINDS = [
   'session-log',
   'terminal-share',
   'agent-pairing',
+  'tenant',
 ] as const;
 export type AuditTargetKind = (typeof AUDIT_TARGET_KINDS)[number];
 

@@ -36,6 +36,7 @@ export const ACTION_GROUPS = [
   'session_log',
   'terminal_share',
   'agent',
+  'tenant',
 ] as const;
 export type ActionGroup = (typeof ACTION_GROUPS)[number];
 export const ACTION_GROUP_LABELS: Record<ActionGroup, string> = {
@@ -54,6 +55,7 @@ export const ACTION_GROUP_LABELS: Record<ActionGroup, string> = {
   session_log: 'Session logs',
   terminal_share: 'Shared terminals',
   agent: 'Paired agents',
+  tenant: 'Hosted account',
 };
 
 export function actionLabel(action: string): string {
@@ -122,6 +124,8 @@ export function targetLabel(event: {
       return `Shared terminal ${str(d['hostName']) ?? ''}`.trim();
     case 'agent-pairing':
       return `Paired agent ${str(d['agentId']) ?? ''}`.trim();
+    case 'tenant':
+      return `Hosted account ${str(d['slug']) ?? str(d['to']) ?? ''}`.trim();
     default:
       return event.target.kind;
   }

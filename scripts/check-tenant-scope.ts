@@ -14,6 +14,8 @@
  *   start-up, the resolver's registration and the admin command line reach it.
  * - **No `stateWithoutScope` at all** (tenancy Tasks 9 and 14): a route or a job that read the license without
  *   its tenant would read another's in hosted mode. Every job reads its tenant's in the job loop.
+ * - **No `tenantWritesOf` outside `tenancy/tenancy.ts` and `control-plane/tenants.ts`** (slice 7 Task 6): the control
+ *   plane's way to `TenantAdmin.create` and the directory's change, which no other module may reach.
  * - **No `TenantDirectory` or `TenantAdmin` outside `src/tenancy/`** (Task 8 review I2), in an import, a `new`,
  *   a type or an alias: `new TenantDirectory(ctx.db).list()` would hand a module every tenant's scope, the hole
  *   `directoryOf` closes.
@@ -73,7 +75,7 @@ export const URLS_FILE = 'packages/server/src/tenancy/urls.ts';
 
 /** The two ways to get a `TenantScope` without a request or the job loop, and the only files that may name them. */
 export const SCOPE_MINTS: Readonly<
-  Record<'defaultScope' | 'scopeOf' | 'directoryOf' | 'stateWithoutScope', readonly string[]>
+  Record<'defaultScope' | 'scopeOf' | 'directoryOf' | 'stateWithoutScope' | 'tenantWritesOf', readonly string[]>
 > = {
   defaultScope: [
     'packages/server/src/tenancy/directory.ts',
@@ -90,6 +92,8 @@ export const SCOPE_MINTS: Readonly<
   // Nowhere: the license without a scope (tenancy Task 9) was removed once its last job, the audit forwarder,
   // read each tenant's in the job loop (Task 14). The name stays refused, so it does not come back.
   stateWithoutScope: [],
+  // The control plane's writes of the tenants (spec §22.2): its lifecycle service alone, so no module creates a tenant.
+  tenantWritesOf: ['packages/server/src/tenancy/tenancy.ts', 'packages/server/src/control-plane/tenants.ts'],
 };
 
 /** The tenant directory's classes, which only `src/tenancy/` may name (Task 8 review I2). */
@@ -211,6 +215,7 @@ export interface ScopeHit {
     | 'directory-of'
     | 'tenant-directory'
     | 'license-without-scope'
+    | 'tenant-writes'
     | 'public-url'
     | 'database-url'
     | 'operator-url'
@@ -287,6 +292,7 @@ const MINT_RULES = {
   scopeOf: 'scope-of',
   directoryOf: 'directory-of',
   stateWithoutScope: 'license-without-scope',
+  tenantWritesOf: 'tenant-writes',
 } as const satisfies Record<keyof typeof SCOPE_MINTS, ScopeHit['rule']>;
 
 /**
@@ -505,6 +511,7 @@ if (process.argv[1] !== undefined && fileURLToPath(import.meta.url) === process.
       'directory-of': 'directoryOf outside the files that may name it',
       'tenant-directory': 'TenantDirectory or TenantAdmin outside src/tenancy/',
       'license-without-scope': 'stateWithoutScope is gone; use state(request.tenant), or state(scope, tx) in a job',
+      'tenant-writes': 'tenantWritesOf outside tenancy.ts and control-plane/tenants.ts',
       'public-url': 'a read of the configured public URL; use tenantUrl(config, request)',
       'database-url':
         'a read of a database URL outside config.ts, src/db/, src/tenancy/ and the start-up; use ctx.tenancy',

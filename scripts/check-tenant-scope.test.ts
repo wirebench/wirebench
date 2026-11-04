@@ -85,6 +85,23 @@ describe('check:tenant-scope', () => {
     expect(findScopeMints('packages/server/src/identity/cli.ts', 'directoryOf(t).defaultScope()')).toEqual([]);
   });
 
+  it('keeps tenantWritesOf to tenancy.ts and the control plane’s lifecycle service (slice 7 Task 6)', () => {
+    const leak = "import { tenantWritesOf } from '../tenancy/tenancy.js';\ntenantWritesOf(ctx.tenancy).changed();";
+    for (const file of [
+      'packages/server/src/teams/routes/teams.ts',
+      'packages/server/src/control-plane/billing.ts',
+      'packages/server/src/tenancy/jobs.ts',
+    ]) {
+      expect(findScopeMints(file, leak), file).toMatchObject([
+        { line: 1, rule: 'tenant-writes' },
+        { line: 2, rule: 'tenant-writes' },
+      ]);
+    }
+    for (const file of ['packages/server/src/control-plane/tenants.ts', 'packages/server/src/tenancy/tenancy.ts']) {
+      expect(findScopeMints(file, leak), file).toEqual([]);
+    }
+  });
+
   it('keeps TenantDirectory and TenantAdmin inside src/tenancy/, however they are named (Task 8 review I2)', async () => {
     const root = await tree({
       'packages/server/src/teams/routes/teams.ts': [
