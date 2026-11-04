@@ -4,6 +4,7 @@ import type { FastifyInstance, RouteOptions } from 'fastify';
 import type { GitCli } from '@wirebench/engine';
 import { loadConfig, type ServerConfig } from '../../src/config.js';
 import type { ServerContext, ServerHooks, ServerModule } from '../../src/context.js';
+import { controlHandle, openControlDb } from '../../src/control-plane/control-db.js';
 import { identityModule } from '../../src/identity/module.js';
 import type { OidcProvider } from '../../src/identity/oidc.js';
 import { hashPassword } from '../../src/identity/passwords.js';
@@ -95,6 +96,11 @@ export async function identityHarness(
     /** This process's instance and its bus's signals, for a test of two servers on one schema (spec §20.3). */
     readonly instance?: ServerContext['instance'];
     readonly bus?: ServerContext['bus'];
+    /**
+     * Hands the control-plane module a control pool on this schema (spec §22.2), as `serve.ts` does in hosted mode.
+     * It connects lazily, and nothing is granted to the control role until a test runs `ensureControlRole`.
+     */
+    readonly control?: boolean;
   } = {},
 ): Promise<IdentityHarness> {
   const db = options.db ?? (await testDatabase());
@@ -135,6 +141,7 @@ export async function identityHarness(
   // repository store, so no developer gitconfig or hook reaches a server test. `options.git` still
   // overrides only the store, for tests that force RepoStore.create to fail.
   const { tenancy, log: statements } = loggedTenancy(db, config.secretsKey);
+  const control = options.control === true ? openControlDb(db.controlUrl) : undefined;
   const ctx = await testContext({
     dataDir,
     db,
@@ -144,6 +151,7 @@ export async function identityHarness(
     tenancy,
     ...(options.instance !== undefined ? { instance: options.instance } : {}),
     ...(options.bus !== undefined ? { bus: options.bus } : {}),
+    ...(control !== undefined ? { control: controlHandle(control) } : {}),
   });
   const directory = directoryOf(ctx.tenancy);
   await directory.load();
@@ -166,6 +174,7 @@ export async function identityHarness(
     statements,
     close: async () => {
       await app.close();
+      await control?.close();
       if (options.db === undefined) await db.close();
       if (options.dataDir === undefined) await removeTempDir(dataDir);
     },

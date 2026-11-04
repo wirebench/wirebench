@@ -576,6 +576,16 @@ export class MetaRegistry {
   }
 }
 
+declare const controlHandleBrand: unique symbol;
+
+/**
+ * The control plane's pool as the context carries it (spec §22.2, ADR-0039): opaque. Only `control-plane/control-db.ts`
+ * turns one into the pool and back, and `check:tenant-scope` keeps those functions, and `ControlDb`, to
+ * `src/control-plane/` and `serve.ts`; every other module would need the raw pool's types to cast it, which that gate
+ * refuses too.
+ */
+export type ControlHandle = { readonly [controlHandleBrand]: true };
+
 export interface ServerContext {
   /** Without the configured public URL (`ModuleConfig`): a module asks `tenantUrl` for its tenant's. */
   readonly config: ModuleConfig;
@@ -606,6 +616,11 @@ export interface ServerContext {
   readonly bus: BusEvents;
   /** Replaced by the licensing module in `register()`; the one field a module may assign (licensing spec §5.1). */
   license: LicenseService;
+  /**
+   * The control role's pool (spec §22.2), set by `serve.ts` in hosted mode only, and read by the control-plane module
+   * alone. Absent on a self-hosted server.
+   */
+  readonly control?: ControlHandle;
 }
 
 export interface ServerModule {

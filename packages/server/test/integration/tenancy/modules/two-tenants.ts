@@ -102,6 +102,8 @@ export async function twoTenants(
     ...(options.onRoute !== undefined ? { onRoute: options.onRoute } : {}),
     ...(options.db !== undefined ? { db: options.db } : {}),
     configure: hosted,
+    // Hosted, as serve.ts runs it: the control-plane module refuses to register without the control pool.
+    control: true,
     modules: (clock) => [
       ...(options.modules?.(clock) ?? []),
       scopeProbe((app) => {

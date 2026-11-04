@@ -2,7 +2,13 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { checkTenantScope, findRawDatabase, findScopeMints, findUrlReads } from './check-tenant-scope.js';
+import {
+  checkTenantScope,
+  findControlPlane,
+  findRawDatabase,
+  findScopeMints,
+  findUrlReads,
+} from './check-tenant-scope.js';
 
 describe('check:tenant-scope', () => {
   const roots: string[] = [];
@@ -372,5 +378,106 @@ describe('check:tenant-scope', () => {
       ['packages/server/src/agent/comma.ts', 'tenant-sql'],
       ['packages/server/src/agent/driver.ts', 'raw-db'],
     ]);
+  });
+
+  describe('the control plane (slice 7, spec §22.2)', () => {
+    const route = 'packages/server/src/teams/routes/teams.ts';
+    const inside = 'packages/server/src/control-plane/billing.ts';
+
+    it('keeps ControlDb and the control-db module to src/control-plane/ and serve.ts', () => {
+      for (const text of [
+        "import { openControlDb } from '../control-plane/control-db.js';",
+        "import type { ControlDb } from '../../control-plane/control-db';",
+        "const m = await import('./control-plane/control-db.js');",
+        "export * from '../control-plane/control-db.js';",
+        'let pool: ControlDb | undefined;',
+        'const db = openControlDb(url);',
+        'const db = controlDbOf(ctx.control!);',
+        'const handle = controlHandle(db);',
+        "type C = import('../control-plane/control-db.js').ControlDb;",
+      ]) {
+        const hits = findControlPlane(route, text);
+        expect(hits.length, text).toBeGreaterThan(0);
+        expect(
+          hits.every((hit) => hit.rule === 'control-db'),
+          text,
+        ).toBe(true);
+      }
+      const allowed = "import { openControlDb, type ControlDb } from './control-plane/control-db.js';";
+      for (const file of ['packages/server/src/serve.ts', inside, 'packages/server/src/control-plane/module.ts']) {
+        expect(findControlPlane(file, allowed), file).toEqual([]);
+      }
+      // src/tenancy/ is no exception, and a comment or another module of a similar name is not the pool.
+      expect(findControlPlane('packages/server/src/tenancy/roles.ts', allowed)).not.toEqual([]);
+      expect(findControlPlane(route, "// ControlDb\nimport { x } from './control-dbs.js';\n")).toEqual([]);
+    });
+
+    it('keeps controlDatabaseUrl to config.ts, serve.ts and the admin role command', () => {
+      for (const text of [
+        'const url = ctx.config.controlDatabaseUrl;',
+        "const url = config['controlDatabaseUrl'];",
+        'const { controlDatabaseUrl } = config;',
+        "type U = Pick<ServerConfig, 'controlDatabaseUrl'>;",
+      ]) {
+        expect(findControlPlane(route, text), text).toMatchObject([{ rule: 'control-url' }]);
+        expect(findControlPlane(inside, text), text).toMatchObject([{ rule: 'control-url' }]);
+      }
+      for (const file of [
+        'packages/server/src/config.ts',
+        'packages/server/src/serve.ts',
+        'packages/server/src/tenancy/cli.ts',
+      ]) {
+        expect(findControlPlane(file, 'const url = config.controlDatabaseUrl;'), file).toEqual([]);
+      }
+    });
+
+    it('keeps SQL naming the control tables to src/control-plane/', () => {
+      for (const table of ['signups', 'billing_events', 'tenant_slugs_retired', 'tenant_deletions']) {
+        for (const text of [
+          `db.query('select * from ${table}')`,
+          `db.query(\`update "${table}" set x = 1\`)`,
+          `db.query('INSERT INTO public.${table.toUpperCase()} values ($1)')`,
+        ]) {
+          for (const file of [route, 'packages/server/src/tenancy/directory.ts']) {
+            expect(findControlPlane(file, text), `${file}: ${text}`).toMatchObject([{ rule: 'control-sql' }]);
+          }
+          expect(findControlPlane(inside, text), text).toEqual([]);
+        }
+        // Another name, and a comment, pass.
+        expect(findControlPlane(route, `db.query('select * from ${table}_old')\n// ${table}`)).toEqual([]);
+      }
+      // The grants list names them for the roles; nowhere else outside the control plane may.
+      expect(findControlPlane('packages/server/src/tenancy/grants.ts', "const t = ['signups'];")).toEqual([]);
+    });
+
+    it('allows from tenants and join tenants in src/control-plane/ too, but not the tenant setting', () => {
+      for (const text of [
+        "db.query('select id from tenants where slug = $1')",
+        "db.query('select s.tenant_id from subscriptions s join tenants t on t.id = s.tenant_id')",
+        "db.query('select 1 from subscriptions s, tenants t')",
+      ]) {
+        expect(findRawDatabase(inside, text), text).toEqual([]);
+        expect(findRawDatabase(route, text), text).toMatchObject([{ rule: 'tenant-sql' }]);
+      }
+      expect(findRawDatabase(inside, 'db.query("select set_config(\'wirebench.tenant_id\', $1, true)")')).toMatchObject(
+        [{ rule: 'tenant-sql' }],
+      );
+    });
+
+    it('finds a planted file of each control-plane kind in a tree', async () => {
+      const root = await tree({
+        'packages/server/src/agent/control.ts': "import type { ControlDb } from '../control-plane/control-db.js';\n",
+        'packages/server/src/agent/url.ts': 'export const url = config.controlDatabaseUrl;\n',
+        'packages/server/src/agent/sql.ts': "export const SQL = 'select * from billing_events';\n",
+        'packages/server/src/control-plane/billing.ts':
+          "import type { ControlDb } from './control-db.js';\nexport const SQL = 'select * from billing_events, tenants';\n",
+      });
+      expect((await checkTenantScope(root)).map((hit) => [hit.file, hit.rule]).sort()).toEqual([
+        ['packages/server/src/agent/control.ts', 'control-db'],
+        ['packages/server/src/agent/control.ts', 'control-db'],
+        ['packages/server/src/agent/sql.ts', 'control-sql'],
+        ['packages/server/src/agent/url.ts', 'control-url'],
+      ]);
+    });
   });
 });

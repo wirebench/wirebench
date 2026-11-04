@@ -32,7 +32,7 @@ import { loadMigrations, migrate, MIGRATIONS_DIR, pendingMigrations, type Migrat
 import { APPLICATION_NAME, createDatabase, openSession } from './db/pool.js';
 import { BusSignals, NotificationBus } from './operations/bus.js';
 import { checkAppRole, checkControlRole, checkPostgresVersion } from './tenancy/checks.js';
-import { openControlDb, type ControlDb } from './control-plane/control-db.js';
+import { controlHandle, openControlDb, type ControlDb } from './control-plane/control-db.js';
 import { allowsMultipleInstances, InstanceRegistry, licenseLapseWatch } from './operations/instances.js';
 import { OPERATIONS_MIGRATIONS_DIR } from './operations/migrations.js';
 import { realTimer } from './live/module.js';
@@ -436,7 +436,7 @@ export async function startServer(
   // The pool's errors are logged once the logger exists; a connection failing before then fails a query too.
   const dbLog: { warn?: (error: Error) => void } = {};
   // The control plane's pool on the control role, hosted mode only (spec §22.2): the one connection past the policy,
-  // at most two, kept here until the control-plane module takes it (slice 7 Task 3). `controlPlaneProblems` makes
+  // at most two, handed to the control-plane module on `ctx.control` and to no other. `controlPlaneProblems` makes
   // the URL required in hosted mode; a config built without it still refuses here.
   const controlUrl = config.mode === 'hosted' ? config.controlDatabaseUrl : undefined;
   if (config.mode === 'hosted' && controlUrl === undefined) {
@@ -624,6 +624,7 @@ export async function startServer(
     instance: registry,
     bus: busSignals,
     license: permissiveLicense(),
+    ...(control !== undefined ? { control: controlHandle(control) } : {}),
   };
   let app: FastifyInstance;
   try {
