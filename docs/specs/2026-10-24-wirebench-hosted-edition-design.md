@@ -7,8 +7,8 @@ customers · Amended 2026-10-26 after an independent review: its four high findi
 guard 6 (background jobs have a tenant scope) and §5.1 (the host package is a factory with no module-level
 state); the rest are folded in where they apply · Amended 2026-10-27 for slice 2 (§17, decision 12,
 ADR-0034) · Amended 2026-10-29 for slice 3 (§18, ADR-0035) · Amended 2026-10-29 for slice 4 (§19, ADR-0036) ·
-Amended 2026-11-03 for slice 5 (§20, ADR-0037) · Amended 2026-11-03 for slice 6 (§21, ADR-0038) ·
-Issue: #776 (slice 1 is #777, slice 2 is #783, slice 3 is #790, slice 4 is #798, slice 5 is #821, slice 6 is #822) ·
+Amended 2026-11-03 for slice 5 (§20, ADR-0037) · Amended 2026-11-03 for slice 6 (§21, ADR-0038) · Amended 2026-11-04 for slice 7 (§22, ADR-0039) ·
+Issue: #776 (slice 1 is #777, slice 2 is #783, slice 3 is #790, slice 4 is #798, slice 5 is #821, slice 6 is #822, slice 7 is #829) ·
 Module ids: `host-seam`,
 `browser-client`, `local-agent`, `tenancy`, `operations`, `domains`, `control-plane`, `custom-domains`
 
@@ -2492,3 +2492,465 @@ stable:
   hosted refusal makes the recipe run.
 - **8:** a custom name is one more resolver entry (§19.12) and one more Traefik router with an HTTP-01 certificate of
   its own; the entry and the wildcard are unchanged.
+
+## 22. Slice 7 amendment: the control plane (2026-11-04)
+
+Slice 7 (#829) is the control plane of §5.6: the module that creates, bills, suspends, renames, exports, imports and
+deletes tenants, and the per-tenant settings that slice 4 deferred (§19.1). It is the slice that lets an operator
+switch hosted mode on, so it lifts `loadConfig`'s refusal, in its last part (§22.1). It builds §3.6, §4.3, §5.6, §8's
+`admin tenant` rows, §11's control-plane line, §13 criteria 5 and 6, and §19.12's and §21.8's slice 7 items. It builds
+nothing of slice 8. Where the build differs from the sections above, this section wins. ADR-0039 records the decision
+that the control plane alone bypasses row-level security and that billing reaches the server only as a verified
+webhook. Plan: `docs/plans/2026-11-04-control-plane.md`.
+
+Rulings that bind it, from earlier decisions: Paddle is the merchant of record and Enterprise is invoiced by Verathic
+(decision 10); no free hosted tier (decision 7); EU only (decision 8); the control plane is the only module on the
+bypass role and is loaded only in hosted mode (§12); a superuser connection is refused in hosted mode (§19.4); no
+domain is owned, so every name is configuration (§21). There is no Paddle account yet: the verifier and the checkout
+are built against Paddle's documented webhook signature and Paddle.js, tested with fixtures and a fake, and no real
+key exists anywhere in the repository.
+
+Owner rulings (popup, 2026-11-04):
+
+1. **Signup lives at `app.<app-domain>/signup`**, on the entry host the server already serves. The site, which the
+   server never serves (§21.1), links to it. This replaces §3.6's `https://<site-domain>/signup`.
+2. **Unpaid means suspended 14 days after the subscription goes `past_due`.** Paddle's own payment retries run inside
+   that window.
+3. **A canceled subscription suspends the tenant and keeps its data until someone asks for deletion**: a tenant
+   server admin or the operator. Nothing is deleted on a timer.
+4. **The per-tenant settings get an API, an operator command and a settings screen in the app** in this slice, not a
+   later one (§22.13).
+
+### 22.1 Switching hosted mode on (amends §19.1)
+
+- `WIREBENCH_SERVER_MODE=hosted` is accepted by `loadConfig` from Part H on (§22.19). Until then the refusal stays,
+  and the parts are proven by tests that build a hosted `ServerConfig`, as slices 4 to 6 were.
+- **Required in hosted mode,** each refused by name when missing: both names (§21.1); `WIREBENCH_SERVER_SMTP_URL`
+  and `_SMTP_FROM` (moved from the entry's registration check into `loadConfig`, same code `entry-smtp-missing`);
+  `WIREBENCH_SERVER_SECRETS_KEY` (every tenant needs a data key, §19.7); `WIREBENCH_SERVER_MIGRATION_DATABASE_URL`
+  set apart from the app URL (two roles, §19.4); `WIREBENCH_SERVER_CONTROL_DATABASE_URL` (§22.2); and the Paddle
+  settings of §22.5.
+- **Refused in hosted mode,** because each is now a tenant's setting (§22.12): `WIREBENCH_SERVER_OIDC_*`,
+  `_SAML_*`, `_AUDIT_FORWARD_*`, with `control-plane-setting-per-tenant` naming the variable. Silently ignoring an
+  identity provider configured for the whole server would be the cross-tenant sign-in §19.1 exists to prevent.
+- **Hosted mode means `multi`** (§20.1) and always denies private ranges (§17.5), as before.
+- **Self-hosted is unchanged.** The new variables are refused there with `control-plane-hosted-only`, so a
+  self-hosted operator who copies a hosted `.env` learns at once, rather than finding a Paddle secret ignored.
+
+### 22.2 The control role (amends §4.2 and §19.4)
+
+- **A third role,** `wirebench_control`: `login nosuperuser bypassrls noinherit`, in the new
+  `WIREBENCH_SERVER_CONTROL_DATABASE_URL`. It is the only role that bypasses the policy, and only the control plane
+  holds a connection on it.
+- **Created by `admin tenancy role`** in hosted mode, beside the app role, with a SCRAM verifier computed in Node as
+  for the app role. PostgreSQL lets only a superuser, or a role that itself has `BYPASSRLS`, create a `BYPASSRLS`
+  role; an owner that may not gets `tenancy-control-role-create-refused` and uses `--print-sql`, which prints the
+  statements for a superuser to run once.
+- **Its grants:** `select, insert, update, delete` on `tenants` and on the control plane's own tables (§22.3);
+  `select` on every scoped table, for the deletion check (§22.11); nothing else. It needs no write on a scoped table:
+  every per-tenant write runs in that tenant's unit on the app role.
+- **Checked at start-up in hosted mode,** after the app role's check of §19.4: the control role must have
+  `rolbypassrls`, must not be a superuser (`control-plane-role-superuser`), must own no table, and must differ from
+  both the app role and the owner. Any failure refuses start-up with its code.
+- **Confined in code.** `controlDatabaseUrl` is not in `ModuleConfig`; `serve.ts` opens a pool of at most two
+  connections and hands it to the control plane as a branded `ControlDb`, which only `src/control-plane/` may name.
+  `check:tenant-scope` gains the rule, and allows `from tenants`, the control tables and `bypass` SQL in
+  `src/control-plane/` only.
+- **What it is used for,** and nothing else:
+
+  | Use | Why it cannot be a tenant unit |
+  | --- | --- |
+  | Finding a tenant by its Paddle subscription | The webhook names a subscription, not a tenant |
+  | The billing sweep (grace, suspension) | It reads every tenant's subscription at once |
+  | Slug checks across `tenants`, `signups` and retired slugs | One answer across every tenant |
+  | Tenant status, edition, rename and deletion writes | They change `tenants` itself |
+  | The deletion check: no row of the tenant left in any scoped table | Proving absence needs a view across the policy |
+
+### 22.3 The tables (amends §4.3)
+
+Migration `0023`, under `packages/server/migrations/control-plane/`, owned by the control plane's `migrationsDir`
+(the module is registered in every mode for its migrations, and serves nothing outside hosted mode).
+
+```sql
+alter table tenants
+  add column edition_source text not null default 'license'
+    check (edition_source in ('license', 'subscription', 'operator')),
+  add column suspended_reason text check (suspended_reason in ('unpaid', 'canceled', 'operator', 'importing')),
+  add column suspended_at timestamptz,
+  add column deletion_requested_at timestamptz,
+  add column deletion_requested_by text;      -- 'operator' or a user id; deleting_at is when the job runs
+
+create table tenant_slugs_retired (            -- unscoped
+  slug text primary key, tenant_id uuid not null, retired_at timestamptz not null default now(),
+  redirect_to text, redirect_until timestamptz);
+
+create table signups (                          -- unscoped: no tenant exists yet
+  id uuid primary key, email_lower text not null, name text not null, slug text not null, seats integer not null,
+  token_hash text not null unique, password_hash text, status text not null default 'pending'
+    check (status in ('pending', 'verified', 'completed')),
+  tenant_id uuid, created_at timestamptz not null default now(), expires_at timestamptz not null);
+create unique index signups_slug_open on signups (slug) where status <> 'completed';
+
+create table billing_events (                   -- unscoped: the provider's event ids, for replay and order
+  provider text not null, event_id text not null, event_type text not null, occurred_at timestamptz not null,
+  received_at timestamptz not null default now(), outcome text not null, primary key (provider, event_id));
+
+create table tenant_deletions (                 -- unscoped: outlives the tenant
+  tenant_id uuid primary key, slug text not null, requested_at timestamptz not null, deleted_at timestamptz not null,
+  chain_seq bigint, chain_hash text, chain_key_id text);
+
+-- scoped, each through tenant_scope() in the same file:
+create table subscriptions (tenant_id …, provider text not null, provider_ref text not null, customer_ref text,
+  plan text not null, seats integer not null, status text not null, current_period_end timestamptz,
+  past_due_since timestamptz, last_event_at timestamptz not null, primary key (tenant_id));
+create unique index subscriptions_ref on subscriptions (tenant_id, provider, provider_ref);
+create table tenant_exports (tenant_id …, id text not null, requested_by text not null, status text not null,
+  size_bytes bigint, sha256 text, error text, requested_at timestamptz not null default now(),
+  ready_at timestamptz, expires_at timestamptz, primary key (tenant_id, id));
+create table tenant_settings (tenant_id …, section text not null, value jsonb not null, sealed bytea,
+  updated_at timestamptz not null default now(), updated_by text not null, primary key (tenant_id, section));
+```
+
+- **Unscoped allowlist** (guard 3, §19.8) gains `signups`, `billing_events`, `tenant_slugs_retired` and
+  `tenant_deletions`; `check:tenant-scope` allows them in `src/control-plane/` only. The scoped list gains
+  `subscriptions`, `tenant_exports` and `tenant_settings`.
+- **A provider ref is unique across tenants** in practice (Paddle mints it), and the lookup runs on the control role;
+  the composite index serves the tenant's own reads. The webhook refuses a ref already held by another tenant
+  (`billing-ref-conflict`, logged by tenant id) rather than move a subscription between customers.
+- **No `deleted` status.** A deleted tenant's row is removed (§22.11); `tenant_deletions` and the retired slug are
+  what remain. A removed row also removes the data key, and with it the trap of `TenantKeys` lazily minting a new key
+  for a null column (`tenancy/keys.ts`), which the deletion would otherwise have to fence.
+- **Slug uniqueness across three tables** (amends §3.6's "the same unique index"): one index cannot span `tenants`,
+  `signups` and `tenant_slugs_retired`, so every slug write takes `pg_advisory_xact_lock(SLUG_LOCK_CLASS,
+  hashtext(SERVER_SCHEMA))` on the control role and checks all three in that transaction.
+
+### 22.4 Edition and seats (amends §3.6 and §19.8, guard 5)
+
+- **In hosted mode `LicenseService.state(scope)` reads the tenant row:** `tenants.edition` and `tenants.seats`, with
+  the edition's features (`team` or `enterprise`; `community` is never a hosted edition). The license row is not
+  read. `POST` of a license file answers `409 licensing-hosted`, and `admin license` refuses with the same code.
+- **`edition_source`** says who set it: `license` (self-hosted, the default), `subscription` (a Team subscription),
+  `operator` (`admin tenant set-edition`, for an Enterprise deal invoiced by Verathic). A webhook never changes a
+  tenant whose source is `operator`; it records the subscription and logs that it was not applied.
+- **Seats** are the subscription's quantity of the Team price (§22.5), or the operator's `--seats`. Seat counting,
+  the seat lock and the host-instance cap (decision 11) read them through `state(scope)` unchanged. Lowering seats
+  below enabled users disables nobody; new sign-ups and enables are refused at the limit, as in self-hosted mode.
+- **Suspension does not change the edition**; it changes reachability (§22.7).
+
+### 22.5 Paddle and the subscription adapter
+
+- **Settings,** required in hosted mode:
+
+  | Variable | Meaning |
+  | --- | --- |
+  | `WIREBENCH_SERVER_PADDLE_ENVIRONMENT` | `sandbox` or `production`; picks Paddle.js's environment. |
+  | `WIREBENCH_SERVER_PADDLE_CLIENT_TOKEN` | Paddle.js's client-side token (`test_…` or `live_…`; checked against the environment). Public by design. |
+  | `WIREBENCH_SERVER_PADDLE_TEAM_PRICE_ID` | The Team seat price (`pri_…`). |
+  | `WIREBENCH_SERVER_PADDLE_WEBHOOK_SECRET` | The notification destination's secret key (`pdl_ntfset_…`). Secret: never printed, `_FILE` accepted. |
+
+- **The server never calls Paddle's API** (my call). It receives webhooks and renders the checkout overlay, nothing
+  more, so it holds no API key that could refund, cancel or read customers. Changing seats or the card goes through
+  Paddle's emailed customer portal; a seat change arrives as `subscription.updated`. A Paddle API client is a later
+  decision if the settings screen ever needs a "change seats" button.
+- **The webhook,** `POST /billing/paddle` on the entry host (`ENTRY_ROUTE`, so no tenant resolves):
+  - raw body, at most 1 MiB, never parsed before the signature passes;
+  - **signature:** the `Paddle-Signature` header is `ts=<unix>;h1=<hex>` with possibly several `h1` (Paddle sends
+    more than one while a secret rotates). The signed payload is `<ts>:<raw body>`, HMAC-SHA256 under the secret;
+    any `h1` that matches, compared in constant time, passes. `ts` must be within 300 s of now (my call: wider than
+    the SDK's 5 s, because replays are stopped by the event id below, and a clock 10 s off must not drop billing).
+    A failure answers `401` with an empty body and logs the reason code, never the header;
+  - **replay and order:** `billing_events (provider, event_id)` is inserted first; a duplicate answers `200` and does
+    nothing. An event older than the subscription's `last_event_at` is recorded and not applied (Paddle does not
+    promise order);
+  - answers `200` once applied, `500` on a database failure so Paddle retries, never another status.
+- **The adapter,** `control-plane/billing/paddle.ts`, is the only file that knows Paddle's shapes. It turns an event
+  into the control plane's own vocabulary (§5.6), and ignores every event type outside `subscription.*`:
+
+  | Paddle `event_type` | Control plane event | Status |
+  | --- | --- | --- |
+  | `subscription.created` | `created` | from `data.status` |
+  | `subscription.updated`, `.activated`, `.trialing`, `.past_due`, `.paused`, `.resumed`, `.imported` | `updated` | from `data.status` |
+  | `subscription.canceled` | `deleted` | `canceled` |
+
+  The event carries `ref` (`data.id`), `customerRef`, `status` (`active`, `trialing`, `past_due`, `paused`,
+  `canceled`), `seats` (the summed `quantity` of items whose `price.id` is the Team price; zero refuses with
+  `billing-no-team-item`), `periodEnd` (`current_billing_period.ends_at`), `occurredAt`, and from `custom_data` either
+  `signup` (a signup id, §22.6) or `tenant` (a tenant id, for a resubscription).
+- **Applying an event,** in one control transaction:
+  - `created` with a `signup`: completes that signup (§22.6). With a `tenant`: attaches the subscription to it,
+    replacing a canceled one. With neither: recorded, `outcome = 'unmatched'`, logged by event id.
+  - `updated`: updates the row; `active` or `trialing` sets the tenant `team` (when its source is `subscription`)
+    and its seats, clears `past_due_since`, and resumes a tenant suspended for `unpaid` or `canceled`; `past_due`
+    sets `past_due_since` once; `paused` suspends at once with `canceled`.
+  - `deleted`: suspends at once with `canceled` (Paddle sends it when the period ends, so the customer had what they
+    paid for). Data is kept until a deletion is asked for (ruling 3).
+- **The grace sweep** (§22.15) suspends with `unpaid` any tenant whose `past_due_since` is 14 days old (ruling 2).
+  Each tenant's server admins are mailed through the operator's SMTP when it goes past due, three days before the
+  suspension, and when it is suspended. The mails hold the team's name and a link to the tenant's sign-in page,
+  nothing from Paddle.
+
+### 22.6 Signup (amends §3.6; ruling 1)
+
+Routes on the entry host, server-rendered in the entry page's style, no cookie at any step:
+
+1. **`GET /signup`**: email, team name, slug, seats (1 to 500). **`POST /signup`** checks `Origin` (as §21.4), the body
+   size, the entry's rate limits (5 a minute per address, 3 an hour per email, in the shared limiter once slice 5
+   moves it), the email's syntax, the name (1–80 characters, plain text), and the slug: `checkSlug`, then free in
+   `tenants`, open `signups` and `tenant_slugs_retired` under the slug lock (§22.3). A taken or reserved slug
+   re-renders the form saying so; this is the one place a slug's existence is answered, and slugs are public names.
+   On success it inserts the signup (24 h expiry, the slug held that long), mails a link
+   `https://app.<app-domain>/signup/<token>`, and answers "Check your inbox". An address that already has teams may
+   sign up another; the answer is the same either way.
+2. **`GET /signup/<token>`**: the token is 32 random bytes, stored as a hash, single-use for the password step. The
+   page asks for the first admin's password (`MIN_PASSWORD_LENGTH`) and shows the price summary. **`POST`** stores the
+   password's scrypt hash on the signup, marks it `verified`, and renders the checkout step.
+3. **The checkout step** loads Paddle.js (`https://cdn.paddle.com/paddle/v2/paddle.js`, the only third-party script
+   the server ever serves, on this page only, with a CSP naming Paddle's script, frame and connect origins) and opens
+   the overlay with the Team price, the seat quantity, the customer's email, and `customData: { signup: <id> }`.
+   The page then polls `GET /signup/<token>/status` every 2 s.
+4. **`subscription.created`** with that signup id (§22.5) completes it in one control transaction plus one tenant
+   unit: `TenantAdmin.create` (slug, name, edition `team`, source `subscription`, region `eu`), the first user as
+   server admin with the stored hash, the subscription row, the audit events `tenant.created` and `user.created`,
+   then the signup `completed` and its `password_hash` cleared.
+5. **The status poll** answers `pending` until then, and `ready` with `https://<slug>.<app-domain>/sign-in`; the page
+   goes there and the person signs in with the email and password they chose. That is §13 criterion 5's "first
+   sign-in", with no operator.
+
+- An expired signup is deleted by the sweep, and its slug is free again. A signup that paid but whose token expired
+  before the webhook arrived is still completed: the webhook, not the token, completes it.
+- The verification mail and every page are plain text or escaped HTML; the team name is never markup.
+
+### 22.7 Suspension (amends §3.6 and §19.5)
+
+- **Who suspends:** the billing paths (`unpaid`, `canceled`), the operator (`operator`), the import (`importing`,
+  §22.10). **Who resumes:** an `active` subscription for `unpaid` and `canceled`; `admin tenant resume` for any.
+- **The resolver keeps suspended tenants** (amends §19.5's "answers `404`"): the hosted map holds active and
+  suspended tenants with their status and reason. On a suspended tenant's host:
+  - `GET /sign-in` renders the sign-in page with no form and one paragraph per reason: unpaid ("This team's
+    subscription is unpaid. Its billing contact can pay from the email Paddle sent."), canceled, operator ("… by the
+    operator. Contact support."), importing ("… being imported. Try again shortly.");
+  - `/hooks/…` (catch URLs) answers `503` with an empty body (§3.6);
+  - every other route, the API and both WebSocket upgrades answer `403` with `{ code: "tenant-suspended", reason }`,
+    so the desktop, the CLI and the MCP server say why;
+  - no one signs in, server admins included (my call): paying, and asking for an export or a deletion, go through
+    Paddle and the operator while suspended.
+- **At the moment of suspension** the status write announces `tenantsChanged` over the bus (§20.3). Every instance
+  then closes that tenant's live sockets (`4403 tenant-suspended`), disposes its host instances and releases their
+  leases, and ends its terminal shares.
+- **Jobs** (§19.8, guard 6): `forEachTenant` still visits suspended tenants, so retention ages their data out as
+  before. The scheduler does not fire their schedules, and when a tenant resumes each schedule's next run is computed
+  from then, never caught up. The alert outbox holds their alerts. The audit sealer and forwarder keep running.
+- `deleting` stays `404`, as in slice 4.
+
+### 22.8 Rename and retired slugs (amends §3.6; §21.8)
+
+- `admin tenant rename <slug> <new>` (operator only in this slice, my call) checks the new slug as a signup does,
+  then in one control transaction moves `tenants.slug`, and inserts the old one into `tenant_slugs_retired` with
+  `redirect_to` the new and `redirect_until` 30 days on.
+- While a redirect lives, the resolver answers the old host with `308` to the same path and query on the new host.
+  After it, the old host answers `404` like any unknown name, and the slug is never written again.
+- A deleted tenant's slug is retired with no redirect (§22.11).
+
+### 22.9 Export (amends §3.6)
+
+- **Who:** a tenant server admin (§22.13, `POST /api/v1/tenant/exports`), or the operator (`admin tenant export
+  <slug> --out <file>`; on a self-hosted server `admin tenant export --out <file>` exports its one tenant). One
+  export runs per tenant at a time; a tenant keeps at most three.
+- **The file,** `wirebench-export-<slug>-<utc>.tar.gz`, written by a small in-house ustar writer over `node:zlib`
+  (no dependency):
+  - `manifest.json`: `format: 1`, the server version, the tenant (id, slug, name, edition, region), the export time,
+    every table with its row count and SHA-256, every workspace's bundle with its SHA-256, and the audit chain block
+    (below);
+  - `tables/<table>.ndjson`: one JSON object per row, columns by name, `bytea` as base64;
+  - `repos/<workspaceId>.bundle`: `git bundle create … --all`, taken under the repository lock (`bundle` joins the
+    engine's allowed git subcommands for the server only).
+- **What is exported.** Every scoped table is classified in `control-plane/export/tables.ts` as `export`,
+  `redact(columns)` or `skip`, and a test fails when a scoped table is missing from the list, as the route map does
+  (§19.13). Skipped: the short-lived tables (flows, nonces, `device_tokens`, `agent_pairing_codes`, `agent_nonces`,
+  `host_leases`, `limiter_buckets`, `send_slots`, `terminal_share_locations`, `audit_forward_queue`) and the control
+  plane's own (`subscriptions`, `tenant_exports`). Redacted to null: every sealed value (`catch_urls.signature_secret`,
+  `schedules.secrets`, `schedules.alerts`, `tenant_settings.sealed`). **Sealed secrets are never exported** (§3.6),
+  and neither are checkouts or the users' sealed `secrets.json`. Password and token hashes are exported, so people
+  sign in after an import; the export is therefore as sensitive as the database, and is said so on the screen.
+- **The audit chain verifies on its own** (§13 criterion 6). `audit_events` is exported with its chain columns and
+  `audit_chain_anchor` whole, and the manifest's chain block holds the tenant's chain key (hex), its key id and the
+  anchor. `wirebench-server admin audit verify --export <file>` verifies an export with no database. Carrying the key
+  is my call: the chain proves the export was not edited after the server wrote it, to the customer's auditor, who
+  has no server to ask; the server's own record of the anchor is the independent witness.
+- **Consistency.** The tables are read in one repeatable-read tenant transaction, then the bundles are taken. A push
+  between the two lands in the bundle and not in the tables' snapshot of `workspaces`' heads; the manifest records
+  both times (my call: a lock over a whole export would stop the team's work).
+- **Delivery** (amends §3.6's "signed download link"): the file is written to `<tenantRoot>/exports/<id>.tar.gz` and
+  served by `GET /api/v1/tenant/exports/:id/file` to a signed-in server admin of that tenant only, because §6 puts no
+  token in a URL ever. Ready exports are mailed to the requester as a link to the settings screen, and expire after
+  seven days, when the sweep deletes the file.
+
+### 22.10 Import (amends §8 and §19.11)
+
+- **`admin tenant import <file>`** restores an export. In hosted mode it makes a new tenant (`--slug`, `--name`,
+  `--edition team|enterprise`, `--seats`; edition source `operator`), created `suspended` with reason `importing` and
+  resumed at the end. On a self-hosted server it imports into the one tenant, which must hold no user and no
+  workspace (`import-target-not-empty`).
+- **Steps,** each resumable from the manifest: verify every checksum and the audit chain under the export's key
+  (`import-chain-broken` refuses); insert the tables in foreign-key order, read from the catalog, inside the new
+  tenant's units, with `tenant_id` rewritten; create each repository and fetch its bundle into it (`refs/*:refs/*`);
+  re-seal the audit chain under the target tenant's key from the first event, then write `tenant.imported` with the
+  source tenant id, key id, last sequence and hash. Re-keying is how §19.12's promise is met: a hosted tenant's chain
+  is always under its derived key, and the source chain's seal is kept in that event (amends ADR-0036's note).
+- **What does not come back:** sealed values (so a schedule that held secrets is imported disabled, and a catch URL
+  with a signature secret is imported without one), sessions and device tokens (people sign in again), pairings and
+  checkouts. The command prints each such item by id.
+- **`admin tenant migrate-self-hosted` is not a command** (amends §8): the migration of an installation is its own
+  export (`admin tenant export` on the self-hosted server) followed by `admin tenant import` on the hosted one, as
+  §19.11 foresaw.
+
+### 22.11 Deletion (amends §3.6)
+
+- **Asked** by a tenant server admin (§22.13: they type the slug to confirm) or by the operator (`admin tenant
+  delete <slug>`). It sets `deletion_requested_at`, `deletion_requested_by` and `deleting_at` 14 days on, mails every
+  server admin, and leaves the tenant working, with a banner on the settings screen. A server admin or the operator
+  cancels it until then (`--cancel`).
+- **The subscription first.** The server cannot cancel a Paddle subscription (§22.5), so the request says to cancel
+  it in Paddle's portal, and the deletion job waits while the subscription is `active`, `trialing` or `past_due`,
+  logging `deletion-subscription-active` daily. A customer is never billed for a deleted team.
+- **The job** (§22.15), at `deleting_at`, each step idempotent so a crash resumes it:
+  1. status `deleting`, announced over the bus: the resolver drops the host, and every instance closes the tenant's
+     sockets and hosts (§22.7);
+  2. every scoped table's rows deleted in reverse foreign-key order, in the tenant's units on the app role;
+  3. `<dataDir>/tenants/<id>/` removed: repositories, checkouts, temporary files and exports;
+  4. one control transaction: the audit chain's last anchor into `tenant_deletions` (§3.6), the slug into
+     `tenant_slugs_retired` with no redirect, and the `tenants` row removed, which removes the data key;
+  5. the check: on the control role, every scoped table holds no row with that `tenant_id`. A row found logs
+     `deletion-incomplete` by table and tenant id, and the job runs again next pass.
+- **Backups** keep the data key until their retention ends (§19.7); the runbook says the deletion is final then.
+
+### 22.12 Per-tenant settings (amends §19.1; owner ruling 2026-10-29)
+
+- **Sections,** one row each in `tenant_settings`:
+
+  | Section | Fields | Secret fields (sealed) | Who writes |
+  | --- | --- | --- | --- |
+  | `oidc` | issuer, client id, scopes, display name | client secret | tenant server admin |
+  | `saml` | IdP metadata XML, display name, email and name attributes, clock skew | — | tenant server admin |
+  | `auditForward` | URL, CA (PEM) | token | tenant server admin |
+  | `smtp` | URL host part, from | the URL's credentials | tenant server admin |
+  | `retention` | audit, captures, schedules and session-log ages; captures kept; session-log size | — | tenant server admin, within the operator's maxima |
+  | `budgets` | sends per minute, burst, concurrent sends, run slots (§20.7) | — | operator only |
+
+- **Secret fields** are sealed under the tenant's data key (AES-256-GCM, as the users' secrets), written through the
+  API and never read back: a read answers `{ set: true }`. Deletion removes them with the row and the key.
+- **Resolution.** `ctx.settings.of(scope, section)` reads and caches per tenant, invalidated by a new bus event
+  `tenantSettingsChanged`. In self-hosted mode the default tenant's settings are today's environment, and the table
+  is not read: the API answers each section read-only with `source: "environment"`. In hosted mode the table is the
+  only source; the environment's SMTP is the fallback sender, its retention values are each setting's default and
+  maximum, and its budgets are the defaults (§20.7).
+- **What each module does with them:**
+  - identity builds an OIDC client per tenant on first use (discovery cached an hour, fetched under the egress rule),
+    so each tenant's link-by-verified-email (`identity/linking.ts`) trusts only its own provider;
+  - SSO builds a SAML provider per tenant from the stored metadata (pasted XML, never fetched by the server, my
+    call), and registers the SAML and SCIM routes in hosted mode. A tenant without settings answers as a disabled
+    method, as a self-hosted server without OIDC does today. The `404` of §19.1 goes;
+  - the audit forwarder keeps one sink per tenant, with its own backoff, and a failed send stops only that tenant's
+    batch (§19.12's promise M1);
+  - alerts and the control plane's tenant mails use the tenant's SMTP when set, else the operator's;
+  - each retention sweep reads the tenant's ages inside its `forEachTenant` unit;
+  - the budgets read the tenant's override, else the defaults, through slice 5's budget code (built on it after it
+    merges).
+- **Checked on save:** an OIDC issuer must be `https` and its discovery must answer; SAML metadata must parse and
+  carry a signing certificate; a forward URL must be `https` with no credentials; an SMTP URL `smtp:` or `smtps:`. Each
+  change writes `settings.changed` with the section name, never a value.
+- **API,** server admins of the tenant only: `GET /api/v1/tenant/settings`, `PUT` and `DELETE
+  /api/v1/tenant/settings/:section`. `budgets` answers `403 settings-operator-only` to a tenant. The operator uses
+  `admin tenant settings <slug> get|set|clear <section> [--file <json>]`.
+- **Two tenants through the routes** (§19.12's promise): OIDC, SAML and SCIM run their two-tenant cases end to end,
+  each tenant with its own provider.
+
+### 22.13 The settings screen (ruling 4)
+
+- **Where:** a *Server* page in the app's full-window Settings, shown to a server admin of the connected server: in
+  the browser client always, and in the desktop app when it is signed in to a team server. It reaches the server
+  through new channels (`serverSettings.*`, `tenantBilling.get`, `tenantExports.*`, `tenantDeletion.*`) that the host
+  serves over the server's API; the server host's allowlist (§3.10) gains them, the agent's browser subset does not.
+- **Sections:** Sign-in (OIDC, SAML), Provisioning (SCIM tokens: list, create once-shown, revoke), Audit forwarding,
+  Email, Retention, and in hosted mode Billing (plan, seats, status, period end, a past-due banner with the days
+  left, "Manage billing from Paddle's emails"), Export (request, list, download) and Delete team (request with the
+  slug typed, cancel, the countdown).
+- **Self-hosted:** each environment-backed section is read-only with "Set by the server's environment"; Billing and
+  Delete team are absent; Export is present, since it is the first half of a move to hosted.
+- **Secrets** are inputs that never show a stored value: "Set — replace" or "Not set".
+- The page follows the Settings page's layout (#396) and is shown as a mockup before it is built (Part G).
+
+### 22.14 Admin commands (amends §8 and §19.11)
+
+| Command | Does |
+| --- | --- |
+| `admin tenant list` | Slug, status and reason, edition and source, seats, subscription status, deletion date. Names no user. |
+| `admin tenant create --slug --name --email [--edition team\|enterprise] [--seats n]` | Sales-led creation (source `operator`); mails the email a server-admin invitation, or prints its link without SMTP. |
+| `admin tenant set-edition <slug> <edition> [--seats n] [--subscription]` | Operator override, or with `--subscription` back to the subscription's edition. |
+| `admin tenant suspend <slug>` / `resume <slug>` | Reason `operator`; resume clears any reason. |
+| `admin tenant rename <slug> <new>` | §22.8. |
+| `admin tenant export [<slug>] --out <file>` | §22.9; no slug on a self-hosted server. |
+| `admin tenant import <file> [--slug --name --edition --seats]` | §22.10. |
+| `admin tenant delete <slug> [--cancel]` | §22.11. |
+| `admin tenant settings <slug> get\|set\|clear <section> [--file]` | §22.12. |
+
+- The slug is positional; `--tenant` is not used here. In self-hosted mode only `export` and `import` run; the rest
+  refuse with `admin-tenant-hosted-only`.
+- Each command that writes records an event in the tenant's chain, `tenant.<verb>`, with the actor `operator`, before
+  a deletion removes the chain.
+
+### 22.15 The control loop
+
+- One loop per instance every 60 s, each pass under `pg_try_advisory_xact_lock(CONTROL_LOOP_CLASS,
+  hashtext(SERVER_SCHEMA))` so one instance runs it at a time: the grace sweep and its mails, due deletions, queued
+  exports (one at a time), expired exports, expired signups, ended redirects, and `billing_events` older than 90 days.
+- A step's failure is logged with the step and the tenant id, and does not stop the others.
+
+### 22.16 Security
+
+- The webhook is the only way billing reaches the server, signature first, and the server holds no Paddle key that
+  can act (§22.5). The webhook secret is never logged or printed; `config check` says only whether it is set.
+- The control role is the only bypass, and its pool, its URL and its tables are confined to one directory by the
+  type system and `check:tenant-scope` (§22.2).
+- Signup answers whether a slug is free, which a public name has to; it never answers whether an address has a team.
+- An export holds password hashes and captures: only a tenant's server admins and the operator reach it, behind a
+  session, never a link alone.
+- The checkout page is the only page that loads a third-party script, and only Paddle's.
+
+### 22.17 Testing
+
+- **§11's control-plane line, end to end** on a hosted test server with a fake checkout that posts signed webhook
+  fixtures: signup to first sign-in; subscription webhook to edition and seats; past-due to suspension after the
+  grace (time injected); suspend to refused sign-in, `403` on the API, `503` on a catch URL, closed sockets; delete to
+  empty directories and rows, checked on the control role; export verifies its audit chain offline.
+- **§13 criterion 6:** an export of a self-hosted server imports into a hosted test server and back into an empty
+  self-hosted one, and every workspace syncs after.
+- **The verifier** against Paddle's documented example, a rotated header with two `h1`, a stale `ts`, a body changed
+  by one byte; the adapter against fixtures of each `subscription.*` type; replay and out-of-order events.
+- **Roles:** start-up refuses a superuser control role, one without bypass, one equal to the app role; the app role
+  still cannot bypass; `check:tenant-scope` refuses the control pool outside `src/control-plane/`.
+- **The guards:** the export classification test, the route map gains every new route (`entry` for signup and the
+  webhook, `own` for the tenant routes), the migration test's lists, and two-tenant cases for every tenant route.
+- **The screen:** component tests per section, and one browser e2e that signs in as a server admin and saves an
+  OIDC section against a fake issuer.
+
+### 22.18 What §22 changes in §3.6, §4.3, §8, §19, §21 and ADR-0036
+
+- §3.6: signup moves to the entry host (ruling 1); slug uniqueness is a lock over three tables, not one index; the
+  export link is a session-guarded download; suspension keeps sign-in pages that say why.
+- §4.3: the tables of §22.3, with `subscriptions` keyed by tenant and `signups` unscoped.
+- §8: `admin tenant migrate-self-hosted` is export plus import; `list`, `rename` and `settings` are added.
+- §19.1: hosted mode is accepted, the federated `404`s go, and the identity, SSO and forwarding variables are refused
+  in hosted mode.
+- §19.5: the resolver keeps suspended tenants and retired redirects.
+- §19.8, guard 3: four unscoped tables join the allowlist, three scoped tables join the scoped list.
+- §21.4: the entry host serves signup and the billing webhook beside its page.
+- ADR-0036: an import re-keys the chain under the target tenant's key and records the source seal.
+
+### 22.19 Parts and success criteria (amends §13)
+
+Eight parts, one pull request each (the plan has the tasks): A the control role, the tables and the module; B tenant
+lifecycle and the operator commands; C suspension; D billing; E signup; F export, import and deletion; G per-tenant
+settings and the screen; H hosted mode switched on, the recipe run end to end, and the docs. Slice 7 is done when §11's
+control-plane line holds, §13 criteria 5 and 6 hold, §22.17 passes, and a self-hosted server behaves as before with
+no new variable set.
