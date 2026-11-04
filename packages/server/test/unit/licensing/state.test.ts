@@ -89,11 +89,13 @@ describe('grantedFeatures (licensing spec §2)', () => {
       'sso-provisioning',
       'session-logs',
       'terminal-sharing',
+      'custom-domains',
     ]);
   });
 
   it('grants exactly an explicit list, whatever the edition, ignoring names it does not know', () => {
     expect(grantedFeatures({ ...PAYLOAD, features: ['audit-log', 'scim'] })).toEqual(['audit-log']);
     expect(grantedFeatures({ ...PAYLOAD, edition: 'enterprise', features: [] })).toEqual([]);
+    expect(grantedFeatures({ ...PAYLOAD, edition: 'enterprise', features: ['audit-log'] })).toEqual(['audit-log']);
   });
 });

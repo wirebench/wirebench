@@ -140,15 +140,20 @@ const alertHostsText = z
  * A hosted name (spec §21.1): a lower-case DNS name of at least two labels, each `[a-z0-9-]`, 1–63 characters, not
  * starting or ending with `-`, at most 253 characters; no scheme, port, path, trailing dot or IP literal.
  */
+export function isDomainName(name: string): boolean {
+  return (
+    name.length <= 253 &&
+    /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$/.test(name) &&
+    // The last label of a DNS name is never all digits, so this refuses an IPv4 literal.
+    !/^\d+$/.test(name.slice(name.lastIndexOf('.') + 1))
+  );
+}
+
 const domainText = z
   .string()
   .transform((value) => value.trim().toLowerCase())
   .refine(
-    (name) =>
-      name.length <= 253 &&
-      /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$/.test(name) &&
-      // The last label of a DNS name is never all digits, so this refuses an IPv4 literal.
-      !/^\d+$/.test(name.slice(name.lastIndexOf('.') + 1)),
+    isDomainName,
     'must be a domain name such as example.test: two labels at least, no scheme, port, path or trailing dot, and an international name in its xn-- form',
   );
 
