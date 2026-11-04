@@ -32,6 +32,8 @@ export interface CheckDepsInput {
   /** Read at each check, not once: the licensing module replaces `ctx.license` when it registers. */
   readonly license: () => LicenseService;
   readonly log: Pick<FastifyBaseLogger, 'error' | 'warn'>;
+  /** After a name was made live, not live, or released: reloads every instance's tenant map (spec §23.5). */
+  readonly hostsChanged?: () => void;
 }
 
 /**
@@ -54,5 +56,6 @@ export async function checkDepsOf(input: CheckDepsInput, overrides: CheckDepsOve
     ...(probe !== undefined ? { probe } : {}),
     ...(mail !== undefined ? { mail } : {}),
     log: input.log,
+    ...(input.hostsChanged !== undefined ? { hostsChanged: input.hostsChanged } : {}),
   };
 }

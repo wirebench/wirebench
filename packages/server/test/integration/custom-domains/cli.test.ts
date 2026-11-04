@@ -3,7 +3,12 @@
  * checked at and never a token; `check --tenant` checks now; `remove --tenant` releases the name, audited. Hosted
  * only, through `runAdmin`'s test seam since `loadConfig` refuses hosted mode (§19.1). DNS is a fake: no real DNS.
  */
-import { afterAll, beforeAll, expect, it } from 'vitest';
+import { randomUUID } from 'node:crypto';
+import Fastify from 'fastify';
+import { afterAll, beforeAll, expect, it, vi } from 'vitest';
+import { cluster, serverHooks } from '../../../src/context.js';
+import { openSession } from '../../../src/db/pool.js';
+import { NotificationBus } from '../../../src/operations/bus.js';
 import type { ServerConfig } from '../../../src/config.js';
 import type { DnsLookup } from '../../../src/custom-domains/dns.js';
 import { claim, getClaim } from '../../../src/custom-domains/repo.js';
@@ -126,8 +131,28 @@ describeDb('admin domains (spec §23.6)', () => {
   });
 
   it('remove --tenant releases the name and records custom_domain.removed in that tenant, by the system', async () => {
+    // A running instance: it hears the release on the bus, and reloads its tenant map (spec §23.5, §20.3).
+    const hooks = serverHooks();
+    const heard: unknown[] = [];
+    hooks.tenantsChanged.push(cluster((event) => heard.push(event)));
+    const bus = new NotificationBus({
+      db,
+      holder: randomUUID(),
+      hooks,
+      open: () => openSession(db.url, { applicationName: 'wirebench-test-bus' }),
+      scopeFor: () => Promise.resolve(undefined),
+      log: Fastify({ logger: false }).log,
+    });
+    await bus.start();
     const out = io();
-    expect(await runAdmin({ command: 'admin-domains-remove', tenant: 'acme' }, out.io, options), out.stderr()).toBe(0);
+    try {
+      expect(await runAdmin({ command: 'admin-domains-remove', tenant: 'acme' }, out.io, options), out.stderr()).toBe(
+        0,
+      );
+      await vi.waitFor(() => expect(heard.length).toBeGreaterThan(0), { timeout: 5_000, interval: 20 });
+    } finally {
+      await bus.stop(0);
+    }
     expect(out.stdout()).toBe(`Removed ${NAME}\n`);
     expect(await hosts()).toEqual([]);
     expect(await tenancy.db(acme).transaction((tx) => getClaim(tx))).toBeUndefined();

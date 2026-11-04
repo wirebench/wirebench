@@ -79,6 +79,11 @@ export interface CheckDeps {
   /** The mail sender; without one nothing is mailed. */
   readonly mail?: Mailer;
   readonly log: Pick<FastifyBaseLogger, 'error' | 'warn'>;
+  /**
+   * Called once a unit that may have changed what the resolver maps has committed: a name made live, made not live
+   * or released (spec §23.5). The module reloads the tenant map here and, through the bus, on every instance.
+   */
+  readonly hostsChanged?: () => void;
 }
 
 /** The job's name in the loop's log lines. */
@@ -189,7 +194,8 @@ async function move(
   now: Date,
   check: () => { observation: { featured: boolean; passed: boolean }; lastResult: LastResult },
 ): Promise<Moved | undefined> {
-  return deps.tenancy.db(scope).transaction(async (tx) => {
+  let routed = false;
+  const moved = await deps.tenancy.db(scope).transaction(async (tx) => {
     const current = await getClaim(tx, { forUpdate: true });
     if (current === undefined || current.token !== token) return undefined;
     const { observation, lastResult: seen } = check();
@@ -201,8 +207,14 @@ async function move(
       to = next(current.state, { ...observation, passed: false }, now, since);
       lastResult = { ...seen, heldElsewhere: true, message: 'Another team holds this name, so it cannot be used.' };
     }
-    if (to === 'verified' && current.state !== 'verified') await setLive(tx, current.name, false);
-    if (isHeld(current.state) && !isHeld(to)) await release(tx, current.name);
+    if (to === 'verified' && current.state !== 'verified') {
+      await setLive(tx, current.name, false);
+      routed = true;
+    }
+    if (isHeld(current.state) && !isHeld(to)) {
+      await release(tx, current.name);
+      routed = true;
+    }
     const write: CheckRecord = {
       state: to,
       lastResult,
@@ -215,6 +227,8 @@ async function move(
     const claim = (await getClaim(tx))!;
     return notice === undefined ? { claim } : { claim, notice };
   });
+  if (routed) deps.hostsChanged?.();
+  return moved;
 }
 
 /** Probes a verified name and, on a pass, marks it live and the claim `active`. */
@@ -225,7 +239,7 @@ async function probeName(deps: CheckDeps, scope: TenantScope, claim: Claim, now:
   } catch (error) {
     probed = { verdict: 'missing', message: `The certificate check failed: ${(error as Error).message}` };
   }
-  return deps.tenancy.db(scope).transaction(async (tx) => {
+  const probedMove = await deps.tenancy.db(scope).transaction(async (tx) => {
     const current = await getClaim(tx, { forUpdate: true });
     if (current === undefined || current.token !== claim.token || current.state !== 'verified') return undefined;
     const base = current.lastResult ?? { cname: 'ok', txt: 'ok', message: '' };
@@ -249,6 +263,9 @@ async function probeName(deps: CheckDeps, scope: TenantScope, claim: Claim, now:
     const after = (await getClaim(tx))!;
     return notice === undefined ? { claim: after } : { claim: after, notice };
   });
+  // Live now: the resolver maps the name from here on.
+  if (probedMove?.claim.state === 'active') deps.hostsChanged?.();
+  return probedMove;
 }
 
 /**

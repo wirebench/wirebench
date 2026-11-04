@@ -3214,9 +3214,13 @@ Owner rulings (2026-11-04, popup):
 ### 23.5 Two names, one tenant (amends §19.5)
 
 - **Resolution.** `TenantResolver` keys its map by full host name (§19.12), so each live custom name is one more key
-  next to `<slug>.<app-domain>`. `directory.resolvable()` gains a join on `tenant_hosts where live`, still limited to
-  active tenants other than the default one. A custom name that is not live answers `404`, empty and `no-store`, like
-  any unknown host. The apex and entry branches (§21.3) run first and are unchanged.
+  next to `<slug>.<app-domain>`, on the same `TenantEntry` as the slug's. The directory's read that feeds the map
+  carries each tenant's live custom host (`tenant_hosts where live`) as `TenantScope.customHost`, for exactly the
+  tenants the slug keys cover. The custom host has no status of its own: whatever the entry says of the tenant applies
+  to both names, so a suspended tenant's custom host answers as its slug does (§22), and resuming needs no new check.
+  A custom name that is not live answers `404`, empty and `no-store`, like any unknown host. When the check job makes
+  a name live, or a name is released, the directory's change reloads this instance's map and `tenantsChanged` reloads
+  every other's (§20.3). The apex and entry branches (§21.3) run first and are unchanged.
 - **`tenantUrl` splits in two** (`tenancy/urls.ts`):
   - `tenantUrl(config, request)` is the URL of the host the request came on, slug or custom. Every check that
     compares with what the browser is showing reads this: `Origin`, the cookie's `Secure` choice, the browser

@@ -6,7 +6,8 @@
  *   that never asks for it never needs the directory.
  * - **Hosted.** A root `onRequest` hook, ahead of every module, takes `request.hostname` (which honours
  *   `trustProxy`), lower-cased and without its port. It must be one label followed by `.<appDomain>`, naming an
- *   active tenant other than the default one. Anything else answers `404` with an empty body and
+ *   active tenant other than the default one, or that tenant's live custom name (spec §23.5), a second key on the
+ *   same entry. Anything else answers `404` with an empty body and
  *   `cache-control: no-store`, so the answer names nothing. WebSocket upgrades pass through the same hook.
  * - **Retired slugs** (spec §22.8). An old slug's host whose redirect lives answers `308` to the same path and query
  *   on the new slug's host, `cache-control: no-store`; after `redirect_until` it is `404` like any unknown name.
@@ -155,7 +156,15 @@ export class TenantResolver {
             this.options.directory.resolvable(),
             this.options.directory.redirects?.() ?? Promise.resolve([]),
           ]);
-          this.hosts = new Map(scopes.map((scope) => [`${scope.slug}.${domain}`, { scope }]));
+          // A live custom name is a second key on the slug's own entry (spec §23.5): whatever the entry says of the
+          // tenant applies to both names alike.
+          this.hosts = new Map(
+            scopes.flatMap((scope) => {
+              const entry: TenantEntry = { scope };
+              const slugHost: [string, TenantEntry] = [`${scope.slug}.${domain}`, entry];
+              return scope.customHost === undefined ? [slugHost] : [slugHost, [scope.customHost, entry]];
+            }),
+          );
           this.redirects = new Map(
             redirects.map((redirect) => [
               `${redirect.slug}.${domain}`,

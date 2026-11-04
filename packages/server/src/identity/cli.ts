@@ -3,18 +3,26 @@
  * an operator who cannot sign in yet — on a fresh server, the first admin comes from here.
  * It refuses to run against an unmigrated database rather than guessing at the schema.
  */
-import type { KeyObject } from 'node:crypto';
+import { randomUUID, type KeyObject } from 'node:crypto';
 import { WirebenchError } from '@wirebench/engine';
 import type { ServerCommand } from '../args.js';
-import { ConfigError, forgetDatabaseUrls, loadConfig, type ServerConfig, type ServerMode } from '../config.js';
+import {
+  ConfigError,
+  forgetDatabaseUrls,
+  loadConfig,
+  migrationUrlOf,
+  type ServerConfig,
+  type ServerMode,
+} from '../config.js';
 import { auditHook } from '../audit-log/hook.js';
 import { chainKeys } from '../audit-log/chain/keys.js';
 import { runAuditCommand, runVerifyCommand } from '../audit-log/cli.js';
-import { DOMAINS_HOSTED_ONLY, isDomainsCommand, runDomainsCommand } from '../custom-domains/cli.js';
+import { busLog, DOMAINS_HOSTED_ONLY, isDomainsCommand, runDomainsCommand } from '../custom-domains/cli.js';
 import type { CheckDepsOverrides } from '../custom-domains/deps.js';
 import { SYSTEM_SOURCE, serverHooks } from '../context.js';
 import { pendingMigrations } from '../db/migrate.js';
-import { ADMIN_APPLICATION_NAME, createDatabase } from '../db/pool.js';
+import { ADMIN_APPLICATION_NAME, createDatabase, openSession } from '../db/pool.js';
+import { NotificationBus } from '../operations/bus.js';
 import { ExitCode, packageVersion, type ServerIo } from '../io.js';
 import { PRODUCTION_PUBLIC_KEYS } from '../licensing/keys.js';
 import { MISSING_SERVER_ID, serverId as readServerId } from '../licensing/repo.js';
@@ -25,7 +33,7 @@ import { BUILTIN_MODULES } from '../modules.js';
 import { allMigrations, StartupError } from '../serve.js';
 import { runScimGroupCommand, runScimTokenCommand } from '../sso/cli.js';
 import type { TenantScope } from '../tenancy/scope.js';
-import { createTenancy, directoryOf, isDefaultTenant, type Tenancy } from '../tenancy/tenancy.js';
+import { createTenancy, directoryOf, isDefaultTenant, shareTenancyCaches, type Tenancy } from '../tenancy/tenancy.js';
 import { tenantUrl } from '../tenancy/urls.js';
 import { identitySettings, type InvitationEnv } from './env.js';
 import { createInvitation, invitationSummary, isOpen, revokeOpenInvitation } from './invitations.js';
@@ -201,6 +209,24 @@ export async function runAdmin(
             hosted: true,
           }),
           ...(options.domains !== undefined ? { overrides: options.domains } : {}),
+          withBus: async (fn) => {
+            const bus = new NotificationBus({
+              db,
+              holder: randomUUID(),
+              hooks,
+              open: () => openSession(migrationUrlOf(config), { applicationName: ADMIN_APPLICATION_NAME }),
+              // Nothing here listens to another instance's event, so none needs its scope.
+              scopeFor: () => Promise.resolve(undefined),
+              log: busLog(io),
+            });
+            shareTenancyCaches(tenancy, hooks, bus, busLog(io));
+            await bus.start();
+            try {
+              return await fn();
+            } finally {
+              await bus.stop();
+            }
+          },
         },
         scope,
         io,

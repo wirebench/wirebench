@@ -1,7 +1,7 @@
 /** The scheduled-runs module's configuration (scheduled-runs spec §7), read once at registration. */
 import type { ModuleConfig } from '../config.js';
 import type { TenantScope } from '../tenancy/scope.js';
-import { tenantUrl } from '../tenancy/urls.js';
+import { primaryUrl } from '../tenancy/urls.js';
 
 const MIB = 1024 * 1024;
 
@@ -35,7 +35,7 @@ export function schedulesSettings(config: ModuleConfig): SchedulesSettings {
     ...(config.smtpUrl !== undefined && config.smtpFrom !== undefined
       ? { smtp: { url: config.smtpUrl, from: config.smtpFrom } }
       : {}),
-    linkUrl: (scope) => tenantUrl(config, scope),
+    linkUrl: (scope) => primaryUrl(config, scope),
   };
 }
 

@@ -12,7 +12,7 @@
  * route nobody classified.
  */
 import { LIVE_CLOSE, LIVE_PATH, TERMINAL_SHARE_CLOSE, TERMINAL_SHARE_PATH } from '@wirebench/engine';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { keyId } from '../../../src/audit-log/chain/canonical.js';
 import { verifyChain } from '../../../src/audit-log/chain/verify.js';
 import { announce } from '../../../src/context.js';
@@ -213,6 +213,17 @@ describeDb('the cross-tenant isolation suite (spec §19.13)', () => {
   afterAll(() => w.close(), 60_000);
 
   describe('positive controls', () => {
+    it("a live custom name is one more key on its tenant: A's admin is served there, B's is refused", async () => {
+      const { customHostOf } = await import('./fill.js');
+      const me = (host: string, token: string) =>
+        w.t.h.app.inject({ method: 'GET', url: '/api/v1/me', headers: { host, authorization: `Bearer ${token}` } });
+      const host = customHostOf(w.a.tenant);
+      await vi.waitFor(async () => expect((await me(host, w.a.admin.token)).statusCode).toBe(200));
+      expect((await me(host, w.a.admin.token)).json()).toMatchObject({ user: { id: w.a.admin.user.id } });
+      expect((await me(host, w.b.admin.token)).statusCode).toBe(401);
+      expect((await me(customHostOf(w.b.tenant), w.a.admin.token)).statusCode).toBe(401);
+    });
+
     it('fill wrote a row of each tenant in every scoped table, counted in its own scope', async () => {
       // `fill` asserted it as it wrote; again here, after the other's fill.
       const { expectFilled } = await import('./fill.js');

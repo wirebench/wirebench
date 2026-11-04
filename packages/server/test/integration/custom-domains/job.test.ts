@@ -82,6 +82,8 @@ describeDb('the custom-name check job (hosted spec §23.2)', () => {
   let probe: ((name: string) => Promise<ProbeResult>) | undefined;
   let sent: { to: readonly string[]; email: DomainEmail }[];
   let mailOn: boolean;
+  /** How many times the job said the resolver's map may have changed (spec §23.5). */
+  let routed: number;
   const warnings: unknown[] = [];
   let hooks = serverHooks();
 
@@ -108,6 +110,9 @@ describeDb('the custom-name check job (hosted spec §23.2)', () => {
         }
       : {}),
     log: { error: () => undefined, warn: (...args: unknown[]) => void warnings.push(args) },
+    hostsChanged: () => {
+      routed++;
+    },
   });
   const pass = () => checkPass(deps());
   const claimOf = (t: TenantDb) => t.transaction((tx) => getClaim(tx));
@@ -159,6 +164,7 @@ describeDb('the custom-name check job (hosted spec §23.2)', () => {
     probe = undefined;
     sent = [];
     mailOn = true;
+    routed = 0;
     warnings.length = 0;
     hooks = serverHooks();
     hooks.audit.push(auditHook(() => clock));
@@ -233,6 +239,8 @@ describeDb('the custom-name check job (hosted spec §23.2)', () => {
       lastResult: { cname: 'ok', txt: 'ok', certificate: 'ok' },
     });
     expect(await hosts()).toEqual([{ host: NAME, tenant_id: scopeA.tenantId, live: true }]);
+    // Held (not live yet), then live: the map is told after each unit.
+    expect(routed).toBe(2);
     expect(sent).toHaveLength(1);
     expect(sent[0]!.to).toEqual(['admin@a.customer.test']);
     expect(sent[0]!.email.subject).toContain(NAME);
@@ -314,6 +322,7 @@ describeDb('the custom-name check job (hosted spec §23.2)', () => {
     const failedAt = clock;
     await pass();
     expect(await claimOf(a)).toMatchObject({ state: 'failing', failingSince: failedAt });
+    const before = routed;
     // Still held and live while failing: still served.
     expect(await hosts()).toEqual([{ host: NAME, tenant_id: scopeA.tenantId, live: true }]);
     // Every 6 hours, until 72 hours have passed since failing_since.
@@ -326,6 +335,8 @@ describeDb('the custom-name check job (hosted spec §23.2)', () => {
     await pass();
     expect(await claimOf(a)).toMatchObject({ state: 'lapsed', failingSince: null });
     expect(await hosts()).toEqual([]);
+    // Only the release changed the map since failing began.
+    expect(routed).toBe(before + 1);
     expect(sent.map((mail) => mail.email.subject)).toEqual([
       `${NAME} now serves your team`,
       `The DNS records of ${NAME} no longer check out`,

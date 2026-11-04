@@ -38,7 +38,7 @@ import { syncModule } from '../../../src/sync/module.js';
 import { teamsModule } from '../../../src/teams/module.js';
 import type { PendingWrites } from '../../../src/pending-writes.js';
 import { terminalSharesModule } from '../../../src/terminal-shares/module.js';
-import { isDefaultTenant } from '../../../src/tenancy/tenancy.js';
+import { isDefaultTenant, tenantHostsChanged } from '../../../src/tenancy/tenancy.js';
 import { browserBuildFixture, type BrowserBuildFixture } from '../../helpers/browser-build.js';
 import { SCOPED_TABLES } from '../../helpers/catalog.js';
 import { testDatabase } from '../../helpers/database.js';
@@ -120,6 +120,9 @@ const noDns: DnsLookup = {
   aaaa: () => Promise.reject(Object.assign(new Error('not found'), { code: 'ENOTFOUND' })),
   txt: () => Promise.reject(Object.assign(new Error('not found'), { code: 'ENOTFOUND' })),
 };
+
+/** The custom name fill holds live for `tenant`: `<slug>.customer.test`. */
+export const customHostOf = (tenant: Tenant): string => `${tenant.slug}.customer.test`;
 
 /** The license key pair the world's licensing module trusts. */
 export const LICENSE_KEYS = testKeys();
@@ -216,6 +219,8 @@ export async function isolationWorld(options: { readonly policiesDisabled?: bool
   await markStepsDone(t.h.db.owner);
   const a = await fill(t, t.a);
   const b = await fill(t, t.b);
+  // The two custom names went live by hand: the map reads them again, as the module's own change would make it.
+  tenantHostsChanged(t.h.ctx.tenancy);
   return {
     t,
     a,
@@ -545,12 +550,15 @@ export async function fill(t: TwoTenants, tenant: Tenant): Promise<Filled> {
     [JSON.stringify({ from: `@${slug}` }), at, browser.user.id],
   );
 
-  // ---- 0024's claim (slice 8), by hand: the name carries the slug, the token stays per tenant.
-  await tenant.tdb.query('insert into custom_domains (name, token, created_by, created_at) values ($1, $2, $3, $4)', [
-    `${slug}.customer.test`,
-    `token-${slug}`,
-    browser.user.id,
-    at,
+  // ---- 0024's claim (slice 8), by hand: the name carries the slug, the token stays per tenant. It is held and live,
+  // as an active claim's is, so the resolver maps it to the tenant beside its slug (spec §23.5).
+  await tenant.tdb.query(
+    "insert into custom_domains (name, token, state, created_by, created_at) values ($1, $2, 'active', $3, $4)",
+    [customHostOf(tenant), `token-${slug}`, browser.user.id, at],
+  );
+  await tenant.tdb.query('insert into tenant_hosts (host, tenant_id, live) values ($1, $2::uuid, true)', [
+    customHostOf(tenant),
+    tenant.scope.tenantId,
   ]);
 
   // ---- the audit log: forward one recorded event (no sink is configured), so the queue holds a row too

@@ -10,6 +10,7 @@ import type { ServerModule } from '../context.js';
 import type { SetTimer } from '../hooks/env.js';
 import { TenantRateLimiter } from '../identity/rate-limit.js';
 import { realTimer } from '../live/module.js';
+import { tenantHostsChanged } from '../tenancy/tenancy.js';
 import { checkDepsOf, type CheckDepsOverrides } from './deps.js';
 import { CHECK_JOB, checkPass, PROBE_EVERY_MS, type CheckDeps } from './job.js';
 import { domainRoutes } from './routes.js';
@@ -40,7 +41,16 @@ export function customDomainsModule(options: CustomDomainsOptions = {}): ServerM
       let check: CheckDeps | undefined;
       if (hosted) {
         check = await checkDepsOf(
-          { config: ctx.config, tenancy: ctx.tenancy, hooks: ctx.hooks, license, log: ctx.log },
+          {
+            config: ctx.config,
+            tenancy: ctx.tenancy,
+            hooks: ctx.hooks,
+            license,
+            log: ctx.log,
+            hostsChanged: () => {
+              tenantHostsChanged(ctx.tenancy);
+            },
+          },
           { ...options, now },
         );
       }

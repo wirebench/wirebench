@@ -11,7 +11,7 @@ import type { FastifyInstance } from 'fastify';
 import { announce, auditSource, recordAudit, tenantOf } from '../../context.js';
 import { jsonSchema } from '../../schema.js';
 import type { TenantQuerier } from '../../tenancy/tenant-db.js';
-import { tenantUrl } from '../../tenancy/urls.js';
+import { primaryUrl } from '../../tenancy/urls.js';
 import type { IdentityEnv } from '../env.js';
 import { notFound, selfChange } from '../errors.js';
 import { requireServerAdmin } from '../guard.js';
@@ -109,7 +109,7 @@ export const userRoutes =
               user,
               request.caller!.id,
               auditSource(request),
-              tenantUrl(env.ctx.config, request),
+              primaryUrl(env.ctx.config, request),
             ),
           );
       },

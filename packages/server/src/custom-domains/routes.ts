@@ -26,6 +26,7 @@ import type { TenantQuerier } from '../tenancy/tenant-db.js';
 import { checkTenant, CUSTOM_DOMAINS_FEATURE, type CheckDeps } from './job.js';
 import { checkCustomName, recordsFor, type CustomNameReason } from './names.js';
 import { claim, getClaim, removeClaim, type Claim } from './repo.js';
+import { isHeld } from './states.js';
 
 export const DOMAIN_ROUTE = '/tenant/domain';
 
@@ -156,7 +157,8 @@ export const domainRoutes =
 
     app.delete(DOMAIN_ROUTE, { preHandler }, async (request, reply) => {
       const source = auditSource(request);
-      await env.tenancy.db(request.tenant).transaction((tx) => removeAudited(env.hooks, tx, source));
+      const removed = await env.tenancy.db(request.tenant).transaction((tx) => removeAudited(env.hooks, tx, source));
+      if (removed !== undefined && isHeld(removed.state)) env.check?.hostsChanged?.();
       return reply.code(204).send();
     });
   };

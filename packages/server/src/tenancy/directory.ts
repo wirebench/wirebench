@@ -72,6 +72,7 @@ export class TenantDirectory {
   #defaultTenant: TenantScope | undefined;
   readonly #listeners: (() => void)[] = [];
   readonly #db: Querier;
+  #hasHosts = false;
 
   /** `keys`: the process's data keys, which `TenantAdmin.create` makes a new tenant's key with. */
   constructor(db: Querier, keys?: TenantKeys) {
@@ -126,8 +127,9 @@ export class TenantDirectory {
 
   /** Every tenant not being deleted, as scopes: what the job loop serves. */
   async list(): Promise<TenantScope[]> {
-    const rows = await this.#db.query<{ id: string; slug: string }>(
-      "select id::text as id, slug from tenants where status <> 'deleting' order by created_at, id",
+    const rows = await this.#db.query<{ id: string; slug: string; customHost: string | null }>(
+      `select t.id::text as id, t.slug, ${await this.#customHost()} from tenants t
+       where t.status <> 'deleting' order by t.created_at, t.id`,
     );
     return rows.rows.map(scopeOf);
   }
@@ -137,17 +139,34 @@ export class TenantDirectory {
    * name matches. A suspended or deleting tenant answers `404` in slice 4.
    */
   async resolvable(): Promise<TenantScope[]> {
-    const rows = await this.#db.query<{ id: string; slug: string }>(
-      `select t.id::text as id, t.slug from tenants t
+    const rows = await this.#db.query<{ id: string; slug: string; customHost: string | null }>(
+      `select t.id::text as id, t.slug, ${await this.#customHost()} from tenants t
        where t.status = 'active' and t.id is distinct from (select default_tenant_id from server_identity)`,
     );
     return rows.rows.map(scopeOf);
   }
 
+  /**
+   * The select-list item for each tenant's live custom name, as `"customHost"` (spec §23.5): the one place outside
+   * `src/custom-domains/` that reads `tenant_hosts`. Only a live name, one with its certificate, is served or made a
+   * primary. `null` on a schema before `0024`; once the table is there it stays, so the check runs until it is.
+   */
+  async #customHost(): Promise<string> {
+    if (!this.#hasHosts) {
+      const exists = await this.#db.query<{ exists: boolean }>(
+        "select to_regclass('tenant_hosts') is not null as exists",
+      );
+      this.#hasHosts = exists.rows[0]?.exists === true;
+    }
+    return this.#hasHosts
+      ? `(select h.host from tenant_hosts h where h.tenant_id = t.id and h.live order by h.host limit 1) as "customHost"`
+      : `null::text as "customHost"`;
+  }
+
   /** {@link resolvable}, with each tenant's name: what the entry's message lists (spec §21.4). */
   async resolvableNamed(): Promise<{ readonly scope: TenantScope; readonly name: string }[]> {
-    const rows = await this.#db.query<{ id: string; slug: string; name: string }>(
-      `select t.id::text as id, t.slug, t.name from tenants t
+    const rows = await this.#db.query<{ id: string; slug: string; name: string; customHost: string | null }>(
+      `select t.id::text as id, t.slug, t.name, ${await this.#customHost()} from tenants t
        where t.status = 'active' and t.id is distinct from (select default_tenant_id from server_identity)
        order by t.created_at, t.id`,
     );

@@ -141,6 +141,16 @@ export function directoryOf(tenancy: Tenancy): TenantDirectory {
 }
 
 /**
+ * What the custom-domains module calls after a unit that held, released or made live a tenant's custom name commits
+ * (hosted edition spec §23.5): the directory's change, which reloads this process's tenant map and, through
+ * {@link shareTenancyCaches}, announces `tenantsChanged`, so every instance's map picks the name up or drops it. It
+ * writes nothing and names no tenant: the map is read again whole.
+ */
+export function tenantHostsChanged(tenancy: Tenancy): void {
+  directoryOf(tenancy).changed();
+}
+
+/**
  * Whether `scope` is the default tenant: a predicate, never a scope, so a module that needs to tell it apart
  * (the audit chain's configured key, spec §19.7) gets no way to reach it. Needs the directory loaded.
  */

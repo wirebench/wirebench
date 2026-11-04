@@ -12,7 +12,8 @@ import type { ModuleConfig } from '../config.js';
 import { SYSTEM_SOURCE, type LicenseService, type ServerHooks } from '../context.js';
 import { ExitCode, type ServerIo } from '../io.js';
 import type { TenantScope } from '../tenancy/scope.js';
-import type { Tenancy } from '../tenancy/tenancy.js';
+import { tenantHostsChanged, type Tenancy } from '../tenancy/tenancy.js';
+import { isHeld } from './states.js';
 import { checkDepsOf, type CheckDepsOverrides } from './deps.js';
 import { checkTenant } from './job.js';
 import { listAll, type ClaimListing } from './repo.js';
@@ -35,6 +36,12 @@ export interface DomainsEnv {
   readonly now: () => Date;
   /** Tests only: the check's DNS, probe and mail. */
   readonly overrides?: CheckDepsOverrides;
+  /**
+   * Runs `fn` with the notification bus listening and drains it after (`identity/cli.ts` opens it, as `admin tenant`
+   * does), so a name `check` or `remove` made live or released reloads every running instance's tenant map (spec
+   * §23.5, §20.3).
+   */
+  readonly withBus: <T>(fn: () => Promise<T>) => Promise<T>;
 }
 
 /** The table `admin domains list` prints: a header, then one row per claim. Never a token. */
@@ -51,13 +58,25 @@ export function formatClaims(rows: readonly ClaimListing[]): string {
     .join('\n');
 }
 
-/** The job loop's log, on stderr: a tenant whose unit failed is named by id, never its claim. */
-function stderrLog(io: ServerIo): Pick<FastifyBaseLogger, 'error' | 'warn'> {
+/** The job loop's and the bus's log: warnings and errors on stderr, by message only, the rest nowhere. */
+export function busLog(io: ServerIo): FastifyBaseLogger {
+  const quiet = (): void => undefined;
   const write = (level: string) => (first: unknown, second?: unknown) => {
     const message = typeof first === 'string' ? first : typeof second === 'string' ? second : '';
     io.stderr.write(`${level}: ${message}\n`);
   };
-  return { error: write('error'), warn: write('warn') } as Pick<FastifyBaseLogger, 'error' | 'warn'>;
+  const log = {
+    level: 'warn',
+    fatal: write('fatal'),
+    error: write('error'),
+    warn: write('warn'),
+    info: quiet,
+    debug: quiet,
+    trace: quiet,
+    silent: quiet,
+    child: () => log,
+  };
+  return log;
 }
 
 const noClaim = (scope: TenantScope) =>
@@ -74,7 +93,7 @@ export async function runDomainsCommand(
   scope: TenantScope | undefined,
   io: ServerIo,
 ): Promise<number> {
-  const log = stderrLog(io);
+  const log = busLog(io);
   switch (command.command) {
     case 'admin-domains-list': {
       const rows = [...(await listAll(env.tenancy, log))].sort((a, b) => a.slug.localeCompare(b.slug));
@@ -84,10 +103,19 @@ export async function runDomainsCommand(
     }
     case 'admin-domains-check': {
       const deps = await checkDepsOf(
-        { config: env.config, tenancy: env.tenancy, hooks: env.hooks, license: () => env.license, log },
+        {
+          config: env.config,
+          tenancy: env.tenancy,
+          hooks: env.hooks,
+          license: () => env.license,
+          log,
+          hostsChanged: () => {
+            tenantHostsChanged(env.tenancy);
+          },
+        },
         { now: env.now, ...env.overrides },
       );
-      const checked = await checkTenant(deps, scope!);
+      const checked = await env.withBus(() => checkTenant(deps, scope!));
       if (checked === undefined) throw noClaim(scope!);
       const checkedAt = checked.checkedAt === null ? '-' : checked.checkedAt.toISOString();
       io.stdout.write(`${checked.name}  ${checked.state}  checked ${checkedAt}\n`);
@@ -95,7 +123,11 @@ export async function runDomainsCommand(
       return ExitCode.Ok;
     }
     case 'admin-domains-remove': {
-      const removed = await env.tenancy.db(scope!).transaction((tx) => removeAudited(env.hooks, tx, SYSTEM_SOURCE));
+      const removed = await env.withBus(async () => {
+        const gone = await env.tenancy.db(scope!).transaction((tx) => removeAudited(env.hooks, tx, SYSTEM_SOURCE));
+        if (gone !== undefined && isHeld(gone.state)) tenantHostsChanged(env.tenancy);
+        return gone;
+      });
       if (removed === undefined) throw noClaim(scope!);
       io.stdout.write(`Removed ${removed.name}\n`);
       return ExitCode.Ok;
