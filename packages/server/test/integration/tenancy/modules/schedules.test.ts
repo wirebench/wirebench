@@ -18,11 +18,11 @@ import { teamsModule } from '../../../../src/teams/module.js';
 import * as teamsRepo from '../../../../src/teams/repo.js';
 import { describeDb } from '../../../helpers/database.js';
 import type { SignedInUser } from '../../../helpers/identity.js';
-import { license, testKeys } from '../../../helpers/licensing.js';
+import { testKeys } from '../../../helpers/licensing.js';
 import { quietLog, testSettings } from '../../../helpers/schedule-runs.js';
 import { SCHEDULES_KEY } from '../../../helpers/schedules.js';
 import { manualTimers } from '../../../helpers/timers.js';
-import { countIn, twoTenants, type Tenant, type TwoTenants } from './two-tenants.js';
+import { countIn, twoTenants, type Tenant, type TwoTenants, setEdition } from './two-tenants.js';
 
 const keys = testKeys();
 const DAY = 86_400_000;
@@ -77,10 +77,7 @@ describeDb('scheduled runs in two tenants (tenancy Task 18)', () => {
     });
     for (const tenant of [t.a, t.b]) {
       const root = await tenant.user({ email: 'root@example.com', serverAdmin: true });
-      const installed = await tenant.call(root, 'PUT', '/license', {
-        license: license(keys, { edition: 'enterprise' }),
-      });
-      expect(installed.status).toBe(200);
+      await setEdition(t, tenant, 'enterprise');
       const admin = await tenant.user({ email: 'admin@example.com' });
       const team = await teamsRepo.insertTeam(tenant.tdb, { id: newId(), name: 'Ops', at: t.h.clock.now });
       await teamsRepo.insertMember(tenant.tdb, {
@@ -284,8 +281,8 @@ describeDb('scheduled runs in two tenants (tenancy Task 18)', () => {
     }
   });
 
-  it('a tenant whose license lacks scheduled-runs fires nothing while the other does', async () => {
-    expect((await t.b.call(cast(t.b).root, 'DELETE', '/license')).status).toBe(204);
+  it('a tenant whose edition lacks scheduled-runs fires nothing while the other does', async () => {
+    await setEdition(t, t.b, 'community');
     const inA = await seedSchedule(t.a, { due: true });
     const inB = await seedSchedule(t.b, { due: true });
     started.length = 0;

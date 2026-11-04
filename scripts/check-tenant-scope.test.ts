@@ -85,6 +85,23 @@ describe('check:tenant-scope', () => {
     expect(findScopeMints('packages/server/src/identity/cli.ts', 'directoryOf(t).defaultScope()')).toEqual([]);
   });
 
+  it('keeps tenantWritesOf to tenancy.ts and the control plane’s lifecycle service (slice 7 Task 6)', () => {
+    const leak = "import { tenantWritesOf } from '../tenancy/tenancy.js';\ntenantWritesOf(ctx.tenancy).changed();";
+    for (const file of [
+      'packages/server/src/teams/routes/teams.ts',
+      'packages/server/src/control-plane/billing.ts',
+      'packages/server/src/tenancy/jobs.ts',
+    ]) {
+      expect(findScopeMints(file, leak), file).toMatchObject([
+        { line: 1, rule: 'tenant-writes' },
+        { line: 2, rule: 'tenant-writes' },
+      ]);
+    }
+    for (const file of ['packages/server/src/control-plane/tenants.ts', 'packages/server/src/tenancy/tenancy.ts']) {
+      expect(findScopeMints(file, leak), file).toEqual([]);
+    }
+  });
+
   it('keeps TenantDirectory and TenantAdmin inside src/tenancy/, however they are named (Task 8 review I2)', async () => {
     const root = await tree({
       'packages/server/src/teams/routes/teams.ts': [
@@ -477,9 +494,17 @@ describe('check:tenant-scope', () => {
         'packages/server/src/config.ts',
         'packages/server/src/serve.ts',
         'packages/server/src/tenancy/cli.ts',
+        'packages/server/src/control-plane/cli.ts',
       ]) {
         expect(findControlPlane(file, 'const url = config.controlDatabaseUrl;'), file).toEqual([]);
       }
+      // `admin tenant` opens its pools; the rest of the control plane takes the pool from serve.ts.
+      expect(
+        findControlPlane('packages/server/src/control-plane/tenants.ts', 'config.controlDatabaseUrl'),
+      ).toMatchObject([{ rule: 'control-url' }]);
+      const pool = "import { createDatabase } from '../db/pool.js';";
+      expect(findRawDatabase('packages/server/src/control-plane/cli.ts', pool)).toEqual([]);
+      expect(findRawDatabase('packages/server/src/control-plane/tenants.ts', pool)).toMatchObject([{ rule: 'raw-db' }]);
     });
 
     it('keeps SQL naming the control tables to src/control-plane/', () => {
@@ -499,6 +524,15 @@ describe('check:tenant-scope', () => {
       }
       // The grants list names them for the roles; nowhere else outside the control plane may.
       expect(findControlPlane('packages/server/src/tenancy/grants.ts', "const t = ['signups'];")).toEqual([]);
+      // The resolver's redirect reader names the retired slugs, and that table only (spec §22.8).
+      const reader = 'packages/server/src/tenancy/redirects.ts';
+      expect(findControlPlane(reader, "db.query('select slug from tenant_slugs_retired')")).toEqual([]);
+      for (const text of [
+        "db.query('select * from signups')",
+        "db.query('select 1 from tenant_slugs_retired r join billing_events e on true')",
+      ]) {
+        expect(findControlPlane(reader, text), text).toMatchObject([{ rule: 'control-sql' }]);
+      }
     });
 
     it('allows from tenants and join tenants in src/control-plane/ too, but not the tenant setting', () => {

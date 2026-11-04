@@ -8,16 +8,17 @@
 import type { KeyObject } from 'node:crypto';
 import type { LicenseState } from '@wirebench/engine';
 import type { LicenseChanged, LicenseService } from '../context.js';
+import { hostedEdition } from '../tenancy/directory.js';
 import type { TenantScope } from '../tenancy/scope.js';
 import type { TenantQuerier } from '../tenancy/tenant-db.js';
 import type { Tenancy } from '../tenancy/tenancy.js';
 import type { ScopeSource } from '../tenancy/urls.js';
-import { licenseInvalid } from './errors.js';
+import { licenseInvalid, licensingHosted } from './errors.js';
 import { verifyLicense } from './format.js';
 import { requireFeature } from './gate.js';
 import * as repo from './repo.js';
 import { assertSeatAvailable, countEnabledUsers } from './seats.js';
-import { licenseState } from './state.js';
+import { hostedLicenseState, licenseState } from './state.js';
 
 export interface LicenseEnv {
   readonly tenancy: Pick<Tenancy, 'db'>;
@@ -28,7 +29,10 @@ export interface LicenseEnv {
    * is server-wide, so any tenant's unit reads the same row.
    */
   readonly serverId: (db: TenantQuerier) => Promise<string>;
-  /** Hosted mode: the seat check takes no legacy server-wide lock (`seats.ts`). */
+  /**
+   * Hosted mode: the state is the tenant row's edition and seats, not a license (spec §22.4), no license is
+   * installed or removed (`licensing-hosted`), and the seat check takes no legacy server-wide lock (`seats.ts`).
+   */
   readonly hosted?: boolean;
 }
 
@@ -45,19 +49,24 @@ export function cachedServerId(): (db: TenantQuerier) => Promise<string> {
 }
 
 export function createLicenseService(env: LicenseEnv): LicenseService {
-  // The stored license and the seat count in one unit.
+  // The stored license, or in hosted mode the tenant row (spec §22.4), and the seat count, in one unit.
   const stateIn = async (tx: TenantQuerier): Promise<LicenseState> =>
-    licenseState(
-      (await repo.storedLicense(tx))?.text,
-      env.publicKeys,
-      env.now(),
-      await countEnabledUsers(tx),
-      await env.serverId(tx),
-    );
+    env.hosted === true
+      ? hostedLicenseState(await hostedEdition(tx), await countEnabledUsers(tx), await env.serverId(tx))
+      : licenseState(
+          (await repo.storedLicense(tx))?.text,
+          env.publicKeys,
+          env.now(),
+          await countEnabledUsers(tx),
+          await env.serverId(tx),
+        );
   // What a feature gate needs, and every gated request pays for: the license's features alone, without the
   // seat count (Task 9 review M6). Features never depend on the seats used, so 0 stands in for them.
   const featuresIn = async (tx: TenantQuerier): Promise<readonly string[]> =>
-    licenseState((await repo.storedLicense(tx))?.text, env.publicKeys, env.now(), 0, await env.serverId(tx)).features;
+    env.hosted === true
+      ? hostedLicenseState(await hostedEdition(tx), 0, '').features
+      : licenseState((await repo.storedLicense(tx))?.text, env.publicKeys, env.now(), 0, await env.serverId(tx))
+          .features;
   const state = (of: ScopeSource, tx?: TenantQuerier): Promise<LicenseState> =>
     tx !== undefined ? stateIn(tx) : env.tenancy.db('tenantId' in of ? of : of.tenant).transaction(stateIn);
   return {
@@ -79,6 +88,7 @@ export async function installLicense(
   text: string,
   actorUserId: string | null,
 ): Promise<LicenseChanged> {
+  if (env.hosted === true) throw licensingHosted();
   const trimmed = text.trim();
   return env.tenancy.db(scope).transaction(async (tx) => {
     const verified = verifyLicense(trimmed, env.publicKeys, env.now(), await env.serverId(tx));
@@ -95,10 +105,11 @@ export async function installLicense(
 
 /** `undefined` when no license was stored: nothing changed, so nothing is announced. */
 export async function removeLicense(
-  env: Pick<LicenseEnv, 'tenancy'>,
+  env: Pick<LicenseEnv, 'tenancy' | 'hosted'>,
   scope: TenantScope,
   actorUserId: string | null,
 ): Promise<LicenseChanged | undefined> {
+  if (env.hosted === true) throw licensingHosted();
   return env.tenancy.db(scope).transaction(async (tx) => {
     const stored = await repo.storedLicense(tx);
     if (stored === undefined || !(await repo.deleteLicense(tx))) return undefined;

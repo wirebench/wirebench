@@ -6,7 +6,8 @@
  * The app role owns nothing, so row-level security applies to it whether forced or not. It gets:
  * - `usage` on the schema, and no `create`;
  * - `select` only on the tables in `READ_ONLY_TABLES`, plus `update (tenancy_step)` on `server_identity`;
- * - nothing on the tables in `CONTROL_ONLY_TABLES`, which only the control role touches (spec §22.2);
+ * - nothing on the tables in `CONTROL_ONLY_TABLES`, which only the control role touches (spec §22.2), but `select` on
+ *   the three columns of `tenant_slugs_retired` the resolver's redirects read ({@link RETIRED_SLUG_READ_COLUMNS});
  * - `select, insert, update, delete` on every other table, and by default on every table the owner creates
  *   later.
  *
@@ -38,6 +39,12 @@ export const CONTROL_ONLY_TABLES: readonly string[] = [
  * list: `controlRoleGrants` and its test read it.
  */
 export const CONTROL_TABLES: readonly string[] = ['tenants', ...CONTROL_ONLY_TABLES];
+
+/**
+ * What the app role may read of `tenant_slugs_retired` (spec §22.8): the old slug, where it redirects and until when,
+ * for the resolver's `308`s (`tenancy/redirects.ts`). Not the tenant id, and nothing it could write.
+ */
+export const RETIRED_SLUG_READ_COLUMNS: readonly string[] = ['slug', 'redirect_to', 'redirect_until'];
 
 export interface AppRoleNames {
   /** The schema the server's tables live in. */
@@ -100,6 +107,10 @@ begin
     elsif t = any (array[${controlOnly}]::text[]) then
       -- The owner's default privileges granted these at create time: taken back, all of them.
       execute format('revoke all on %I.%I from %I', ${quoteLiteral(names.schema)}, t, ${quoteLiteral(names.app)});
+      -- But the resolver reads the retired slugs' redirects (spec §22.8): three columns, read only.
+      if t = 'tenant_slugs_retired' then
+        execute format('grant select (${RETIRED_SLUG_READ_COLUMNS.join(', ')}) on %I.%I to %I', ${quoteLiteral(names.schema)}, t, ${quoteLiteral(names.app)});
+      end if;
     else
       execute format('grant select, insert, update, delete on %I.%I to %I', ${quoteLiteral(names.schema)}, t, ${quoteLiteral(names.app)});
     end if;

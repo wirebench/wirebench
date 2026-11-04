@@ -12,7 +12,8 @@ import type { FastifyBaseLogger } from 'fastify';
 import { announce, remote, type ServerHooks } from '../context.js';
 import type { Database } from '../db/querier.js';
 import type { BusEvents } from '../operations/bus.js';
-import { TenantDirectory } from './directory.js';
+import type { Querier } from '../db/querier.js';
+import { TenantAdmin, TenantDirectory, type NewTenant, type TenantRow } from './directory.js';
 import { readTenancyStep } from './file-step.js';
 import { forEachTenant, type JobOutcome, type JobPass } from './jobs.js';
 import { TenantKeys, type KeyRoot } from './keys.js';
@@ -145,4 +146,31 @@ export function directoryOf(tenancy: Tenancy): TenantDirectory {
  */
 export function isDefaultTenant(tenancy: Tenancy, scope: TenantScope): boolean {
   return directoryOf(tenancy).isDefault(scope);
+}
+
+/**
+ * What the control plane writes the tenants with (hosted edition spec §22.2): `TenantAdmin.create` on its own control
+ * transaction, the scope of a tenant it changed (for that tenant's audit unit), and the directory's change, which
+ * reloads this process's map, drops its data keys and, through {@link shareTenancyCaches}, announces
+ * `tenantsChanged` on the bus. `check:tenant-scope` lets only `control-plane/tenants.ts` name it, so no module can
+ * create a tenant or tell the directory it changed.
+ */
+export interface TenantWrites {
+  /** A new tenant and its data key, inserted on `tx`; nothing is told until {@link TenantWrites.changed}. */
+  create(tx: Querier, input: NewTenant): Promise<TenantRow & { readonly scope: TenantScope }>;
+  /** The tenant with this id, whatever its status; `undefined` when its row is gone. */
+  scope(id: string): Promise<TenantScope | undefined>;
+  /** After the transaction committed: this process's tenant listeners, and the bus. */
+  changed(): void;
+}
+
+export function tenantWritesOf(tenancy: Tenancy): TenantWrites {
+  const directory = directoryOf(tenancy);
+  return {
+    create: (tx, input) => new TenantAdmin(tx, directory, { announce: false }).create(input),
+    scope: async (id) => (await directory.get(id))?.scope,
+    changed: () => {
+      directory.changed();
+    },
+  };
 }

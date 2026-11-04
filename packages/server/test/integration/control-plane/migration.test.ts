@@ -169,7 +169,8 @@ describeDb('migration 0023: the control plane (hosted spec §22.2, §22.3)', () 
       );
       expect(privileges.rows).toEqual([]);
       for (const table of Object.keys(UNSCOPED_0023)) {
-        await expect(rawApp.query(`select count(*) from ${table}`), table).rejects.toMatchObject({ code: '42501' });
+        // `select *`: the app role reads three columns of tenant_slugs_retired for the resolver (Task 7), never all.
+        await expect(rawApp.query(`select * from ${table}`), table).rejects.toMatchObject({ code: '42501' });
       }
       await expect(
         rawApp.query(

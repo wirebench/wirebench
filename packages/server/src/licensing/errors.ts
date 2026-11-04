@@ -25,3 +25,11 @@ export const featureRequired = (feature: Feature): WirebenchError =>
   );
 
 export const licenseInvalid = (message: string): WirebenchError => problem('licensing-invalid', message, 400);
+
+/** Hosted mode (spec §22.4): a tenant's edition and seats come from its subscription or the operator, never a file. */
+export const licensingHosted = (): WirebenchError =>
+  problem(
+    'licensing-hosted',
+    'A hosted team’s edition and seats come from its subscription or the operator; no license file is installed.',
+    409,
+  );
