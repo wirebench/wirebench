@@ -9,6 +9,7 @@ row, and file an issue for any failure.
 
 | #   | Step                                                                                                     | Expected                                                                                              | Result |
 | --- | -------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- | ------ |
+| C0  | `docker compose exec server cat /run/secrets/proxy_token` and compare it with `PROXY_TOKEN` in `.env` | The same value: the `environment:` secret reached the server (Docker Compose 2.24 or newer) | — |
 | C1  | `curl -s -o /dev/null -w '%{http_code}' http://server:8081/proxy/traefik` from the Traefik container     | `401`: no token                                                                                       | —      |
 | C2  | The same with `-H "Authorization: Bearer $PROXY_TOKEN"`                                                  | `200` and `{"http":{"routers":{}}}` before any claim                                                  | —      |
 | C3  | From outside: `curl -I https://<slug>.<app-domain>/proxy/traefik` and a scan of the host's open ports    | `404` from the server; only 80 and 443 are open                                                       | —      |

@@ -91,12 +91,16 @@ a file, so the token is set once in `.env` as `PROXY_TOKEN`: compose puts it int
 to the server as the `proxy_token` secret, which the server reads from `WIREBENCH_SERVER_PROXY_TOKEN_FILE`. It is one
 value, so the two cannot drift. Make it with `openssl rand -hex 32`; changing it means `docker compose up -d` for
 both services. It shows in Traefik's container command line (`docker inspect`), so keep the Docker socket to the
-operators.
+operators. Don't run Traefik at `--log.level=DEBUG` in production: the provider's header, the token, can then appear in
+its log as well as its argv. A compose secret with an `environment:` source, as `proxy_token` is, needs Docker Compose
+2.24 or newer.
 
 **What the operator sees.** `wirebench-server admin domains list` prints every team's claim: its slug, the name, the
 state and when it was last checked, never a token. Traefik's log shows one ACME order per verified name and the
 router's name, `custom-` and a hash of the host. Let's Encrypt's rate limits apply per registered domain of the
-customer's name, so one customer cannot use up another's.
+customer's name, so one customer cannot use up another's. While any team's names cannot be read, `/proxy/traefik`
+answers `503` and Traefik keeps the routers of its last good poll, so a newly verified name waits until every team
+reads again.
 
 **Removing a name** (abuse, a support case): `wirebench-server admin domains remove --tenant <slug>`. The name is
 released at once, its router goes at Traefik's next poll, and the team's primary goes back to `<slug>.<app-domain>`.

@@ -5,8 +5,9 @@
  * listener, over a fake list of held names, on this machine. A name's router appears, Pebble issues by HTTP-01 through
  * the web entry point and its redirect to https, and the certificate probe sees the name.
  *
- * It needs Docker and pulls three pinned images, so it runs on Linux where Docker answers (as CI's runners have it),
- * elsewhere only with `WIREBENCH_SERVER_PEBBLE=1`, and never with `WIREBENCH_SERVER_PEBBLE=0`. Traefik's version and
+ * Traefik's image is the recipe's own, so the test runs what ships. It needs Docker and pulls three images, so it runs
+ * only on CI (`CI` set) or with `WIREBENCH_SERVER_PEBBLE=1`, never with `WIREBENCH_SERVER_PEBBLE=0` (which wins on CI
+ * too), and skips where Docker does not answer: a plain local `pnpm test` starts no containers. Traefik's version and
  * usage reporting are off, so nothing but the image pulls leaves the machine.
  */
 import { execFile } from 'node:child_process';
@@ -25,8 +26,6 @@ import type { TenantScope } from '../../../src/tenancy/scope.js';
 
 const run = promisify(execFile);
 const RECIPE = join(import.meta.dirname, '..', '..', '..', 'deploy', 'hosted', 'compose.yaml');
-// At least two weeks old when pinned (2026-11-04).
-const TRAEFIK = 'traefik:v3.7.15';
 const PEBBLE = 'ghcr.io/letsencrypt/pebble:2.10.1';
 const CHALLTESTSRV = 'ghcr.io/letsencrypt/pebble-challtestsrv:2.10.1';
 const NAME = 'app.customer.test';
@@ -35,7 +34,7 @@ const TIMEOUT = 240_000;
 
 const wanted = process.env.WIREBENCH_SERVER_PEBBLE;
 async function dockerAnswers(): Promise<boolean> {
-  if (wanted === '0' || (wanted !== '1' && process.platform !== 'linux')) return false;
+  if (wanted === '0' || (wanted !== '1' && (process.env.CI ?? '') === '')) return false;
   try {
     await run('docker', ['compose', 'version'], { timeout: 20_000 });
     return true;
@@ -45,16 +44,21 @@ async function dockerAnswers(): Promise<boolean> {
 }
 const enabled = await dockerAnswers();
 
-/** The recipe's Traefik flags this test keeps: the entry points, the HTTP provider and the `le-http` resolver. */
-async function recipeFlags(endpoint: string): Promise<string[]> {
-  const recipe = parse(await readFile(RECIPE, 'utf8')) as { services: { traefik: { command: string[] } } };
+/**
+ * The recipe's Traefik: its image, and the flags this test keeps (the entry points, the HTTP provider and the `le-http`
+ * resolver).
+ */
+async function recipeTraefik(endpoint: string): Promise<{ readonly image: string; readonly flags: string[] }> {
+  const recipe = parse(await readFile(RECIPE, 'utf8')) as {
+    services: { traefik: { image: string; command: string[] } };
+  };
   const kept = recipe.services.traefik.command.filter(
     (flag) =>
       flag.startsWith('--entrypoints.') ||
       flag.startsWith('--providers.http.') ||
       flag.startsWith('--certificatesresolvers.le-http.'),
   );
-  return kept.map((flag) => {
+  const flags = kept.map((flag) => {
     const [key] = flag.split('=', 1) as [string];
     switch (key) {
       case '--providers.http.endpoint':
@@ -70,6 +74,7 @@ async function recipeFlags(endpoint: string): Promise<string[]> {
         return flag;
     }
   });
+  return { image: recipe.services.traefik.image, flags };
 }
 
 /** GETs `path` from Pebble's management interface, which serves Pebble's own test certificate. */
@@ -89,15 +94,21 @@ function pebbleManagement(port: number, path: string, ca: string): Promise<strin
   });
 }
 
-/** `fn`'s answer once it stops throwing: the containers take a moment to listen after `up -d`. */
-async function retried<T>(fn: () => Promise<T>, ms = 60_000): Promise<T> {
-  const deadline = Date.now() + ms;
-  for (;;) {
+/**
+ * `fn`'s answer once it stops throwing: the containers take a moment to listen after `up -d`, and a registry may refuse
+ * a pull for a moment (a rate limit's blip on CI).
+ */
+async function retried<T>(
+  fn: () => Promise<T>,
+  options: { readonly ms?: number; readonly tries?: number; readonly delayMs?: number } = {},
+): Promise<T> {
+  const deadline = Date.now() + (options.ms ?? 60_000);
+  for (let tried = 1; ; tried++) {
     try {
       return await fn();
     } catch (error) {
-      if (Date.now() >= deadline) throw error;
-      await new Promise((done) => setTimeout(done, 500));
+      if (Date.now() >= deadline || tried >= (options.tries ?? Infinity)) throw error;
+      await new Promise((done) => setTimeout(done, options.delayMs ?? 500));
     }
   }
 }
@@ -133,6 +144,11 @@ describe.runIf(enabled)('a custom name’s certificate through Traefik and Pebbl
     });
     await stub.listen({ host: '0.0.0.0', port: 0 });
     const stubPort = (stub.server.address() as { port: number }).port;
+    const traefik = await recipeTraefik(`http://host.docker.internal:${String(stubPort)}${PROXY_ROUTE}`);
+    // Each image up to three times, 5 seconds apart: a registry's rate limit blips now and then on CI.
+    for (const image of [PEBBLE, CHALLTESTSRV, traefik.image]) {
+      await retried(() => run('docker', ['pull', '--quiet', image]), { ms: TIMEOUT, tries: 3, delayMs: 5_000 });
+    }
 
     // Pebble's CA for its own API, which Traefik's ACME client must trust.
     const created = (await run('docker', ['create', PEBBLE])).stdout.trim();
@@ -174,7 +190,6 @@ describe.runIf(enabled)('a custom name’s certificate through Traefik and Pebbl
         '',
       ].join('\n'),
     );
-    const flags = await recipeFlags(`http://host.docker.internal:${String(stubPort)}${PROXY_ROUTE}`);
     await writeFile(
       join(dir, 'compose.yaml'),
       JSON.stringify({
@@ -206,13 +221,13 @@ describe.runIf(enabled)('a custom name’s certificate through Traefik and Pebbl
             ports: ['127.0.0.1::15000'],
           },
           traefik: {
-            image: TRAEFIK,
+            image: traefik.image,
             command: [
               '--providers.file.filename=/etc/traefik/dynamic.yaml',
               '--global.checknewversion=false',
               '--global.sendanonymoususage=false',
               '--log.level=DEBUG',
-              ...flags,
+              ...traefik.flags,
             ],
             environment: { LEGO_CA_CERTIFICATES: '/certs/pebble.minica.pem' },
             volumes: [
@@ -226,7 +241,7 @@ describe.runIf(enabled)('a custom name’s certificate through Traefik and Pebbl
         },
       }),
     );
-    await compose('up', '-d', '--quiet-pull');
+    await retried(() => compose('up', '-d'), { ms: TIMEOUT, tries: 2, delayMs: 5_000 });
   }, TIMEOUT);
 
   afterAll(async () => {
