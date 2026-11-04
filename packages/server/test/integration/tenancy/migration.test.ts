@@ -668,7 +668,7 @@ describeDb('migration 0021 on the frozen 0019 fixture: forced isolation (hosted 
     const started = performance.now();
     const { applied } = await migrate(db.owner, await allMigrations(BUILTIN_MODULES));
     console.info(`[tenancy] 0020 and 0021 on the 0019 fixture: ${(performance.now() - started).toFixed(0)} ms`);
-    expect(applied).toEqual([20, 21, 22]);
+    expect(applied).toEqual([20, 21, 22, 23]);
     await db.grant();
     tenantId = (await db.owner.query<{ id: string }>('select default_tenant_id as id from server_identity')).rows[0]!
       .id;
@@ -679,7 +679,7 @@ describeDb('migration 0021 on the frozen 0019 fixture: forced isolation (hosted 
     await removeTempDir(dataDir);
   });
 
-  it("enables and forces row-level security on the 36 scoped tables and 0022's three, and on no other", async () => {
+  it("enables and forces row-level security on the 36 scoped tables, 0022's three and 0023's one, and on no other", async () => {
     const security = await rowSecurityOf(db.owner);
     const on = security.filter((row) => row.enabled && row.forced).map((row) => row.table);
     expect(on).toEqual([...SCOPED_TABLES].sort());
@@ -707,10 +707,17 @@ describeDb('migration 0021 on the frozen 0019 fixture: forced isolation (hosted 
 
   it('defaults every tenant_id to the setting, so an insert outside a unit has no tenant', async () => {
     const tenantColumns = (await columnsOf(db.owner)).filter((column) => column.column === 'tenant_id');
-    expect(tenantColumns.map((column) => column.table).sort()).toEqual([...SCOPED_TABLES].sort());
-    for (const column of tenantColumns) {
+    // `tenant_hosts` (0023) is the one unscoped table that names a tenant: routing only, with no default, so every
+    // write names its tenant on purpose (spec §23.3).
+    expect(tenantColumns.map((column) => column.table).sort()).toEqual([...SCOPED_TABLES, 'tenant_hosts'].sort());
+    for (const column of tenantColumns.filter((c) => c.table !== 'tenant_hosts')) {
       expect(column, column.table).toMatchObject({ type: 'uuid', notNull: true, default: SETTING_EXPRESSION });
     }
+    expect(tenantColumns.find((c) => c.table === 'tenant_hosts')).toMatchObject({
+      type: 'uuid',
+      notNull: true,
+      default: null,
+    });
   });
 
   it("adds the forwarder's lease to the queue, nullable and with no default, after the 0020 columns", async () => {

@@ -301,6 +301,33 @@ describe('check:tenant-scope', () => {
     ]);
   });
 
+  it('keeps tenant_hosts to src/custom-domains/ and the directory (slice 8, spec §23.3)', async () => {
+    for (const file of ['packages/server/src/host/lease.ts', 'packages/server/src/tenancy/resolve.ts']) {
+      for (const text of [
+        "db.query('select host, tenant_id from tenant_hosts where live')",
+        'db.query(`delete from "tenant_hosts" where host = $1`)',
+        "db.query('INSERT INTO public.tenant_hosts (host, tenant_id) values ($1, $2)')",
+      ]) {
+        expect(findRawDatabase(file, text), `${file}: ${text}`).toMatchObject([{ rule: 'hosts-sql' }]);
+      }
+      // Another name, and a comment, pass.
+      expect(findRawDatabase(file, "db.query('select * from tenant_hosts_old')\n// tenant_hosts")).toEqual([]);
+    }
+    for (const file of ['packages/server/src/custom-domains/repo.ts', 'packages/server/src/tenancy/directory.ts']) {
+      expect(findRawDatabase(file, "db.query('select host from tenant_hosts where live')"), file).toEqual([]);
+    }
+    const root = await tree({
+      'packages/server/src/live/hub.ts': "export const SQL = 'select host from tenant_hosts';\n",
+      'packages/server/src/tenancy/urls.ts': "export const SQL = 'select host from tenant_hosts';\n",
+      'packages/server/src/custom-domains/repo.ts': "export const SQL = 'select host from tenant_hosts';\n",
+      'packages/server/src/tenancy/directory.ts': "export const SQL = 'select host from tenant_hosts';\n",
+    });
+    expect((await checkTenantScope(root)).map((hit) => [hit.file, hit.rule]).sort()).toEqual([
+      ['packages/server/src/live/hub.ts', 'hosts-sql'],
+      ['packages/server/src/tenancy/urls.ts', 'hosts-sql'],
+    ]);
+  });
+
   it('keeps pg_notify and LISTEN to src/operations/ (slice 5, spec §20.3)', () => {
     for (const file of ['packages/server/src/live/hub.ts', 'packages/server/src/tenancy/tenancy.ts']) {
       for (const text of [

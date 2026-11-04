@@ -43,6 +43,9 @@
  *   touch it.
  * - **No `pg_notify` and no `LISTEN` outside `src/operations/`** (spec §20.3): the notification bus is the one
  *   sender and listener, so every payload goes through its codec, which carries ids only.
+ * - **No `tenant_hosts` outside `src/custom-domains/` and `src/tenancy/directory.ts`** (spec §23.3): the unscoped
+ *   table of custom names. Only the custom-domains module writes it, the claim's own row in its tenant's unit, and
+ *   only the directory reads it, for the resolver, so no other code can learn which tenant holds a name.
  *
  * `node scripts/check-tenant-scope.ts` prints the result and exits non-zero, listing `file:line`, on any hit.
  * Wired into `pnpm check` as `pnpm check:tenant-scope`. ESLint's config is protected, which is why this is a
@@ -87,6 +90,13 @@ export const TENANCY_DIR = 'packages/server/src/tenancy/';
 export const OPERATIONS_DIR = 'packages/server/src/operations/';
 /** The instance table, by name, in SQL text. */
 const INSTANCES_SQL = /(?<![\w"])"?server_instances"?(?![\w"])/i;
+/** Where `tenant_hosts` may be named (spec §23.3): the module that writes it, and the resolver's read. */
+export const TENANT_HOSTS_ALLOWED: readonly { readonly dir?: string; readonly file?: string }[] = [
+  { dir: 'packages/server/src/custom-domains/' },
+  { file: 'packages/server/src/tenancy/directory.ts' },
+];
+/** The custom names' table, by name, in SQL text. */
+const HOSTS_SQL = /(?<![\w"])"?tenant_hosts"?(?![\w"])/i;
 /**
  * The notification bus's SQL (spec §20.3): `pg_notify(` anywhere, and a whole `LISTEN`/`UNLISTEN` statement, so a
  * sentence that starts with "Listen" is not one.
@@ -155,7 +165,8 @@ export interface ScopeHit {
     | 'tenant-sql'
     | 'for-each-tenant'
     | 'instances-sql'
-    | 'notify-sql';
+    | 'notify-sql'
+    | 'hosts-sql';
 }
 
 const PUBLIC_URL = 'publicUrl';
@@ -253,7 +264,8 @@ export function findScopeMints(file: string, content: string): ScopeHit[] {
 
 /**
  * Every import of the raw pool outside the files that hold it, and every piece of SQL text that sets the tenant,
- * names the tenants table, calls `for_each_tenant` or names `server_instances` outside `src/operations/`. Strings and template text are read from the syntax tree, so
+ * names the tenants table, calls `for_each_tenant`, names `server_instances` outside `src/operations/` or names
+ * `tenant_hosts` outside its two places. Strings and template text are read from the syntax tree, so
  * a comment never counts; `for_each_tenant` counts as an identifier too, and in `src/tenancy/` as well.
  */
 export function findRawDatabase(file: string, content: string): ScopeHit[] {
@@ -267,6 +279,9 @@ export function findRawDatabase(file: string, content: string): ScopeHit[] {
   const holdsPool = RAW_DB_ALLOWED.includes(file) || RAW_DB_DIRS.some((dir) => file.startsWith(dir));
   const inTenancy = file.startsWith(TENANCY_DIR);
   const inOperations = file.startsWith(OPERATIONS_DIR);
+  const hostsAllowed = TENANT_HOSTS_ALLOWED.some((place) =>
+    place.dir !== undefined ? file.startsWith(place.dir) : file === place.file,
+  );
   const specifier = (node: ts.Node): ts.Expression | undefined => {
     if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) return node.moduleSpecifier;
     if (ts.isImportEqualsDeclaration(node) && ts.isExternalModuleReference(node.moduleReference)) {
@@ -300,6 +315,7 @@ export function findRawDatabase(file: string, content: string): ScopeHit[] {
       for (const rule of rules) hit(node, rule);
       if (!inOperations && INSTANCES_SQL.test(text)) hit(node, 'instances-sql');
       if (!inOperations && NOTIFY_SQL.some((pattern) => pattern.test(text))) hit(node, 'notify-sql');
+      if (!hostsAllowed && HOSTS_SQL.test(text)) hit(node, 'hosts-sql');
     }
     if (ts.isIdentifier(node) && node.text === 'for_each_tenant') {
       hit(node, 'for-each-tenant');
@@ -349,6 +365,7 @@ if (process.argv[1] !== undefined && fileURLToPath(import.meta.url) === process.
       'for-each-tenant': 'for_each_tenant is for migrations only',
       'instances-sql': 'server_instances outside src/operations/',
       'notify-sql': 'pg_notify or LISTEN outside src/operations/',
+      'hosts-sql': 'tenant_hosts outside src/custom-domains/ and src/tenancy/directory.ts',
     } as const;
     for (const hit of hits) console.error(`${hit.file}:${String(hit.line)}: ${WHAT[hit.rule]}: ${hit.text}`);
     console.error('A module takes its scope, and its URL, from the request or the job loop (spec §19.5, §19.8).');

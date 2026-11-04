@@ -99,11 +99,13 @@ describe('allMigrations', () => {
     const teams = await folder('0003_teams.sql');
     const tenancy = await folder('0004_tenancy.sql');
     const operations = await folder('0005_operations.sql');
+    const customDomains = await folder('0006_custom-domains.sql');
     const full = await allMigrations(
       [moduleWith(identity), moduleWith(teams, 'teams-access')],
       host,
       tenancy,
       operations,
+      customDomains,
     );
     expect(full.map((m) => `${m.version}_${m.name}`)).toEqual([
       '1_init',
@@ -111,16 +113,23 @@ describe('allMigrations', () => {
       '3_teams',
       '4_tenancy',
       '5_operations',
+      '6_custom-domains',
     ]);
-    // A test's partial set stops short of both, and is not refused for the gap.
-    expect((await allMigrations([moduleWith(identity)], host, tenancy, operations)).map((m) => m.version)).toEqual([
-      1, 2,
-    ]);
+    // A test's partial set stops short of all three, and is not refused for the gap.
+    expect(
+      (await allMigrations([moduleWith(identity)], host, tenancy, operations, customDomains)).map((m) => m.version),
+    ).toEqual([1, 2]);
   });
 
-  it('puts 0020_tenancy, 0021_tenant-isolation and 0022_operations after every built-in module', async () => {
+  it('puts 0020_tenancy, 0021_tenant-isolation, 0022_operations and 0023_custom-domains after every built-in module', async () => {
     const versions = (await allMigrations(BUILTIN_MODULES)).map((m) => `${m.version}_${m.name}`);
-    expect(versions.slice(-4)).toEqual(['19_agent-pairings', '20_tenancy', '21_tenant-isolation', '22_operations']);
+    expect(versions.slice(-5)).toEqual([
+      '19_agent-pairings',
+      '20_tenancy',
+      '21_tenant-isolation',
+      '22_operations',
+      '23_custom-domains',
+    ]);
   });
 });
 

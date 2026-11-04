@@ -6,17 +6,20 @@ import type { Querier } from '../../src/db/querier.js';
 
 /**
  * The tables without `tenant_id` (spec §19.2): guard 3's allowlist. `server_instances` (0022, spec §20.2) names
- * processes, not tenants.
+ * processes, not tenants. `tenant_hosts` (0023, spec §23.3) is routing only, the custom-name counterpart of
+ * `tenants.slug`: it names a tenant but holds none of its content, and the resolver reads it before any tenant is known.
  */
 export const UNSCOPED_TABLES: readonly string[] = [
   'schema_migrations',
   'server_identity',
   'tenants',
   'server_instances',
+  'tenant_hosts',
 ];
 
 /**
- * The scoped tables: the 36 of spec §19.3, as 0020 and 0021 name them, then the three of 0022 (spec §20.6, §20.7).
+ * The scoped tables: the 36 of spec §19.3, as 0020 and 0021 name them, then the three of 0022 (spec §20.6, §20.7) and
+ * the one of 0023 (spec §23.3).
  */
 export const SCOPED_TABLES: readonly string[] = [
   'workspaces',
@@ -58,14 +61,16 @@ export const SCOPED_TABLES: readonly string[] = [
   'limiter_buckets',
   'send_slots',
   'terminal_share_locations',
+  'custom_domains',
 ];
 
-/** The scoped tables 0019 did not have: 0020 creates `host_leases`, 0022 the other three. */
+/** The scoped tables 0019 did not have: 0020 creates `host_leases`, 0022 three more, 0023 `custom_domains`. */
 export const SCOPED_AFTER_0019: readonly string[] = [
   'host_leases',
   'limiter_buckets',
   'send_slots',
   'terminal_share_locations',
+  'custom_domains',
 ];
 
 export type ColumnInfo = {

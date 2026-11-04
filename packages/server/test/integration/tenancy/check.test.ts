@@ -22,7 +22,7 @@ import { SCOPED_AFTER_0019, SCOPED_TABLES } from '../../helpers/catalog.js';
 import { describeDb, testDatabase } from '../../helpers/database.js';
 import { mkTempDir, removeTempDir } from '../../helpers/git.js';
 
-/** The scoped tables that exist at 0019: 0020 creates `host_leases`, 0022 three more. */
+/** The scoped tables that exist at 0019: 0020 creates `host_leases`, 0022 three more, 0023 one. */
 const SCOPED_0019 = SCOPED_TABLES.filter((table) => !SCOPED_AFTER_0019.includes(table));
 
 describeDb('admin tenancy check and status', () => {

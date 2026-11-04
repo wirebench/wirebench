@@ -505,6 +505,14 @@ export async function fill(t: TwoTenants, tenant: Tenant): Promise<Filled> {
     at,
   ]);
 
+  // ---- 0023's claim (slice 8), by hand until its routes land: the name carries the slug, the token stays per tenant.
+  await tenant.tdb.query('insert into custom_domains (name, token, created_by, created_at) values ($1, $2, $3, $4)', [
+    `${slug}.customer.test`,
+    `token-${slug}`,
+    browser.user.id,
+    at,
+  ]);
+
   // ---- the audit log: forward one recorded event (no sink is configured), so the queue holds a row too
   // Named by tenant: the negative run's schema has the policy off.
   const event = (

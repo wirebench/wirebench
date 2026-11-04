@@ -85,6 +85,8 @@ describeDb('scoped tables outside a tenant unit (hosted spec §19.4, plan Task 1
     await tdb.query(
       "insert into terminal_share_locations (share_id, holder, created_at) values ('share-0022', gen_random_uuid(), now())",
     );
+    // 0023's claim.
+    await tdb.query("insert into custom_domains (name, token) values ('app.customer.test', 'token-0023')");
   });
   afterAll(async () => {
     await app.close();
