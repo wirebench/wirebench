@@ -227,4 +227,36 @@ describeDb('the signup form (spec §22.6)', () => {
     await queue.idle();
     expect(sent.filter((s) => s.to[0] === 'same@team.test')).toHaveLength(3);
   });
+
+  it('creates at most ten signups a day per client address, refusals not counted, then inserts nothing', async () => {
+    const tick = () => {
+      // A minute apart, so the per-minute client bucket never limits; the daily one barely refills.
+      now = new Date(now.getTime() + 60_000);
+    };
+    for (const slug of ['acme', 'oldname', 'www']) {
+      tick();
+      await post(fields({ email: `refused-${slug}@cap.test`, slug }));
+    }
+    for (let i = 0; i < 10; i++) {
+      tick();
+      const res = await post(fields({ email: `cap${String(i)}@cap.test`, slug: `capped${String(i)}` }));
+      expect(res.body).toContain(SIGNUP_SENT);
+    }
+    tick();
+    const over = await post(fields({ email: 'cap10@cap.test', slug: 'capped10' }));
+    expect(over.body).toContain(SIGNUP_SENT);
+    expect(await signupsOf('capped9')).toHaveLength(1);
+    expect(await signupsOf('capped10')).toEqual([]);
+    await queue.idle();
+    expect(sent.filter((s) => s.to[0] === 'cap10@cap.test')).toEqual([]);
+    // Another address is not limited by it.
+    expect((await post(fields({ email: 'other@cap.test', slug: 'cappedother' }), FORM, '10.9.9.9')).body).toContain(
+      SIGNUP_SENT,
+    );
+    expect(await signupsOf('cappedother')).toHaveLength(1);
+    // A day on, the address may create again.
+    now = new Date(now.getTime() + 24 * 3_600_000);
+    await post(fields({ email: 'cap11@cap.test', slug: 'capped11' }));
+    expect(await signupsOf('capped11')).toHaveLength(1);
+  });
 });

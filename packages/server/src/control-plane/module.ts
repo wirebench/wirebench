@@ -4,7 +4,7 @@
  * mode it takes the control role's pool and the Paddle webhook's secret as its factory's arguments, which `serve.ts`
  * passes through {@link withControlPool}, and refuses to register without them: neither is ever on the shared
  * `ServerContext`. It serves the billing webhook on the entry host (spec §22.5), and runs the control loop
- * (§22.15): the grace sweep, its mails and the events' retention.
+ * (§22.15): the grace sweep, its mails, the events' retention and the signups' finishing and expiry.
  */
 import { fileURLToPath } from 'node:url';
 import { WirebenchError } from '@wirebench/engine';
@@ -22,7 +22,7 @@ import type { SetTimer } from '../hooks/env.js';
 import { sendAlertMail } from '../schedules/alerts/smtp.js';
 import { EntryQueue } from '../entry/queue.js';
 import { entryHostOf } from '../tenancy/resolve.js';
-import { signupCompleter } from './signup/complete.js';
+import { signupCompleter, signupFinishStep, type SignupCompleterDeps } from './signup/complete.js';
 import { signupExpiryStep } from './signup/expiry.js';
 import { registerSignupRoutes, renderSignupMail, type SignupMailItem } from './signup/routes.js';
 
@@ -94,20 +94,21 @@ export function controlPlaneModule(options: ControlPlaneOptions = {}): ServerMod
         hooks: ctx.hooks,
         ...(options.now !== undefined ? { now: options.now } : {}),
       });
+      const completer: SignupCompleterDeps = {
+        control,
+        tenancy: ctx.tenancy,
+        lifecycle,
+        hooks: ctx.hooks,
+        license: ctx.license,
+        log: ctx.log,
+        ...(options.now !== undefined ? { now: options.now } : {}),
+      };
       const deps: ApplyDeps = {
         control,
         tenancy: ctx.tenancy,
         lifecycle,
         log: ctx.log,
-        completeSignup: signupCompleter({
-          control,
-          tenancy: ctx.tenancy,
-          lifecycle,
-          hooks: ctx.hooks,
-          license: ctx.license,
-          log: ctx.log,
-          ...(options.now !== undefined ? { now: options.now } : {}),
-        }),
+        completeSignup: signupCompleter(completer),
       };
       const apply =
         options.apply ??
@@ -172,7 +173,7 @@ export function controlPlaneModule(options: ControlPlaneOptions = {}): ServerMod
           }),
         );
       }
-      steps.push(billingEventsRetentionStep(), signupExpiryStep());
+      steps.push(billingEventsRetentionStep(), signupFinishStep(completer), signupExpiryStep());
       const loop = new ControlLoop({
         control,
         steps,

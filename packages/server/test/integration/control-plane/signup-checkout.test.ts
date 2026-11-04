@@ -115,6 +115,11 @@ describeDb('the signup password and checkout steps (spec §22.6)', () => {
   it('shows one page for an unknown, a malformed, an expired and a used link', async () => {
     const used = await signup();
     expect((await postPassword(used.token, PASSWORD)).statusCode).toBe(200);
+    // Used up: the webhook completed it.
+    await h.db.owner.query(
+      `update signups set status = 'completed', tenant_id = gen_random_uuid(), password_hash = null where slug = $1`,
+      [used.slug],
+    );
     const late = await signup();
     now = new Date(now.getTime() + 24 * 3_600_000 + 1);
     const pages = [
@@ -227,5 +232,36 @@ describeDb('the signup password and checkout steps (spec §22.6)', () => {
     const { token } = await signup();
     now = new Date(now.getTime() + 24 * 3_600_000 + 1);
     expect(await status(token)).toEqual({ status: 'expired' });
+  });
+
+  it('renders the checkout again, with a fresh nonce, for a verified link, and the expired page once completed', async () => {
+    const { token, slug } = await signup(5);
+    const nonceOf = (csp: unknown) => /'nonce-([A-Za-z0-9+/=]+)'/.exec(String(csp))![1]!;
+    const first = await postPassword(token, PASSWORD);
+    const reload = await get(`/signup/${token}`);
+    expect(reload.statusCode).toBe(200);
+    expect(reload.body).toContain(
+      `<script src="${PADDLE_JS}" nonce="${nonceOf(reload.headers['content-security-policy'])}">`,
+    );
+    expect(reload.body).toContain('data-seats="5"');
+    expect(reload.body).toContain(`data-status="/signup/${token}/status"`);
+    expect(reload.headers['cache-control']).toBe('no-store');
+    const again = await get(`/signup/${token}`);
+    const nonces = [first, reload, again].map((res) => nonceOf(res.headers['content-security-policy']));
+    expect(new Set(nonces).size).toBe(3);
+    // Past the link's expiry it may still be paid for, so the checkout still opens; past the grace, it does not.
+    now = new Date(now.getTime() + 25 * 3_600_000);
+    expect((await get(`/signup/${token}`)).body).toContain(PADDLE_JS);
+    now = new Date(now.getTime() + 8 * 24 * 3_600_000);
+    expect((await get(`/signup/${token}`)).statusCode).toBe(404);
+    now = new Date(now.getTime() - 8 * 24 * 3_600_000);
+    await h.db.owner.query(
+      `update signups set status = 'completed', tenant_id = gen_random_uuid(), password_hash = null where slug = $1`,
+      [slug],
+    );
+    const done = await get(`/signup/${token}`);
+    expect(done.statusCode).toBe(404);
+    expect(done.body).toContain('This link has expired');
+    expect(done.body).not.toContain(PADDLE_JS);
   });
 });

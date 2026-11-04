@@ -11,6 +11,9 @@
  * sent, through a queue, so the time to answer does not say whether a mail went out. The answer is the same whether
  * or not the address already has teams: the form never looks.
  *
+ * A client address also creates at most {@link CREATED_PER_CLIENT} signups a day, charged only by an insert, so one
+ * address cannot hold many slugs with pending signups; over it, the same "Check your inbox" and nothing inserted.
+ *
  * The rate limits are in-process token buckets, as the entry's (identity's `RateLimiter`): the shared limiter's
  * buckets live in a tenant's table (§20.7), and a signup has no tenant; charging the default tenant's would need its
  * scope, which guard 2 (§19.8) keeps from every module. The email's bucket is keyed by a keyed hash, so the map
@@ -120,6 +123,12 @@ export function signupStatus(row: SignupRow | undefined, now: Date, appDomain: s
   return until > now.getTime() ? { status: 'pending' } : { status: 'expired' };
 }
 
+/**
+ * The signups one client address may create a day: each holds its slug for a day, so this bounds how many slugs one
+ * address can squat. Charged only when a row is inserted, never by a refusal, which the per-minute limit covers.
+ */
+export const CREATED_PER_CLIENT = { capacity: 10, refillPerMs: 10 / (24 * 60 * 60 * 1000) } as const;
+
 /** A link's token as `newSignupToken` makes it: 43 base64url characters. Anything else is unknown at once. */
 const TOKEN = /^[A-Za-z0-9_-]{43}$/;
 
@@ -155,6 +164,7 @@ export function registerSignupRoutes(app: FastifyInstance, options: SignupRoutes
   const clock = { now: () => now().getTime() };
   const clients = new RateLimiter({ ...PER_CLIENT, ...clock });
   const addresses = new RateLimiter({ ...PER_ADDRESS, ...clock });
+  const created = new RateLimiter({ ...CREATED_PER_CLIENT, ...clock });
   // A key that lives as long as the process, so the per-address buckets never hold an address in the clear.
   const bucketKey = randomBytes(32);
 
@@ -198,9 +208,31 @@ export function registerSignupRoutes(app: FastifyInstance, options: SignupRoutes
       }),
     );
 
+  /** The checkout step (spec §22.6, step 3), under its own policy with a fresh nonce each time it is rendered. */
+  const checkoutStep = (reply: FastifyReply, token: string, row: SignupRow): FastifyReply => {
+    const nonce = randomBytes(16).toString('base64');
+    return html(
+      reply,
+      renderCheckoutStep({
+        ...summaryOf(row),
+        nonce,
+        environment: options.paddle.environment,
+        clientToken: options.paddle.clientToken,
+        priceId: options.paddle.priceId,
+        signupId: row.id,
+        statusPath: `${SIGNUP_PATH}/${token}/status`,
+      }),
+    ).header('content-security-policy', checkoutCsp(options.paddle.environment, nonce));
+  };
+
   app.get<{ Params: { token: string } }>(`${SIGNUP_PATH}/:token`, ENTRY_ROUTE, async (request, reply) => {
     const { token } = request.params;
     const row = await lookup(token);
+    // A verified signup that may still be paid for (the status poll's `pending`): a reload or a closed tab reaches
+    // its checkout again. A completed or expired one keeps the expired page.
+    if (row?.status === 'verified' && signupStatus(row, now(), options.appDomain).status === 'pending') {
+      return checkoutStep(reply, token, row);
+    }
     if (!passwordStepOpen(row, now())) return expired(reply);
     return passwordStep(reply, token, row);
   });
@@ -243,6 +275,8 @@ export function registerSignupRoutes(app: FastifyInstance, options: SignupRoutes
       const state = await options.control.transaction(async (tx) => {
         const found = await slugState(tx, slug);
         if (found !== 'ok') return found;
+        // Taken here, just before the insert: only a signup that is made spends the day's cap.
+        if (!created.take(`ip:${request.ip}`).allowed) return 'capped' as const;
         await insertSignup(tx, {
           emailLower: email,
           name,
@@ -253,6 +287,7 @@ export function registerSignupRoutes(app: FastifyInstance, options: SignupRoutes
         });
         return 'ok' as const;
       });
+      if (state === 'capped') return html(reply, renderSignupSent());
       if (state !== 'ok') return form(reply, values, REFUSALS[state]);
       options.queue.push({ to: email, link: `${origin}${SIGNUP_PATH}/${token}` });
       return html(reply, renderSignupSent());
@@ -280,19 +315,7 @@ export function registerSignupRoutes(app: FastifyInstance, options: SignupRoutes
         const verified = await verifySignup(options.control, token, await hashPassword(password), now());
         // Another post of the same link won the race: the step is single-use.
         if (verified === undefined) return expired(reply);
-        const nonce = randomBytes(16).toString('base64');
-        return html(
-          reply,
-          renderCheckoutStep({
-            ...summaryOf(verified),
-            nonce,
-            environment: options.paddle.environment,
-            clientToken: options.paddle.clientToken,
-            priceId: options.paddle.priceId,
-            signupId: verified.id,
-            statusPath: `${SIGNUP_PATH}/${token}/status`,
-          }),
-        ).header('content-security-policy', checkoutCsp(options.paddle.environment, nonce));
+        return checkoutStep(reply, token, verified);
       },
     );
     registered();

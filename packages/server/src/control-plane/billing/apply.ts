@@ -308,10 +308,19 @@ async function writeSubscription(
   await deps.tenancy.db(scope).transaction((tx) => upsertSubscription(tx, event, pastDueSince));
 }
 
-/** The tenant's subscription row as `event` says, in the tenant's unit `tx`: a value set, so writing twice is once. */
+/** What a tenant's subscription row is written from: an event's, or what a signup's first half recorded of one. */
+export type SubscriptionValues = Pick<
+  SubscriptionEvent,
+  'provider' | 'ref' | 'customerRef' | 'status' | 'seats' | 'periodEnd' | 'occurredAt'
+>;
+
+/**
+ * The tenant's subscription row as `event` says, in the tenant's unit `tx`: a value set, so writing twice is once,
+ * and never over a newer event's row (a signup's second half run late by the control loop).
+ */
 export async function upsertSubscription(
   tx: TenantQuerier,
-  event: SubscriptionEvent,
+  event: SubscriptionValues,
   pastDueSince: Date | null,
 ): Promise<void> {
   await tx.query(
@@ -321,7 +330,8 @@ export async function upsertSubscription(
        on conflict (tenant_id) do update set provider = excluded.provider, provider_ref = excluded.provider_ref,
          customer_ref = excluded.customer_ref, plan = excluded.plan, seats = excluded.seats, status = excluded.status,
          current_period_end = excluded.current_period_end, past_due_since = excluded.past_due_since,
-         last_event_at = excluded.last_event_at`,
+         last_event_at = excluded.last_event_at
+       where subscriptions.last_event_at <= excluded.last_event_at`,
     [
       event.provider,
       event.ref,

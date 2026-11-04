@@ -2855,6 +2855,18 @@ Routes on the entry host, server-rendered in the entry page's style, no cookie a
 - An expired signup is deleted by the sweep, and its slug is free again. A signup that paid but whose token expired
   before the webhook arrived is still completed: the webhook, not the token, completes it.
 - The verification mail and every page are plain text or escaped HTML; the team name is never markup.
+- The signup's rate limits are in-process per instance: a signup has no tenant, and the shared limiter is
+  tenant-scoped, so across N instances the capacity is N times the figures above. On top of them, one client address
+  creates at most 10 signups a day, charged only when a row is inserted, so pending signups cannot squat many slugs;
+  over it the answer is the same "Check your inbox" and nothing is inserted.
+- While a signup is `verified` and may still be paid for, `GET /signup/<token>` renders the checkout step again
+  (a fresh nonce), so a reload or a closed tab reaches it; a completed or expired one shows the expired page.
+- The first half of step 4 records the event's subscription on the signup it binds (`0025`). A second `created` for
+  a bound signup naming another subscription is refused `billing-ref-conflict` (logged by signup and tenant id, for
+  a refund); the same one is a retry. A bound signup still holding its hash 10 minutes on is finished by the control
+  loop (§22.15) from what was recorded, should Paddle stop retrying.
+- Paddle documents no CSP list: the checkout's frame and connect origins must be checked in the sandbox (Part H's
+  manual test).
 
 ### 22.7 Suspension (amends §3.6 and §19.5)
 
@@ -3039,7 +3051,8 @@ Routes on the entry host, server-rendered in the entry page's style, no cookie a
 
 - One loop per instance every 60 s, each pass under `pg_try_advisory_xact_lock(CONTROL_LOOP_CLASS,
   hashtext(SERVER_SCHEMA))` so one instance runs it at a time: the grace sweep and its mails, due deletions, queued
-  exports (one at a time), expired exports, expired signups, ended redirects, and `billing_events` older than 90 days.
+  exports (one at a time), expired exports, bound signups left unfinished (§22.6), expired signups, ended redirects,
+  and `billing_events` older than 90 days.
 - A step's failure is logged with the step and the tenant id, and does not stop the others.
 
 ### 22.16 Security

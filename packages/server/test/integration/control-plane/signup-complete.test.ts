@@ -7,7 +7,7 @@
  */
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { afterAll, beforeAll, beforeEach, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, expect, it, vi } from 'vitest';
 import { auditLogModule } from '../../../src/audit-log/module.js';
 import type { ServerConfig } from '../../../src/config.js';
 import { paddleSignature } from '../../../src/control-plane/billing/signature.js';
@@ -15,7 +15,9 @@ import { openControlDb } from '../../../src/control-plane/control-db.js';
 import { ControlLoop } from '../../../src/control-plane/loop.js';
 import type { ControlMail } from '../../../src/control-plane/mail.js';
 import { controlPlaneModule } from '../../../src/control-plane/module.js';
+import { signupFinishStep } from '../../../src/control-plane/signup/complete.js';
 import { signupExpiryStep } from '../../../src/control-plane/signup/expiry.js';
+import { TenantLifecycle } from '../../../src/control-plane/tenants.js';
 import type { EntryQueue } from '../../../src/entry/queue.js';
 import { TenantAdmin } from '../../../src/tenancy/directory.js';
 import type { TenantResolver } from '../../../src/tenancy/resolve.js';
@@ -90,6 +92,9 @@ describeDb('signup to first sign-in (spec §22.6, §13 criterion 5)', () => {
   const control = () => (reader ??= openControlDb(h.db.controlUrl));
   beforeEach(() => {
     now = new Date(now.getTime() + 24 * 3_600_000);
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   interface Signup {
@@ -257,6 +262,159 @@ describeDb('signup to first sign-in (spec §22.6, §13 criterion 5)', () => {
     expect(
       (await h.db.owner.query('select tenant_id from signups where id = $1 and tenant_id is null', [s.id])).rows,
     ).toHaveLength(1);
+  });
+
+  /** The seat check, made to throw once: the tenant's transaction (the completion's second half) fails. */
+  const failTenantTransactionOnce = () =>
+    vi
+      .spyOn(h.ctx.license, 'assertSeatAvailable')
+      .mockRejectedValueOnce(Object.assign(new Error('injected'), { code: 'injected-seat-check' }));
+  const signupRow = async (id: string) =>
+    (
+      await h.db.owner.query<{ status: string; tenant_id: string | null; has_hash: boolean }>(
+        'select status, tenant_id::text, password_hash is not null as has_hash from signups where id = $1',
+        [id],
+      )
+    ).rows[0];
+  const usersOf = async (tenantId: string) =>
+    (
+      await control().query<{ email: string; server_admin: boolean }>(
+        'select email, server_admin from users where tenant_id = $1',
+        [tenantId],
+      )
+    ).rows;
+  const subscriptionsOf = async (tenantId: string) =>
+    (
+      await control().query<{ provider_ref: string; seats: number; status: string }>(
+        'select provider_ref, seats, status from subscriptions where tenant_id = $1',
+        [tenantId],
+      )
+    ).rows;
+
+  it('answers 5xx when the tenant transaction fails, keeps the signup bound with its hash, and a redelivery finishes it', async () => {
+    const s = await signup();
+    failTenantTransactionOnce();
+    const failed = await paid(s.id, 'evt_test_signup_7', 'sub_test_signup_7');
+    expect(failed.statusCode).toBeGreaterThanOrEqual(500);
+    expect(await outcome('evt_test_signup_7')).toBeUndefined();
+    const [tenant, ...others] = await tenantsWith(s.slug);
+    expect(others).toEqual([]);
+    expect(await signupRow(s.id)).toEqual({ status: 'verified', tenant_id: tenant!.id, has_hash: true });
+    expect(await usersOf(tenant!.id)).toEqual([]);
+
+    const again = await paid(s.id, 'evt_test_signup_7', 'sub_test_signup_7');
+    expect(again.statusCode).toBe(200);
+    expect(await outcome('evt_test_signup_7')).toBe('applied');
+    expect(await tenantsWith(s.slug)).toHaveLength(1);
+    expect(await usersOf(tenant!.id)).toEqual([{ email: s.email.toLowerCase(), server_admin: true }]);
+    expect(await subscriptionsOf(tenant!.id)).toEqual([
+      { provider_ref: 'sub_test_signup_7', seats: 5, status: 'active' },
+    ]);
+    expect(await signupRow(s.id)).toEqual({ status: 'completed', tenant_id: tenant!.id, has_hash: false });
+  });
+
+  it('answers 5xx when the tenant transaction committed but the control update failed, and a redelivery finishes it', async () => {
+    const s = await signup();
+    // The signup's `completed` update refused once, by a trigger on this one row.
+    await h.db.owner.query(`create or replace function fail_signup_complete() returns trigger language plpgsql as $$
+      begin
+        if new.status = 'completed' and old.id = '${s.id}'::uuid then raise exception 'injected'; end if;
+        return new;
+      end $$`);
+    await h.db.owner.query(
+      'create trigger fail_signup_complete before update on signups for each row execute function fail_signup_complete()',
+    );
+    try {
+      const failed = await paid(s.id, 'evt_test_signup_8', 'sub_test_signup_8');
+      expect(failed.statusCode).toBeGreaterThanOrEqual(500);
+    } finally {
+      await h.db.owner.query('drop trigger fail_signup_complete on signups');
+      await h.db.owner.query('drop function fail_signup_complete()');
+    }
+    expect(await outcome('evt_test_signup_8')).toBeUndefined();
+    const [tenant] = await tenantsWith(s.slug);
+    expect(await usersOf(tenant!.id)).toHaveLength(1);
+    expect(await signupRow(s.id)).toEqual({ status: 'verified', tenant_id: tenant!.id, has_hash: true });
+
+    expect((await paid(s.id, 'evt_test_signup_8', 'sub_test_signup_8')).statusCode).toBe(200);
+    expect(await outcome('evt_test_signup_8')).toBe('applied');
+    expect(await tenantsWith(s.slug)).toHaveLength(1);
+    expect(await usersOf(tenant!.id)).toHaveLength(1);
+    expect(await subscriptionsOf(tenant!.id)).toHaveLength(1);
+    expect(await signupRow(s.id)).toEqual({ status: 'completed', tenant_id: tenant!.id, has_hash: false });
+  });
+
+  it('refuses a second created with another ref for a bound, unfinished signup, and the first one still finishes', async () => {
+    const s = await signup();
+    failTenantTransactionOnce();
+    expect((await paid(s.id, 'evt_test_signup_9', 'sub_test_signup_9')).statusCode).toBeGreaterThanOrEqual(500);
+    const warn = vi.spyOn(h.app.log, 'warn');
+    expect((await paid(s.id, 'evt_test_signup_9b', 'sub_test_signup_9b')).statusCode).toBe(200);
+    expect(await outcome('evt_test_signup_9b')).toBe('billing-ref-conflict');
+    const [tenant, ...others] = await tenantsWith(s.slug);
+    expect(others).toEqual([]);
+    // Logged by the signup and its tenant, for the operator's refund.
+    expect(warn).toHaveBeenCalledWith(
+      expect.objectContaining({ reason: 'billing-ref-conflict', signupId: s.id, tenantId: tenant!.id }),
+      expect.any(String),
+    );
+    expect(await subscriptionsOf(tenant!.id)).toEqual([]);
+    expect(await signupRow(s.id)).toMatchObject({ status: 'verified', has_hash: true });
+
+    // The first one's retry, same ref, finishes it.
+    expect((await paid(s.id, 'evt_test_signup_9', 'sub_test_signup_9')).statusCode).toBe(200);
+    expect(await outcome('evt_test_signup_9')).toBe('applied');
+    expect(await tenantsWith(s.slug)).toHaveLength(1);
+    expect(await usersOf(tenant!.id)).toHaveLength(1);
+    expect(await subscriptionsOf(tenant!.id)).toEqual([
+      { provider_ref: 'sub_test_signup_9', seats: 5, status: 'active' },
+    ]);
+  });
+
+  it("the control loop's step finishes a bound signup Paddle stopped retrying, once it is 10 minutes old", async () => {
+    const s = await signup();
+    failTenantTransactionOnce();
+    expect((await paid(s.id, 'evt_test_signup_10', 'sub_test_signup_10')).statusCode).toBeGreaterThanOrEqual(500);
+    const [tenant] = await tenantsWith(s.slug);
+    const loopControl = openControlDb(h.db.controlUrl);
+    try {
+      const lifecycle = new TenantLifecycle({ control: loopControl, tenancy: h.ctx.tenancy, hooks: h.ctx.hooks });
+      const step = signupFinishStep({
+        control: loopControl,
+        tenancy: h.ctx.tenancy,
+        lifecycle,
+        hooks: h.ctx.hooks,
+        license: h.ctx.license,
+        log: h.app.log,
+      });
+      const pass = (at: Date) =>
+        new ControlLoop({ control: loopControl, steps: [step], log: h.app.log, now: () => at }).pass();
+      expect(await pass(new Date(now.getTime() + 5 * 60_000))).toBe(true);
+      expect(await signupRow(s.id)).toMatchObject({ status: 'verified', has_hash: true });
+      expect(await usersOf(tenant!.id)).toEqual([]);
+
+      await pass(new Date(now.getTime() + 11 * 60_000));
+      expect(await signupRow(s.id)).toEqual({ status: 'completed', tenant_id: tenant!.id, has_hash: false });
+      expect(await usersOf(tenant!.id)).toEqual([{ email: s.email.toLowerCase(), server_admin: true }]);
+      expect(await subscriptionsOf(tenant!.id)).toEqual([
+        { provider_ref: 'sub_test_signup_10', seats: 5, status: 'active' },
+      ]);
+      const audit = await control().query<{ action: string }>(
+        'select action from audit_events where tenant_id = $1 order by action',
+        [tenant!.id],
+      );
+      expect(audit.rows.map((r) => r.action)).toEqual(['tenant.created', 'user.created']);
+
+      // Idempotent: another pass changes nothing.
+      await pass(new Date(now.getTime() + 20 * 60_000));
+      expect(await usersOf(tenant!.id)).toHaveLength(1);
+      expect(await subscriptionsOf(tenant!.id)).toHaveLength(1);
+    } finally {
+      await loopControl.close();
+    }
+    // A late redelivery finds the signup completed.
+    expect((await paid(s.id, 'evt_test_signup_10', 'sub_test_signup_10')).statusCode).toBe(200);
+    expect(await usersOf(tenant!.id)).toHaveLength(1);
   });
 
   it("the control loop's step removes pending signups at expiry and verified ones a week later, freeing the slug", async () => {
