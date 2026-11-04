@@ -26,11 +26,20 @@ import {
 
 export const APP_DOMAIN = 'example.test';
 
+/** The Paddle settings hosted mode needs (spec §22.5): placeholders, never a real key. */
+export const PADDLE_TEST_SETTINGS = {
+  paddleEnvironment: 'sandbox',
+  paddleClientToken: 'test_placeholdertoken',
+  paddleTeamPriceId: 'pri_test_team',
+  paddleWebhookSecret: 'pdl_ntfset_test_placeholder_webhook_secret',
+} as const;
+
 export const hosted = (config: ServerConfig): ServerConfig => ({
   ...config,
   mode: 'hosted',
   appDomain: APP_DOMAIN,
   siteDomain: 'site.test',
+  ...PADDLE_TEST_SETTINGS,
 });
 
 export type Method = 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
