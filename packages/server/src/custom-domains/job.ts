@@ -13,8 +13,11 @@
  *    `verified` (a name another tenant holds keeps the claim where it was, `held-elsewhere`), release it on the way to
  *    `lapsed`, `paused` or `expired`, and write the result. The claim is matched by its token, so a claim removed and
  *    made again meanwhile is left alone.
- * 4. A `verified` name gets the certificate probe, when one is given (Part C): a pass marks the name live and the
- *    claim `active`. Without a probe the claim waits in `verified`.
+ * 4. A `verified` name gets the certificate probe (`probe.ts`), when one is given: right after the check
+ *    that verified it, then every {@link PROBE_EVERY_MS} between DNS checks, since Traefik issues within minutes of
+ *    the router appearing and the next DNS check is hours away. A pass marks the name live and the claim `active`.
+ *    Without a probe the claim waits in `verified`. The probe never touches `checked_at`, which stays the DNS
+ *    check's time; `last_result.probedAt` is the probe's.
  * 5. After the units, mail the tenant's server admins about `active`, `failing` and `lapsed`, when SMTP is set.
  *
  * Each change is an audit event in the tenant's chain, through the audit-log module's hook. Neither an event, a log
@@ -47,6 +50,11 @@ export const CUSTOM_DOMAINS_FEATURE = 'custom-domains';
 /** How often a pending claim is checked, and how often any other (spec §23.2). */
 export const PENDING_EVERY_MS = 60 * 60_000;
 export const HELD_EVERY_MS = 6 * 60 * 60_000;
+/**
+ * How often a `verified` name is probed between its DNS checks (spec §23.4). The job's timer (Task 7) must run at
+ * least this often for the cadence to hold.
+ */
+export const PROBE_EVERY_MS = 2 * 60_000;
 
 /** The certificate probe's verdict for one name (Part C, spec §23.4). */
 export interface ProbeResult {
@@ -82,6 +90,14 @@ export function isDue(claim: Pick<Claim, 'state' | 'checkedAt'>, now: Date): boo
   if (claim.checkedAt === null) return true;
   const every = claim.state === 'pending' ? PENDING_EVERY_MS : HELD_EVERY_MS;
   return now.getTime() - claim.checkedAt.getTime() >= every;
+}
+
+/** Whether `claim` is due a probe-only pass at `now`: `verified`, and not probed for {@link PROBE_EVERY_MS}. */
+export function isProbeDue(claim: Pick<Claim, 'state' | 'lastResult'>, now: Date): boolean {
+  if (claim.state !== 'verified') return false;
+  const probedAt = claim.lastResult?.probedAt;
+  if (probedAt === undefined) return true;
+  return now.getTime() - Date.parse(probedAt) >= PROBE_EVERY_MS;
 }
 
 const AUDIT_ACTION = {
@@ -136,7 +152,14 @@ async function checkClaim(deps: CheckDeps, scope: TenantScope, seen: Claim, forc
     }));
     return moved?.claim ?? seen;
   }
-  if (seen.state === 'expired' || (!force && !isDue(seen, now))) return seen;
+  if (seen.state === 'expired') return seen;
+  if (!force && !isDue(seen, now)) {
+    // Between DNS checks, a verified name is only probed, on its own faster cadence.
+    if (deps.probe === undefined || !isProbeDue(seen, now)) return seen;
+    const probed = await probeName(deps, scope, seen, now);
+    await sendNotices(deps, scope, [probed?.notice], seen.name);
+    return probed?.claim ?? seen;
+  }
 
   const records = await verifyRecords(deps.lookup, seen.name, seen.token, deps.appDomain);
   const passed = records.cname === 'ok' && records.txt === 'ok';
@@ -206,7 +229,12 @@ async function probeName(deps: CheckDeps, scope: TenantScope, claim: Claim, now:
     const current = await getClaim(tx, { forUpdate: true });
     if (current === undefined || current.token !== claim.token || current.state !== 'verified') return undefined;
     const base = current.lastResult ?? { cname: 'ok', txt: 'ok', message: '' };
-    const lastResult: LastResult = { ...base, certificate: probed.verdict, message: probed.message };
+    const lastResult: LastResult = {
+      ...base,
+      certificate: probed.verdict,
+      probedAt: now.toISOString(),
+      message: probed.message,
+    };
     const live = probed.verdict === 'ok' && (await setLive(tx, current.name, true));
     const to: DomainState = live ? 'active' : 'verified';
     const written = await record(tx, current.token, {

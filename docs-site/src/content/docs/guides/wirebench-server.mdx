@@ -161,6 +161,10 @@ with the variable's name and the rule it broke, never the value.
 | `WIREBENCH_SERVER_PADDLE_CLIENT_TOKEN` | no | — | Hosted mode only, and required there: the checkout’s client-side token, public by design; `test_…` with the sandbox, `live_…` in production. Refused on a self-hosted server. |
 | `WIREBENCH_SERVER_PADDLE_TEAM_PRICE_ID` | no | — | Hosted mode only, and required there: the Team seat price (`pri_…`). A subscription’s seats are its quantity of this price. Refused on a self-hosted server. |
 | `WIREBENCH_SERVER_PADDLE_WEBHOOK_SECRET` | no | — | Hosted mode only, and required there: the secret key of the Paddle notification destination that posts to `https://app.<app-domain>/billing/paddle`, which every webhook’s signature is checked with. `WIREBENCH_SERVER_PADDLE_WEBHOOK_SECRET_FILE` may name a file holding it instead. Refused on a self-hosted server. Never logged. |
+| `WIREBENCH_SERVER_PROXY_LISTEN` | no | — | Hosted mode only: `host:port` of a second, internal listener that tells the proxy which custom domains to route and get certificates for (`GET /proxy/traefik`, and `/healthz`). Never publish it. Unset, no such listener. Unused on a self-hosted server. |
+| `WIREBENCH_SERVER_PROXY_TOKEN_FILE` | no | — | A file holding the bearer token every request to the proxy listener must carry; required when WIREBENCH_SERVER_PROXY_LISTEN is set. Read at start-up, never logged. |
+| `WIREBENCH_SERVER_PROXY_TLS_ADDRESS` | no | — | Hosted mode only: `host:port` where the proxy terminates TLS (`traefik:443` in the recipe). A verified custom domain becomes active once a certificate for it, trusted and covering the name, answers there. Unset, a verified domain waits. Unused on a self-hosted server. |
+| `WIREBENCH_SERVER_PROXY_TLS_CA_FILE` | no | — | A PEM bundle that replaces the system roots for that check: for a test CA only, never in production. |
 {/* config:end */}
 {/* prettier-ignore-end */}
 

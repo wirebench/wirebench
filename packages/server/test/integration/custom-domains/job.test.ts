@@ -12,6 +12,7 @@ import {
   checkTenant,
   HELD_EVERY_MS,
   PENDING_EVERY_MS,
+  PROBE_EVERY_MS,
   type CheckDeps,
   type ProbeResult,
 } from '../../../src/custom-domains/job.js';
@@ -240,6 +241,50 @@ describeDb('the custom-name check job (hosted spec §23.2)', () => {
       'custom_domain.verified',
       'custom_domain.activated',
     ]);
+  });
+
+  it('probes a verified name every 2 minutes between its DNS checks, and activates it within one of issuance', async () => {
+    const made = await claimA();
+    dns.prove(NAME, made.token);
+    let answer: ProbeResult = { verdict: 'wrong', message: 'Not trusted yet.' };
+    let probes = 0;
+    probe = () => {
+      probes++;
+      return Promise.resolve(answer);
+    };
+    await pass();
+    expect(probes).toBe(1);
+    expect(await claimOf(a)).toMatchObject({
+      state: 'verified',
+      checkedAt: START,
+      lastResult: { certificate: 'wrong' },
+    });
+    const asked = dns.asked;
+    advance(PROBE_EVERY_MS - 1);
+    await pass();
+    expect(probes).toBe(1);
+    advance(1);
+    await pass();
+    expect(probes).toBe(2);
+    // A probe alone: DNS is not asked, and the DNS check's time stays.
+    expect(dns.asked).toBe(asked);
+    expect(await claimOf(a)).toMatchObject({
+      state: 'verified',
+      checkedAt: START,
+      lastResult: { cname: 'ok', txt: 'ok', certificate: 'wrong', probedAt: clock.toISOString() },
+    });
+    answer = { verdict: 'ok', message: 'The certificate for this name is live.' };
+    advance(PROBE_EVERY_MS);
+    await pass();
+    expect(await claimOf(a)).toMatchObject({ state: 'active', checkedAt: START, activeAt: clock });
+    expect(await hosts()).toEqual([{ host: NAME, tenant_id: scopeA.tenantId, live: true }]);
+    expect(sent.map((mail) => mail.email.subject)).toEqual([expect.stringContaining(NAME)]);
+    // An active name is not probed on that cadence; its DNS check every 6 hours stands.
+    advance(PROBE_EVERY_MS);
+    await pass();
+    expect(probes).toBe(3);
+    expect(dns.asked).toBe(asked);
+    expect(PROBE_EVERY_MS).toBe(2 * 60_000);
   });
 
   it('keeps a verified name waiting while the probe fails, and without a probe', async () => {
