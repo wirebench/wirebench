@@ -5,7 +5,9 @@
  *
  * Per tenant:
  *
- * 1. In the loop's unit, read the claim. Nothing network-bound runs inside a unit, so the rest runs after it.
+ * 1. In the loop's unit, read the claim, and skip a tenant that serves nothing now (suspended or deleting): its claim
+ *    keeps its state and clocks, and it keeps its name. Nothing network-bound runs inside a unit, so the rest runs
+ *    after it.
  * 2. Read the tenant's features. Without `custom-domains`, the claim is `paused` and its name released at once,
  *    whether or not a check is due.
  * 3. When a check is due (hourly while `pending`, every 6 hours otherwise, never once `expired`), ask DNS
@@ -75,6 +77,11 @@ export interface CheckDeps {
   readonly hooks: ServerHooks;
   /** The features the tenant's license grants, read through its scope (slice 7's per-tenant state plugs in here). */
   readonly features: (scope: TenantScope) => Promise<readonly string[]>;
+  /**
+   * Whether the unit's tenant serves nothing now, suspended or deleting (slice 7's `tenantStopped`). Its claim is left
+   * exactly as it is: no DNS, no move, no mail. A suspended tenant keeps its name (spec §23.2).
+   */
+  readonly stopped: (tx: TenantQuerier) => Promise<boolean>;
   /** The certificate probe; without one a verified name stays `verified`. */
   readonly probe?: CertificateProbe;
   /** The mail sender; without one nothing is mailed. */
@@ -129,7 +136,7 @@ export async function checkPass(deps: CheckDeps): Promise<JobPass> {
     CHECK_JOB,
     async (tx, scope) => {
       const seen = await getClaim(tx);
-      if (seen === undefined || seen.state === 'expired') return;
+      if (seen === undefined || seen.state === 'expired' || (await deps.stopped(tx))) return;
       return { afterUnit: () => checkClaim(deps, scope, seen, false).then(() => undefined) };
     },
     deps.log,
@@ -141,9 +148,13 @@ export async function checkPass(deps: CheckDeps): Promise<JobPass> {
  * afterwards, or undefined when there is none.
  */
 export async function checkTenant(deps: CheckDeps, scope: TenantScope): Promise<Claim | undefined> {
-  const seen = await deps.tenancy.db(scope).transaction((tx) => getClaim(tx));
-  if (seen === undefined) return undefined;
-  return checkClaim(deps, scope, seen, true);
+  const read = await deps.tenancy
+    .db(scope)
+    .transaction(async (tx) => ({ seen: await getClaim(tx), stopped: await deps.stopped(tx) }));
+  if (read.seen === undefined) return undefined;
+  // A stopped tenant's claim is answered as it is: nothing is checked until it runs again.
+  if (read.stopped) return read.seen;
+  return checkClaim(deps, scope, read.seen, true);
 }
 
 async function checkClaim(deps: CheckDeps, scope: TenantScope, seen: Claim, force: boolean): Promise<Claim> {

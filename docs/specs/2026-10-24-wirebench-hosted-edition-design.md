@@ -3164,9 +3164,12 @@ Owner rulings (2026-11-04, popup):
   A pass from `lapsed` or `paused` goes back through `verified`, since both released the name, so an attacker who
   takes over a lapsed name has to prove it again. A pass from `failing` returns the name to `active` while it is
   still live: it never released the name, so it needs no fresh proof and is never taken offline. A name that failed
-  before it went live goes to `verified` and waits for its certificate. `paused` is set by the check job, which reads the feature through the tenant's scope.
-  A suspended tenant keeps its name. The resolver drops every host of a tenant that is not `active` in
-  `tenants.status` (§19.5), so a suspension takes effect at the next map reload, and resuming needs no new check.
+  before it went live goes to `verified` and waits for its certificate. `paused` is set by the check job, which reads
+  the feature through the tenant's scope.
+  A suspended tenant keeps its name. The check job leaves a stopped tenant (suspended or deleting) alone: no DNS
+  check, no move and no mail, so a failing name does not age toward `lapsed` while its tenant is suspended. Its
+  custom host stays on the map on the slug's entry, so it answers as the slug does (§22.7, §23.5), and resuming needs
+  no new check.
 - **Mail.** The tenant's server admins get one plain-text mail, through the tenant's SMTP sender (slice 7), when a
   name becomes `active`, `failing` or `lapsed`. Nothing is mailed without SMTP. Each change is an audit event in the
   tenant's chain: `custom-domain.claimed|verified|activated|failing|lapsed|paused|removed`. The token never appears in

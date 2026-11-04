@@ -145,7 +145,8 @@ export class TenantDirectory {
   /**
    * The tenants a hosted `Host` names (spec §19.5, §22.7): active and suspended, with the status and the reason, and
    * never the default tenant, whose slug no name matches. A deleting tenant is not here, so it answers `404`. A
-   * suspended row without a reason (written before `0023` named one) counts as the operator's.
+   * suspended row without a reason (written before `0023` named one) counts as the operator's. Each scope carries the
+   * tenant's live custom name (spec §23.5), which the map keys on the same entry as the slug.
    */
   async hosted(): Promise<HostedTenant[]> {
     const rows = await this.#db.query<{
@@ -153,8 +154,9 @@ export class TenantDirectory {
       slug: string;
       status: 'active' | 'suspended';
       reason: SuspendedReason | null;
+      customHost: string | null;
     }>(
-      `select t.id::text as id, t.slug, t.status, t.suspended_reason as reason from tenants t
+      `select t.id::text as id, t.slug, t.status, t.suspended_reason as reason, ${await this.#customHost()} from tenants t
        where t.status in ('active', 'suspended') and t.id is distinct from (select default_tenant_id from server_identity)`,
     );
     return rows.rows.map((row) =>
