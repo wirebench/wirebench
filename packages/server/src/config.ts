@@ -219,13 +219,19 @@ const inputSchema = z.object({
   hostIdleMinutes: integerText(1, 1440, '30'),
   instances: z.enum(INSTANCE_MODES).default('single'),
   instanceUrl: instanceUrlText.optional(),
+  tenantSendsPerMinute: integerText(1, 1_000_000, '600'),
+  tenantConcurrentSends: integerText(1, 10_000, '16'),
+  // Unset, the schedules concurrency (below, in `loadConfig`): one tenant keeps every slot its server has.
+  tenantRunSlots: integerText(1, 1_000).optional(),
   appDomain: domainText.optional(),
   siteDomain: domainText.optional(),
 });
 
 type ConfigKey = keyof z.input<typeof inputSchema>;
 
-export interface ServerConfig extends z.output<typeof inputSchema> {
+export interface ServerConfig extends Omit<z.output<typeof inputSchema>, 'tenantRunSlots'> {
+  /** `WIREBENCH_SERVER_TENANT_RUN_SLOTS`, or the schedules concurrency when it is unset. */
+  readonly tenantRunSlots: number;
   /** The package version, for `/api/v1/meta` and `--version`. */
   readonly version: string;
 }
@@ -684,6 +690,33 @@ export const CONFIG_VARIABLES: readonly ConfigVariable[] = [
       'This instance’s private address, which the other instances reach it at: `http://host:port`, such as `http://10.0.0.5:8091`; the port is its internal listener’s. Required with `WIREBENCH_SERVER_INSTANCES=multi`.',
   },
   {
+    env: 'WIREBENCH_SERVER_TENANT_SENDS_PER_MINUTE',
+    key: 'tenantSendsPerMinute',
+    required: false,
+    defaultText: '600',
+    secret: false,
+    description:
+      'Requests the server sends for one tenant’s browser users per minute, every instance together (1–1000000). A burst of a sixth of it (100 at the default) may go at once; past it a send fails with `tenant-send-budget` and its retry time, while a run started in the browser pauses until the budget refills, each of its requests counting. Sends through a paired agent and scheduled runs do not count.',
+  },
+  {
+    env: 'WIREBENCH_SERVER_TENANT_CONCURRENT_SENDS',
+    key: 'tenantConcurrentSends',
+    required: false,
+    defaultText: '16',
+    secret: false,
+    description:
+      'Requests the server sends for one tenant’s browser users at once, every instance together (1–10000); a run counts as one while it lasts, a WebSocket only while it opens. Past it a send fails with `tenant-send-concurrency`.',
+  },
+  {
+    env: 'WIREBENCH_SERVER_TENANT_RUN_SLOTS',
+    key: 'tenantRunSlots',
+    required: false,
+    defaultText: 'WIREBENCH_SERVER_SCHEDULES_CONCURRENCY',
+    secret: false,
+    description:
+      'Scheduled runs one tenant runs at once, every instance together (1–1000). Unset, the schedules concurrency, so a one-tenant server runs as many as before. Its further runs wait their turn, never refused; WIREBENCH_SERVER_SCHEDULES_CONCURRENCY still caps each instance.',
+  },
+  {
     env: 'WIREBENCH_SERVER_APP_DOMAIN',
     key: 'appDomain',
     required: false,
@@ -883,6 +916,7 @@ export function loadConfig(env: NodeJS.ProcessEnv, version: string): ServerConfi
   return {
     ...config,
     publicUrl: publicUrl.origin,
+    tenantRunSlots: config.tenantRunSlots ?? config.schedulesConcurrency,
     // Absolute for every consumer: git reads a relative core.hooksPath from the worktree root, not
     // from the directory the server started in.
     dataDir: isAbsolute(config.dataDir) ? config.dataDir : resolve(config.dataDir),

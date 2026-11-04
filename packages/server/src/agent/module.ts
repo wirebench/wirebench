@@ -43,7 +43,7 @@ export function agentModule(options: AgentModuleOptions = {}): ServerModule {
       if (!ctx.config.browserClient) return;
       // loadConfig refuses the browser client without the key; checked again so the type knows it.
       if (ctx.config.secretsKey === undefined) throw new Error('the agent module needs WIREBENCH_SERVER_SECRETS_KEY');
-      await agentRoutes({ ctx, now, secretsKey: ctx.config.secretsKey })(app);
+      await agentRoutes({ ctx, now, limiterNow: options.now, secretsKey: ctx.config.secretsKey })(app);
       const interval = options.sweepIntervalMs ?? DAY_MS;
       if (interval > 0) {
         const timer = setInterval(() => {

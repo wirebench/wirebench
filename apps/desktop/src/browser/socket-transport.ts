@@ -11,7 +11,8 @@
  * frame), and is made afresh for every attempt (a new single-use nonce each time).
  *
  * A dropped socket reopens with backoff (1 s, doubling to 30 s, back to 1 s after a hello), or later when the close
- * listener asks for a longer wait (a held host lease's remaining time, spec §19.9). A reopen
+ * listener asks for a longer wait (a held host lease's remaining time, spec §19.9), or at once when it asks for that
+ * (a draining server's socket, spec §20.5). A reopen
  * re-sends nothing: a call pending at the drop, or made while the socket is down, is answered
  * `host-disconnected` as an ordinary failed `IpcResult`, so the renderer shows it as it shows any other
  * failed call. Event listeners belong to the transport, not to one socket, so they outlive reconnects.
@@ -48,9 +49,14 @@ export interface SocketTransportOptions {
   /**
    * Each time a socket closes other than by {@link SocketTransport.close}: its close code, whether a hello arrived
    * on it, and the close's reason. The next attempt is already scheduled unless the listener calls `close()`; a
-   * `retryAfterMs` it returns puts that attempt off to at least that long after the close.
+   * `retryAfterMs` it returns puts that attempt off to at least that long after the close, and `now: true` makes it
+   * at once instead, with no backoff.
    */
-  readonly onClosed?: (code: number, helloSeen: boolean, reason: string) => void | { readonly retryAfterMs?: number };
+  readonly onClosed?: (
+    code: number,
+    helloSeen: boolean,
+    reason: string,
+  ) => void | { readonly retryAfterMs?: number; readonly now?: boolean };
   /**
    * Each time opening a socket throws (a URL the page may not connect to, say). The next attempt is
    * already scheduled, on the same backoff as after a close.
@@ -200,6 +206,14 @@ export function createSocketTransport(url: string, options: SocketTransportOptio
     scheduledMs = ms;
   };
 
+  /** Makes the scheduled attempt now (on the next turn, so the close handler finishes first). */
+  const reconnectNow = (): void => {
+    if (timer === undefined || stopped) return;
+    clearTimeout(timer);
+    timer = setTimeout(connect, 0);
+    scheduledMs = 0;
+  };
+
   const connect = (): void => {
     timer = undefined;
     if (stopped) return;
@@ -259,7 +273,8 @@ export function createSocketTransport(url: string, options: SocketTransportOptio
       // Scheduled before the listener runs, so a listener that gives up can still cancel it with close().
       retry();
       const asked = options.onClosed?.(event.code, helloSeen, event.reason ?? '');
-      if (asked?.retryAfterMs !== undefined) putOff(asked.retryAfterMs);
+      if (asked?.now === true) reconnectNow();
+      else if (asked?.retryAfterMs !== undefined) putOff(asked.retryAfterMs);
     };
     // A failed socket also closes; the close handler does the work.
     current.onerror = () => undefined;

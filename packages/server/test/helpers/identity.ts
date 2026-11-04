@@ -9,6 +9,8 @@ import type { OidcProvider } from '../../src/identity/oidc.js';
 import { hashPassword } from '../../src/identity/passwords.js';
 import * as repo from '../../src/identity/repo.js';
 import { mintToken, newId } from '../../src/identity/tokens.js';
+import { createLockPool, type LockPool } from '../../src/db/pool.js';
+import { DatabaseRepoLock, guardGit, REPO_LOCK_POOL_MAX, REPO_LOCK_WAIT_MS } from '../../src/operations/repo-lock.js';
 import { NO_HOOKS_DIR, RepoStore } from '../../src/repos/repo-store.js';
 import { buildServer } from '../../src/server.js';
 import type { TenantResolver } from '../../src/tenancy/resolve.js';
@@ -95,6 +97,11 @@ export async function identityHarness(
     /** This process's instance and its bus's signals, for a test of two servers on one schema (spec §20.3). */
     readonly instance?: ServerContext['instance'];
     readonly bus?: ServerContext['bus'];
+    /**
+     * The database repository lock the server always has (spec §20.4), on a lock pool of the harness's own, with
+     * the git clients guarded as the server's are; `waitMs` shortens the 30 s wait. Off by default.
+     */
+    readonly repoLock?: { readonly waitMs?: number };
   } = {},
 ): Promise<IdentityHarness> {
   const db = options.db ?? (await testDatabase());
@@ -130,7 +137,20 @@ export async function identityHarness(
   // registers: versions are checked for contiguity across modules, so a partial set would leave a gap.
   // Only `modules` get routes and hooks.
   await RepoStore.prepare(dataDir);
-  const repos = new RepoStore({ git: options.git ?? testGit(join(dataDir, NO_HOOKS_DIR)), dataDir });
+  let lockPool: LockPool | undefined;
+  if (options.repoLock !== undefined) {
+    lockPool = createLockPool(db.url, {
+      max: REPO_LOCK_POOL_MAX,
+      applicationName: 'wirebench-server-repo-lock',
+      waitMs: options.repoLock.waitMs ?? REPO_LOCK_WAIT_MS,
+    });
+  }
+  const guard = (git: GitCli): GitCli => (lockPool === undefined ? git : guardGit(git));
+  const repos = new RepoStore({
+    git: guard(options.git ?? testGit(join(dataDir, NO_HOOKS_DIR))),
+    dataDir,
+    ...(lockPool !== undefined ? { lock: new DatabaseRepoLock({ pool: lockPool }) } : {}),
+  });
   // R13: ctx.git (and the commit store's ctx.git.withPlumbing()) gets the same hermetic client as the
   // repository store, so no developer gitconfig or hook reaches a server test. `options.git` still
   // overrides only the store, for tests that force RepoStore.create to fail.
@@ -140,7 +160,7 @@ export async function identityHarness(
     db,
     config,
     repos,
-    git: testGit(join(dataDir, NO_HOOKS_DIR)),
+    git: guard(testGit(join(dataDir, NO_HOOKS_DIR))),
     tenancy,
     ...(options.instance !== undefined ? { instance: options.instance } : {}),
     ...(options.bus !== undefined ? { bus: options.bus } : {}),
@@ -166,6 +186,7 @@ export async function identityHarness(
     statements,
     close: async () => {
       await app.close();
+      await lockPool?.close();
       if (options.db === undefined) await db.close();
       if (options.dataDir === undefined) await removeTempDir(dataDir);
     },

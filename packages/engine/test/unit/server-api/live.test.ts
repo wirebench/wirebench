@@ -34,6 +34,7 @@ describe('server-api live protocol (live-updates §3.1, §4)', () => {
       goingAway: 1001,
       tooBig: 1009,
       serverError: 1011,
+      serviceRestart: 1012,
       badMessage: 4400,
       unauthenticated: 4401,
       authTimeout: 4408,
@@ -46,7 +47,7 @@ describe('server-api live protocol (live-updates §3.1, §4)', () => {
 
   it('every close code is a protocol code a server may send, or in the application range', () => {
     for (const code of Object.values(LIVE_CLOSE)) {
-      expect([1000, 1001, 1009, 1011].includes(code) || (code >= 4000 && code <= 4999)).toBe(true);
+      expect([1000, 1001, 1009, 1011, 1012].includes(code) || (code >= 4000 && code <= 4999)).toBe(true);
     }
   });
 

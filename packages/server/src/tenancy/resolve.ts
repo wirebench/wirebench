@@ -50,8 +50,8 @@ export function rawHostOf(req: IncomingMessage, trustProxy: boolean): string {
   return hostKey(req.headers.host ?? (typeof authority === 'string' ? authority : ''));
 }
 
-/** The routes that take no tenant: health reads no tenant row (spec §19.5). */
-const UNSCOPED_ROUTES = new Set(['/healthz']);
+/** The routes that take no tenant: health and readiness read no tenant row (spec §19.5, §20.9). */
+const UNSCOPED_ROUTES = new Set(['/healthz', '/readyz']);
 
 /**
  * What an entry route is registered with (spec §21.4): a constraint that only a request for `app.<appDomain>` meets,

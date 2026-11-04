@@ -34,6 +34,16 @@ describe('loadConfig', () => {
     expect(config.gitPath).toBeUndefined();
   });
 
+  it('defaults the tenant run slots to the schedules concurrency, so one tenant keeps what the server ran', () => {
+    expect(loadConfig({ ...required, WIREBENCH_SERVER_SCHEDULES_CONCURRENCY: '8' }, '1').tenantRunSlots).toBe(8);
+    expect(loadConfig(required, '1').tenantRunSlots).toBe(2);
+    const set = { ...required, WIREBENCH_SERVER_SCHEDULES_CONCURRENCY: '8', WIREBENCH_SERVER_TENANT_RUN_SLOTS: '3' };
+    expect(loadConfig(set, '1').tenantRunSlots).toBe(3);
+    expect(CONFIG_VARIABLES.find((v) => v.key === 'tenantRunSlots')?.defaultText).toBe(
+      'WIREBENCH_SERVER_SCHEDULES_CONCURRENCY',
+    );
+  });
+
   it('leaves the migration URL unset by default: migrations run as the one database URL', () => {
     const config = loadConfig(required, '2.1.1');
     expect(config.migrationDatabaseUrl).toBeUndefined();
@@ -258,6 +268,9 @@ describe('describeConfig', () => {
         'WIREBENCH_SERVER_SITE_DOMAIN',
         'WIREBENCH_SERVER_SMTP_FROM',
         'WIREBENCH_SERVER_SMTP_URL',
+        'WIREBENCH_SERVER_TENANT_CONCURRENT_SENDS',
+        'WIREBENCH_SERVER_TENANT_RUN_SLOTS',
+        'WIREBENCH_SERVER_TENANT_SENDS_PER_MINUTE',
         'WIREBENCH_SERVER_TOKEN_IDLE_DAYS',
         'WIREBENCH_SERVER_TOKEN_MAX_DAYS',
         'WIREBENCH_SERVER_TRUST_PROXY',

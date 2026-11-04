@@ -44,11 +44,12 @@ import {
 } from '@wirebench/engine';
 import type { FastifyInstance, FastifyReply, FastifyRequest, preHandlerHookHandler } from 'fastify';
 import { announce, auditSource, recordAudit, type AuditInput, type ServerContext } from '../context.js';
-import type { TenantQuerier } from '../tenancy/tenant-db.js';
+import type { TenantScope } from '../tenancy/scope.js';
+import type { TenantDbFactory, TenantQuerier } from '../tenancy/tenant-db.js';
 import { tenantUrl } from '../tenancy/urls.js';
 import { isUniqueViolation } from '../db/errors.js';
 import { unauthenticated } from '../identity/errors.js';
-import { RateLimiter, callerKey, chargeKeys, ipKey, rateLimit } from '../identity/rate-limit.js';
+import { TenantRateLimiter, callerKey, chargeKeys, ipKey, rateLimit } from '../identity/rate-limit.js';
 import { findUserById } from '../identity/repo.js';
 import { hashSecret, mintSecret, newId } from '../identity/tokens.js';
 import { problem } from '../problem.js';
@@ -69,6 +70,8 @@ declare module 'fastify' {
 export interface AgentRoutesEnv {
   readonly ctx: ServerContext;
   readonly now: () => Date;
+  /** A test's injected clock for the rate limits; without one the database's clock refills them. */
+  readonly limiterNow?: (() => Date) | undefined;
   /** `WIREBENCH_SERVER_SECRETS_KEY`, which the browser client requires: the pairing codes' HMAC key derives from it. */
   readonly secretsKey: Buffer;
 }
@@ -96,31 +99,40 @@ export const AGENT_RATE_LIMITS = {
 
 const CODE_COLLISION_RETRIES = 3;
 
-const limiterFor = (limit: { capacity: number; windowMs: number }, now: () => Date): RateLimiter =>
-  new RateLimiter({
+const limiterFor = (
+  name: keyof typeof AGENT_RATE_LIMITS,
+  db: TenantDbFactory,
+  now: (() => Date) | undefined,
+): TenantRateLimiter => {
+  const limit = AGENT_RATE_LIMITS[name];
+  return new TenantRateLimiter({
+    name: `agent-${name}`,
     capacity: limit.capacity,
     refillPerMs: limit.capacity / limit.windowMs,
-    now: () => now().getTime(),
+    db,
+    ...(now !== undefined ? { now: () => now().getTime() } : {}),
   });
+};
 
 /**
  * The failed-pairing budget (spec §18.2), per tenant (spec §19.8 guard 5): server-wide, one tenant's attacker
  * would shut pairing for every customer. `open` peeks without charging; `failed` charges one attempt.
  */
 export class PairingBudget {
-  readonly #limiter: RateLimiter;
+  readonly #limiter: TenantRateLimiter;
 
-  constructor(now: () => Date) {
-    this.#limiter = limiterFor(AGENT_RATE_LIMITS.pairFailures, now);
+  /** `now` is a test's injected clock; without one the database's clock refills the budget. */
+  constructor(db: TenantDbFactory, now?: () => Date) {
+    this.#limiter = limiterFor('pairFailures', db, now);
   }
 
   /** Whether the tenant may try a pairing now, and if not, when again. */
-  open(tenantId: string): { readonly allowed: boolean; readonly retryAfterSeconds: number } {
-    return this.#limiter.peek(`${tenantId}:pairings`);
+  open(tenant: TenantScope): Promise<{ readonly allowed: boolean; readonly retryAfterSeconds: number }> {
+    return this.#limiter.peek(tenant, `${tenant.tenantId}:pairings`);
   }
 
-  failed(tenantId: string): void {
-    this.#limiter.take(`${tenantId}:pairings`);
+  async failed(tenant: TenantScope): Promise<void> {
+    await this.#limiter.take(tenant, `${tenant.tenantId}:pairings`);
   }
 }
 
@@ -161,12 +173,14 @@ export function agentRoutes(env: AgentRoutesEnv): (app: FastifyInstance) => Prom
   const { hooks } = ctx;
   const tdb = (request: FastifyRequest) => ctx.tenancy.db(request.tenant);
   const hashCode = pairingCodeHasher(env.secretsKey);
-  const pairPerAddress = limiterFor(AGENT_RATE_LIMITS.pairPerAddress, now);
-  const pairFailures = new PairingBudget(now);
-  const codesPerUser = limiterFor(AGENT_RATE_LIMITS.codesPerUser, now);
-  const redeemPerAddress = limiterFor(AGENT_RATE_LIMITS.redeemPerAddress, now);
-  const redeemPerPairing = limiterFor(AGENT_RATE_LIMITS.redeemPerPairing, now);
-  const signedPerAddress = limiterFor(AGENT_RATE_LIMITS.signedPerAddress, now);
+  const db = ctx.tenancy.db;
+  const clock = env.limiterNow;
+  const pairPerAddress = limiterFor('pairPerAddress', db, clock);
+  const pairFailures = new PairingBudget(db, clock);
+  const codesPerUser = limiterFor('codesPerUser', db, clock);
+  const redeemPerAddress = limiterFor('redeemPerAddress', db, clock);
+  const redeemPerPairing = limiterFor('redeemPerPairing', db, clock);
+  const signedPerAddress = limiterFor('signedPerAddress', db, clock);
   /** Charges an agent-signed request's address; a browser's cookie `DELETE` is not the agent's. */
   const signedLimit = rateLimit({ limiter: signedPerAddress }, (request) => [
     agentHeaders(request.headers) !== undefined ? ipKey(request) : undefined,
@@ -209,13 +223,12 @@ export function agentRoutes(env: AgentRoutesEnv): (app: FastifyInstance) => Prom
     tdb(request).transaction((tx) => recordAudit(hooks, tx, event));
 
   /** Answers 429 while the tenant's failed-pairing bucket is empty; it is charged only on a failure. */
-  const pairingOpen = (request: FastifyRequest, reply: FastifyReply, done: (error?: Error) => void): void => {
-    const decision = pairFailures.open(request.tenant.tenantId);
+  const pairingOpen = async (request: FastifyRequest, reply: FastifyReply): Promise<FastifyReply | undefined> => {
+    const decision = await pairFailures.open(request.tenant);
     if (!decision.allowed) {
-      void reply.header('retry-after', String(decision.retryAfterSeconds)).code(429).send(RATE_LIMITED);
-      return;
+      return reply.header('retry-after', String(decision.retryAfterSeconds)).code(429).send(RATE_LIMITED);
     }
-    done();
+    return undefined;
   };
 
   /**
@@ -299,12 +312,12 @@ export function agentRoutes(env: AgentRoutesEnv): (app: FastifyInstance) => Prom
       },
       async (request, reply) => {
         const body = request.body as AgentPairRequest;
-        const failed = (): Error => {
-          pairFailures.failed(request.tenant.tenantId);
+        const failed = async (): Promise<Error> => {
+          await pairFailures.failed(request.tenant);
           return pairingCodeInvalid();
         };
         const code = normalizePairingCode(body.code);
-        if (code === undefined) throw failed();
+        if (code === undefined) throw await failed();
         // Checked before the code is taken, so a malformed key does not cost the user their code.
         if (parseAgentPublicKey(body.publicKey) === undefined) {
           throw problem('invalid-request', 'The public key is not an Ed25519 key in base64 SPKI DER.', 400);
@@ -338,7 +351,7 @@ export function agentRoutes(env: AgentRoutesEnv): (app: FastifyInstance) => Prom
           });
           return { row, email: user.email };
         });
-        if (paired === undefined) throw failed();
+        if (paired === undefined) throw await failed();
         const answer: AgentPairResponse = {
           pairingId: paired.row.id,
           origin: tenantUrl(ctx.config, request),
@@ -407,7 +420,9 @@ export function agentRoutes(env: AgentRoutesEnv): (app: FastifyInstance) => Prom
         }
         const { pairing } = verified;
         // Charged only now the signature holds, so no one else can spend this pairing's allowance.
-        const retryAfter = chargeKeys(redeemPerPairing, [`${request.tenant.tenantId}:pairing:${pairing.id}`]);
+        const retryAfter = await chargeKeys(redeemPerPairing, request.tenant, [
+          `${request.tenant.tenantId}:pairing:${pairing.id}`,
+        ]);
         if (retryAfter > 0) return reply.header('retry-after', String(retryAfter)).code(429).send(RATE_LIMITED);
         const redeemed = await tdb(request).transaction(async (tx) => {
           const userId = await repo.takeNonce(tx, { nonceHash: hashSecret(nonce), pairingId: pairing.id, now: now() });

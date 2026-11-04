@@ -13,7 +13,8 @@
  * - The reconnect bar, a plain element shown while the socket is down, hidden by the next hello. Before
  *   the first hello it says the workspace cannot be reached (the page is otherwise blank); after it, that
  *   the connection was lost; after a `4503` close, that the server cannot open the user's saved data with its
- *   current key; after a `4409`, that another server process still has the user's workspace open (the host lease,
+ *   current key (a `4503 host-draining`, a server draining for a restart, reconnects at once and says only that the
+ *   connection was lost); after a `4409`, that another server process still has the user's workspace open (the host lease,
  *   spec §19.9), and the next attempt waits out the lease's `retryAfterMs`; after a `4409 host-lease-expired` (the
  *   server could not renew the lease), only that the connection was lost. A hello whose capabilities differ
  *   from the first reloads the page: the renderer hid what the first set lacked, and only a fresh load redoes
@@ -70,6 +71,8 @@ const LEASE_MS = 60_000;
  * reach): no other server has the workspace, so the tab says only that the connection was lost.
  */
 export const LEASE_EXPIRED_REASON = 'host-lease-expired';
+/** The `4503` reason of a server that is draining for a restart (spec §20.5): the tab reconnects at once. */
+export const HOST_DRAINING_REASON = 'host-draining';
 /** The `4429` reason when every seat of the team has a browser host open; any other `4429` is the user's tabs. */
 export const INSTANCE_CAP_REASON = 'host-instance-cap';
 export const RECONNECT_BAR_ID = 'wirebench-reconnect-bar';
@@ -242,6 +245,13 @@ export async function startBrowserClient(deps: BootstrapDeps): Promise<void> {
       if (code === CLOSE_CODE.tooManySockets) {
         bar.show(reason === INSTANCE_CAP_REASON ? RECONNECT_TEXT.instanceCap : RECONNECT_TEXT.tooManyTabs);
         return;
+      }
+      // A draining server (spec §20.5) ran the host's quit path and gave its lease back: reconnect at once, and the
+      // balancer picks a live instance. Only a socket that had its hello: one refused at the upgrade by the same
+      // draining server backs off as usual, so the tab never spins against it.
+      if (code === CLOSE_CODE.unavailable && reason === HOST_DRAINING_REASON) {
+        bar.show(RECONNECT_TEXT.reconnecting);
+        return helloSeen ? { now: true } : undefined;
       }
       // The server's secrets key no longer opens the stored data key: the operator's to fix, not the session's.
       if (code === CLOSE_CODE.unavailable) {

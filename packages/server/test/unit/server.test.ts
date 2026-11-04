@@ -7,7 +7,8 @@ import { z } from 'zod';
 import { problem } from '../../src/problem.js';
 import { jsonSchema } from '../../src/schema.js';
 import { buildServer } from '../../src/server.js';
-import { fakeDatabase, testContext } from '../helpers/context.js';
+import type { Readiness } from '../../src/operations/instances.js';
+import { fakeDatabase, testContext, testInstance } from '../helpers/context.js';
 
 let dataDir: string;
 beforeEach(() => {
@@ -61,6 +62,25 @@ describe('buildServer', () => {
     const app = await buildServer(await testContext({ dataDir }), { modules: [] });
     const res = await app.inject({ method: 'GET', url: '/healthz' });
     expect(res.json<{ checks: { dataDir: string } }>().checks.dataDir).toBe(process.getuid?.() === 0 ? 'ok' : 'failed');
+    await app.close();
+  });
+
+  it('serves /readyz 200 while the instance is ready, and 503 with the reason otherwise (spec §20.9)', async () => {
+    let readiness: Readiness = 'starting';
+    const instance = { ...testInstance(), readiness: () => readiness };
+    const app = await buildServer(await testContext({ dataDir, instance }), { modules: [] });
+    const answers: [number, unknown][] = [];
+    for (const state of ['starting', 'ready', 'reconnecting', 'draining'] as const) {
+      readiness = state;
+      const res = await app.inject({ method: 'GET', url: '/readyz' });
+      answers.push([res.statusCode, res.json()]);
+    }
+    expect(answers).toEqual([
+      [503, { status: 'starting' }],
+      [200, { status: 'ready' }],
+      [503, { status: 'reconnecting' }],
+      [503, { status: 'draining' }],
+    ]);
     await app.close();
   });
 

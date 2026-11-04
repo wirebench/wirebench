@@ -34,11 +34,16 @@ export const HOST_CLOSE = {
    */
   tooManySockets: 4429,
   /**
-   * The embedder cannot build this user's host for a reason only its operator can fix (HTTP's 503): the server's
-   * secrets key no longer opens the stored data key. Reconnecting does not help until the key is restored.
+   * HTTP's 503, with one of two reasons. `server key refused`: the embedder cannot build this user's host for a
+   * reason only its operator can fix (the server's secrets key no longer opens the stored data key), and reconnecting
+   * does not help until the key is restored. {@link HOST_DRAINING_REASON}: this process is draining (spec §20.5);
+   * the host's quit path has run and its lease is given back, so the tab reconnects at once, to another instance.
    */
   unavailable: 4503,
 } as const;
+
+/** The `4503` reason of a draining process (spec §20.5), on its open sockets and on every upgrade it refuses. */
+export const HOST_DRAINING_REASON = 'host-draining';
 
 export const HOST_LIMITS = {
   /** A frame either way: a sync transfer of a large workspace is the biggest call. */

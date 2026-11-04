@@ -9,7 +9,7 @@ import {
 import type { FastifyInstance } from 'fastify';
 import { announce, tenantOf, type LicenseService, type ServerHooks } from '../context.js';
 import { requireServerAdmin } from '../identity/guard.js';
-import { rateLimit, type RateLimiter } from '../identity/rate-limit.js';
+import { rateLimit, type TenantRateLimiter } from '../identity/rate-limit.js';
 import { jsonSchema } from '../schema.js';
 import { installLicense, removeLicense, type LicenseEnv } from './service.js';
 
@@ -17,7 +17,7 @@ export interface LicenseRoutesEnv extends LicenseEnv {
   readonly service: LicenseService;
   readonly hooks: ServerHooks;
   /** PUT carries a signature check, so it is rate-limited as identity's attempts are (§3.6). */
-  readonly limiter: RateLimiter;
+  readonly limiter: TenantRateLimiter;
 }
 
 export const licenseRoutes =

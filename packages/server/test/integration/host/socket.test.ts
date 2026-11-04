@@ -27,6 +27,7 @@ import { HOST_CLOSE, HOST_LIMITS } from '../../../src/host/errors.js';
 import { hostDirectories } from '../../../src/host/server-platform.js';
 import { sessionCookieName } from '../../../src/identity/cookies.js';
 import * as teamsRepo from '../../../src/teams/repo.js';
+import type { TestInstance } from '../../helpers/context.js';
 import { describeDb } from '../../helpers/database.js';
 import { browserUser, hostHarness, openHost, openRawHost, PUBLIC_URL, type HostHarness } from '../../helpers/host.js';
 import { signedInUser } from '../../helpers/identity.js';
@@ -733,6 +734,21 @@ describeDb('the host socket (hosted edition spec §17.3)', () => {
     const rows = await h.tdb.query<{ holder: string }>('select holder from host_leases');
     expect(rows.rows).toHaveLength(1);
     expect(rows.rows[0]!.holder).not.toBe('another-process');
+  });
+
+  it('a drain closes the socket 4503 host-draining with its lease given back, and refuses every later upgrade so', async () => {
+    const alice = await browserUser(h, 'alice@example.com');
+    const client = await openHost(h, alice);
+    await client.waitFor((frame) => frame.type === 'hello');
+    expect((await h.tdb.query('select holder from host_leases')).rows).toHaveLength(1);
+    await (h.ctx.instance as TestInstance).drain();
+    expect(await client.closedWith).toEqual({ code: HOST_CLOSE.unavailable, reason: 'host-draining' });
+    // Given back at once, not left to expire: another process takes the user on the tab's next attempt.
+    expect((await h.tdb.query('select holder from host_leases')).rows).toEqual([]);
+    expect(h.instances().size).toBe(0);
+    const late = await openHost(h, alice);
+    expect(await late.closedWith).toEqual({ code: HOST_CLOSE.unavailable, reason: 'host-draining' });
+    expect(late.frames).toEqual([]);
   });
 
   it('closes 4429 host-instance-cap when every seat of the tenant has a live host, read from the license', async () => {

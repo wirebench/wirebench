@@ -3,6 +3,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { LIVE_CAPABILITY, LIVE_CLOSE, LIVE_LIMITS, LIVE_PATH, type SyncPushRequest } from '@wirebench/engine';
 import * as identityRepo from '../../../src/identity/repo.js';
 import { mintToken, newId } from '../../../src/identity/tokens.js';
+import type { ServerModule } from '../../../src/context.js';
 import { BUILTIN_MODULES } from '../../../src/modules.js';
 import { startServer, type RunningServer } from '../../../src/serve.js';
 import * as teamsRepo from '../../../src/teams/repo.js';
@@ -238,7 +239,7 @@ describeDb('live-updates at shutdown (live-updates §5.1, host spec §3.7)', () 
     await removeTempDir(dataDir);
   });
 
-  it('close() sends 1001 to every socket before repos.drain(), and a push in flight still completes', async () => {
+  it('close() drains: 1012 to every live socket before repos.drain(), and a push in flight still completes', async () => {
     const server = await startServer(env(), io(), {
       signals: new EventEmitter(),
       exit: vi.fn(),
@@ -269,8 +270,9 @@ describeDb('live-updates at shutdown (live-updates §5.1, host spec §3.7)', () 
     await vi.waitFor(() => expect(queued).toHaveBeenCalledTimes(1)); // the push waits behind the held lock
 
     const closing = server.close();
-    expect(await admitted.closed).toEqual({ code: LIVE_CLOSE.goingAway });
-    expect(await pending.closed).toEqual({ code: LIVE_CLOSE.goingAway });
+    // Spec §20.5: a drain closes them `1012` (service restart), authenticated or not.
+    expect(await admitted.closed).toEqual({ code: LIVE_CLOSE.serviceRestart });
+    expect(await pending.closed).toEqual({ code: LIVE_CLOSE.serviceRestart });
     expect(drained).not.toHaveBeenCalled(); // both sockets were closed while the push was still in flight
 
     release();
@@ -281,5 +283,92 @@ describeDb('live-updates at shutdown (live-updates §5.1, host spec §3.7)', () 
     expect(pushed).toMatchObject({ head: expect.any(String) as string });
     await closing;
     expect(drained).toHaveBeenCalledTimes(1);
+  });
+
+  it('/readyz: 200 once started, 503 while the bus reconnects and while draining, when upgrades are refused 1012', async () => {
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let draining = false;
+    // Holds the drain open, as a host's quit path would, so the test can look at the server meanwhile.
+    const modules: ServerModule[] = BUILTIN_MODULES.map((m) =>
+      m.name !== 'live-updates'
+        ? m
+        : {
+            ...m,
+            register: async (app, ctx) => {
+              await m.register(app, ctx);
+              ctx.instance.onDrain(() => {
+                draining = true;
+                return gate;
+              });
+            },
+          },
+    );
+    const signals = new EventEmitter();
+    const server = await startServer(env(), io(), {
+      signals,
+      exit: vi.fn(),
+      modules,
+    });
+    const url = (path: string) => `http://127.0.0.1:${String(server.port)}${path}`;
+    const readyz = async () => {
+      const response = await fetch(url('/readyz'));
+      return { status: response.status, body: (await response.json()) as unknown };
+    };
+    try {
+      expect(await readyz()).toEqual({ status: 200, body: { status: 'ready' } });
+      // The bus's listening connection is cut: not ready until it listens again (1 s later).
+      await db.query(
+        "select pg_terminate_backend(pid) from pg_stat_activity where application_name = 'wirebench-server-bus'",
+      );
+      await vi.waitFor(async () => expect(await readyz()).toEqual({ status: 503, body: { status: 'reconnecting' } }), {
+        timeout: 5_000,
+        interval: 20,
+      });
+      await vi.waitFor(async () => expect(await readyz()).toEqual({ status: 200, body: { status: 'ready' } }), {
+        timeout: 10_000,
+        interval: 50,
+      });
+
+      const { token } = await seedAdmin(server);
+      const admitted = await openLive(server, token);
+      signals.emit('SIGTERM');
+      await vi.waitFor(() => expect(draining).toBe(true));
+      expect(await admitted.closed).toEqual({ code: LIVE_CLOSE.serviceRestart });
+      expect(await readyz()).toEqual({ status: 503, body: { status: 'draining' } });
+      // HTTP still serves while draining; a new live socket is refused at once.
+      expect((await fetch(url('/healthz'))).status).toBe(200);
+      const late = await openLive(server);
+      expect(await late.closed).toEqual({ code: LIVE_CLOSE.serviceRestart });
+    } finally {
+      release();
+      await server.close();
+    }
+  });
+
+  it('a drain listener that never ends holds the shutdown no longer than the drain time', async () => {
+    const modules: ServerModule[] = BUILTIN_MODULES.map((m) =>
+      m.name !== 'live-updates'
+        ? m
+        : {
+            ...m,
+            register: async (app, ctx) => {
+              await m.register(app, ctx);
+              // A host whose quit path hangs.
+              ctx.instance.onDrain(() => new Promise<void>(() => undefined));
+            },
+          },
+    );
+    const server = await startServer(env(), io(), {
+      signals: new EventEmitter(),
+      exit: vi.fn(),
+      modules,
+      drainMs: 300,
+    });
+    const started = performance.now();
+    await server.close();
+    expect(performance.now() - started).toBeLessThan(5_000);
   });
 });

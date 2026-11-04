@@ -756,6 +756,19 @@ describe('LiveHub — closeAll (§3.3, §5.1)', () => {
     expect(late.closed?.code).toBe(LIVE_CLOSE.goingAway);
     expect(late.sent).toEqual([]);
   });
+
+  it('on a drain closes every socket 1012, and one admitted after it too; a later closeAll changes nothing', async () => {
+    const f = fixture();
+    f.team(TEAM, [WS_A]);
+    const ana = await joined(f, ANA, 'tok-ana', WS_A);
+    settle(ana);
+    f.hub.closeAll(LIVE_CLOSE.serviceRestart, 'service restart');
+    expect(ana.closed).toMatchObject({ code: 1012, reason: 'service restart' });
+    f.hub.closeAll();
+    const late = new FakeSocket();
+    expect(f.hub.admit(late, session(CAT, 'tok-cat'))).toBe('ok');
+    expect(late.closed).toMatchObject({ code: 1012, reason: 'service restart' });
+  });
 });
 
 const HOOK_1 = '01J8ZC5Q0V7R3T9XK2M4N6H001';
