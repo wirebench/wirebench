@@ -11,6 +11,7 @@ import { markStepsDone } from '../../helpers/tenancy.js';
 import { createHash, generateKeyPairSync, randomBytes, randomUUID, sign } from 'node:crypto';
 import type { RouteOptions } from 'fastify';
 import { expect } from 'vitest';
+import { controlPlaneModule } from '../../../src/control-plane/module.js';
 import { entryModule } from '../../../src/entry/module.js';
 import { agentModule } from '../../../src/agent/module.js';
 import { chainKeys } from '../../../src/audit-log/chain/keys.js';
@@ -185,6 +186,7 @@ export async function isolationWorld(options: { readonly policiesDisabled?: bool
         hostModule({ now, setTimer: timers.setTimer, browserRoot: build.root }),
         agentModule({ now, sweepIntervalMs: 0 }),
         entryModule(),
+        controlPlaneModule(),
       ];
       modules.push('identity', ...list.map((module) => module.name));
       return list;
@@ -488,7 +490,7 @@ export async function fill(t: TwoTenants, tenant: Tenant): Promise<Filled> {
     [browser.user.id, `${slug}-holder`, at, new Date(at.getTime() + 60_000)],
   );
 
-  // ---- 0022's tables (slice 5), used from its later tasks: a row each by hand. A bucket key carries the slug,
+  // ---- 0022's tables (slice 5): a row each, by hand where nothing writes one yet. A bucket key carries the slug,
   // as the limiter's keys carry what they count.
   const holder = randomUUID();
   await tenant.tdb.query('insert into limiter_buckets (key, tokens, updated_at) values ($1, 5, $2)', [
@@ -499,13 +501,24 @@ export async function fill(t: TwoTenants, tenant: Tenant): Promise<Filled> {
     holder,
     new Date(at.getTime() + 60_000),
   ]);
-  await tenant.tdb.query('insert into terminal_share_locations (share_id, holder, created_at) values ($1, $2, $3)', [
-    share.shareId,
-    holder,
-    at,
-  ]);
+  // `terminal_share_locations` has its row already: the share created above wrote it (Task 12).
 
-  // ---- 0023's claim (slice 8), by hand until its routes land: the name carries the slug, the token stays per tenant.
+  // ---- 0023's tables (slice 7), used from its later tasks: a row each by hand, each carrying the slug.
+  await tenant.tdb.query(
+    `insert into subscriptions (provider, provider_ref, plan, seats, status, last_event_at)
+     values ('paddle', $1, 'team', 5, 'active', $2)`,
+    [`sub_${slug}`, at],
+  );
+  await tenant.tdb.query(
+    "insert into tenant_exports (id, requested_by, status, requested_at) values ($1, $2, 'ready', $3)",
+    [`export-${slug}`, browser.user.id, at],
+  );
+  await tenant.tdb.query(
+    "insert into tenant_settings (section, value, updated_at, updated_by) values ('mail', $1, $2, $3)",
+    [JSON.stringify({ from: `@${slug}` }), at, browser.user.id],
+  );
+
+  // ---- 0024's claim (slice 8), by hand until its routes land: the name carries the slug, the token stays per tenant.
   await tenant.tdb.query('insert into custom_domains (name, token, created_by, created_at) values ($1, $2, $3, $4)', [
     `${slug}.customer.test`,
     `token-${slug}`,

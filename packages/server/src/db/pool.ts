@@ -102,6 +102,7 @@ export function createDatabase(connectionString: string, options: DatabaseOption
       }
     },
     close: () => pool.end(),
+    waiting: () => (pool as Partial<Pick<pg.Pool, 'waitingCount'>>).waitingCount ?? 0,
   };
 }
 
@@ -203,6 +204,8 @@ export interface LockPool {
    */
   acquire(): Promise<LockConnection>;
   close(): Promise<void>;
+  /** Holds waiting for a free connection: `wirebench.db.pool.waiting` (spec §20.8). */
+  waiting(): number;
 }
 
 export interface LockPoolOptions {
@@ -274,5 +277,6 @@ export function createLockPool(connectionString: string, options: LockPoolOption
       };
     },
     close: () => pool.end(),
+    waiting: () => pool.waitingCount,
   };
 }

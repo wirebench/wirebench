@@ -36,6 +36,7 @@ describeDb('0003_teams (§4.1)', () => {
       'host',
       'agent',
       'entry',
+      'control-plane',
     ]);
   });
 

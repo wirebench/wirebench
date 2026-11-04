@@ -4,6 +4,8 @@ import type { FastifyInstance, RouteOptions } from 'fastify';
 import type { GitCli } from '@wirebench/engine';
 import { loadConfig, type ServerConfig } from '../../src/config.js';
 import type { ServerContext, ServerHooks, ServerModule } from '../../src/context.js';
+import { openControlDb } from '../../src/control-plane/control-db.js';
+import { withControlPool } from '../../src/control-plane/module.js';
 import { identityModule } from '../../src/identity/module.js';
 import type { OidcProvider } from '../../src/identity/oidc.js';
 import { hashPassword } from '../../src/identity/passwords.js';
@@ -97,6 +99,15 @@ export async function identityHarness(
     /** This process's instance and its bus's signals, for a test of two servers on one schema (spec §20.3). */
     readonly instance?: ServerContext['instance'];
     readonly bus?: ServerContext['bus'];
+    /** The share relay of a `multi` server (spec §20.6). */
+    readonly relay?: ServerContext['relay'];
+    /** The server's instruments, for a test that collects what was recorded (spec §20.8). */
+    readonly metrics?: ServerContext['metrics'];
+    /**
+     * Hands the control-plane module a control pool on this schema (spec §22.2), as `serve.ts` does in hosted mode.
+     * It connects lazily, and nothing is granted to the control role until a test runs `ensureControlRole`.
+     */
+    readonly control?: boolean;
     /**
      * The database repository lock the server always has (spec §20.4), on a lock pool of the harness's own, with
      * the git clients guarded as the server's are; `waitMs` shortens the 30 s wait. Off by default.
@@ -155,6 +166,7 @@ export async function identityHarness(
   // repository store, so no developer gitconfig or hook reaches a server test. `options.git` still
   // overrides only the store, for tests that force RepoStore.create to fail.
   const { tenancy, log: statements } = loggedTenancy(db, config.secretsKey);
+  const control = options.control === true ? openControlDb(db.controlUrl) : undefined;
   const ctx = await testContext({
     dataDir,
     db,
@@ -164,12 +176,15 @@ export async function identityHarness(
     tenancy,
     ...(options.instance !== undefined ? { instance: options.instance } : {}),
     ...(options.bus !== undefined ? { bus: options.bus } : {}),
+    ...(options.relay !== undefined ? { relay: options.relay } : {}),
+    ...(options.metrics !== undefined ? { metrics: options.metrics } : {}),
   });
   const directory = directoryOf(ctx.tenancy);
   await directory.load();
   await options.beforeBuild?.(db, ctx);
   const app = await buildServer(ctx, {
-    modules,
+    // The pool goes to the control-plane module's factory, as serve.ts hands it: never on the context.
+    modules: withControlPool(modules, control),
     ...(options.logStream !== undefined ? { logStream: options.logStream } : {}),
     ...(options.onTenantResolver !== undefined ? { onTenantResolver: options.onTenantResolver } : {}),
     ...(options.onRoute !== undefined ? { onRoute: options.onRoute } : {}),
@@ -186,6 +201,7 @@ export async function identityHarness(
     statements,
     close: async () => {
       await app.close();
+      await control?.close();
       await lockPool?.close();
       if (options.db === undefined) await db.close();
       if (options.dataDir === undefined) await removeTempDir(dataDir);

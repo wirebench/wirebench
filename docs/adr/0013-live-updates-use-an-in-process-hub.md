@@ -7,6 +7,13 @@
   [ADR-0010](0010-server-identity-is-device-tokens-and-invitations.md) (device tokens),
   [ADR-0011](0011-workspace-roles-are-team-default-plus-grants.md) (who may see a workspace) and
   [ADR-0012](0012-server-sync-merges-on-the-client.md) (the client fetches and merges).
+- Amended: 2026-11-04 by the hosted edition spec §20 (slice 5, §20.12;
+  [ADR-0037](0037-server-instances-share-state-through-postgresql.md)): the hub stays in each process, and its
+  announcements fan out between instances through one `LISTEN`/`NOTIFY` channel per server schema, payloads ids
+  only. Presence is the union of every instance's users of a room. After a lost connection or a missed event an
+  instance resyncs its rooms with `head`, `access` and `presence` and re-validates its sessions; nothing replays, as
+  before. The repository lock is an advisory lock and the rate limits live in PostgreSQL. A server may run as several
+  instances: hosted always, self-hosted on an Enterprise license by opting in.
 
 ## Context
 

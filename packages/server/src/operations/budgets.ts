@@ -34,6 +34,7 @@ import { outsideTenantUnit, type TenantDbFactory, type TenantQuerier } from '../
 import { WirebenchError } from '@wirebench/engine';
 import type { HostSendGateRequest } from '../host/host-runtime.js';
 import { charge, registerBucket, type BucketSize } from './limiter.js';
+import type { ServerMetrics } from './metrics/instruments.js';
 import { chargeOf, type SendCharge } from './send-channels.js';
 
 /** The sends bucket's key in `limiter_buckets`: its own namespace beside the other limiters' `name/key`. */
@@ -118,6 +119,8 @@ export interface SendBudgetsOptions {
   /** Test only: the sends bucket's clock (the database's otherwise). */
   readonly now?: () => number;
   readonly log?: (message: string, error: unknown) => void;
+  /** Where each charged call's outcome and each refusal is counted (spec §20.8); the server's `ctx.metrics`. */
+  readonly metrics?: Pick<ServerMetrics, 'send' | 'budgetRefusal'>;
 }
 
 /** The call a gate runs inside: what its requests are charged to. */
@@ -185,6 +188,7 @@ export class SendBudgets {
       else if (row.free === 0) break;
     }
     if (release === undefined) {
+      this.options.metrics?.budgetRefusal(scope.tenantId, 'concurrency');
       return {
         ok: false,
         refusal: {
@@ -204,6 +208,7 @@ export class SendBudgets {
     }
     if (!spent.ok) {
       await release();
+      this.options.metrics?.budgetRefusal(scope.tenantId, 'sends');
       return {
         ok: false,
         refusal: {
@@ -234,6 +239,7 @@ export class SendBudgets {
       taken = await this.take(scope, { token: charged !== 'run' });
     } catch (error) {
       this.options.log?.('a send could not be charged to its tenant’s budgets', error);
+      this.options.metrics?.send(scope.tenantId, 'failed');
       return {
         id: frame.id,
         ok: false,
@@ -241,11 +247,14 @@ export class SendBudgets {
       };
     }
     if (!taken.ok) {
+      this.options.metrics?.send(scope.tenantId, 'refused');
       const { code, message, retryAfterMs } = taken.refusal;
       return { id: frame.id, ok: false, error: { code, message, details: { retryAfterMs } } };
     }
     try {
-      return await this.calls.run({ scope, charge: charged, signal, release: () => taken.release() }, serve);
+      const reply = await this.calls.run({ scope, charge: charged, signal, release: () => taken.release() }, serve);
+      this.options.metrics?.send(scope.tenantId, reply.ok ? 'ok' : 'failed');
+      return reply;
     } finally {
       await taken.release();
     }

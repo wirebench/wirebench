@@ -657,7 +657,7 @@ self-hosted teams on their own, which is why they would come first whenever the 
 | 2 | `browser-client` | **Built** (#785, #787 and #789, 2026-10-29, for #783; §17 records what changed from this row). The Vite browser build, `browser-bootstrap.ts`, capability discovery, the sign-in page and `browser_flows`, the cookie session, the server host with checkouts and per-user state via `inject`, live events over the host socket, user-scoped sealed secrets under one server-wide root, the §3.10 allowlist and path guard, the egress rule on every outbound connection | 1 | yes: a self-hosted team gets a browser tab |
 | 3 | `local-agent` | **Built** (#793, #795 and, for the agent hosts, #790, 2026-10-29; ADR-0035; §18 records what changed from this row). `packages/agent` as a library, the loopback socket transport, pairing with the browser subset, the send-route rule and the send bundle, `wirebench agent`, the agent's packaging | 1, 2 | yes |
 | 4 | `tenancy` | **Built** (#800, #805, #807, #811 and #812, 2026-11-02, for #798; §19 records what changed from this row). `tenants`, `tenant_id` on every table, forced row-level security, tenant resolution by `Host`, per-tenant directories and data keys with the one-time re-wrap, the six guards of §5.4 including the job scope, the host-instance lease, the self-hosted migration | 2 | yes, invisibly (one tenant) |
-| 5 | `operations` | `LISTEN`/`NOTIFY` hub fan-out, advisory locks, sticky host sockets, per-tenant budgets, metrics by tenant id | 4 | partly (multi-instance self-hosted) |
+| 5 | `operations` | **Built** (#828, #833 and #836, 2026-11-04, for #821; ADR-0037 accepted; §20 records what changed from this row). `LISTEN`/`NOTIFY` hub fan-out, advisory locks, sticky host sockets, per-tenant budgets, metrics by tenant id | 4 | partly (multi-instance self-hosted) |
 | 6 | `domains` | **Built** (#825, #826 and #827, 2026-11-03, for #822; ADR-0038; §21 records what changed from this row). The two names as settings, the wildcard certificate in a Traefik recipe by DNS-01, the `app.` entry with emailed links, reserved slugs; the public suffix submission is an operator step for when a domain is registered | 4 | no |
 | 7 | `control-plane` | Signup, subscriptions, edition from subscription, suspension, export, deletion, operator commands; per-tenant settings (OIDC, SAML, SCIM, audit forwarding, SMTP sender, retention), today's environment variables becoming the default tenant's (§19.1, §19.12) | 4, 5, 6 | no |
 | 8 | `custom-domains` | CNAME plus TXT verification for Enterprise tenants; §23 records the design (#830, ADR-0040): a second full name that becomes the primary, a CNAME to `custom.<app-domain>`, one per tenant, an HTTP-01 certificate per name through Traefik's HTTP provider | 6, 7 | no |
@@ -2061,6 +2061,13 @@ Owner rulings (popup, 2026-11-03):
    and the host lease stays the guard (§20.5).
 5. **Terminal shares cross instances through a node-to-node relay** (§20.6).
 
+Built in #828, #833 and #836 (2026-11-04). The sections below record the build where it differs from the design
+first written here. Owner rulings taken during the build (popup, 2026-11-04):
+
+6. **Every request inside a run counts.** A run, a sequence or a send to several environments spends one token per
+   request as it goes out, and an empty bucket makes the run wait, never fail (§20.7).
+7. **A WebSocket open costs one token** and holds a slot only until it has opened; an open session holds none (§20.7).
+
 ### 20.1 One instance or several
 
 - `WIREBENCH_SERVER_INSTANCES` takes `single` (the default) or `multi`. Hosted mode is always `multi`, whatever the
@@ -2075,7 +2082,8 @@ Owner rulings (popup, 2026-11-03):
     grace, `serve` refuses with `server-instances-need-enterprise`, and `config check` says the same.
   - A license that lapses while the server runs does not stop it. Every instance logs a warning once an hour, and the
     next start refuses. A running fleet is not cut off by a renewal that is a day late (my call).
-  - `multi` drops the start-up lease delete (§19.12), and needs `WIREBENCH_SERVER_INSTANCE_URL` (§20.6).
+  - `multi` drops the start-up lease delete (§19.12), and needs `WIREBENCH_SERVER_INSTANCE_URL` and
+    `WIREBENCH_SERVER_SECRETS_KEY`, the relay token's key (§20.6). Without either, `config check` and `serve` refuse.
 - **What stays per process,** by design, in both modes: the eight host sockets per user and the live sockets per
   user (§17.3, ADR-0013). They guard one process's memory, not a tenant's share of the fleet.
 - **Every instance mounts the same data volume read-write** (§5.5). Repositories are written under the advisory lock
@@ -2112,26 +2120,47 @@ create table server_instances (
   - delivers to this process's listeners at once, as today;
   - queues the event for `select pg_notify($channel, $payload)` on the pool, outside any tenant transaction, in
     order, with a queue of 10 000 events. A full queue drops the oldest and counts it (§20.8).
-- **The payload** is JSON, at most 7 900 bytes: `{ v: 1, from: holder, kind, tenantId, …the event's ids }`.
+  - A failed `pg_notify` is tried three times in all (100 ms, then 1 s apart) before it is given up. After a give-up
+    or an overflow the bus owes one **missed marker**, a `resync` with no tenant, sent at once when the queue is idle
+    and otherwise ahead of the next payload. A peer that hears it acts as if its own bus had reconnected (below).
+- **The payload** is JSON, at most 7 900 bytes: `{ v: 1, from: holder, at, kind, tenantId, …the event's ids }`.
+  - `at` is the send time in epoch ms, for the lag histogram (§20.8). It is optional on decode, so an instance on the
+    previous version, which sends none, is still heard during a rolling upgrade.
+  - Each kind has its own field list, and the encoder copies only those fields. The decoder drops any key it does
+    not know before it checks the known ones strictly, so a newer instance may add an envelope key during a rolling
+    upgrade without its events going unheard; `v` stays the switch for a change an older decoder must refuse (Part C
+    review). The encoder, not the decoder, keeps private fields off the wire, and a dropped key never reaches a
+    listener. `check:tenant-scope` keeps `pg_notify` and `LISTEN` to `src/operations/`, so no other path puts a
+    payload on the bus past the codec.
   - It carries ids only, never a name, an email or file content (ADR-0013).
   - `AccessChangedEvent` and `LicenseChangedEvent` carry a branded `TenantScope`. The receiver rebuilds it from
     `tenantId` with `scopeOf` in `src/tenancy/`, the only place a scope may be made.
   - An event that would not fit is never truncated. It is sent as `{ v: 1, from, kind: 'resync', tenantId }`, and each
     receiving hub resyncs that tenant's rooms (below).
 - **Receiving.** A notification from this process's own `holder` is dropped, since it was delivered locally. The rest
-  reach the listeners registered as **cluster** listeners.
-- **Two kinds of listener** (my call): a listener says whether it is `cluster` or `local`.
-  - **Cluster** listeners keep in-memory state in step: the live hub, the host instances' `sessionEnded`, the
-    terminal-share registry, the tenant map and the data-key cache.
+  reach the listeners registered as **cluster** or **remote** listeners. A kind no such listener hears is dropped
+  before any lookup. Received notifications wait in an inbox of 10 000; a full inbox drops the oldest and then
+  resyncs this process as after a lost connection.
+- **Three kinds of listener** (my call): a listener says whether it is `cluster`, `local` or `remote`.
+  - **Cluster** listeners keep in-memory state in step, hearing this process and the others: the live hub, the host
+    instances' `sessionEnded` and the terminal-share registry.
+  - **Remote** listeners hear the other instances only: the tenant map and the data-key cache, which a write in this
+    process already refreshed directly, so a key this process just wrote is not dropped again.
   - **Local** listeners have an effect that must happen once: the audit module's `licenseChanged` writes an audit
-    event, and runs only in the process that announced it.
+    event, and runs only in the process that announced it. Finished schedule runs are counted for metrics the same
+    way (§20.8).
   - A listener that does not say which is a type error.
 - **New events:** `tenantsChanged` (from `TenantDirectory.changed()`) and `tenantKeysChanged { tenantId? }` (from the
-  data-key paths). Their cluster listeners call `TenantResolver.invalidate()` and `TenantKeys.invalidate()`, which
+  data-key paths). Their remote listeners call `TenantResolver.invalidate()` and `TenantKeys.invalidate()`, which
   slice 4 left for this (§19.12). The resolver's 60 s poll stays as a backstop, at 10 minutes.
 - **Presence crosses instances.** The hub announces `presenceChanged { tenantId, workspaceId, holder, users }` with
   its own sockets' users of that room. Every hub keeps the other holders' lists per room, and `presence` sends the
   union. A holder's lists are dropped when its `server_instances` row dies, or when it says `presenceReset`.
+  - The event carries user ids only; each hub looks the display names up in the tenant, once per user and room.
+  - A room whose list would pass the payload limit is cut into parts (`seq`, `part`, `parts`), not turned into a
+    resync. The receiver replaces the holder's list once every part of one `seq` has come, and ignores stragglers
+    of an older one.
+  - A hub answers another's `presenceReset` with its own lists, so a holder that just started learns the room.
 - **When the listening connection drops:**
   - the bus reconnects with a backoff of 1 s to 30 s;
   - once it listens again, it invalidates the tenant map and the key cache, sends `presenceReset` with its own
@@ -2140,6 +2169,11 @@ create table server_instances (
     subscribed socket gets `head` with the workspace's current head (one query per room), then `access`, then
     `presence`. Each makes the client run its ordinary fetch. Nothing replays a missed event, as before
     (ADR-0013); the 300 s safety-net fetch still converges every client.
+  - it **re-validates every session it holds**: the live hub, the host instances and the share registry list their
+    sockets' device tokens, one query per tenant finds the ones no longer live, and each goes through its holder's
+    own `sessionEnded` path. The share registry also re-checks access in every tenant it holds shares in. A
+    `sessionEnded` the bus missed would otherwise leave a revoked user connected.
+  - A missed marker from a peer, or a full inbox, takes the same path.
 - **Ordering.** Notifications from one process arrive in the order it sent them; notifications from two processes
   have no order. Every event is a hint followed by an HTTP fetch, so neither matters.
 
@@ -2154,10 +2188,19 @@ create table server_instances (
     would hand the session to someone else), with at most 8 connections. A ninth concurrent push waits in the
     in-process queue first, so one process never holds more than 8 (my call).
   - The in-process queue stays in front, so pushes to one workspace in one process never queue on the database.
+  - `REPO_LOCK_CLASS` is `0x57425250` ("WBRP").
 - A wait longer than 30 s answers `503 repo-busy` with `Retry-After: 5`. The desktop already retries a `503` push.
-- A lost lock connection ends `fn` with `repo-lock-lost` before its next git step. A git step that already started
-  runs to completion, as a crash would: the bare repository's own lock files and the push's compare-and-swap of the
-  head keep it consistent.
+  The lock pool's connections carry `lock_timeout`, so the wait fails in PostgreSQL itself and can never go on to
+  take the lock; a connection in doubt is destroyed, which drops whatever it held.
+- A lost lock connection ends `fn` with `repo-lock-lost` before its next git step, also `503` with `Retry-After: 5`.
+  A git step that already started runs to completion, as a crash would: the bare repository's own lock files and the
+  push's compare-and-swap of the head keep it consistent.
+  - A half-open connection (after a failover the old primary's socket gives no error) is caught by a probe: before
+    a git step the lock connection is asked `select 1` with a 2 s timeout, at most once a second, and always right
+    before `update-ref` or `symbolic-ref`, the push's last step. A failed or late probe marks the lock lost and
+    destroys the connection (my call).
+  - The server's `GitCli` is wrapped so each run checks its operation's state, carried in `AsyncLocalStorage`, so no
+    caller changes.
 - `drain()` waits for the in-process queue and for every held database lock to be released.
 
 ### 20.5 Sticky host sockets (amends §5.5)
@@ -2170,14 +2213,20 @@ create table server_instances (
 - **The lease stays the guard.** A socket that reaches the wrong instance gets `4409 host-lease-held` with
   `retryAfterMs`, as in §19.9. The bootstrap reconnects after that wait, the balancer sends it back to the holder
   while the holder lives, and once the holder is gone the next instance takes the lease after expiry.
-- **Draining.** On `SIGTERM` an instance:
-  - stops accepting upgrades;
-  - closes its host sockets `4503 host-draining` after the quit path, and releases their leases at once, so the next
-    instance does not wait for expiry;
-  - closes its live sockets `1012` (service restart).
+- **Draining.** On `SIGTERM` an instance, as the shutdown's first step, before the app closes:
+  - answers `503` on `/readyz` (§20.9) and refuses host and live upgrades;
+  - runs each host's quit path, then releases its lease, then closes its sockets `4503 host-draining`. Release before
+    close, so the tab's immediate reconnect finds the lease free on the next instance instead of a `4409` wait; never
+    before the quit path, so no two hosts hold one checkout. A release that throws still closes the sockets, and is
+    logged;
+  - closes its live sockets `1012` (service restart);
+  - keeps serving HTTP until the app closes.
 
-  The bootstrap reconnects after `4503` with no backoff, and the balancer picks a live instance. `4503` already
-  exists (§17.3); the reason is new.
+  The whole drain is bounded by the server's drain time (10 s), and is not waited for once the server-running lock is
+  lost, so a host whose quit path hangs does not hold the shutdown. The bootstrap reconnects at once after
+  `4503 host-draining` on a socket that had its hello, and the balancer picks a live instance; one refused at the
+  upgrade by the same draining server backs off as usual, so a tab never spins against it. `4503` already exists
+  (§17.3); the reason is new.
 
 ### 20.6 The share relay (ruling 5)
 
@@ -2187,18 +2236,34 @@ logs and sharing spec B1). With several instances, a viewer can land on another 
 - **Where a share lives.** `terminal_share_locations(tenant_id, share_id, holder, created_at)`, scoped like every
   table, keyed `(tenant_id, share_id)`. The owner's instance writes the row when the share starts and deletes it when
   the share ends. A row whose `holder` has no live `server_instances` row is dead, and a join treats it as no share.
+  - On each instance heartbeat the holder writes the rows of every share it still holds again (an upsert, per tenant
+    in its scope), so a holder that was only slow, whose rows a peer cleared as dead, is found again within one beat.
+  - Every 10 minutes the heartbeat also deletes, per tenant through the job loop, the rows whose holder has no live
+    instance row and that are older than a dead instance's 60 s: a crashed holder's rows do not stay for good.
 - **Joining elsewhere.** A viewer's instance that does not hold the share looks it up, then dials the holder's `url`
   at `/internal/v1/shares/<share_id>` with the viewer's identity, and pipes frames both ways unchanged. The holder
   sees one more viewer, with that viewer's identity, and every rule of the registry (the viewer limit, control,
-  audit) applies there once.
+  audit) applies there once. The viewer's instance clears a dead row it finds. A frame from the viewer before the
+  holder has answered is out of order, and the viewer is closed with the bad-message code, as the holder would.
+  - A share whose row cannot be written is ended before the create answers `500`.
+- **The join dialog's info** is answered by the holder the same way: a client asks for it before it opens the socket,
+  so the relay also serves `GET /internal/v1/shares/<share_id>/info`.
 - **The internal listener.** `WIREBENCH_SERVER_INSTANCE_URL` names this instance's own address on the private
-  network (for example `http://10.0.0.5:8091`), and the server listens there on a second port that serves only
-  `/internal/v1/*`.
+  network (for example `http://10.0.0.5:8091`), and the server listens on its port with a second Fastify that serves
+  only `/internal/v1/*`. It binds the URL's host when that is an IP literal or `localhost`, and `0.0.0.0` for a DNS
+  name, which may not resolve to a local address; `WIREBENCH_SERVER_INTERNAL_HOST` overrides the bind address. The
+  listener speaks plain HTTP, so the URL must be `http://` (configuration refuses `https://`): the private network
+  is the transport's guard.
   - Each relay request carries a token made with HMAC-SHA-256 under a key HKDF derives from
-    `WIREBENCH_SERVER_SECRETS_KEY` ("wirebench/instance-relay/v1"). The token binds the tenant, the share, the
-    viewer's user and token ids, the target holder, and an expiry 30 s ahead. The holder refuses any other.
+    `WIREBENCH_SERVER_SECRETS_KEY` ("wirebench/instance-relay/v1"), which is why `multi` needs that key (§20.1). The
+    token binds the tenant, the share, the workspace, the viewer's user and token ids, the target holder, and an
+    expiry 30 s ahead, and carries what the holder admits the viewer with: the display name, when the viewer's device
+    token reaches its maximum age, and the audit source. It also names its route (`purpose`: `join` or `info`) and
+    carries a random `jti`; the holder keeps each `jti` it accepted until the token expires, so a token works once and
+    on its own route only. The holder refuses any other.
   - The public listener never routes `/internal/`, and the internal one routes nothing else.
-  - The docs say the port must not be reachable from outside the private network. The token is the guard if it is.
+  - The docs say the port must not be reachable from outside the private network. The token is the only guard if
+    it is.
 - **What does not change:** the share's protocol, its limits and its audit. When the holder dies, the share ends for
   every viewer, as a restart ends it today.
 - `single` mode never dials: every share lives in the one process.
@@ -2214,25 +2279,59 @@ logs and sharing spec B1). With several instances, a viewer can land on another 
   the pairing failure budget, and catch-URL buckets. Their keys, sizes and refill rates are unchanged, and so is
   every refusal a client sees. Spread over several instances, one tenant's attacker gets no more attempts than on
   one.
+  - Each limiter names its own rows (`name/key`), since sign-in and the agent's per-address limit key an address the
+    same way and were two maps before. A charge runs in a unit of its own, so a request that fails afterwards cannot
+    roll its charge back, and it uses the database's clock.
+  - Rows unspent for the longest refill window of every registered limiter, and at least an hour, are swept every
+    10 minutes, per tenant. Such a row is full, as a missing one is, so no decision changes.
+  - **One limiter stays in memory:** slice 6's `app.` entry form (`entry/routes.ts`) is charged before the request has
+    a tenant, and a scoped table cannot hold its buckets. Its limits are per instance.
 - **The new budgets,** one bucket each per tenant, with server-wide defaults:
 
   | Budget | Variable | Default | Refused with |
   | --- | --- | --- | --- |
   | Server-side sends per minute | `WIREBENCH_SERVER_TENANT_SENDS_PER_MINUTE` | 600, burst 100 | `429 tenant-send-budget`, `retryAfterMs` |
   | Concurrent server-side sends | `WIREBENCH_SERVER_TENANT_CONCURRENT_SENDS` | 16 | `429 tenant-send-concurrency` |
-  | Scheduled-run slots | `WIREBENCH_SERVER_TENANT_RUN_SLOTS` | 2 | queued, never refused |
+  | Scheduled-run slots | `WIREBENCH_SERVER_TENANT_RUN_SLOTS` | `WIREBENCH_SERVER_SCHEDULES_CONCURRENCY` | queued, never refused |
+
+  - The burst is one sixth of the per-minute rate, 100 at the default of 600, so raising the rate raises the burst.
+  - The run slots default to the per-server schedules concurrency, not to 2, so a one-tenant self-hosted server runs
+    as many scheduled runs at once as before (Part B review).
 
 - **What a server-side send is.** A send the server host makes on a browser user's behalf: the host's send channels,
-  listed in `src/operations/send-channels.ts`. A test fails when the channel registry has a send channel that the
-  list does not name, as the allowlist test does (§17.3). A send through a paired agent is not one; nor is a
-  scheduled run's request, which the run slots govern instead.
+  listed in `src/operations/send-channels.ts`. A send through a paired agent is not one (`agent.send` runs on the
+  person's machine; the host only builds its bundle and records the exchange); nor is a scheduled run's request,
+  which the run slots govern instead.
+  - **The rule.** A served channel whose last name segment starts with send, resend, open, run, invoke, call,
+    execute, connect, fetch, refresh or import (or ends in `Send`, `Introspect` or `Refresh`) is listed as a send, as a send only when its source
+    is a URL, or in `NOT_SENDS` with its reason. `send-channels.test.ts` fails on one in none, as the allowlist test
+    fails on an unclassified channel (§17.3), so a new protocol's send cannot go uncharged by accident.
+  - Outbound calls the host makes for the user count as sends: `oauth2.fetchToken`, `issuedTokens.fetch`,
+    `api.grpcRefresh`, `api.refreshMcpCatalogue`. `definition.import`, `api.importOpenApi`, `api.importAsyncApi` and
+    `api.importProto` count only when their source is a URL (or reflection). File and text imports, `sync.fetch`
+    (this server, in process) and the local imports are not sends, each with its reason.
+  - **Three charges** (owner rulings, 2026-11-04):
+    - `send`: a single request or outbound call takes one token and one slot for the call.
+    - `run`: `runner.run`, `sequence.run` and `request.sendToEnvironments` hold one slot for the whole call and take
+      no token for it; each request inside spends a token as it goes out, through the host's new `sendGate` option,
+      asked just before the wire. An empty bucket pauses the run, polling each second until the bucket's retry
+      time, bounded by the run's cancel and its socket's close. It never fails the run.
+    - `session`: `request.openWs` spends one token and holds a slot only until the handshake opens the session, so
+      open sessions block no send.
+  - The host socket charges each served frame in the user's tenant. A refusal is the call's error reply, with
+    `retryAfterMs`, which the tab already shows as a failed send.
 - **Concurrency across instances.** `send_slots(tenant_id, slot, holder, expires_at)`, unlogged and scoped. A send
   takes a slot (`insert … on conflict do update … where expires_at < now()` on one of the tenant's numbered slots)
-  and frees it after. A slot lasts the send's own deadline plus 30 s, so a crashed instance's slots free themselves.
+  and frees it after.
+  - The slot is taken before the token, and a budget refusal gives the slot back, so a send refused for concurrency
+    spends no token.
+  - The server cannot see a request's own deadline, so a slot lasts the host's default deadline (60 s) plus 30 s, and
+    is renewed every 30 s while its call runs: a run keeps its slot, and a dead instance's slots free themselves
+    within 90 s.
 - **Run slots.** The scheduler's per-server cap (`WIREBENCH_SERVER_SCHEDULES_CONCURRENCY`) stays. Beside it, a
   tenant runs at most its slots at once across every instance: the claim counts that tenant's `running` runs in the
-  same transaction that claims, and skips the tenant when it is full. The round-robin of §19.8 then offers the slot
-  to the next tenant.
+  same transaction that claims, under a per-tenant transaction lock (`0x57425253`, "WBRS"), and skips the tenant when
+  it is full, as an empty turn. The round-robin of §19.8 then offers the slot to the next tenant.
 - **Script limits stay per run** (ADR-0016): 1 s by default, 10 s at most, 64 MiB.
 - **Overrides** per tenant are slice 7's settings. Until then every tenant gets the defaults. A self-hosted server's
   one tenant gets them too. The send budget's default is set high enough that a team's own use does not reach it,
@@ -2259,7 +2358,7 @@ logs and sharing spec B1). With several instances, a viewer can land on another 
   | Name | Kind | Attributes |
   | --- | --- | --- |
   | `wirebench.http.requests` | counter | tenant, route, method, status class |
-  | `wirebench.http.duration` | histogram (ms) | tenant, route, method |
+  | `wirebench.http.duration` | histogram (ms) | route, method |
   | `wirebench.live.sockets` | gauge | tenant |
   | `wirebench.host.instances` | gauge | tenant |
   | `wirebench.sends` | counter | tenant, outcome (`ok`, `failed`, `refused`) |
@@ -2273,17 +2372,36 @@ logs and sharing spec B1). With several instances, a viewer can land on another 
 
   The process's id and version are resource attributes (`service.instance.id` is the `holder`).
 - A route without a tenant (`/healthz`, the sign-in page before resolution) records `wirebench.tenant.id` as `none`.
+- **As built:**
+  - Modules record through `ctx.metrics`. With no endpoint, the instruments sit on the API's no-op meter, the SDK is
+    loaded through `import()` only when an endpoint is set, and the gauges' sources are never read.
+  - `wirebench.http.duration` carries no tenant (Part C review): a histogram's buckets multiply its series, so
+    tenant × route × method × buckets would grow with every tenant. The counter keeps tenant × route × method × status
+    class.
+  - `wirebench.budget.refusals`'s budget is `sends` or `concurrency`.
+  - `wirebench.instances` counts the live `server_instances` rows when the reader collects, not on a timer.
+  - `wirebench.schedules.runs` records from a local listener, so each instance counts its own runs.
+  - `wirebench.bus.lag` records only for an envelope that carries `at` (§20.3).
+  - The periodic reader does not read `OTEL_METRIC_EXPORT_INTERVAL` and `OTEL_METRIC_EXPORT_TIMEOUT` itself, so the
+    server parses them; `config.ts` lists none of the `OTEL_*` variables.
+  - Shutdown flushes within 5 s, while the pools are still open.
+  - The attribute sweep also refuses any value shaped like a URL, an email or a slug.
 
 ### 20.9 Health
 
 - `GET /healthz` stays as it is (database, data directory, git).
-- `GET /readyz` is new and unscoped: `200` once start-up has finished and while the bus listens; `503` while draining
-  or while the bus reconnects. A balancer's health check uses it, so a draining instance gets no new socket.
+- `GET /readyz` is new and unscoped: `200` once start-up has finished and while the bus listens; `503` with
+  `starting`, `reconnecting` or `draining` otherwise. A balancer's health check uses it, so a draining instance gets no
+  new socket.
+  - It joins `/healthz` in `UNSCOPED_ROUTES` (`server.ts` and `tenancy/resolve.ts`), and the isolation suite's route
+    map classifies it `own`.
 
 ### 20.10 Admin
 
 - `wirebench-server admin instances` lists the live `server_instances` rows: holder, address, version, age, last
   renew. It prints no tenant.
+- `wirebench-server admin tenancy revert` refuses a database at `0022`, and its refusal names it: §19.10 ends the way
+  back with the first release that adds a migration after `0021`.
 
 ### 20.11 Testing
 
@@ -2315,7 +2433,8 @@ logs and sharing spec B1). With several instances, a viewer can land on another 
 
 - ADR-0009 and ADR-0013 carry an amendment note: the hub fans out through `LISTEN`/`NOTIFY`, the repository lock is
   an advisory lock, and the rate limits live in PostgreSQL. A server may run as several instances: hosted always,
-  self-hosted on Enterprise by opting in.
+  self-hosted on Enterprise by opting in. ADR-0037 is accepted with the build's changes (remote listeners, the missed
+  marker, session re-validation, the entry's in-memory limiter).
 - §5.5's sticky cookie is the balancer's, not the server's (ruling 4).
 - §19.9's start-up lease delete runs in `single` mode only (§19.12).
 - §19.8 guard 3's allowlist gains `server_instances`.
@@ -2551,8 +2670,9 @@ Owner rulings (popup, 2026-11-04):
   `select` on every scoped table, for the deletion check (§22.11); nothing else. It needs no write on a scoped table:
   every per-tenant write runs in that tenant's unit on the app role.
 - **Checked at start-up in hosted mode,** after the app role's check of §19.4: the control role must have
-  `rolbypassrls`, must not be a superuser (`control-plane-role-superuser`), must own no table, and must differ from
-  both the app role and the owner. Any failure refuses start-up with its code.
+  `rolbypassrls`, must not be a superuser (`control-plane-role-superuser`), must have neither `rolcreaterole` nor
+  `rolcreatedb` (`control-plane-role-too-broad`), must own no table, schema, sequence, view, function or type
+  (`control-plane-role-owns`), and must differ from both the app role and the owner. Any failure refuses start-up with its code.
 - **Confined in code.** `controlDatabaseUrl` is not in `ModuleConfig`; `serve.ts` opens a pool of at most two
   connections and hands it to the control plane as a branded `ControlDb`, which only `src/control-plane/` may name.
   `check:tenant-scope` gains the rule, and allows `from tenants`, the control tables and `bypass` SQL in

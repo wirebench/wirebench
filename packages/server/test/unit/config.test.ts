@@ -224,6 +224,7 @@ describe('describeConfig', () => {
         'WIREBENCH_SERVER_AUDIT_MAX_AGE_DAYS',
         'WIREBENCH_SERVER_BODY_LIMIT_MB',
         'WIREBENCH_SERVER_BROWSER_CLIENT',
+        'WIREBENCH_SERVER_CONTROL_DATABASE_URL',
         'WIREBENCH_SERVER_DATABASE_URL',
         'WIREBENCH_SERVER_DATA_DIR',
         'WIREBENCH_SERVER_DNS_SERVERS',
@@ -241,6 +242,7 @@ describe('describeConfig', () => {
         'WIREBENCH_SERVER_HOST_IDLE_MINUTES',
         'WIREBENCH_SERVER_INSTANCE_URL',
         'WIREBENCH_SERVER_INSTANCES',
+        'WIREBENCH_SERVER_INTERNAL_HOST',
         'WIREBENCH_SERVER_INVITATION_DAYS',
         'WIREBENCH_SERVER_LOCAL_AUTH',
         'WIREBENCH_SERVER_LOG_LEVEL',
@@ -700,6 +702,7 @@ describe('one instance or several (hosted edition spec §20.1)', () => {
     ...required,
     WIREBENCH_SERVER_INSTANCES: 'multi',
     WIREBENCH_SERVER_INSTANCE_URL: 'http://10.0.0.5:8091',
+    WIREBENCH_SERVER_SECRETS_KEY: Buffer.alloc(32, 7).toString('base64'),
   };
 
   it('defaults to single, with no instance URL', () => {
@@ -721,6 +724,12 @@ describe('one instance or several (hosted edition spec §20.1)', () => {
     );
   });
 
+  it('refuses multi without the secrets key the share relay is signed under (spec §20.6)', () => {
+    expect(() => loadConfig({ ...MULTI, WIREBENCH_SERVER_SECRETS_KEY: undefined }, '1')).toThrow(
+      /WIREBENCH_SERVER_SECRETS_KEY: is required when WIREBENCH_SERVER_INSTANCES is multi/,
+    );
+  });
+
   it('refuses a value other than single or multi', () => {
     expect(() => loadConfig({ ...required, WIREBENCH_SERVER_INSTANCES: 'many' }, '1')).toThrow(
       /WIREBENCH_SERVER_INSTANCES/,
@@ -734,6 +743,7 @@ describe('one instance or several (hosted edition spec §20.1)', () => {
     ['a path', 'http://10.0.0.5:8091/internal'],
     ['a trailing slash', 'http://10.0.0.5:8091/'],
     ['credentials', 'http://a:b@10.0.0.5:8091'],
+    ['https, which the plain-HTTP internal listener does not speak', 'https://10.0.0.5:8091'],
   ])('refuses an instance URL with %s, without echoing it', (_why, value) => {
     let message = '';
     try {
@@ -743,6 +753,20 @@ describe('one instance or several (hosted edition spec §20.1)', () => {
     }
     expect(message).toContain('WIREBENCH_SERVER_INSTANCE_URL');
     expect(message).not.toContain(value);
+  });
+
+  it('says why an https instance URL is refused (review: the internal listener speaks plain HTTP)', () => {
+    expect(() => loadConfig({ ...MULTI, WIREBENCH_SERVER_INSTANCE_URL: 'https://10.0.0.5:8091' }, '1')).toThrow(
+      /WIREBENCH_SERVER_INSTANCE_URL: must be http:\/\/host:port: the internal listener speaks plain HTTP/,
+    );
+  });
+
+  it('reads the internal bind address, unset by default (review)', () => {
+    expect(loadConfig(MULTI, '1').internalHost).toBeUndefined();
+    expect(loadConfig({ ...MULTI, WIREBENCH_SERVER_INTERNAL_HOST: '10.0.0.5' }, '1').internalHost).toBe('10.0.0.5');
+    expect(describeConfig(MULTI)).toEqual(
+      expect.arrayContaining([{ variable: 'WIREBENCH_SERVER_INTERNAL_HOST', status: 'missing' }]),
+    );
   });
 
   it('is always multi in hosted mode, whatever the variable says', () => {

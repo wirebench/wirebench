@@ -170,26 +170,38 @@ export class DatabaseRepoLock {
   readonly #pool: RepoLockPool;
   readonly #warn: (error: Error, message: string) => void;
   readonly #probeTimeoutMs: number;
+  readonly #waited: (tenantId: string, ms: number) => void;
 
   constructor(deps: {
     readonly pool: RepoLockPool;
     readonly warn?: (error: Error, message: string) => void;
     /** {@link REPO_LOCK_PROBE_TIMEOUT_MS} unless a test shortens it. */
     readonly probeTimeoutMs?: number;
+    /**
+     * How long each hold waited for its connection and lock, granted or run out (`503 repo-busy`): the
+     * `wirebench.repo.lock.wait` histogram (spec §20.8).
+     */
+    readonly waited?: (tenantId: string, ms: number) => void;
   }) {
     this.#pool = deps.pool;
     this.#warn = deps.warn ?? (() => undefined);
     this.#probeTimeoutMs = deps.probeTimeoutMs ?? REPO_LOCK_PROBE_TIMEOUT_MS;
+    this.#waited = deps.waited ?? (() => undefined);
   }
 
   /** Runs `fn` holding the lock for `scope`'s `workspaceId`; `503 repo-busy` when the wait runs out. */
   async hold<T>(scope: TenantScope, workspaceId: string, fn: () => Promise<T>): Promise<T> {
     const params = [REPO_LOCK_CLASS, scope.tenantId, workspaceId];
+    const asked = performance.now();
+    const busy = (): WirebenchError => {
+      this.#waited(scope.tenantId, performance.now() - asked);
+      return repoBusy();
+    };
     let connection: RepoLockConnection;
     try {
       connection = await this.#pool.acquire();
     } catch (error) {
-      if (codeOf(error) === 'pool-timeout') throw repoBusy();
+      if (codeOf(error) === 'pool-timeout') throw busy();
       throw error;
     }
     let released = false;
@@ -220,7 +232,7 @@ export class DatabaseRepoLock {
     } catch (error) {
       // Destroyed whatever went wrong: a wait cut short on the client side could still be granted later.
       release(true);
-      if (codeOf(error) === '55P03') throw repoBusy(); // lock_not_available: `lock_timeout` ran out
+      if (codeOf(error) === '55P03') throw busy(); // lock_not_available: `lock_timeout` ran out
       throw error;
     }
     if (held.lost !== undefined) {
@@ -228,6 +240,7 @@ export class DatabaseRepoLock {
       throw held.lost;
     }
     held.answeredAt = performance.now();
+    this.#waited(scope.tenantId, held.answeredAt - asked);
     try {
       return await current.run(held, fn);
     } finally {

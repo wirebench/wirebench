@@ -297,6 +297,16 @@ export class HostInstances {
     return this.instances.size;
   }
 
+  /** How many instances run, by tenant id: the `wirebench.host.instances` gauge (spec §20.8). */
+  countsByTenant(): Map<string, number> {
+    const counts = new Map<string, number>();
+    for (const instance of this.instances.values()) {
+      const tenantId = instance.user.tenant.tenantId;
+      counts.set(tenantId, (counts.get(tenantId) ?? 0) + 1);
+    }
+    return counts;
+  }
+
   /**
    * The lease first, then the host. A host that cannot be built gives the lease back before its promise rejects,
    * and so before the instance is forgotten and another can take the lease again.
