@@ -137,6 +137,8 @@ export const SOCKET_ROUTES = {
 export const ROUTE_MAP: Readonly<Record<string, RouteCase>> = {
   // ---- the host and meta
   'GET /healthz': { cls: 'own', request: () => ({ method: 'GET', url: '/healthz' }) },
+  // Spec §20.9: this process's own state, the same on every host.
+  'GET /readyz': { cls: 'own', request: () => ({ method: 'GET', url: '/readyz' }) },
   'GET /api/v1/meta': { cls: 'own', request: () => ({ method: 'GET', url: api('/meta') }) },
   // Also the entry's page (spec §21.4), which the entry suite covers: on a tenant host `/` is the browser client's.
   'GET /': { cls: 'own', request: (ctx) => ({ method: 'GET', url: '/', headers: asTab(ctx) }) },

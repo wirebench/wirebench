@@ -682,6 +682,8 @@ export async function startServer(
     log: app.log,
   });
   busSignals.attach(bus);
+  // `/readyz` follows the bus (spec §20.9): not ready while it reconnects.
+  registry.watchBus(busSignals);
   try {
     await bus.start();
   } catch (error) {
@@ -727,6 +729,10 @@ export async function startServer(
       // the deadline the remaining connections are dropped so app.close() resolves. The shutdown
       // stays a normal one: only a second signal ends it with 130.
       if (lost) app.server.closeAllConnections();
+      // Spec §20.5, first: `/readyz` answers 503 and the socket routes refuse upgrades; each host runs its quit path,
+      // gives its lease back and only then closes its sockets `4503 host-draining`; live sockets close `1012`. HTTP
+      // keeps serving until `app.close()` below.
+      await registry.drain();
       const timer = setTimeout(() => app.server.closeAllConnections(), lost ? 0 : (options.drainMs ?? SERVER_DRAIN_MS));
       timer.unref();
       // Node's server.close() drops only the connections idle at that moment; a keep-alive
@@ -793,5 +799,7 @@ export async function startServer(
     void close();
   }
   for (const name of SIGNALS) signals.on(name, onSignal);
+  // Start-up has finished: `/readyz` answers 200 while the bus listens.
+  registry.serving();
   return { app, ctx: { ...ctx, log: app.log }, db, port, bus, close };
 }

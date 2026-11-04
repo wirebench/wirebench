@@ -169,3 +169,93 @@ describe('admin instances output (spec §20.10)', () => {
     expect(lines).toHaveLength(3);
   });
 });
+
+describe('readiness and draining (spec §20.5, §20.9)', () => {
+  /** A bus's signals the test fires by hand. */
+  const signals = () => {
+    const listened: ((listened: { reconnected: boolean }) => void)[] = [];
+    const lost: ((error: Error) => void)[] = [];
+    return {
+      events: {
+        onListen: (listener: (listened: { reconnected: boolean }) => void) => listened.push(listener),
+        onLost: (listener: (error: Error) => void) => lost.push(listener),
+      },
+      listen: (reconnected: boolean) => listened.forEach((one) => one({ reconnected })),
+      lose: () => lost.forEach((one) => one(new Error('connection terminated'))),
+    };
+  };
+  const made = (log: (message: string, error: unknown) => void = () => undefined) =>
+    new InstanceRegistry({
+      db: { query: () => Promise.resolve({ rows: [] }) },
+      holder: '22222222-2222-4222-8222-222222222222',
+      mode: 'multi',
+      version: '0.0.0-test',
+      setTimer: manualTimers().setTimer,
+      log,
+    });
+
+  it('is starting until start-up finished, ready while the bus listens, reconnecting while it is lost', () => {
+    const registry = made();
+    const bus = signals();
+    registry.watchBus(bus.events);
+    expect(registry.readiness()).toBe('starting');
+    bus.listen(false);
+    // Listening, but start-up has not finished.
+    expect(registry.readiness()).toBe('starting');
+    registry.serving();
+    expect(registry.readiness()).toBe('ready');
+    bus.lose();
+    expect(registry.readiness()).toBe('reconnecting');
+    bus.listen(true);
+    expect(registry.readiness()).toBe('ready');
+  });
+
+  it('is not ready once served if the bus never listened', () => {
+    const registry = made();
+    registry.watchBus(signals().events);
+    registry.serving();
+    expect(registry.readiness()).toBe('reconnecting');
+  });
+
+  it('drains once: draining from the first call, every listener run side by side and waited for, a failure logged', async () => {
+    const logged: string[] = [];
+    const registry = made((message) => logged.push(message));
+    const bus = signals();
+    registry.watchBus(bus.events);
+    bus.listen(false);
+    registry.serving();
+    const order: string[] = [];
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((done) => {
+      release = done;
+    });
+    registry.onDrain(async () => {
+      order.push('host started');
+      await held;
+      order.push('host done');
+    });
+    registry.onDrain(() => {
+      order.push('live');
+      return Promise.reject(new Error('boom'));
+    });
+    expect(registry.draining).toBe(false);
+    let drained = false;
+    const draining = registry.drain().then(() => {
+      drained = true;
+    });
+    expect(registry.draining).toBe(true);
+    expect(registry.readiness()).toBe('draining');
+    // A bus that listens again does not make a draining process ready.
+    bus.listen(true);
+    expect(registry.readiness()).toBe('draining');
+    await new Promise((done) => setTimeout(done, 5));
+    expect(order).toEqual(['host started', 'live']);
+    expect(drained).toBe(false);
+    // A second call is the same drain: no listener runs twice.
+    const again = registry.drain();
+    release();
+    await Promise.all([draining, again]);
+    expect(order).toEqual(['host started', 'live', 'host done']);
+    expect(logged).toEqual(['a drain listener failed']);
+  });
+});

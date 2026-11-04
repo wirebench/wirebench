@@ -29,12 +29,19 @@ export function fakeDatabase(options: { failing?: boolean } = {}): Database {
   return { ...querier, transaction: async (fn) => fn(querier), close: () => Promise.resolve() } as Database;
 }
 
-/** A test's `ctx.instance`: no row, and a heartbeat that beats only when the test calls `beat`. */
-export function testInstance(
-  mode: ServerInstance['mode'] = 'single',
-  holder: string = randomUUID(),
-): ServerInstance & { beat(): Promise<void> } {
+/** A test's `ctx.instance`, always ready until it drains. */
+export type TestInstance = ServerInstance & {
+  /** Runs every heartbeat listener; the test calls it, no timer does. */
+  beat(): Promise<void>;
+  /** The shutdown's first step (spec §20.5): every drain listener, once, as `serve.ts` runs it. */
+  drain(): Promise<void>;
+};
+
+/** A test's `ctx.instance`: no row, a heartbeat that beats only when the test calls `beat`, and a drain likewise. */
+export function testInstance(mode: ServerInstance['mode'] = 'single', holder: string = randomUUID()): TestInstance {
   const listeners: (() => Promise<void>)[] = [];
+  const drainListeners: (() => Promise<void>)[] = [];
+  let drained: Promise<void> | undefined;
   return {
     holder,
     mode,
@@ -45,6 +52,17 @@ export function testInstance(
       await Promise.all(listeners.map((listener) => listener()));
     },
     live: () => Promise.resolve([]),
+    readiness: () => (drained === undefined ? 'ready' : 'draining'),
+    get draining() {
+      return drained !== undefined;
+    },
+    onDrain: (listener) => {
+      drainListeners.push(listener);
+    },
+    drain: () => {
+      drained ??= Promise.all(drainListeners.map((listener) => listener())).then(() => undefined);
+      return drained;
+    },
   };
 }
 

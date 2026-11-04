@@ -16,7 +16,8 @@
  * `HOST_LIMITS.maxSocketsPerUser + 1`th socket closes `4429`, also before any frame. A user whose host another
  * server process holds (the lease, spec §19.9) closes `4409`, `host-lease-held` with a `retryAfterMs`. A user
  * of a tenant whose every seat has a live host, once this process's idle ones are evicted, closes `4429` with
- * `host-instance-cap` (the ninth socket's `4429` says `too many host sockets`).
+ * `host-instance-cap` (the ninth socket's `4429` says `too many host sockets`). A draining process (spec §20.5)
+ * closes every upgrade `4503 host-draining`, and its open sockets the same way once their host's quit path has run.
  *
  * Identity's guard checks `Origin` only on mutating methods: every `GET` under `/api/v1` is free of side
  * effects, so a cross-site `GET` with the cookie can read nothing it may not and change nothing. That
@@ -40,7 +41,7 @@ import { realTimer } from '../live/module.js';
 import { tenantUrl } from '../tenancy/urls.js';
 import { isServedChannel } from './allowlist.js';
 import { browserClientRoutes } from './browser-client.js';
-import { HOST_CLOSE, HOST_LIMITS } from './errors.js';
+import { HOST_CLOSE, HOST_DRAINING_REASON, HOST_LIMITS } from './errors.js';
 import { loadHostRuntime, loadHostSocketLoop, type HostSecretEvent } from './host-runtime.js';
 import { injectSend } from './inject-send.js';
 import { HostInstances, type HostSession, type HostSocketHandle, type HostUser } from './instances.js';
@@ -251,6 +252,11 @@ export function hostModule(options: HostModuleOptions = {}): ServerModule {
         const refuse = (code: number, reason: string): void => {
           socket.close(code, reason);
         };
+        // Draining (spec §20.5): no new socket; the tab tries again, and the balancer sends it to a live instance.
+        if (ctx.instance.draining) {
+          refuse(HOST_CLOSE.unavailable, HOST_DRAINING_REASON);
+          return;
+        }
         const serverUrl = tenantUrl(config, request);
         if (request.headers.origin !== serverUrl) {
           refuse(HOST_CLOSE.forbidden, 'origin refused');
@@ -379,6 +385,9 @@ export function hostModule(options: HostModuleOptions = {}): ServerModule {
           ctx.log,
         );
       });
+      // Spec §20.5: on `SIGTERM`, before the app closes, each host runs its quit path and gives its lease back, and only
+      // then do its sockets close `4503 host-draining`.
+      ctx.instance.onDrain(() => instances.drain());
       app.addHook('onClose', async () => {
         await instances.closeAll();
         // The pool closes after the app, so every secret audit row is written first.

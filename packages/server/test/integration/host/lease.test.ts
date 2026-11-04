@@ -618,6 +618,48 @@ describeDb('the host-instance lease (spec §19.9)', () => {
     expect(await two.instances.open(alice, socket('a2'))).toBeDefined();
   });
 
+  it('a drain closes each socket 4503 host-draining after the quit path and the release, so another process takes the user at once', async () => {
+    const order: string[] = [];
+    const one = serverProcess('holder-one', watching(order), order);
+    const two = serverProcess('holder-two');
+    /** A socket whose close is noted in `order`, beside the disposals and releases. */
+    const tab = (token: string): HostSocketHandle & { closed: { code: number; reason: string }[] } => {
+      const made = socket(token);
+      return {
+        ...made,
+        close: (code, reason) => {
+          order.push(`closed ${token} ${String(code)} ${reason}`);
+          made.close(code, reason);
+        },
+      };
+    };
+    const first = tab('a1');
+    const second = tab('a2');
+    await one.instances.open(alice, first);
+    await one.instances.open(alice, second);
+    await one.instances.open(carol, tab('c1'));
+    // Held by the first process: the second is told to wait out the lease.
+    await expect(two.instances.open(alice, socket('a3'))).rejects.toMatchObject({ code: 'host-lease-held' });
+    await one.instances.drain();
+    const alices = order.filter((entry) => entry.includes(alice.id) || entry.includes(' a'));
+    expect(alices).toEqual([
+      `disposed ${alice.id}`,
+      `released ${alice.id}`,
+      'closed a1 4503 host-draining',
+      'closed a2 4503 host-draining',
+    ]);
+    expect(order.indexOf('closed c1 4503 host-draining')).toBeGreaterThan(order.indexOf(`released ${carol.id}`));
+    expect(await leaseRows(home)).toEqual([]);
+    expect(await leaseRows(acme)).toEqual([]);
+    // No expiry waited for: the other process takes the user the moment the tab reconnects.
+    expect(await two.instances.open(alice, socket('a4'))).toBeDefined();
+    expect(await leaseRows(home)).toEqual([{ user_id: alice.id, holder: 'holder-two' }]);
+    // The drained process builds nothing more, and its shutdown afterwards has nothing left to do.
+    expect(await one.instances.open(bob, socket('b1'))).toBeUndefined();
+    await one.instances.closeAll();
+    expect(hostOf(one, alice)?.disposed).toBe(1);
+  });
+
   it('a take is one unit: the lock, the expired delete and the insert (and the remaining time when refused)', async () => {
     const one = serverProcess('holder-one');
     const two = serverProcess('holder-two');

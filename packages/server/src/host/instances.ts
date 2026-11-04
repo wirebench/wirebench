@@ -20,6 +20,11 @@
  * it back once its eviction has run the quit path, so no two processes hold one user's host. A lease lost to
  * another holder, or one this process could not renew in time, closes the instance's sockets `4409` and evicts it.
  *
+ * A drain (spec §20.5, a `SIGTERM`) evicts every instance with its sockets left open, and closes them `4503
+ * host-draining` only once the host's quit path has run and its lease is given back: the tab reconnects at once, and
+ * the instance the balancer sends it to takes the lease without waiting for it to expire, while no two hosts ever
+ * hold the checkout (the release comes after the quit path, as on every eviction).
+ *
  * At the tenant's instance cap (a take refused `host-instance-cap`), this process evicts its own idle instances of
  * that tenant, longest idle first, one at a time, and takes again after each eviction has given its lease back. Idle
  * is what the idle timer already means: no socket open, the timer running. Still at the cap with none left, or after
@@ -28,7 +33,7 @@
  */
 import { rm } from 'node:fs/promises';
 import type { SessionEndedEvent } from '../context.js';
-import { HOST_CLOSE } from './errors.js';
+import { HOST_CLOSE, HOST_DRAINING_REASON } from './errors.js';
 import type { ServerHost } from './host-runtime.js';
 import { isInstanceCap, type InstanceLeases, type LeaseLoss } from './lease.js';
 import { hostDirectories } from './server-platform.js';
@@ -259,6 +264,22 @@ export class HostInstances {
   }
 
   /**
+   * The drain (spec §20.5): nothing more is built, a socket still waiting for an eviction closes `4503 host-draining`
+   * at once, and every instance is evicted, its sockets closed the same way after its quit path and its lease
+   * release. Resolves once every eviction has finished; {@link closeAll} afterwards has only the renewals to stop.
+   */
+  async drain(): Promise<void> {
+    this.closed = true;
+    for (const [socket, wait] of this.waiting) {
+      if (wait.gone) continue;
+      wait.gone = true;
+      socket.close(HOST_CLOSE.unavailable, HOST_DRAINING_REASON);
+    }
+    for (const instance of [...this.instances.values()]) this.evict(instance, true);
+    await Promise.all([...this.evicting.values()]);
+  }
+
+  /**
    * How many host sockets `user` has: open on their instance, or waiting for its eviction. The module
    * turns away a socket past `HOST_LIMITS.maxSocketsPerUser` before calling {@link open}.
    */
@@ -364,7 +385,8 @@ export class HostInstances {
     if (at !== -1) instance.sockets.splice(at, 1);
   }
 
-  private evict(instance: Instance): void {
+  /** `draining`: the instance's open sockets close `4503 host-draining` once the quit path and the release are done. */
+  private evict(instance: Instance, draining = false): void {
     const key = keyOf(instance.user);
     if (this.instances.get(key) !== instance) return;
     this.instances.delete(key);
@@ -400,6 +422,10 @@ export class HostInstances {
           )
         )
           instance.released = await this.deps.leases?.release(instance.user);
+        // Only now (Review Focus 3): a tab that reconnected sooner would find the lease still held, and wait it out.
+        if (draining) {
+          for (const socket of instance.sockets.splice(0)) socket.close(HOST_CLOSE.unavailable, HOST_DRAINING_REASON);
+        }
       })
       .finally(() => {
         if (this.evicting.get(key) === done) this.evicting.delete(key);
