@@ -13,7 +13,7 @@ import type { ServerMetrics } from './operations/metrics/instruments.js';
 import { healthRoutes } from './routes/health.js';
 import { metaRoutes } from './routes/meta.js';
 import { registerTenantResolution, type TenantResolver } from './tenancy/resolve.js';
-import { directoryOf, shareTenancyCaches } from './tenancy/tenancy.js';
+import { directoryOf, shareTenancyCaches, tellTenantsStopped } from './tenancy/tenancy.js';
 
 export interface BuildServerOptions {
   readonly modules: readonly ServerModule[];
@@ -125,6 +125,11 @@ export async function buildServer(ctx: ServerContext, options: BuildServerOption
     ctx.hooks.tenantsChanged.push(remote(reload));
     ctx.bus.onListen(({ reconnected }) => {
       if (reconnected) reload();
+    });
+    // Spec §22.7 (review I1): every successful read of the map, the poll's included, closes the stopped tenants'
+    // sockets on this instance, once the map no longer lets them in.
+    resolver.onReloaded((tenantIds) => {
+      tellTenantsStopped(ctx.tenancy, tenantIds, app.log);
     });
     options.onTenantResolver?.(resolver);
   }

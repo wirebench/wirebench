@@ -163,15 +163,6 @@ export class TenantDirectory {
   }
 
   /**
-   * The ids of the tenants that serve nothing now, suspended or deleting (spec §22.7): what each instance closes the
-   * sockets, hosts and shares of. Ids, never scopes: a caller learns which tenants to stop, not a way into one.
-   */
-  async stoppedIds(): Promise<Set<string>> {
-    const rows = await this.#db.query<{ id: string }>("select id::text as id from tenants where status <> 'active'");
-    return new Set(rows.rows.map((row) => row.id));
-  }
-
-  /**
    * The tenants the entry lists (spec §21.4), with each one's name: active only, and never the default tenant. A
    * suspended tenant is on the hosted map (it answers why it is suspended) but never in the entry's message.
    */

@@ -375,6 +375,32 @@ describeDb('tenant resolution (spec §19.5)', () => {
         expect([200, 503]).toContain(health.statusCode);
       });
 
+      it('sends a page load (GET or HEAD for text/html) to its sign-in page with 303; the API stays 403 JSON (review M5)', async () => {
+        const html = { host: 'canceled-co.example.test', accept: 'text/html,application/xhtml+xml,*/*;q=0.8' };
+        for (const method of ['GET', 'HEAD'] as const) {
+          for (const url of ['/', '/w/team?tab=1', '/no-such-route', '/sign-in/oidc']) {
+            const res = await h.app.inject({ method, url, headers: html });
+            expect(res.statusCode, `${method} ${url}`).toBe(303);
+            expect(res.headers.location, `${method} ${url}`).toBe('/sign-in');
+            expect(res.headers['cache-control'], `${method} ${url}`).toBe('no-store');
+          }
+        }
+        // The API, a POST, and a request that does not ask for HTML keep the 403 body that says why.
+        for (const request of [
+          { method: 'GET', url: '/api/v1/meta', headers: html },
+          { method: 'POST', url: '/sign-in/local', headers: html, payload: { email: 'a@b.test', password: 'x' } },
+          { method: 'GET', url: '/', headers: { host: html.host, accept: 'application/json' } },
+          { method: 'GET', url: '/', headers: { host: html.host } },
+        ] as const) {
+          const res = await h.app.inject(request);
+          expect(res.statusCode, `${request.method} ${request.url}`).toBe(403);
+          expect(res.json(), `${request.method} ${request.url}`).toMatchObject({ code: 'tenant-suspended' });
+        }
+        // The sign-in page itself is never redirected.
+        const page = await h.app.inject({ method: 'GET', url: '/sign-in?redirect_to=%2F', headers: html });
+        expect(page.statusCode).toBe(200);
+      });
+
       it('gives a second host name of the same tenant the same answer: the status is on the entry', async () => {
         const hosts = (resolver as unknown as { hosts: Map<string, unknown> }).hosts;
         hosts.set('alias.custom.test', resolver!.entryOf('importing-co.example.test'));

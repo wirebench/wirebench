@@ -238,7 +238,9 @@ export function terminalSharesModule(options: TerminalSharesOptions = {}): Serve
         const ip = auditIp(request.ip);
         runShareSocket(socket, {
           registry,
-          authenticate: (token) => callerForToken({ db: ctx.tenancy.db(request.tenant), settings, now }, token),
+          // A fresh read, not the map (review I1): an owner or viewer that upgraded on a map not yet reloaded is refused.
+          authenticate: (token) =>
+            callerForToken({ db: ctx.tenancy.db(request.tenant), settings, now, refuseStopped: true }, token),
           tokenMaxMs: settings.tokenMaxMs,
           featureOn: async () => (await ctx.license.state(request.tenant)).features.includes('terminal-sharing'),
           canView: (userId, workspaceId) => canView(userId, workspaceId, request.tenant),

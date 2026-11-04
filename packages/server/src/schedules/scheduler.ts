@@ -23,7 +23,9 @@
  * A suspended (or deleting) tenant fires nothing and starts nothing (hosted edition spec §22.7), but the pass still
  * visits it: each due schedule's next fire moves past now with no run, so on its resume each schedule's next run is
  * the one after then, never a catch-up of what it missed (one tick, 15 s, is the granularity, as for any fire). A
- * run of it that was queued waits for the resume; a stale running one still ends `interrupted`.
+ * run of it that was queued ends `skipped` (reason `suspended`), so none starts as a catch-up on the resume either; a
+ * stale running one still ends `interrupted`. Each claim reads the status again, so a run ending, or a kick, between
+ * two passes starts nothing of a tenant suspended since the last one.
  *
  * A start claims only in the tenants with a run waiting (Task 17 perf): each pass asks every licensed tenant, in
  * the unit it already has, and a claim that finds nothing takes its tenant off the list until the next pass. So a
@@ -236,11 +238,12 @@ export class Scheduler {
   }
 
   /**
-   * A stopped tenant's pass: its stale runs still end `interrupted` (their alerts wait in the outbox), and each due
-   * schedule's next fire moves past now without a run.
+   * A stopped tenant's pass: its stale runs still end `interrupted` (their alerts wait in the outbox), its queued runs
+   * end `skipped` (review M2), and each due schedule's next fire moves past now without a run.
    */
   private async passOver(tx: TenantQuerier): Promise<void> {
     const now = this.env.now();
+    await repo.skipQueuedRuns(tx, 'suspended', now);
     for (const run of await repo.interruptStaleRuns(tx, now)) {
       await enqueueAlertsOrWarn(tx, this.env, run.scheduleId, {
         ...run,
@@ -296,6 +299,8 @@ export class Scheduler {
         runId = await this.env.tenancy.db(scope).transaction(async (tx) => {
           // The tenant's run slots (spec §20.7), counted under its lock so two servers cannot both take the last.
           await lockRunSlots(tx);
+          // Suspended since the pass that listed it (spec §22.7, review M1): a freed slot or a kick starts nothing.
+          if (await tenantStopped(tx)) return undefined;
           if ((await repo.countRunningRuns(tx)) >= this.env.settings.runSlots) return FULL;
           return (await claim(tx, 1, this.env.now()))[0];
         });

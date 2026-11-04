@@ -264,7 +264,7 @@ describeDb('terminal shares (#429)', () => {
   // license and the seat count) and canView's, one each. Two units for the two checks were measured beside the host
   // lease's one take per host and one renew per tenant per 15 s, and left apart: a join is a person opening a share,
   // so grouping them would save one begin, set_config and commit per join. Pinned here so a third shows.
-  it('a viewer’s join runs the token’s unit, then one unit each for featureOn and canView', async () => {
+  it('a viewer’s join runs the token’s unit (with the tenant’s status), then one unit each for featureOn and canView', async () => {
     const shareId = await create();
     const owner = await openShare(port, auth(ada.token, shareId));
     await owner.next('ready');
@@ -281,7 +281,8 @@ describeDb('terminal shares (#429)', () => {
     expect(join).toHaveLength(3);
     expect(join).toEqual(
       expect.arrayContaining([
-        [expect.stringContaining('token_hash')],
+        // The token's unit reads the tenant's status first (hosted edition spec §22.7, review I1).
+        [expect.stringContaining('from tenants'), expect.stringContaining('token_hash')],
         [expect.stringContaining('from license'), expect.stringContaining('from users')],
         [expect.stringContaining('m.role')],
       ]),

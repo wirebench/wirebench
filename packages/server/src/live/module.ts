@@ -173,7 +173,9 @@ export function liveModule(options: LiveOptions = {}): ServerModule {
       // A socket's token is found in the tenant it connected to (spec §19.8 guard 2).
       const loopFor = (tenant: TenantScope): SocketLoopDeps => ({
         hub,
-        authenticate: (token) => callerForToken({ db: ctx.tenancy.db(tenant), settings, now }, token),
+        // A fresh read, not the map (review I1): a reconnect that upgraded on a map not yet reloaded is refused here.
+        authenticate: (token) =>
+          callerForToken({ db: ctx.tenancy.db(tenant), settings, now, refuseStopped: true }, token),
         tokenMaxMs: settings.tokenMaxMs,
         setTimer,
         log: ctx.log,

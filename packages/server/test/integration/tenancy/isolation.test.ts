@@ -667,7 +667,7 @@ describeDb('the cross-tenant isolation suite (spec §19.13)', () => {
   // Last, since it suspends B for its run (spec §22.7): every registered route answers a suspended tenant as the
   // resolver says, before any module route, and an active tenant's is unaffected.
   describe('a suspended tenant', () => {
-    it('answers every route with its page, a 503 or 403 tenant-suspended; A is unaffected', async () => {
+    it('answers every route with its page, a 503, a 303 to sign in or 403 tenant-suspended; A is unaffected', async () => {
       const db = w.t.h.db;
       const setStatus = async (status: 'active' | 'suspended', reason: string | null): Promise<void> => {
         await db.query('update tenants set status = $2, suspended_reason = $3 where id = $1::uuid', [
@@ -719,6 +719,22 @@ describeDb('the cross-tenant isolation suite (spec §19.13)', () => {
             wrong.push(`${key}: ${res.statusCode} ${res.body.slice(0, 200)}`);
           } else if (res.json<{ code: string }>().code !== 'tenant-suspended') {
             wrong.push(`${key}: ${res.body.slice(0, 200)}`);
+          }
+          // A browser's page load (review M5): `303` to the sign-in page, but never on the API, which keeps its 403.
+          const isPage =
+            request.method === 'GET' &&
+            path !== '/healthz' &&
+            path !== '/readyz' &&
+            path !== '/sign-in' &&
+            !path.startsWith('/hooks/');
+          if (isPage) {
+            const headers = { ...(request.headers as Record<string, string> | undefined), accept: 'text/html' };
+            const page = await w.b.tenant.inject({ ...request, headers });
+            if (path === '/api' || path.startsWith('/api/')) {
+              if (page.statusCode !== 403) wrong.push(`${key}: the API answered a page load ${page.statusCode}`);
+            } else if (page.statusCode !== 303 || page.headers.location !== '/sign-in') {
+              wrong.push(`${key}: a page load answered ${page.statusCode} ${String(page.headers.location)}`);
+            }
           }
           // A, active, on the same route: never the suspension's answer. Reads only, so A's rows stay as they are.
           if (key.startsWith('GET ')) {

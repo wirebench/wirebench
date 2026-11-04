@@ -38,6 +38,7 @@ import { SendBudgets, sendBudgetSettings } from '../operations/budgets.js';
 import { endGoneSessions } from '../operations/sessions.js';
 import { hashToken } from '../identity/tokens.js';
 import { realTimer } from '../live/module.js';
+import { tenantStopped } from '../tenancy/directory.js';
 import { TENANT_SUSPENDED } from '../tenancy/resolve.js';
 import { tenantUrl } from '../tenancy/urls.js';
 import { isServedChannel } from './allowlist.js';
@@ -331,8 +332,15 @@ export function hostModule(options: HostModuleOptions = {}): ServerModule {
         // A data key that does not open under the configured root (the key was changed) is the operator's to fix,
         // not a server fault: the socket closes `4503`, which the tab shows as such, and the log names the code.
         // The error is a fixed string; no key, wrap or root reaches the log or the close (ADR-0004).
-        const host = Promise.all([opened, checked]).then(
-          ([ready]) => ready,
+        // A fresh read, not the map (spec §22.7, review I1): a tab that reconnected on a map not yet reloaded is
+        // refused before its hello, as the stopped-tenant listener would have closed it.
+        const stopped = tenantStopped(ctx.tenancy.db(request.tenant));
+        const host = Promise.all([opened, checked, stopped]).then(
+          ([ready, , isStopped]) => {
+            if (!isStopped) return ready;
+            running.socket?.end(HOST_CLOSE.forbidden, TENANT_SUSPENDED);
+            return undefined;
+          },
           (error: unknown) => {
             if (!isWirebenchError(error)) throw error;
             // Not `code`: the logger redacts that name at the top level and one level down (pairing codes).

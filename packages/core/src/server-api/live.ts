@@ -35,8 +35,8 @@ export const LIVE_LIMITS = {
 
 /**
  * The close codes of §3.1. `1000`–`1011` are the protocol's own. The `44xx` codes mirror the HTTP
- * status each stands for. Only `4401` stops the desktop from reconnecting: it runs the token check
- * instead.
+ * status each stands for. Only `4401` and `4403` stop the desktop from reconnecting: `4401` runs the
+ * token check instead.
  */
 export const LIVE_CLOSE = {
   /** The desktop closed it: no open workspace on that server, sign-out, or quit. */
@@ -56,6 +56,11 @@ export const LIVE_CLOSE = {
   badMessage: 4400,
   /** A bad token, an ended session, or the token's maximum age reached. */
   unauthenticated: 4401,
+  /**
+   * The team is suspended or being deleted (hosted edition spec §22.7), with the reason `tenant-suspended`. The desktop
+   * stops reconnecting: its next HTTP call answers why.
+   */
+  tenantSuspended: 4403,
   /** No `auth` within `LIVE_LIMITS.authTimeoutMs`. */
   authTimeout: 4408,
   /** The user already has `LIVE_LIMITS.maxSocketsPerUser` sockets; the desktop waits 60 s. */

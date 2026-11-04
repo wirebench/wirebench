@@ -10,7 +10,8 @@
  *   `cache-control: no-store`, so the answer names nothing. WebSocket upgrades pass through the same hook.
  * - **Suspended tenants** (spec §22.7) stay on the map with their reason, and answer before any module route:
  *   `GET /sign-in` (and `HEAD`) the sign-in page with the reason and no form; `/hooks/…` (catch URLs, every method)
- *   `503` with an empty body; everything else, the API and both WebSocket upgrades included, `403`
+ *   `503` with an empty body; a browser's page load elsewhere (`GET`/`HEAD` accepting `text/html`, not the API) `303`
+ *   to `/sign-in`; everything else, the API and both WebSocket upgrades included, `403`
  *   `{ code: "tenant-suspended", message, reason }`. No one signs in, server admins included. `/healthz` and
  *   `/readyz` stay unscoped; a deleting tenant is off the map, so `404`.
  * - **Retired slugs** (spec §22.8). An old slug's host whose redirect lives answers `308` to the same path and query
@@ -19,7 +20,7 @@
  *   `app.<appDomain>` serves only the routes marked {@link ENTRY_ROUTE}, with no tenant: a module route that reached
  *   for one there throws rather than serving the default tenant.
  */
-import { WirebenchError } from '@wirebench/engine';
+import { LIVE_CLOSE, WirebenchError } from '@wirebench/engine';
 import type { IncomingMessage } from 'node:http';
 import type { FastifyBaseLogger, FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { ServerConfig } from '../config.js';
@@ -119,7 +120,12 @@ export const TENANT_SUSPENDED = 'tenant-suspended';
  * The close code of a suspended or deleting tenant's sockets (spec §22.7), with {@link TENANT_SUSPENDED} as the reason:
  * HTTP's 403, as the live, host and terminal-share sockets spell it.
  */
-export const TENANT_STOPPED_CLOSE = 4403;
+export const TENANT_STOPPED_CLOSE = LIVE_CLOSE.tenantSuspended;
+
+/** What a socket's fresh check throws for a stopped tenant (review I1): its loop closes it {@link TENANT_STOPPED_CLOSE}. */
+export function tenantSuspendedError(): WirebenchError {
+  return new WirebenchError(TENANT_SUSPENDED, 'this team is suspended');
+}
 
 /** The `403` body of a suspended tenant's routes: `reason` beside the usual `{ code, message }`. */
 export function suspendedBody(reason: SuspendedReason): {
@@ -147,8 +153,19 @@ export class TenantResolver {
   private loading: Promise<void> | undefined;
   private again = false;
   private stopTimers: (() => void) | undefined;
+  private readonly reloaded: ((stopped: ReadonlySet<string>) => void)[] = [];
 
   constructor(private readonly options: ResolverOptions) {}
+
+  /**
+   * Runs `listener` after every read of the map that succeeded, whatever started it (a write here, another instance's
+   * `tenantsChanged`, a bus that listens again, the poll), with the ids of the tenants that serve nothing now: those
+   * suspended on the new map, and those the read took off it (deleting, or gone). Only told when there is one. The
+   * map is already the new one, so a socket upgraded after the call is answered by it (spec §22.7, review I1).
+   */
+  onReloaded(listener: (stopped: ReadonlySet<string>) => void): void {
+    this.reloaded.push(listener);
+  }
 
   /** The scope `hostname` names when its tenant serves (active), or `undefined`. */
   resolve(hostname: string): TenantScope | undefined {
@@ -183,6 +200,7 @@ export class TenantResolver {
             this.options.directory.hosted(),
             this.options.directory.redirects?.() ?? Promise.resolve([]),
           ]);
+          const before = this.hosts;
           this.hosts = new Map(tenants.map((tenant) => [`${tenant.scope.slug}.${domain}`, tenant]));
           this.redirects = new Map(
             redirects.map((redirect) => [
@@ -190,12 +208,34 @@ export class TenantResolver {
               { to: `${redirect.to}.${domain}`, until: redirect.until.getTime() },
             ]),
           );
+          this.tellStopped(before);
         } while (this.again);
       } finally {
         this.loading = undefined;
       }
     })();
     return this.loading;
+  }
+
+  private tellStopped(before: ReadonlyMap<string, TenantEntry>): void {
+    if (this.reloaded.length === 0) return;
+    const serving = new Set<string>();
+    const stopped = new Set<string>();
+    for (const entry of this.hosts.values()) {
+      if (entry.status === 'active') serving.add(entry.scope.tenantId);
+      else stopped.add(entry.scope.tenantId);
+    }
+    for (const entry of before.values()) {
+      if (!serving.has(entry.scope.tenantId)) stopped.add(entry.scope.tenantId);
+    }
+    if (stopped.size === 0) return;
+    for (const listener of this.reloaded) {
+      try {
+        listener(stopped);
+      } catch (error) {
+        this.options.log.warn({ err: error }, "a stopped tenant's sockets could not all be closed");
+      }
+    }
   }
 
   /** Subscribes to the directory and starts the poll; idempotent. */
@@ -309,6 +349,17 @@ function pathOf(url: string): string {
   return query === -1 ? url : url.slice(0, query);
 }
 
+/**
+ * A browser's page load: `GET` or `HEAD` that accepts `text/html`, outside the API and with no upgrade. What a suspended
+ * tenant's host sends to its sign-in page; the desktop, the CLI and the MCP server never ask for HTML.
+ */
+function isPageLoad(request: FastifyRequest, path: string): boolean {
+  if (request.method !== 'GET' && request.method !== 'HEAD') return false;
+  if (path === '/api' || path.startsWith('/api/') || request.headers.upgrade !== undefined) return false;
+  const accept = request.headers.accept;
+  return typeof accept === 'string' && /(^|[\s,])text\/html(\s*(;|,|$))/i.test(accept);
+}
+
 /** A suspended tenant's answer (spec §22.7), on every route but the unscoped ones: no module route runs. */
 function answerSuspended(
   request: FastifyRequest,
@@ -323,6 +374,11 @@ function answerSuspended(
   // A catch URL's sender learns nothing but "not now" (spec §3.6), and tries again as it would after any 503.
   if (path === '/hooks' || path.startsWith('/hooks/')) {
     void reply.code(503).header('cache-control', 'no-store').send();
+    return reply;
+  }
+  // A page load in a browser (review M5): the sign-in page, which says why, rather than a JSON body.
+  if (isPageLoad(request, path)) {
+    void reply.code(303).header('location', '/sign-in').header('cache-control', 'no-store').send();
     return reply;
   }
   void reply.code(403).header('cache-control', 'no-store').send(suspendedBody(entry.reason));

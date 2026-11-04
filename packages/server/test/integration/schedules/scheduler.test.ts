@@ -129,7 +129,7 @@ describeDb('the scheduler (scheduled-runs spec §3.1)', () => {
     await s.stop();
   });
 
-  it('a suspended tenant starts none of its queued runs until it resumes', async () => {
+  it('a run queued before the suspension never starts as a catch-up: it ends skipped, suspended (review M2)', async () => {
     const id = await seedSchedule('Hourly', -60 * 60_000);
     await repo.insertRun(c.h.tdb, {
       id: newId(),
@@ -144,7 +144,32 @@ describeDb('the scheduler (scheduled-runs spec §3.1)', () => {
     expect(await s.runOnce()).toEqual({ fired: 0, started: 0 });
     expect(held.started).toHaveLength(0);
     await setSuspended(false);
+    expect((await s.runOnce()).started).toBe(0);
+    expect(held.started).toHaveLength(0);
+    expect(await runsOf(id)).toEqual([{ status: 'skipped', reason: 'suspended', trigger: 'manual' }]);
+    await s.stop();
+  });
+
+  it('a run ending in the stale window starts no queued run of a tenant suspended since the pass (review M1)', async () => {
+    const id = await seedSchedule('Hourly', -60 * 60_000);
+    for (let n = 0; n < 2; n++) {
+      await repo.insertRun(c.h.tdb, {
+        id: newId(),
+        scheduleId: id,
+        trigger: 'manual',
+        status: 'queued',
+        at: new Date(c.h.clock.now.getTime() + n),
+      });
+    }
+    const held = heldRuns();
+    // One run at a time on this server, two slots for the tenant: the second waits for the first to end.
+    const s = scheduler({ execute: held.execute, settings: testSettings({ concurrency: 1, runSlots: 2 }) });
     expect((await s.runOnce()).started).toBe(1);
+    await setSuspended(true);
+    // The first run ends before the next pass: its freed slot must not start the suspended tenant's next run.
+    held.started[0]!.release();
+    await s.idle();
+    expect(held.started).toHaveLength(1);
     await s.stop();
   });
 
