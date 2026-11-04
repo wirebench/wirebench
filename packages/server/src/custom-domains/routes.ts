@@ -25,8 +25,7 @@ import type { Tenancy } from '../tenancy/tenancy.js';
 import type { TenantQuerier } from '../tenancy/tenant-db.js';
 import { checkTenant, CUSTOM_DOMAINS_FEATURE, type CheckDeps } from './job.js';
 import { checkCustomName, recordsFor, type CustomNameReason } from './names.js';
-import { claim, getClaim, removeClaim, type Claim } from './repo.js';
-import { isHeld } from './states.js';
+import { claim, getClaim, removeClaim, type Claim, type RemovedClaim } from './repo.js';
 
 export const DOMAIN_ROUTE = '/tenant/domain';
 
@@ -92,7 +91,7 @@ export async function removeAudited(
   hooks: ServerHooks,
   tx: TenantQuerier,
   source: AuditSource,
-): Promise<Claim | undefined> {
+): Promise<RemovedClaim | undefined> {
   const removed = await removeClaim(tx);
   if (removed !== undefined) {
     await recordAudit(hooks, tx, {
@@ -134,6 +133,7 @@ export const domainRoutes =
         });
         if (!checked.ok) throw problem(checked.reason, REASONS[checked.reason], 400);
         const source = auditSource(request);
+        // A new claim is pending and holds nothing in `tenant_hosts`, so the resolver's map has nothing to hear.
         const made = await env.tenancy.db(request.tenant).transaction(async (tx) => {
           const row = await claim(tx, { name: checked.name, createdBy: request.caller!.id, now: env.now() });
           await recordAudit(env.hooks, tx, {
@@ -158,7 +158,8 @@ export const domainRoutes =
     app.delete(DOMAIN_ROUTE, { preHandler }, async (request, reply) => {
       const source = auditSource(request);
       const removed = await env.tenancy.db(request.tenant).transaction((tx) => removeAudited(env.hooks, tx, source));
-      if (removed !== undefined && isHeld(removed.state)) env.check?.hostsChanged?.();
+      // Only a released `tenant_hosts` row can change what the resolver maps.
+      if (removed?.released === true) env.check?.hostsChanged?.();
       return reply.code(204).send();
     });
   };

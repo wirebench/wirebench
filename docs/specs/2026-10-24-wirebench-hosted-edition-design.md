@@ -3153,8 +3153,10 @@ Owner rulings (2026-11-04, popup):
   | `paused` | The feature is gone (the edition left Enterprise): released | no |
   | `expired` | Pending for 7 days without a pass | no |
 
-  A pass from `failing`, `lapsed` or `paused` goes back through `verified`, so an attacker who takes over a lapsed
-  name has to prove it again. `paused` is set by the check job, which reads the feature through the tenant's scope.
+  A pass from `lapsed` or `paused` goes back through `verified`, since both released the name, so an attacker who
+  takes over a lapsed name has to prove it again. A pass from `failing` returns the name to `active` while it is
+  still live: it never released the name, so it needs no fresh proof and is never taken offline. A name that failed
+  before it went live goes to `verified` and waits for its certificate. `paused` is set by the check job, which reads the feature through the tenant's scope.
   A suspended tenant keeps its name. The resolver drops every host of a tenant that is not `active` in
   `tenants.status` (§19.5), so a suspension takes effect at the next map reload, and resuming needs no new check.
 - **Mail.** The tenant's server admins get one plain-text mail, through the tenant's SMTP sender (slice 7), when a

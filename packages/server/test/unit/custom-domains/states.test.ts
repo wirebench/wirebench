@@ -49,10 +49,18 @@ describe('next', () => {
     expect(FAILING_FOR_MS).toBe(72 * 3_600_000);
   });
 
-  it('sends every return through verified: failing, lapsed and paused on a pass', () => {
-    for (const state of ['failing', 'lapsed', 'paused'] as const) {
-      expect(next(state, PASS, at(0), { createdAt: CREATED, failingSince: at(0) }), state).toBe('verified');
+  it('sends lapsed and paused back through verified on a pass: they released the name', () => {
+    for (const state of ['lapsed', 'paused'] as const) {
+      expect(next(state, PASS, at(0), { createdAt: CREATED, failingSince: null }, true), state).toBe('verified');
     }
+  });
+
+  it('returns a failing name that is still live to active on a pass: it never released the name', () => {
+    const failing = { createdAt: CREATED, failingSince: at(0) };
+    expect(next('failing', PASS, at(1_000), failing, true)).toBe('active');
+    // A name that failed before it went live has no certificate yet: it waits in verified.
+    expect(next('failing', PASS, at(1_000), failing, false)).toBe('verified');
+    expect(next('failing', PASS, at(1_000), failing)).toBe('verified');
   });
 
   it('keeps lapsed and paused on a failure', () => {

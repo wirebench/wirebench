@@ -13,7 +13,6 @@ import { SYSTEM_SOURCE, type LicenseService, type ServerHooks } from '../context
 import { ExitCode, type ServerIo } from '../io.js';
 import type { TenantScope } from '../tenancy/scope.js';
 import { tenantHostsChanged, type Tenancy } from '../tenancy/tenancy.js';
-import { isHeld } from './states.js';
 import { checkDepsOf, type CheckDepsOverrides } from './deps.js';
 import { checkTenant } from './job.js';
 import { listAll, type ClaimListing } from './repo.js';
@@ -125,7 +124,7 @@ export async function runDomainsCommand(
     case 'admin-domains-remove': {
       const removed = await env.withBus(async () => {
         const gone = await env.tenancy.db(scope!).transaction((tx) => removeAudited(env.hooks, tx, SYSTEM_SOURCE));
-        if (gone !== undefined && isHeld(gone.state)) tenantHostsChanged(env.tenancy);
+        if (gone?.released === true) tenantHostsChanged(env.tenancy);
         return gone;
       });
       if (removed === undefined) throw noClaim(scope!);

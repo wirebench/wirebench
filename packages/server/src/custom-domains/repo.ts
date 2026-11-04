@@ -139,9 +139,22 @@ export async function hold(tx: TenantQuerier, name: string): Promise<'held' | 'h
   return own.rowCount === 1 ? 'held' : 'held-elsewhere';
 }
 
-/** Releases `name` if the querier's tenant holds it; another tenant's row is left alone. */
-export async function release(tx: TenantQuerier, name: string): Promise<void> {
-  await tx.query('delete from tenant_hosts where host = $1 and tenant_id = $2', [name, tx.scope.tenantId]);
+/** Releases `name` if the querier's tenant holds it; another tenant's row is left alone. Answers whether it held it. */
+export async function release(tx: TenantQuerier, name: string): Promise<boolean> {
+  const deleted = await tx.query('delete from tenant_hosts where host = $1 and tenant_id = $2', [
+    name,
+    tx.scope.tenantId,
+  ]);
+  return deleted.rowCount === 1;
+}
+
+/** Whether the querier's tenant holds `name` and it is live (certificate seen). */
+export async function isLive(tx: TenantQuerier, name: string): Promise<boolean> {
+  const rows = await tx.query('select 1 from tenant_hosts where host = $1 and tenant_id = $2 and live', [
+    name,
+    tx.scope.tenantId,
+  ]);
+  return rows.rowCount === 1;
 }
 
 /** Marks the tenant's own row for `name` live (certificate seen) or not. Answers whether it holds the name. */
@@ -166,14 +179,20 @@ export async function heldHosts(tx: TenantQuerier): Promise<readonly string[]> {
   return rows.rows.map((row) => row.host);
 }
 
-/** Removes the tenant's claim, releasing its name first. Answers the removed claim, or undefined when there was none. */
-export async function removeClaim(tx: TenantQuerier): Promise<Claim | undefined> {
+/** A removed claim, and whether removing it released a row of `tenant_hosts` (the resolver's map may change). */
+export type RemovedClaim = Claim & { readonly released: boolean };
+
+/**
+ * Removes the tenant's claim, releasing its name first. Answers the removed claim with whether a `tenant_hosts` row
+ * went with it, or undefined when there was none.
+ */
+export async function removeClaim(tx: TenantQuerier): Promise<RemovedClaim | undefined> {
   // Locked, so a check that holds the name commits first and the release below sees its row.
   const existing = await getClaim(tx, { forUpdate: true });
   if (existing === undefined) return undefined;
-  await release(tx, existing.name);
+  const released = await release(tx, existing.name);
   await tx.query('delete from custom_domains where token = $1', [existing.token]);
-  return existing;
+  return { ...existing, released };
 }
 
 /** The addresses the claim's mail goes to: the tenant's enabled server admins. */

@@ -10,8 +10,9 @@
  * | `failing` | yes | yes, while live |
  * | `lapsed`, `paused`, `expired` | no | no |
  *
- * Every return to a held state goes through `verified`, so a name that lapsed or paused has to be proved again, and
- * only the certificate probe (Part C) moves `verified` to `active`.
+ * A name that lapsed or paused released its hold, so it goes back through `verified` and has to be proved again, and
+ * only the certificate probe (Part C) moves `verified` to `active`. A `failing` name kept its hold and its live row,
+ * so a pass returns it to `active` as it was.
  */
 
 export const DOMAIN_STATES = ['pending', 'verified', 'active', 'failing', 'lapsed', 'paused', 'expired'] as const;
@@ -44,15 +45,24 @@ export interface Since {
  * Where a claim in `state` goes after `observation` at `now`.
  *
  * - Without the feature, every claim but an expired one is `paused`.
- * - A pass moves `pending`, `failing`, `lapsed` and `paused` to `verified`, and keeps `verified` and `active`.
+ * - A pass moves `pending`, `lapsed` and `paused` to `verified`, and keeps `verified` and `active`. It returns a
+ *   `failing` name that is still `live` straight to `active`: it never released the name, so it needs no fresh proof
+ *   and is never taken offline; a failing name that was never live goes to `verified`.
  * - A failure keeps `pending` for {@link PENDING_FOR_MS} after the claim, then `expired`; moves `verified` and
  *   `active` to `failing`; keeps `failing` for {@link FAILING_FOR_MS}, then `lapsed`; keeps the rest.
  * - `expired` stays until the claim is removed, pass or not.
  */
-export function next(state: DomainState, observation: Observation, now: Date, since: Since): DomainState {
+export function next(
+  state: DomainState,
+  observation: Observation,
+  now: Date,
+  since: Since,
+  /** The claim's name is held and live in `tenant_hosts`: served, with its certificate. */
+  live = false,
+): DomainState {
   if (state === 'expired') return 'expired';
   if (!observation.featured) return 'paused';
-  if (observation.passed) return state === 'active' ? 'active' : 'verified';
+  if (observation.passed) return state === 'active' || (state === 'failing' && live) ? 'active' : 'verified';
   switch (state) {
     case 'pending':
       return now.getTime() - since.createdAt.getTime() >= PENDING_FOR_MS ? 'expired' : 'pending';

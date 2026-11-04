@@ -350,6 +350,34 @@ describeDb('the custom-name check job (hosted spec §23.2)', () => {
     ]);
   });
 
+  it('returns a failing name that passes again straight to active, still served, with no change to the map', async () => {
+    const made = await claimA();
+    dns.prove(NAME, made.token);
+    probe = () => Promise.resolve({ verdict: 'ok', message: 'The certificate covers the name.' });
+    await pass();
+    const activeAt = (await claimOf(a))!.activeAt;
+    dns.clear(NAME);
+    advance(HELD_EVERY_MS);
+    await pass();
+    expect((await claimOf(a))?.state).toBe('failing');
+    const before = routed;
+    const mailed = sent.length;
+    dns.prove(NAME, made.token);
+    advance(HELD_EVERY_MS);
+    await pass();
+    expect(await claimOf(a)).toMatchObject({ state: 'active', failingSince: null, activeAt });
+    expect(await hosts()).toEqual([{ host: NAME, tenant_id: scopeA.tenantId, live: true }]);
+    // Never taken off the map, so nothing tells it; and nothing new to tell the admins.
+    expect(routed).toBe(before);
+    expect(sent).toHaveLength(mailed);
+    expect((await events(a)).map((event) => event.action)).toEqual([
+      'custom_domain.verified',
+      'custom_domain.activated',
+      'custom_domain.failing',
+      'custom_domain.activated',
+    ]);
+  });
+
   it('sends a pass from lapsed back through verified, holding the name again', async () => {
     const made = await claimA();
     dns.prove(NAME, made.token);
