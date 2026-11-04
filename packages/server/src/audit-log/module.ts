@@ -56,7 +56,11 @@ export function auditLogModule(options: AuditLogOptions = {}): ServerModule {
       // The workspace `recordDesktopActivity` setting (#211); a server without it ignores the field, so the desktop hides the switch.
       ctx.meta.addCapability('desktop-activity');
       auditRoutes({ tenancy: ctx.tenancy, hooks: ctx.hooks, license: () => ctx.license })(app);
-      desktopRoutes({ tenancy: ctx.tenancy, hooks: ctx.hooks, limiter: desktopEventsLimiter(now) })(app);
+      desktopRoutes({
+        tenancy: ctx.tenancy,
+        hooks: ctx.hooks,
+        limiter: desktopEventsLimiter(ctx.tenancy.db, options.now),
+      })(app);
       const configured = ctx.config.auditChainKey;
       // Each tenant's chain key (spec §19.7): the configured one for the self-hosted default tenant, else derived.
       const keys =

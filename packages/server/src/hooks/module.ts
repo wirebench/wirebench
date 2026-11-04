@@ -74,7 +74,8 @@ export function hooksModule(options: HooksOptions = {}): ServerModule {
         buckets: new CatchBuckets({
           ratePerSecond: settings.ratePerSecond,
           burst: settings.burst,
-          now: () => now().getTime(),
+          db: ctx.tenancy.db,
+          ...(options.now !== undefined ? { now: () => now().getTime() } : {}),
         }),
         newCaptureId: captureIdFactory(),
       };

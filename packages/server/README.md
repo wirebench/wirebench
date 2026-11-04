@@ -585,8 +585,8 @@ editors and admins create, change, rotate, clear and delete.
   - A sweep every ten minutes deletes captures older than `WIREBENCH_SERVER_HOOKS_MAX_AGE_DAYS`.
   - A body is stored up to `WIREBENCH_SERVER_HOOKS_BODY_LIMIT_MB`; the rest is counted but not kept.
   - A workspace holds at most `WIREBENCH_SERVER_HOOKS_PER_WORKSPACE` catch URLs.
-- **The rate limit is per catch URL and per process**: `WIREBENCH_SERVER_HOOKS_RATE_PER_SECOND` tokens a
-  second, up to `WIREBENCH_SERVER_HOOKS_BURST`. Run **one** replica, as for live updates.
+- **The rate limit is per catch URL**, kept in the database so every instance spends one bucket:
+  `WIREBENCH_SERVER_HOOKS_RATE_PER_SECOND` tokens a second, up to `WIREBENCH_SERVER_HOOKS_BURST`.
 - **The secret stays out of logs.** Request logs show `/hooks/[redacted]`.
 - **Behind a proxy with `WIREBENCH_SERVER_TRUST_PROXY`**, the server's usual `x-request-id` handling
   applies on catch URLs too: a proxy-supplied id may be echoed back. Nothing from the request body or
