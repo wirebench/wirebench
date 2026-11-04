@@ -1,0 +1,103 @@
+{
+  "event_id": "evt_test_01hv8x2b03",
+  "event_type": "subscription.trialing",
+  "occurred_at": "2026-11-04T10:00:03.000000Z",
+  "notification_id": "ntf_test_01hv8x2c03",
+  "data": {
+    "id": "sub_test_01hv8x2a7b",
+    "status": "trialing",
+    "customer_id": "ctm_test_01hv8x2a7c",
+    "address_id": "add_test_01hv8x2a7d",
+    "business_id": null,
+    "currency_code": "EUR",
+    "created_at": "2026-11-01T10:00:00.000Z",
+    "updated_at": "2026-11-04T10:00:00.000Z",
+    "started_at": "2026-11-01T10:00:00.000Z",
+    "first_billed_at": "2026-11-01T10:00:00.000Z",
+    "next_billed_at": "2026-12-01T10:00:00.000Z",
+    "paused_at": null,
+    "canceled_at": null,
+    "collection_mode": "automatic",
+    "billing_details": null,
+    "current_billing_period": {
+      "starts_at": "2026-11-01T10:00:00.000Z",
+      "ends_at": "2026-12-01T10:00:00.000Z"
+    },
+    "billing_cycle": {
+      "frequency": 1,
+      "interval": "month"
+    },
+    "scheduled_change": null,
+    "items": [
+      {
+        "status": "active",
+        "quantity": 3,
+        "recurring": true,
+        "created_at": "2026-11-01T10:00:00.000Z",
+        "updated_at": "2026-11-01T10:00:00.000Z",
+        "price": {
+          "id": "pri_test_team",
+          "product_id": "pro_test_team",
+          "description": "Team seat",
+          "billing_cycle": {
+            "frequency": 1,
+            "interval": "month"
+          },
+          "unit_price": {
+            "amount": "1200",
+            "currency_code": "EUR"
+          }
+        }
+      },
+      {
+        "status": "active",
+        "quantity": 2,
+        "recurring": true,
+        "created_at": "2026-11-01T10:00:00.000Z",
+        "updated_at": "2026-11-01T10:00:00.000Z",
+        "price": {
+          "id": "pri_test_team",
+          "product_id": "pro_test_team",
+          "description": "Team seat, added",
+          "billing_cycle": {
+            "frequency": 1,
+            "interval": "month"
+          },
+          "unit_price": {
+            "amount": "1200",
+            "currency_code": "EUR"
+          }
+        }
+      },
+      {
+        "status": "active",
+        "quantity": 1,
+        "recurring": true,
+        "created_at": "2026-11-01T10:00:00.000Z",
+        "updated_at": "2026-11-01T10:00:00.000Z",
+        "price": {
+          "id": "pri_test_other",
+          "product_id": "pro_test_other",
+          "description": "Something else",
+          "billing_cycle": {
+            "frequency": 1,
+            "interval": "month"
+          },
+          "unit_price": {
+            "amount": "500",
+            "currency_code": "EUR"
+          }
+        }
+      }
+    ],
+    "custom_data": {
+      "tenant": "9b1f0c3e-6c1d-4c8e-9a51-2f4b7d0e1a23"
+    },
+    "management_urls": {
+      "update_payment_method": "https://sandbox-buyer-portal.example.test/update",
+      "cancel": "https://sandbox-buyer-portal.example.test/cancel"
+    },
+    "discount": null,
+    "import_meta": null
+  }
+}

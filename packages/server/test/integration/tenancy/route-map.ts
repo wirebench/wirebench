@@ -165,6 +165,16 @@ export const ROUTE_MAP: Readonly<Record<string, RouteCase>> = {
       payload: 'email=a%40acme.test',
     }),
   },
+  // The billing webhook (spec §22.5), on the entry host only: a signature is never checked on a tenant's host.
+  'POST /billing/paddle': {
+    cls: 'entry',
+    request: () => ({
+      method: 'POST',
+      url: '/billing/paddle',
+      headers: { 'content-type': 'application/json', 'paddle-signature': 'ts=1;h1=' + '0'.repeat(64) },
+      payload: '{}',
+    }),
+  },
   'GET /*': { cls: 'own', request: (ctx) => ({ method: 'GET', url: '/workspaces', headers: asTab(ctx) }) },
   // The browser build's files, one route each (`routeKey` folds them into one key).
   'GET /assets/*': { cls: 'own', request: (ctx) => ({ method: 'GET', url: ctx.url }) },

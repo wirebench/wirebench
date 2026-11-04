@@ -729,7 +729,8 @@ export async function startServer(
   let app: FastifyInstance;
   try {
     app = await buildServer(ctx, {
-      modules: withControlPool(modules, control),
+      // The Paddle webhook's secret goes with it (spec §22.16): it is not in the context's config either.
+      modules: withControlPool(modules, control, config),
       ...(options.logStream !== undefined ? { logStream: options.logStream } : {}),
     });
   } catch (error) {

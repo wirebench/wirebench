@@ -184,7 +184,7 @@ export async function identityHarness(
   await options.beforeBuild?.(db, ctx);
   const app = await buildServer(ctx, {
     // The pool goes to the control-plane module's factory, as serve.ts hands it: never on the context.
-    modules: withControlPool(modules, control),
+    modules: withControlPool(modules, control, config),
     ...(options.logStream !== undefined ? { logStream: options.logStream } : {}),
     ...(options.onTenantResolver !== undefined ? { onTenantResolver: options.onTenantResolver } : {}),
     ...(options.onRoute !== undefined ? { onRoute: options.onRoute } : {}),

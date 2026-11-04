@@ -2775,6 +2775,8 @@ create table tenant_settings (tenant_id …, section text not null, value jsonb 
   decision if the settings screen ever needs a "change seats" button.
 - **The webhook,** `POST /billing/paddle` on the entry host (`ENTRY_ROUTE`, so no tenant resolves):
   - raw body, at most 1 MiB, never parsed before the signature passes;
+  - at most 300 posts a minute from one client address, checked before the signature, past which it answers `429`
+    with `retry-after` (Paddle retries it like any failure);
   - **signature:** the `Paddle-Signature` header is `ts=<unix>;h1=<hex>` with possibly several `h1` (Paddle sends
     more than one while a secret rotates). The signed payload is `<ts>:<raw body>`, HMAC-SHA256 under the secret;
     any `h1` that matches, compared in constant time, passes. `ts` must be within 300 s of now (my call: wider than
@@ -2782,8 +2784,11 @@ create table tenant_settings (tenant_id …, section text not null, value jsonb 
     A failure answers `401` with an empty body and logs the reason code, never the header;
   - **replay and order:** `billing_events (provider, event_id)` is inserted first; a duplicate answers `200` and does
     nothing. An event older than the subscription's `last_event_at` is recorded and not applied (Paddle does not
-    promise order);
-  - answers `200` once applied, `500` on a database failure so Paddle retries, never another status.
+    promise order). An event other than `created` whose ref no tenant holds, less than 24 hours old, answers `500`
+    and its `billing_events` row rolls back, so Paddle retries it after the `created` it may have overtaken (a cancel
+    delivered first must not be lost); older, it is recorded `unmatched`;
+  - answers `200` once applied or recorded, `500` on a database failure or an unknown ref as above so Paddle
+    retries, never another status.
 - **The adapter,** `control-plane/billing/paddle.ts`, is the only file that knows Paddle's shapes. It turns an event
   into the control plane's own vocabulary (§5.6), and ignores every event type outside `subscription.*`:
 
@@ -2795,17 +2800,28 @@ create table tenant_settings (tenant_id …, section text not null, value jsonb 
 
   The event carries `ref` (`data.id`), `customerRef`, `status` (`active`, `trialing`, `past_due`, `paused`,
   `canceled`), `seats` (the summed `quantity` of items whose `price.id` is the Team price; zero refuses with
-  `billing-no-team-item`), `periodEnd` (`current_billing_period.ends_at`), `occurredAt`, and from `custom_data` either
-  `signup` (a signup id, §22.6) or `tenant` (a tenant id, for a resubscription).
-- **Applying an event,** in one control transaction:
-  - `created` with a `signup`: completes that signup (§22.6). With a `tenant`: attaches the subscription to it,
-    replacing a canceled one. With neither: recorded, `outcome = 'unmatched'`, logged by event id.
+  `billing-no-team-item`), `periodEnd` (`current_billing_period.ends_at`), `occurredAt`, and from `custom_data` only
+  `signup`: a `signups` row id the server minted (a random UUIDv4, never one the browser makes up). The buyer's
+  checkout sets `custom_data`, and Paddle signs whatever it was given, so no tenant id is ever read from it: one
+  would let anyone pay to replace, then cancel, another tenant's subscription.
+- **Applying an event,** in one control transaction, under an advisory lock on the provider and the ref (no index
+  spans the tenants' `subscriptions` rows, so two events naming one ref for two tenants wait on each other, and the
+  second is refused `billing-ref-conflict`):
+  - `created` is matched only by its `signup`. A signups row with no `tenant_id`: completes that signup (§22.6). A
+    row whose `tenant_id` is set is that tenant's **resubscription** (Part E serves the checkout for it): the
+    subscription is attached, replacing one that is `canceled` or `paused` (or none), and the row is marked
+    `completed`. Over a live one (`active`, `trialing`, `past_due`) it is refused, `not-applied`, logged by tenant
+    id. A missing, unknown or completed signup: recorded, `outcome = 'unmatched'`, logged by event id.
+  - every other event finds its tenant only by the stored ref.
   - `updated`: updates the row; `active` or `trialing` sets the tenant `team` (when its source is `subscription`)
     and its seats, clears `past_due_since`, and resumes a tenant suspended for `unpaid` or `canceled`; `past_due`
     sets `past_due_since` once; `paused` suspends at once with `canceled`.
   - `deleted`: suspends at once with `canceled` (Paddle sends it when the period ends, so the customer had what they
     paid for). Data is kept until a deletion is asked for (ruling 3).
-- **The grace sweep** (§22.15) suspends with `unpaid` any tenant whose `past_due_since` is 14 days old (ruling 2).
+- **The grace sweep** (§22.15) suspends with `unpaid` any tenant whose `past_due_since` is 14 days old (ruling 2),
+  and with `canceled` any active tenant whose edition is the subscription's and whose subscription is `canceled` or
+  `paused`: a cancel recorded while the tenant was suspended for `importing` or `operator` is acted on once that
+  suspension is lifted.
   Each tenant's server admins are mailed through the operator's SMTP when it goes past due, three days before the
   suspension, and when it is suspended. The mails hold the team's name and a link to the tenant's sign-in page,
   nothing from Paddle.
@@ -2819,7 +2835,8 @@ Routes on the entry host, server-rendered in the entry page's style, no cookie a
    moves it), the email's syntax, the name (1–80 characters, plain text), and the slug: `checkSlug`, then free in
    `tenants`, open `signups` and `tenant_slugs_retired` under the slug lock (§22.3). A taken or reserved slug
    re-renders the form saying so; this is the one place a slug's existence is answered, and slugs are public names.
-   On success it inserts the signup (24 h expiry, the slug held that long), mails a link
+   On success it inserts the signup (its id `crypto.randomUUID()`, since `signups.id` has no default and the id is
+   what a `created` is matched by, §22.5; 24 h expiry, the slug held that long), mails a link
    `https://app.<app-domain>/signup/<token>`, and answers "Check your inbox". An address that already has teams may
    sign up another; the answer is the same either way.
 2. **`GET /signup/<token>`**: the token is 32 random bytes, stored as a hash, single-use for the password step. The
