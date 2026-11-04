@@ -16,13 +16,14 @@ import { createTenancy, directoryOf, type Tenancy } from '../../../src/tenancy/t
 import { TenantAdmin } from '../../../src/tenancy/directory.js';
 import { describeDb, testDatabase } from '../../helpers/database.js';
 import { mkTempDir, removeTempDir } from '../../helpers/git.js';
-import { license, PAYLOAD, testKeys } from '../../helpers/licensing.js';
+import { license, testKeys } from '../../helpers/licensing.js';
 
 const hosted = (config: ServerConfig): ServerConfig => ({ ...config, mode: 'hosted', appDomain: 'example.test' });
 
 describeDb('admin --tenant (spec §19.11)', () => {
   let db: Awaited<ReturnType<typeof testDatabase>>;
   let tenancy: Tenancy;
+  let acme: TenantScope;
   let beta: TenantScope;
   let dir: string;
   const keys = testKeys();
@@ -32,7 +33,7 @@ describeDb('admin --tenant (spec §19.11)', () => {
     tenancy = createTenancy(db);
     await directoryOf(tenancy).load();
     const admin = new TenantAdmin(db, directoryOf(tenancy));
-    await admin.create({ slug: 'acme', name: 'Acme' });
+    acme = (await admin.create({ slug: 'acme', name: 'Acme' })).scope;
     beta = (await admin.create({ slug: 'beta', name: 'Beta' })).scope;
   });
   afterAll(async () => {
@@ -117,17 +118,17 @@ describeDb('admin --tenant (spec §19.11)', () => {
     expect(out.stdout()).toBe('');
   });
 
-  it('hosted: a license installed with --tenant acme is acme’s alone (Task 16 review M3)', async () => {
+  it('hosted: admin license refuses with licensing-hosted, and writes nothing in either tenant (spec §22.4)', async () => {
     const path = join(dir, 'team.lic');
     await writeFile(path, `${license(keys)}\n`);
-    expect(await runAdmin({ command: 'admin-license-install', file: path, tenant: 'acme' }, io().io, options)).toBe(0);
-    const inAcme = io();
-    expect(await runAdmin({ command: 'admin-license-show', tenant: 'acme' }, inAcme.io, options)).toBe(0);
-    expect(inAcme.stdout()).toContain('Team (active)');
-    const inBeta = io();
-    expect(await runAdmin({ command: 'admin-license-show', tenant: 'beta' }, inBeta.io, options)).toBe(0);
-    expect(inBeta.stdout()).toContain('Community (none)');
-    expect(inBeta.stdout()).not.toContain(PAYLOAD.id);
+    const install = io();
+    expect(await runAdmin({ command: 'admin-license-install', file: path, tenant: 'acme' }, install.io, options)).toBe(
+      1,
+    );
+    expect(install.stderr()).toMatch(/^licensing-hosted: /);
+    for (const scope of [acme, beta]) {
+      expect((await tenancy.db(scope).query('select 1 from license')).rows).toEqual([]);
+    }
   });
 
   it('hosted: admin schedules list --tenant lists that tenant’s schedules only (Task 16 review M3)', async () => {

@@ -32,6 +32,34 @@ type TenantAdminCommand =
   | { readonly command: 'admin-schedules-disable'; readonly id: string }
   | { readonly command: 'admin-schedules-runs'; readonly id: string; readonly limit: number };
 
+/**
+ * The operator's tenant lifecycle commands (hosted edition spec §22.14): hosted mode only. The slug is positional;
+ * `--tenant` is not used. `export`, `import` and `settings` arrive with their parts.
+ */
+export type AdminTenantCommand =
+  | { readonly command: 'admin-tenant-list' }
+  | {
+      readonly command: 'admin-tenant-create';
+      readonly slug: string;
+      readonly name: string;
+      readonly email: string;
+      readonly edition: 'team' | 'enterprise';
+      readonly seats?: number;
+    }
+  | {
+      readonly command: 'admin-tenant-set-edition';
+      readonly slug: string;
+      /** Absent with `subscription`: back to the subscription's edition and seats. */
+      readonly edition?: 'team' | 'enterprise';
+      /** `null`: `--seats unlimited`. */
+      readonly seats?: number | null;
+      readonly subscription: boolean;
+    }
+  | { readonly command: 'admin-tenant-suspend'; readonly slug: string }
+  | { readonly command: 'admin-tenant-resume'; readonly slug: string }
+  | { readonly command: 'admin-tenant-rename'; readonly slug: string; readonly to: string }
+  | { readonly command: 'admin-tenant-delete'; readonly slug: string; readonly cancel: boolean };
+
 export type ServerCommand =
   | { readonly command: 'serve' }
   | { readonly command: 'migrate'; readonly check: boolean }
@@ -41,6 +69,7 @@ export type ServerCommand =
    * checks it against the configuration, which the parser does not read).
    */
   | (TenantAdminCommand & { readonly tenant?: string })
+  | AdminTenantCommand
   | { readonly command: 'admin-instances' }
   | { readonly command: 'admin-tenancy-role'; readonly printSql: boolean }
   | { readonly command: 'admin-tenancy-check' }
@@ -104,11 +133,30 @@ Usage:
                                     --accept-unopened goes on past values that open under neither key
                                     and links it does not follow; --abort, while it is still re-sealing,
                                     gives the upgrade back to the next start
+  wirebench-server admin tenant list
+                                    Hosted mode: every tenant's slug, status, edition, seats,
+                                    subscription and deletion date
+  wirebench-server admin tenant create --slug <slug> --name <name> --email <email> [--edition team|enterprise] [--seats <n>]
+                                    Hosted mode: a tenant whose edition the operator sets, and a
+                                    server-admin invitation for the email, mailed through the
+                                    server's SMTP or printed without it
+  wirebench-server admin tenant set-edition <slug> <team|enterprise> [--seats <n>|unlimited]
+  wirebench-server admin tenant set-edition <slug> --subscription
+                                    Hosted mode: the operator's edition and seats, or back to the
+                                    subscription's
+  wirebench-server admin tenant suspend <slug>
+  wirebench-server admin tenant resume <slug>
+  wirebench-server admin tenant rename <slug> <new-slug>
+                                    Hosted mode: the old name redirects to the new one for 30 days,
+                                    and is never used again
+  wirebench-server admin tenant delete <slug> [--cancel]
+                                    Hosted mode: the tenant and its data are deleted 14 days on;
+                                    --cancel takes the request back until then
   wirebench-server --version
   wirebench-server --help
 
-Every admin command but admin instances and admin tenancy takes --tenant <slug>: the tenant it works in. Hosted mode requires it;
-a self-hosted server has one tenant and refuses it.
+Every admin command but admin instances, admin tenancy and admin tenant takes --tenant <slug>: the tenant it works in. Hosted
+mode requires it; a self-hosted server has one tenant and refuses it. admin tenant names its tenant as an argument.
 
 Configuration is read from WIREBENCH_SERVER_* environment variables; see README.md.
 `;
@@ -132,7 +180,39 @@ const OPTIONS = {
   'accept-unopened': { type: 'boolean' },
   abort: { type: 'boolean' },
   tenant: { type: 'string' },
+  slug: { type: 'string' },
+  name: { type: 'string' },
+  email: { type: 'string' },
+  edition: { type: 'string' },
+  seats: { type: 'string' },
+  subscription: { type: 'boolean' },
+  cancel: { type: 'boolean' },
 } as const;
+
+const TENANT_USAGE =
+  'usage: wirebench-server admin tenant list | create --slug <slug> --name <name> --email <email> [--edition team|enterprise] [--seats <n>]' +
+  ' | set-edition <slug> <team|enterprise> [--seats <n>|unlimited] | set-edition <slug> --subscription | suspend <slug> | resume <slug>' +
+  ' | rename <slug> <new-slug> | delete <slug> [--cancel]';
+
+/** `--edition`, or an edition argument: a hosted edition is Team or Enterprise (spec §22.4). */
+function parseEdition(value: string): 'team' | 'enterprise' {
+  if (value !== 'team' && value !== 'enterprise') throw new UsageError('the edition must be team or enterprise');
+  return value;
+}
+
+/** `set-edition`'s `--seats`: a number, or `unlimited` for no limit. */
+function parseSetSeats(value: string | undefined): number | null | undefined {
+  return value === 'unlimited' ? null : parseSeats(value);
+}
+
+function parseSeats(value: string | undefined): number | undefined {
+  if (value === undefined) return undefined;
+  const seats = Number(value);
+  if (!/^[0-9]+$/.test(value) || !Number.isSafeInteger(seats) || seats < 1) {
+    throw new UsageError('--seats must be a whole number from 1');
+  }
+  return seats;
+}
 
 const SCHEDULES_USAGE =
   'usage: wirebench-server admin schedules list [--workspace <id>] | enable <id> | disable <id> | runs <id> [--limit <n>]';
@@ -205,10 +285,27 @@ export function parseServerArgs(argv: readonly string[]): ServerCommand {
       throw new UsageError('--abort and --accept-unopened cannot be given together');
     }
   }
+  const isTenantCommand = word === 'admin' && second === 'tenant';
+  const isCreate = isTenantCommand && third === 'create';
+  for (const key of ['slug', 'name', 'email', 'edition'] as const) {
+    if (parsed.values[key] !== undefined && !isCreate)
+      throw new UsageError(`--${key} applies to admin tenant create only`);
+  }
+  if (parsed.values.seats !== undefined && !(isCreate || (isTenantCommand && third === 'set-edition'))) {
+    throw new UsageError('--seats applies to admin tenant create and set-edition only');
+  }
+  if (parsed.values.subscription !== undefined && !(isTenantCommand && third === 'set-edition')) {
+    throw new UsageError('--subscription applies to admin tenant set-edition only');
+  }
+  if (parsed.values.cancel !== undefined && !(isTenantCommand && third === 'delete')) {
+    throw new UsageError('--cancel applies to admin tenant delete only');
+  }
   const tenant = parsed.values.tenant;
   if (tenant !== undefined) {
-    if (word !== 'admin' || second === 'tenancy' || second === 'instances') {
-      throw new UsageError('--tenant applies to the admin commands, not to admin tenancy or admin instances');
+    if (word !== 'admin' || second === 'tenancy' || second === 'instances' || second === 'tenant') {
+      throw new UsageError(
+        '--tenant applies to the admin commands, not to admin tenancy, admin instances or admin tenant (which names its tenant as an argument)',
+      );
     }
     if (!TENANT_SLUG.test(tenant))
       throw new UsageError('--tenant must be a tenant slug: lower-case letters, digits and -');
@@ -284,6 +381,8 @@ export function parseServerArgs(argv: readonly string[]): ServerCommand {
             default:
               throw new UsageError(SCHEDULES_USAGE);
           }
+        case 'tenant':
+          return parseTenantCommand(third, fourth, fifth, parsed.positionals.length, parsed.values);
         case 'instances':
           if (third !== undefined) throw new UsageError('usage: wirebench-server admin instances');
           return { command: 'admin-instances' };
@@ -351,5 +450,76 @@ export function parseServerArgs(argv: readonly string[]): ServerCommand {
       }
     default:
       throw new UsageError(`unknown command "${word}"`);
+  }
+}
+
+/** `admin tenant <verb> …` (spec §22.14); `count` is every positional, so an extra one is refused. */
+function parseTenantCommand(
+  verb: string | undefined,
+  first: string | undefined,
+  second: string | undefined,
+  count: number,
+  values: {
+    readonly slug?: string;
+    readonly name?: string;
+    readonly email?: string;
+    readonly edition?: string;
+    readonly seats?: string;
+    readonly subscription?: boolean;
+    readonly cancel?: boolean;
+  },
+): AdminTenantCommand {
+  /** `admin tenant <verb>` and `args` positionals more, exactly. */
+  const positionals = (args: number): void => {
+    if (count !== 3 + args) throw new UsageError(TENANT_USAGE);
+  };
+  switch (verb) {
+    case 'list':
+      positionals(0);
+      return { command: 'admin-tenant-list' };
+    case 'create': {
+      positionals(0);
+      if (values.slug === undefined || values.name === undefined || values.email === undefined) {
+        throw new UsageError('admin tenant create needs --slug, --name and --email');
+      }
+      const seats = parseSeats(values.seats);
+      return {
+        command: 'admin-tenant-create',
+        slug: values.slug,
+        name: values.name,
+        email: values.email,
+        edition: values.edition === undefined ? 'team' : parseEdition(values.edition),
+        ...(seats !== undefined ? { seats } : {}),
+      };
+    }
+    case 'set-edition': {
+      if (values.subscription === true) {
+        positionals(1);
+        if (values.seats !== undefined)
+          throw new UsageError("--subscription takes the subscription's seats; drop --seats");
+        return { command: 'admin-tenant-set-edition', slug: first!, subscription: true };
+      }
+      positionals(2);
+      const seats = parseSetSeats(values.seats);
+      return {
+        command: 'admin-tenant-set-edition',
+        slug: first!,
+        edition: parseEdition(second!),
+        ...(seats !== undefined ? { seats } : {}),
+        subscription: false,
+      };
+    }
+    case 'suspend':
+    case 'resume':
+      positionals(1);
+      return { command: verb === 'suspend' ? 'admin-tenant-suspend' : 'admin-tenant-resume', slug: first! };
+    case 'rename':
+      positionals(2);
+      return { command: 'admin-tenant-rename', slug: first!, to: second! };
+    case 'delete':
+      positionals(1);
+      return { command: 'admin-tenant-delete', slug: first!, cancel: values.cancel === true };
+    default:
+      throw new UsageError(TENANT_USAGE);
   }
 }

@@ -15,9 +15,9 @@ import * as teamsRepo from '../../../../src/teams/repo.js';
 import { terminalSharesModule } from '../../../../src/terminal-shares/module.js';
 import { describeDb } from '../../../helpers/database.js';
 import type { SignedInUser } from '../../../helpers/identity.js';
-import { license, testKeys } from '../../../helpers/licensing.js';
+import { testKeys } from '../../../helpers/licensing.js';
 import { manualTimers } from '../../../helpers/timers.js';
-import { openSocket, twoTenants, type Tenant, type TestSocket, type TwoTenants } from './two-tenants.js';
+import { openSocket, twoTenants, type Tenant, type TestSocket, type TwoTenants, setEdition } from './two-tenants.js';
 
 const keys = testKeys();
 
@@ -49,10 +49,7 @@ describeDb('live updates and terminal shares in two tenants (tenancy Task 18)', 
     });
     for (const tenant of [t.a, t.b]) {
       const root = await tenant.user({ email: 'root@example.com', serverAdmin: true });
-      const installed = await tenant.call(root, 'PUT', '/license', {
-        license: license(keys, { edition: 'enterprise' }),
-      });
-      expect(installed.status).toBe(200);
+      await setEdition(t, tenant, 'enterprise');
       const owner = await tenant.user({ email: 'owner@example.com' });
       const viewer = await tenant.user({ email: 'viewer@example.com' });
       const team = await teamsRepo.insertTeam(tenant.tdb, { id: newId(), name: 'Ops', at: t.h.clock.now });

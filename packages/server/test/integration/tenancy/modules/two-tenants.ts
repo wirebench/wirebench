@@ -144,6 +144,23 @@ export async function twoTenants(
 }
 
 /** Rows a tenant sees in `table`: the forced policy shows a unit its own only. */
+/**
+ * Sets `tenant`'s edition and seats on its row, as `admin tenant set-edition` does (hosted spec §22.4): in hosted mode
+ * the row, not a license file, is the edition, and `PUT /license` answers `409 licensing-hosted`.
+ */
+export async function setEdition(
+  t: TwoTenants,
+  tenant: Tenant,
+  edition: 'community' | 'team' | 'enterprise',
+  seats: number | null = null,
+): Promise<void> {
+  await t.h.db.query("update tenants set edition = $2, seats = $3, edition_source = 'operator' where id = $1::uuid", [
+    tenant.scope.tenantId,
+    edition,
+    seats,
+  ]);
+}
+
 export async function countIn(tenant: Tenant, table: string, where = 'true', params: unknown[] = []): Promise<number> {
   const result = await tenant.tdb.query<{ n: string }>(
     `select count(*)::text as n from ${table} where ${where}`,

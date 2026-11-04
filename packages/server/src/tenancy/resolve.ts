@@ -8,6 +8,8 @@
  *   `trustProxy`), lower-cased and without its port. It must be one label followed by `.<appDomain>`, naming an
  *   active tenant other than the default one. Anything else answers `404` with an empty body and
  *   `cache-control: no-store`, so the answer names nothing. WebSocket upgrades pass through the same hook.
+ * - **Retired slugs** (spec §22.8). An old slug's host whose redirect lives answers `308` to the same path and query
+ *   on the new slug's host, `cache-control: no-store`; after `redirect_until` it is `404` like any unknown name.
  * - **The apex and the entry** (spec §21.3). In hosted mode `<appDomain>` itself redirects to the entry, and
  *   `app.<appDomain>` serves only the routes marked {@link ENTRY_ROUTE}, with no tenant: a module route that reached
  *   for one there throws rather than serving the default tenant.
@@ -87,7 +89,10 @@ export function hostKey(hostname: string): string {
 
 export interface ResolverOptions {
   readonly appDomain: string;
-  readonly directory: Pick<TenantDirectory, 'resolvable' | 'onChange'>;
+  /** `redirects` is optional for a test's directory: without it no host redirects. */
+  readonly directory: Pick<TenantDirectory, 'resolvable' | 'onChange'> & Partial<Pick<TenantDirectory, 'redirects'>>;
+  /** The clock a redirect's end is read against; the real one by default. */
+  readonly now?: () => number;
   readonly log: Pick<FastifyBaseLogger, 'warn'>;
   readonly reloadMs?: number;
   readonly setInterval?: (fn: () => void, ms: number) => { unref?(): void };
@@ -95,12 +100,28 @@ export interface ResolverOptions {
 }
 
 /**
- * The hosted map of host names to scopes. It is keyed by full host name, so a custom name (slice 8) is one
- * more entry. It is loaded before the server listens, reloaded after any write through the directory in this
+ * What a host name names in the hosted map: a tenant. Whatever is the tenant's own (its scope; its status in a later
+ * part) lives here, in the value, so a second name for the same tenant (slice 8's custom names) is one more key on
+ * an equal value, and nothing is read from the host string itself.
+ */
+export interface TenantEntry {
+  readonly scope: TenantScope;
+}
+
+/** An old slug's host (spec §22.8): the new host it redirects to, until when (ms since the epoch). */
+interface RedirectEntry {
+  readonly to: string;
+  readonly until: number;
+}
+
+/**
+ * The hosted map of host names to tenants, and the retired slugs' redirects beside it. It is keyed by full host
+ * name, so a custom name (slice 8) is one more entry. It is loaded before the server listens, reloaded after any write through the directory in this
  * process, and every {@link RELOAD_MS}. A failed reload keeps the map it had.
  */
 export class TenantResolver {
-  private hosts = new Map<string, TenantScope>();
+  private hosts = new Map<string, TenantEntry>();
+  private redirects = new Map<string, RedirectEntry>();
   private loading: Promise<void> | undefined;
   private again = false;
   private stopTimers: (() => void) | undefined;
@@ -109,7 +130,14 @@ export class TenantResolver {
 
   /** The scope `hostname` names, or `undefined`. */
   resolve(hostname: string): TenantScope | undefined {
-    return this.hosts.get(hostKey(hostname));
+    return this.hosts.get(hostKey(hostname))?.scope;
+  }
+
+  /** The host `hostname` redirects to while its retired slug's redirect lives, or `undefined`. */
+  redirectOf(hostname: string): string | undefined {
+    const redirect = this.redirects.get(hostKey(hostname));
+    if (redirect === undefined) return undefined;
+    return redirect.until > (this.options.now ?? Date.now)() ? redirect.to : undefined;
   }
 
   /** Reads the map now. Calls during a read run one more read after it, so none misses a write. */
@@ -123,8 +151,17 @@ export class TenantResolver {
         do {
           this.again = false;
           const domain = this.options.appDomain.toLowerCase();
-          const scopes = await this.options.directory.resolvable();
-          this.hosts = new Map(scopes.map((scope) => [`${scope.slug}.${domain}`, scope]));
+          const [scopes, redirects] = await Promise.all([
+            this.options.directory.resolvable(),
+            this.options.directory.redirects?.() ?? Promise.resolve([]),
+          ]);
+          this.hosts = new Map(scopes.map((scope) => [`${scope.slug}.${domain}`, { scope }]));
+          this.redirects = new Map(
+            redirects.map((redirect) => [
+              `${redirect.slug}.${domain}`,
+              { to: `${redirect.to}.${domain}`, until: redirect.until.getTime() },
+            ]),
+          );
         } while (this.again);
       } finally {
         this.loading = undefined;
@@ -221,6 +258,13 @@ export async function registerTenantResolution(
     }
     const scope = resolver.resolve(host);
     if (scope === undefined) {
+      // A renamed tenant's old host (spec §22.8): the same path and query on the new one, while the redirect lives.
+      const to = resolver.redirectOf(host);
+      if (to !== undefined) {
+        const path = request.url.startsWith('/') ? request.url : '/';
+        void reply.code(308).header('location', `https://${to}${path}`).header('cache-control', 'no-store').send();
+        return reply;
+      }
       void reply.code(404).header('cache-control', 'no-store').send();
       return reply;
     }

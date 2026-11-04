@@ -29,11 +29,12 @@ import { identitySettings, type InvitationEnv } from './env.js';
 import { createInvitation, invitationSummary, isOpen, revokeOpenInvitation } from './invitations.js';
 import * as repo from './repo.js';
 
-// `admin tenancy role` runs as the owner, not the app role, so it has its own runner (tenancy/cli.ts), and so has
-// `admin instances`, which works in no tenant (operations/cli.ts).
+// `admin tenancy role` runs as the owner, not the app role, so it has its own runner (tenancy/cli.ts), and so have
+// `admin instances`, which works in no tenant (operations/cli.ts), and `admin tenant`, on the control role
+// (control-plane/cli.ts).
 type AdminCommand = Exclude<
   Extract<ServerCommand, { command: `admin-${string}` }>,
-  { command: `admin-tenancy-${string}` | 'admin-instances' }
+  { command: `admin-tenancy-${string}` | `admin-tenant-${string}` | 'admin-instances' }
 >;
 
 /**
@@ -190,7 +191,13 @@ export async function runAdmin(
         tenancy,
         config,
         hooks,
-        license: createLicenseService({ tenancy, publicKeys, now, serverId: () => Promise.resolve(serverId) }),
+        license: createLicenseService({
+          tenancy,
+          publicKeys,
+          now,
+          serverId: () => Promise.resolve(serverId),
+          hosted: config.mode === 'hosted',
+        }),
       },
       settings: identitySettings(config),
       now,
@@ -247,6 +254,7 @@ export async function runAdmin(
             publicKeys,
             now: env.now,
             serverId: () => Promise.resolve(serverId),
+            hosted: config.mode === 'hosted',
             license: env.ctx.license,
             hooks: env.ctx.hooks,
           },

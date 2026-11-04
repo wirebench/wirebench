@@ -6,6 +6,7 @@
  * - **own**: 2xx, B's own data;
  * - **federated**: 404 in hosted mode on both hosts (spec §19.1), so no control applies;
  * - **entry**: an entry route (spec §21.4), which only `app.<app-domain>` serves, so 404 on both tenant hosts too;
+ * - **hosted-off**: a self-hosted write hosted mode refuses on every host, `409` on both (the license file, §22.4);
  * - **socket**: a WebSocket route, which the socket sweep covers.
  * No body B gets may hold any of A's ids or anything named for A. A route missing here fails the suite.
  *
@@ -27,7 +28,7 @@ import {
   type World,
 } from './fill.js';
 
-export type RouteClass = 'refused' | 'own' | 'federated' | 'entry' | 'socket';
+export type RouteClass = 'refused' | 'own' | 'federated' | 'entry' | 'hosted-off' | 'socket';
 
 export interface Ctx {
   readonly w: World;
@@ -294,22 +295,13 @@ export const ROUTE_MAP: Readonly<Record<string, RouteCase>> = {
 
   // ---- licensing
   'GET /api/v1/license': { cls: 'own', request: (ctx) => json(ctx, 'GET', api('/license')) },
+  // Hosted mode takes no license file (spec §22.4): the tenant row is the edition, on both hosts.
   'PUT /api/v1/license': {
-    cls: 'own',
+    cls: 'hosted-off',
     request: (ctx) =>
       json(ctx, 'PUT', api('/license'), { license: license(keys, { id: newId(), edition: 'enterprise', seats: 500 }) }),
   },
-  'DELETE /api/v1/license': {
-    cls: 'own',
-    request: (ctx) => json(ctx, 'DELETE', api('/license')),
-    // The other routes need the license back.
-    after: async (ctx) => {
-      const res = await ctx.from.tenant.call(ctx.from.admin, 'PUT', '/license', {
-        license: license(keys, { id: newId(), edition: 'enterprise', seats: 500 }),
-      });
-      if (res.status !== 200) throw new Error(`license reinstall answered ${res.status}`);
-    },
-  },
+  'DELETE /api/v1/license': { cls: 'hosted-off', request: (ctx) => json(ctx, 'DELETE', api('/license')) },
 
   // ---- teams
   'GET /api/v1/teams': { cls: 'own', request: (ctx) => json(ctx, 'GET', api('/teams')) },

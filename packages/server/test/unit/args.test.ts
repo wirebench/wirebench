@@ -273,3 +273,105 @@ describe('admin instances (hosted spec §20.10)', () => {
     expect(HELP_TEXT).toContain('wirebench-server admin instances');
   });
 });
+
+describe('admin tenant (hosted edition spec §22.14)', () => {
+  it('parses each command, the slug positional', () => {
+    expect(parseServerArgs(['admin', 'tenant', 'list'])).toEqual({ command: 'admin-tenant-list' });
+    expect(
+      parseServerArgs(['admin', 'tenant', 'create', '--slug', 'acme', '--name', 'Acme', '--email', 'a@acme.example']),
+    ).toEqual({ command: 'admin-tenant-create', slug: 'acme', name: 'Acme', email: 'a@acme.example', edition: 'team' });
+    expect(
+      parseServerArgs([
+        'admin',
+        'tenant',
+        'create',
+        '--slug',
+        'acme',
+        '--name',
+        'Acme',
+        '--email',
+        'a@acme.example',
+        '--edition',
+        'enterprise',
+        '--seats',
+        '25',
+      ]),
+    ).toMatchObject({ edition: 'enterprise', seats: 25 });
+    expect(parseServerArgs(['admin', 'tenant', 'set-edition', 'acme', 'enterprise', '--seats', '9'])).toEqual({
+      command: 'admin-tenant-set-edition',
+      slug: 'acme',
+      edition: 'enterprise',
+      seats: 9,
+      subscription: false,
+    });
+    expect(parseServerArgs(['admin', 'tenant', 'set-edition', 'acme', 'enterprise', '--seats', 'unlimited'])).toEqual({
+      command: 'admin-tenant-set-edition',
+      slug: 'acme',
+      edition: 'enterprise',
+      seats: null,
+      subscription: false,
+    });
+    expect(parseServerArgs(['admin', 'tenant', 'set-edition', 'acme', '--subscription'])).toEqual({
+      command: 'admin-tenant-set-edition',
+      slug: 'acme',
+      subscription: true,
+    });
+    expect(parseServerArgs(['admin', 'tenant', 'suspend', 'acme'])).toEqual({
+      command: 'admin-tenant-suspend',
+      slug: 'acme',
+    });
+    expect(parseServerArgs(['admin', 'tenant', 'resume', 'acme'])).toEqual({
+      command: 'admin-tenant-resume',
+      slug: 'acme',
+    });
+    expect(parseServerArgs(['admin', 'tenant', 'rename', 'acme', 'acme-ag'])).toEqual({
+      command: 'admin-tenant-rename',
+      slug: 'acme',
+      to: 'acme-ag',
+    });
+    expect(parseServerArgs(['admin', 'tenant', 'delete', 'acme', '--cancel'])).toEqual({
+      command: 'admin-tenant-delete',
+      slug: 'acme',
+      cancel: true,
+    });
+  });
+
+  it('refuses --tenant, a missing or extra argument, a bad edition or seats, and flags of other commands', () => {
+    for (const argv of [
+      ['admin', 'tenant', 'list', '--tenant', 'acme'],
+      ['admin', 'tenant', 'suspend'],
+      ['admin', 'tenant', 'suspend', 'acme', 'beta'],
+      ['admin', 'tenant', 'create', '--slug', 'acme', '--name', 'Acme'],
+      [
+        'admin',
+        'tenant',
+        'create',
+        '--slug',
+        'acme',
+        '--name',
+        'A',
+        '--email',
+        'a@x.example',
+        '--edition',
+        'community',
+      ],
+      ['admin', 'tenant', 'create', '--slug', 'acme', '--name', 'A', '--email', 'a@x.example', '--seats', '0'],
+      ['admin', 'tenant', 'set-edition', 'acme'],
+      ['admin', 'tenant', 'set-edition', 'acme', '--subscription', '--seats', '3'],
+      ['admin', 'tenant', 'rename', 'acme'],
+      ['admin', 'tenant', 'delete', 'acme', '--subscription'],
+      ['admin', 'tenant', 'suspend', 'acme', '--cancel'],
+      ['admin', 'invite', 'a@x.example', '--slug', 'acme'],
+      ['admin', 'tenant', 'export', 'acme'],
+      ['admin', 'tenant'],
+    ]) {
+      expect(() => parseServerArgs(argv), argv.join(' ')).toThrow(UsageError);
+    }
+  });
+
+  it('lists the commands in the help text', () => {
+    for (const verb of ['list', 'create', 'set-edition', 'suspend', 'resume', 'rename', 'delete']) {
+      expect(HELP_TEXT).toContain(`admin tenant ${verb}`);
+    }
+  });
+});
