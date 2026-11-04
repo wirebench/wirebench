@@ -9,6 +9,8 @@ import { useUiStore } from '../../state/ui.js';
 import { InvitationsTab } from './invitations-tab.js';
 import { LicenseBanner } from './license-banner.js';
 import { AuditTab } from './audit-tab.js';
+import { DomainTab } from './domain-tab.js';
+import { useDomainStore } from '../../state/domain.js';
 import { LicenseTab } from './license-tab.js';
 import { useLicenseStore } from '../../state/license.js';
 import { MembersTab } from './members-tab.js';
@@ -41,6 +43,13 @@ export function TeamDialog() {
     if (!open) useTeamStore.getState().reset();
   }, [open, url]);
 
+  // Spec §23.6: the Domain tab is a hosted server's, with the feature. Only the server's answer to the read says so.
+  const domainShown = useDomainStore((s) => s.available && s.url === url);
+  useEffect(() => {
+    if (open && url !== undefined && store.serverAdmin && !store.signedOut) void useDomainStore.getState().load(url);
+    if (!open) useDomainStore.getState().reset();
+  }, [open, url, store.serverAdmin, store.signedOut]);
+
   useEffect(() => {
     setName(team?.name ?? '');
   }, [team?.id, team?.name]);
@@ -53,6 +62,7 @@ export function TeamDialog() {
     ...(canAudit ? [{ id: 'audit' as const, label: 'Audit' }] : []),
     // saml-scim §3.7: SAML and SCIM are server-wide, so the tab is a server admin's whatever team is selected.
     ...(store.serverAdmin ? [{ id: 'provisioning' as const, label: 'Provisioning' }] : []),
+    ...(store.serverAdmin && domainShown ? [{ id: 'domain' as const, label: 'Domain' }] : []),
   ];
   // A server admin with no team selected still has the License and Audit tabs (plan rulings 10, 15).
   const teamTabs: TabItem<TeamTab>[] = [
@@ -61,8 +71,11 @@ export function TeamDialog() {
     ...(isAdmin ? [{ id: 'invitations' as const, label: 'Invitations' }] : []),
   ];
   const tabs: TabItem<TeamTab>[] = team === undefined ? adminTabs : [...teamTabs, ...adminTabs];
+  // A Domain tab that is no longer offered (another server, or the feature gone) falls back like the others.
+  const tab: TeamTab =
+    store.tab === 'domain' && !domainShown ? (team === undefined ? 'license' : 'members') : store.tab;
   const activeTab: TeamTab =
-    team === undefined ? (store.tab === 'audit' || store.tab === 'provisioning' ? store.tab : 'license') : store.tab;
+    team === undefined ? (tab === 'audit' || tab === 'provisioning' || tab === 'domain' ? tab : 'license') : tab;
 
   const submitNew = async (): Promise<void> => {
     if (newName.trim().length === 0) return;
@@ -241,6 +254,9 @@ export function TeamDialog() {
                         url={url}
                         teams={store.teams.map((item) => ({ id: item.id, name: item.name }))}
                       />
+                    )}
+                    {activeTab === 'domain' && store.serverAdmin && domainShown && url !== undefined && (
+                      <DomainTab url={url} />
                     )}
                     {activeTab === 'audit' && canAudit && url !== undefined && (
                       <AuditTab

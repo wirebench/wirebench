@@ -316,6 +316,13 @@ export function stubWirebenchApi(overrides: ApiOverrides = {}): WirebenchApi {
     },
     ciTokens: { list: fail('ciTokens.list'), create: fail('ciTokens.create'), revoke: fail('ciTokens.revoke') },
     license: { get: fail('license.get'), install: fail('license.install'), remove: fail('license.remove') },
+    // A self-hosted server or a tenant without the feature: no Domain tab, so other team-dialog tests are unaffected.
+    domain: {
+      get: fail('domain.get'),
+      claim: fail('domain.claim'),
+      check: fail('domain.check'),
+      remove: fail('domain.remove'),
+    },
     provisioning: {
       info: fail('provisioning.info'),
       listTokens: fail('provisioning.listTokens'),
