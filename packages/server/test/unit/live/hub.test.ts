@@ -903,6 +903,19 @@ describe('LiveHub — two tenants with the same ids (hosted edition spec §19.8 
     return { f, one, two };
   }
 
+  it('counts the sockets it holds by tenant, for the live sockets gauge (spec §20.8)', async () => {
+    const { f, one } = await twoTenants();
+    await joined(f, BEN, 'tok-ben', WS_B);
+    expect(f.hub.countsByTenant()).toEqual(
+      new Map([
+        [TENANT.tenantId, 2],
+        [TENANT_TWO.tenantId, 1],
+      ]),
+    );
+    f.hub.remove(one);
+    expect(f.hub.countsByTenant().get(TENANT.tenantId)).toBe(1);
+  });
+
   it("delivers a head, a capture, the hooks and a run to the announcing tenant's room only", async () => {
     const { f, one, two } = await twoTenants();
     f.hub.headMoved({ ...IN_TENANT, workspaceId: WS_A, head: 'b'.repeat(40), tokenId: 'tok-other' });

@@ -6,9 +6,10 @@
  * dependency check in ADR-0009 found `fastify-type-provider-zod`'s required peers
  * (`@fastify/swagger`, `openapi-types`) would ship in the container image licensed for nothing.
  */
-import Fastify, { type FastifyInstance, type RouteOptions } from 'fastify';
-import { remote, type ServerContext, type ServerModule } from './context.js';
+import Fastify, { type FastifyInstance, type FastifyRequest, type RouteOptions } from 'fastify';
+import { local, remote, type ServerContext, type ServerModule } from './context.js';
 import { toProblem } from './problem.js';
+import type { ServerMetrics } from './operations/metrics/instruments.js';
 import { healthRoutes } from './routes/health.js';
 import { metaRoutes } from './routes/meta.js';
 import { registerTenantResolution, type TenantResolver } from './tenancy/resolve.js';
@@ -61,6 +62,28 @@ function pathOf(url: string): string {
   return path.replace(/^\/invite\/[^/]+$/, '/invite/[redacted]').replace(/^\/hooks\/[^/]+/, '/hooks/[redacted]');
 }
 
+/** The routes that take no tenant (spec §19.5, §20.9): self-hosted, `request.tenant` would answer the default one. */
+const UNSCOPED_ROUTES: ReadonlySet<string | undefined> = new Set(['/healthz', '/readyz']);
+
+/** The request's tenant id for a metric, or `undefined` (`none`): an unscoped route, or a host that resolved none. */
+function tenantIdOf(request: FastifyRequest): string | undefined {
+  if (UNSCOPED_ROUTES.has(request.routeOptions.url)) return undefined;
+  try {
+    return request.tenant.tenantId;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Each run this process finished (`local`: another instance counts its own), by its tenant and status. */
+function recordScheduleRuns(ctx: { readonly hooks: ServerContext['hooks']; readonly metrics: ServerMetrics }): void {
+  ctx.hooks.scheduleRunFinished.push(
+    local((event) => {
+      ctx.metrics.scheduleRun(event.tenantId, event.status);
+    }),
+  );
+}
+
 /** Symbol Fastify reads to register a plugin into its parent's scope instead of a child one. */
 const SKIP_OVERRIDE = Symbol.for('skip-override');
 
@@ -109,6 +132,18 @@ export async function buildServer(ctx: ServerContext, options: BuildServerOption
   app.addHook('onSend', async (request, reply) => {
     reply.header('x-request-id', request.id);
   });
+
+  // Spec §20.8: every answered request, by its route template (never the URL) and its tenant's id.
+  app.addHook('onResponse', async (request, reply) => {
+    ctx.metrics.httpRequest({
+      tenantId: tenantIdOf(request),
+      route: request.routeOptions.url,
+      method: request.method,
+      statusCode: reply.statusCode,
+      durationMs: reply.elapsedTime,
+    });
+  });
+  recordScheduleRuns(ctx);
 
   app.setNotFoundHandler((request, reply) => {
     void reply.code(404).send({ code: 'not-found', message: `No route for ${request.method} ${pathOf(request.url)}` });

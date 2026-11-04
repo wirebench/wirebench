@@ -122,6 +122,7 @@ export function liveModule(options: LiveOptions = {}): ServerModule {
           headOf: (workspaceId, tenant) => heads.head(tenant, workspaceId),
         },
       });
+      ctx.metrics.observe('liveSockets', () => hub.countsByTenant());
       let heartbeat: { cancel(): void } | undefined;
       // Re-armed before the work, so one failing beat cannot stop every later one: a socket that
       // missed its pong would otherwise never be terminated again.

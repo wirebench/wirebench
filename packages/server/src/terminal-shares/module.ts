@@ -31,7 +31,8 @@ import { forbidden } from '../teams/errors.js';
 import { effectiveRole, requireWorkspaceRole } from '../teams/roles.js';
 import { shareNotFound } from './errors.js';
 import { ShareRegistry, type ShareRegistryDeps } from './registry.js';
-import { runShareSocket } from './socket.js';
+import { ShareRelay, shareLocationBeat, shareLocations } from './relay.js';
+import { runRelayedViewer, runShareSocket } from './socket.js';
 import type { TenantScope } from '../tenancy/scope.js';
 import { outsideTenantUnit } from '../tenancy/tenant-db.js';
 
@@ -65,7 +66,7 @@ export function newShareId(): string {
   return out;
 }
 
-function callerOf(request: FastifyRequest): { readonly id: string } {
+function callerOf(request: FastifyRequest): NonNullable<FastifyRequest['caller']> {
   if (request.caller === undefined) throw forbidden();
   return request.caller;
 }
@@ -112,6 +113,46 @@ export function terminalSharesModule(options: TerminalSharesOptions = {}): Serve
         log: (message, error) => {
           ctx.log.warn({ err: error }, message);
         },
+        // Spec §20.6: the location row goes with the share, in its tenant, tracked like the audit rows.
+        ended: (tenant, shareId) => {
+          outsideTenantUnit(() => {
+            auditWrites.track(
+              shareLocations.remove(ctx.tenancy.db(tenant), shareId, ctx.instance.holder).catch((error: unknown) => {
+                ctx.log.warn({ err: error }, 'a terminal share location could not be removed');
+              }),
+            );
+          });
+        },
+      });
+      // Spec §20.6, `multi` only: a share held elsewhere is relayed to its holder, and this holder's shares are
+      // served to the other instances on the internal listener.
+      const relay =
+        ctx.relay === undefined
+          ? undefined
+          : new ShareRelay({
+              relay: ctx.relay,
+              instance: ctx.instance,
+              db: (tenant) => ctx.tenancy.db(tenant),
+              setTimer,
+              log: ctx.log,
+            });
+      ctx.relay?.serveShares({
+        join: (socket, claims, tenant) => {
+          runRelayedViewer(socket, {
+            registry,
+            tenant,
+            workspaceId: claims.workspaceId,
+            shareId: claims.shareId,
+            who: {
+              userId: claims.userId,
+              tokenId: claims.tokenId,
+              name: claims.viewer.name,
+              expiresAt: claims.viewer.tokenExpiresAt,
+              source: claims.viewer.source,
+            },
+          });
+        },
+        info: (claims, tenant) => registry.info(tenant, claims.workspaceId, claims.shareId, claims.userId),
       });
 
       const feature: preHandlerAsyncHookHandler = async function (request, reply) {
@@ -142,6 +183,14 @@ export function terminalSharesModule(options: TerminalSharesOptions = {}): Serve
             source: auditSource(request),
             tenant: request.tenant,
           });
+          // Where the share lives (spec §20.6), before its id is handed out: a viewer on another instance finds it.
+          // Without its row the share is ended, so no share outlives a failed create unseen by every other instance.
+          try {
+            await shareLocations.add(ctx.tenancy.db(request.tenant), shareId, ctx.instance.holder);
+          } catch (error) {
+            registry.abandon(request.tenant, shareId);
+            throw error;
+          }
           const answer: TerminalShareCreateResponse = { shareId };
           return reply.code(201).send(answer);
         },
@@ -156,12 +205,27 @@ export function terminalSharesModule(options: TerminalSharesOptions = {}): Serve
             response: { 200: jsonSchema(terminalShareInfoSchema) },
           },
         },
-        (request): Promise<TerminalShareInfo> => {
+        async (request): Promise<TerminalShareInfo> => {
           const caller = callerOf(request);
           const { shareId } = request.params as { shareId: string };
-          const info = registry.info(request.tenant, request.workspaceAccess!.workspaceId, shareId, caller.id);
+          const workspaceId = request.workspaceAccess!.workspaceId;
+          const info =
+            registry.info(request.tenant, workspaceId, shareId, caller.id) ??
+            (await relay?.info({
+              tenant: request.tenant,
+              workspaceId,
+              shareId,
+              // Only the ids decide an info answer; the holder reads nothing else of it.
+              who: {
+                userId: caller.id,
+                tokenId: caller.tokenId,
+                name: '',
+                expiresAt: 0,
+                source: auditSource(request),
+              },
+            }));
           if (info === undefined) throw shareNotFound();
-          return Promise.resolve(info);
+          return info;
         },
       );
 
@@ -179,12 +243,26 @@ export function terminalSharesModule(options: TerminalSharesOptions = {}): Serve
           tenant: request.tenant,
           setTimer,
           log: ctx.log,
+          ...(relay !== undefined ? { relay: (socket, join) => relay.join(socket, join) } : {}),
           request: {
             ...(ip !== undefined ? { ip } : {}),
             ...(typeof header === 'string' ? { userAgent: header.slice(0, 512) } : {}),
           },
         });
       });
+
+      // Spec §20.6: the rows of the shares held here, written again on each instance heartbeat, and the rows of
+      // crashed holders swept every ten minutes.
+      ctx.instance.onBeat(
+        shareLocationBeat({
+          held: () => registry.held(),
+          holds: (tenantId, shareId) => registry.holds(tenantId, shareId),
+          instance: ctx.instance,
+          db: (tenant) => ctx.tenancy.db(tenant),
+          forEachTenant: (job, fn) => ctx.tenancy.forEachTenant(job, (tx) => fn(tx), ctx.log),
+          now: () => now().getTime(),
+        }),
+      );
 
       let heartbeat: { cancel(): void } | undefined;
       const beat = (): void => {

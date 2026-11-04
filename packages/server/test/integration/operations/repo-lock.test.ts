@@ -101,11 +101,15 @@ describeDb('the advisory repository lock (hosted spec §20.4)', () => {
   });
 
   /** One instance's repository store: its own lock pool on the test schema. */
-  const instance = (waitMs = 5_000): RepoStore => {
+  const instance = (waitMs = 5_000, waited?: (tenantId: string, ms: number) => void): RepoStore => {
     const pool = createLockPool(db.url, { max: 8, applicationName: APP, waitMs });
     pools.push(pool);
     const git = guardGit(testGit(join(dataDir, NO_HOOKS_DIR)));
-    return new RepoStore({ git, dataDir, lock: new DatabaseRepoLock({ pool }) });
+    return new RepoStore({
+      git,
+      dataDir,
+      lock: new DatabaseRepoLock({ pool, ...(waited !== undefined ? { waited } : {}) }),
+    });
   };
 
   /** The repository locks this file's lock pools hold right now (other files may hold their own). */
@@ -174,6 +178,24 @@ describeDb('the advisory repository lock (hosted spec §20.4)', () => {
     expect(await held()).toBe(0);
     // And the store that timed out takes it normally next time.
     expect(await b.withLock(TENANT, WS, () => Promise.resolve('next'))).toBe('next');
+  });
+
+  it('tells each hold’s wait, granted or run out, in its tenant (spec §20.8 repo lock wait)', async () => {
+    const waits: [string, number][] = [];
+    const a = instance();
+    const b = instance(300, (tenantId, ms) => waits.push([tenantId, ms]));
+    expect(await b.withLock(TENANT, WS, () => Promise.resolve('free'))).toBe('free');
+    expect(waits).toHaveLength(1);
+    expect(waits[0]![0]).toBe(TENANT.tenantId);
+    const first = gate();
+    const aHolds = a.withLock(TENANT, WS, () => first.wait);
+    await vi.waitFor(async () => expect(await held()).toBe(1));
+    await expect(b.withLock(TENANT, WS, () => Promise.resolve())).rejects.toMatchObject({ code: 'repo-busy' });
+    first.open();
+    await aHolds;
+    expect(waits).toHaveLength(2);
+    expect(waits[1]![0]).toBe(TENANT.tenantId);
+    expect(waits[1]![1]).toBeGreaterThanOrEqual(250);
   });
 
   it('a killed lock connection ends fn with repo-lock-lost at its next git step', async () => {

@@ -15,4 +15,6 @@ export interface Querier {
 export interface Database extends Querier {
   transaction<T>(fn: (tx: Querier) => Promise<T>): Promise<T>;
   close(): Promise<void>;
+  /** Queries and units waiting for a free connection: `wirebench.db.pool.waiting` (spec §20.8). A fake has none. */
+  waiting?(): number;
 }

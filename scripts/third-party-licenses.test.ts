@@ -157,6 +157,17 @@ describe('THIRD-PARTY-LICENSES.md', () => {
     }
   });
 
+  it('attributes the server metrics SDK, which ships whether or not an endpoint is set (spec §20.8)', () => {
+    for (const name of [
+      '@opentelemetry/api',
+      '@opentelemetry/sdk-metrics',
+      '@opentelemetry/resources',
+      '@opentelemetry/exporter-metrics-otlp-http',
+    ]) {
+      expect(rendered).toMatch(new RegExp(`\\| \`${name}\` \\| [^|]+ \\| Apache-2\\.0 \\|`));
+    }
+  });
+
   it('attributes every third-party package the renderer bundle imports', async () => {
     const committed = await readFile(target, 'utf-8');
     const files = await sourceFiles(rendererDir);

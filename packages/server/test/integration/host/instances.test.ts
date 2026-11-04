@@ -121,6 +121,13 @@ describe('HostInstances', () => {
     expect(instances.size).toBe(2);
     expect(instances.socketCount(ALICE)).toBe(1);
     expect(instances.socketCount(elsewhere)).toBe(1);
+    // The host instances gauge (spec §20.8): one in each tenant.
+    expect(instances.countsByTenant()).toEqual(
+      new Map([
+        [TENANT.tenantId, 1],
+        [OTHER_TENANT.tenantId, 1],
+      ]),
+    );
     // A release in one tenant leaves the other's instance alone: its count, its socket and its credential.
     instances.release(elsewhere, there);
     expect(instances.socketCount(elsewhere)).toBe(0);

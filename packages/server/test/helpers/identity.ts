@@ -99,6 +99,10 @@ export async function identityHarness(
     /** This process's instance and its bus's signals, for a test of two servers on one schema (spec §20.3). */
     readonly instance?: ServerContext['instance'];
     readonly bus?: ServerContext['bus'];
+    /** The share relay of a `multi` server (spec §20.6). */
+    readonly relay?: ServerContext['relay'];
+    /** The server's instruments, for a test that collects what was recorded (spec §20.8). */
+    readonly metrics?: ServerContext['metrics'];
     /**
      * Hands the control-plane module a control pool on this schema (spec §22.2), as `serve.ts` does in hosted mode.
      * It connects lazily, and nothing is granted to the control role until a test runs `ensureControlRole`.
@@ -172,6 +176,8 @@ export async function identityHarness(
     tenancy,
     ...(options.instance !== undefined ? { instance: options.instance } : {}),
     ...(options.bus !== undefined ? { bus: options.bus } : {}),
+    ...(options.relay !== undefined ? { relay: options.relay } : {}),
+    ...(options.metrics !== undefined ? { metrics: options.metrics } : {}),
   });
   const directory = directoryOf(ctx.tenancy);
   await directory.load();
