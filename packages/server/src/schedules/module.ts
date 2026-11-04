@@ -82,6 +82,9 @@ export function schedulesModule(options: SchedulesOptions = {}): ServerModule {
         log: ctx.log,
         egress: ctx.egress,
         license,
+        ...(ctx.config.mode === 'hosted'
+          ? { runSlotsFor: async (scope: TenantScope) => (await ctx.settings.budgets(scope)).runSlots }
+          : {}),
         ...(options.execute !== undefined ? { execute: options.execute } : {}),
       });
       options.onScheduler?.(scheduler);

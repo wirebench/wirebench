@@ -50,6 +50,7 @@ import { HostInstances, type HostSession, type HostSocketHandle, type HostUser }
 import { clearLeasesAtStartUp, HostLeases, isInstanceCap, leaseHeldReason, leaseRetryAfter } from './lease.js';
 import { liveBridge } from './live-bridge.js';
 import { pendingWrites, type PendingWrites } from '../pending-writes.js';
+import type { TenantScope } from '../tenancy/scope.js';
 import { outsideTenantUnit } from '../tenancy/tenant-db.js';
 import { runHostSocket, type HostSocket } from './socket.js';
 
@@ -196,6 +197,8 @@ export function hostModule(options: HostModuleOptions = {}): ServerModule {
       const budgets = new SendBudgets({
         db: ctx.tenancy.db,
         settings: sendBudgetSettings(config),
+        // Hosted, the operator's override of a tenant's budgets, else the defaults above (spec §22.12).
+        ...(config.mode === 'hosted' ? { settingsFor: (scope: TenantScope) => ctx.settings.budgets(scope) } : {}),
         log,
         metrics: ctx.metrics,
       });
