@@ -52,7 +52,8 @@
  *   everywhere); `controlDatabaseUrl` outside `config.ts`, `serve.ts`
  *   and `tenancy/cli.ts` (`admin tenancy role`, which creates the role), in the forms the database URLs are refused
  *   in; and SQL naming `signups`, `billing_events`, `tenant_slugs_retired` or `tenant_deletions` outside
- *   `src/control-plane/` (`tenancy/grants.ts` lists them for the roles). `from tenants` and `join tenants` are allowed
+ *   `src/control-plane/` (`tenancy/grants.ts` lists them for the roles, and `tenancy/redirects.ts` reads
+ *   `tenant_slugs_retired`'s redirects for the resolver, that table only). `from tenants` and `join tenants` are allowed
  *   in `src/control-plane/` as in `src/tenancy/`; setting the tenant is not.
  *
  * The gate is textual: a name built by string concatenation, or an aliased re-export made from inside an allowed
@@ -203,6 +204,12 @@ const CONTROL_URL = 'controlDatabaseUrl';
 const CONTROL_SQL = /(?<![\w"])"?(?:signups|billing_events|tenant_slugs_retired|tenant_deletions)"?(?![\w"])/i;
 /** Outside `src/control-plane/`, the list the roles' grants read them from. */
 export const CONTROL_SQL_ALLOWED: readonly string[] = ['packages/server/src/tenancy/grants.ts'];
+/**
+ * The resolver's read of the retired slugs' redirects (spec §22.8): this one file may name `tenant_slugs_retired`, and
+ * no other control table.
+ */
+export const RETIRED_SLUGS_READER = 'packages/server/src/tenancy/redirects.ts';
+const CONTROL_SQL_NAMES = new RegExp(CONTROL_SQL.source, 'gi');
 
 export interface ScopeHit {
   readonly file: string;
@@ -469,7 +476,11 @@ export function findControlPlane(file: string, content: string): ScopeHit[] {
         ts.isStringLiteralLike(node) || ts.isTemplateHead(node) || ts.isTemplateMiddle(node) || ts.isTemplateTail(node)
           ? node.text
           : undefined;
-      if (text !== undefined && CONTROL_SQL.test(text)) hit(node, 'control-sql');
+      if (text !== undefined && CONTROL_SQL.test(text)) {
+        const named = [...text.matchAll(CONTROL_SQL_NAMES)].map((match) => match[0].replaceAll('"', '').toLowerCase());
+        const retiredOnly = named.every((name) => name === 'tenant_slugs_retired');
+        if (!(file === RETIRED_SLUGS_READER && retiredOnly)) hit(node, 'control-sql');
+      }
     }
     ts.forEachChild(node, visit);
   };

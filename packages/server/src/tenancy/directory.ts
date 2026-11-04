@@ -9,6 +9,7 @@
 import { randomUUID } from 'node:crypto';
 import { WirebenchError } from '@wirebench/engine';
 import type { Querier } from '../db/querier.js';
+import { liveRedirects, type LiveRedirect } from './redirects.js';
 import type { TenantKeys } from './keys.js';
 import { scopeOf, type TenantScope } from './scope.js';
 import { checkSlug } from './slugs.js';
@@ -151,6 +152,11 @@ export class TenantDirectory {
        order by t.created_at, t.id`,
     );
     return rows.rows.map((row) => ({ scope: scopeOf(row), name: row.name }));
+  }
+
+  /** The retired slugs' live redirects (spec §22.8), which the hosted map loads beside the tenants. */
+  redirects(): Promise<LiveRedirect[]> {
+    return liveRedirects(this.#db);
   }
 
   async get(id: string): Promise<(TenantRow & { readonly scope: TenantScope }) | undefined> {

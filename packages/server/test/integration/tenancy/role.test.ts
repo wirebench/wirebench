@@ -182,5 +182,21 @@ describeDb('the test database roles (§19.4)', () => {
       [db.schema, ['schema_migrations', 'server_identity']],
     );
     expect(columns.rows).toEqual([{ table: 'server_identity', column: 'tenancy_step', privilege: 'UPDATE' }]);
+    // The resolver's redirects (spec §22.8): three columns of the retired slugs, read only, never the tenant id.
+    const retired = await db.owner.query<{ column: string; privilege: string }>(
+      `select column_name as column, privilege_type as privilege from information_schema.column_privileges
+        where table_schema = $1 and grantee = 'wirebench_app' and table_name = 'tenant_slugs_retired'
+        order by column_name, privilege_type`,
+      [db.schema],
+    );
+    expect(retired.rows).toEqual([
+      { column: 'redirect_to', privilege: 'SELECT' },
+      { column: 'redirect_until', privilege: 'SELECT' },
+      { column: 'slug', privilege: 'SELECT' },
+    ]);
+    await expect(db.query('select tenant_id from tenant_slugs_retired')).rejects.toMatchObject({ code: '42501' });
+    await expect(
+      db.query("insert into tenant_slugs_retired (slug, tenant_id) values ('x', gen_random_uuid())"),
+    ).rejects.toMatchObject({ code: '42501' });
   });
 });

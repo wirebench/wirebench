@@ -7,6 +7,7 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import { genesisHash, keyId } from '../../../src/audit-log/chain/canonical.js';
 import { chainKeys, derivedChainKey } from '../../../src/audit-log/chain/keys.js';
+import { SEAL_IDLE_MS } from '../../../src/audit-log/chain/sealer.js';
 import { verifyChain } from '../../../src/audit-log/chain/verify.js';
 import { auditLogModule } from '../../../src/audit-log/module.js';
 import { readAnchor } from '../../../src/audit-log/repo.js';
@@ -23,6 +24,8 @@ const hosted = (config: ServerConfig): ServerConfig => ({ ...config, mode: 'host
 
 describeDb('the audit log in a tenant (tenancy Task 14)', () => {
   const cleanup: (() => Promise<void>)[] = [];
+  /** Each server's timers: a first pass that found the chain locked by the retention sweep's waits on one. */
+  const timersOf = new WeakMap<IdentityHarness, ReturnType<typeof manualTimers>>();
   afterEach(async () => {
     for (const close of cleanup.splice(0)) await close();
   });
@@ -35,6 +38,7 @@ describeDb('the audit log in a tenant (tenancy Task 14)', () => {
       modules: (clock) => [auditLogModule({ now: () => clock.now, setTimer: timers.setTimer })],
     });
     cleanup.push(() => h.close());
+    timersOf.set(h, timers);
     return h;
   }
 
@@ -45,6 +49,9 @@ describeDb('the audit log in a tenant (tenancy Task 14)', () => {
     await vi.waitFor(
       async () => {
         anchor = await readAnchor(h.tdb);
+        // The retention sweep's first batch takes the chain lock too: a pass that found it held (busy-elsewhere)
+        // waits SEAL_IDLE_MS, which these timers only run when fired.
+        if (anchor === undefined) timersOf.get(h)?.fire(SEAL_IDLE_MS);
         expect(anchor).toBeDefined();
       },
       { timeout: 10_000 },

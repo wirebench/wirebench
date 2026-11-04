@@ -489,6 +489,15 @@ describe('check:tenant-scope', () => {
       }
       // The grants list names them for the roles; nowhere else outside the control plane may.
       expect(findControlPlane('packages/server/src/tenancy/grants.ts', "const t = ['signups'];")).toEqual([]);
+      // The resolver's redirect reader names the retired slugs, and that table only (spec §22.8).
+      const reader = 'packages/server/src/tenancy/redirects.ts';
+      expect(findControlPlane(reader, "db.query('select slug from tenant_slugs_retired')")).toEqual([]);
+      for (const text of [
+        "db.query('select * from signups')",
+        "db.query('select 1 from tenant_slugs_retired r join billing_events e on true')",
+      ]) {
+        expect(findControlPlane(reader, text), text).toMatchObject([{ rule: 'control-sql' }]);
+      }
     });
 
     it('allows from tenants and join tenants in src/control-plane/ too, but not the tenant setting', () => {

@@ -285,6 +285,38 @@ export class TenantLifecycle {
     return row;
   }
 
+  /**
+   * Renames (spec §22.8): the new slug claimed as a signup's is, then in one control transaction `tenants.slug` moved
+   * and the old slug retired, redirecting to the new one for {@link REDIRECT_DAYS}. An earlier rename's redirects
+   * follow to the new name, so no old host points at a retired one. A retired slug is never written again.
+   */
+  async rename(
+    slug: string,
+    to: string,
+    actor: LifecycleActor = OPERATOR,
+  ): Promise<TenantRow & { scope: TenantScope }> {
+    const now = this.#now();
+    const row = await this.#deps.control.transaction(async (tx) => {
+      const tenant = await lockedTenant(tx, slug);
+      refuseDeleting(tenant);
+      await claimSlug(tx, to);
+      const updated = await this.#update(tx, tenant.id, 'slug = $2', [to]);
+      await tx.query(
+        'update tenant_slugs_retired set redirect_to = $2 where tenant_id = $1::uuid and redirect_to is not null',
+        [tenant.id, to],
+      );
+      await tx.query(
+        `insert into tenant_slugs_retired (slug, tenant_id, retired_at, redirect_to, redirect_until)
+         values ($1, $2::uuid, $3::timestamptz, $4, $5::timestamptz)`,
+        [slug, tenant.id, now, to, new Date(now.getTime() + REDIRECT_DAYS * DAY_MS)],
+      );
+      return updated;
+    });
+    const scope = await this.#scope(row);
+    await this.#after(scope, actor, 'tenant.renamed', { from: slug, to });
+    return { ...row, scope };
+  }
+
   async #update(tx: ControlTx, id: string, set: string, params: readonly unknown[]): Promise<TenantRow> {
     const rows = await tx.query<TenantRow & Record<string, unknown>>(
       `update tenants set ${set} where id = $1::uuid returning ${TENANT_COLUMNS}`,
