@@ -315,6 +315,42 @@ describeDb('a tenant import (spec §22.10)', () => {
       expect((await back.tdb.query<{ n: string }>('select count(*)::text as n from users')).rows[0]!.n).toBe('0');
     });
 
+    it('never merges another export into an import a crash stopped, nor overwrites its marker', async () => {
+      const first = join(dir, 'first.tar.gz');
+      await exportOf({ h: x.f.h, scope: x.scope, key: CHAIN_KEY }, first);
+      x.f.h.clock.advance(60_000);
+      const second = join(dir, 'second.tar.gz');
+      await exportOf({ h: x.f.h, scope: x.scope, key: CHAIN_KEY }, second);
+      const crash = (deps: ImportDeps): ImportDeps => ({
+        ...deps,
+        afterTable: (table) => {
+          if (table === 'workspaces') throw new Error('crash');
+        },
+      });
+      // Self-hosted: the second export is refused, and the first still resumes.
+      const back = await syncHarness();
+      closing.push(() => back.close());
+      back.hooks.audit.push(auditHook(() => back.clock.now));
+      const deps = importDeps(back, () => CHAIN_KEY);
+      await expect(importSelfHosted(crash(deps), back.tdb.scope, first)).rejects.toThrow('crash');
+      await expect(importSelfHosted(deps, back.tdb.scope, second)).rejects.toMatchObject({
+        code: 'import-target-not-empty',
+      });
+      expect((await importSelfHosted(deps, back.tdb.scope, first)).resumed).toBe(true);
+      // Hosted: the tenant still importing the first export is not the second's.
+      const target = await hostedTarget();
+      const keyOf = (scope: TenantScope) => derivedChainKey(CHAIN_KEY, scope.tenantId);
+      const hostedDeps = importDeps(target.h, keyOf);
+      await expect(importHosted(crash(hostedDeps), target.lifecycle, first, { slug: 'moved' })).rejects.toThrow(
+        'crash',
+      );
+      await expect(importHosted(hostedDeps, target.lifecycle, second, { slug: 'moved' })).rejects.toMatchObject({
+        code: 'import-target-not-empty',
+      });
+      const done = await importHosted(hostedDeps, target.lifecycle, first, { slug: 'moved' });
+      expect(done).toMatchObject({ tenant: { status: 'active' }, report: { resumed: true } });
+    });
+
     it('resumes an import a crash stopped half-way through its tables', async () => {
       const file = join(dir, 'x.tar.gz');
       await exportOf({ h: x.f.h, scope: x.scope, key: CHAIN_KEY }, file);

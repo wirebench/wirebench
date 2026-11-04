@@ -115,6 +115,41 @@ export async function importInProgress(dataDir: string, scope: TenantScope): Pro
   }
 }
 
+const otherImport = (): WirebenchError =>
+  refuse(
+    'import-target-not-empty',
+    "another export's import is under way here: finish it with its own file, or import into an empty target",
+  );
+
+/**
+ * Claims `scope` for this export's import: its marker written if none is there (exclusively, so two runs never both
+ * write one), or kept when it is this export's. Another export's marker is never overwritten, and no export is merged
+ * into another's half-done import. `true` when this run resumes one.
+ *
+ * @throws WirebenchError `import-target-not-empty` when another export's import is under way there
+ */
+async function claimMarker(dataDir: string, scope: TenantScope, manifest: ExportManifest): Promise<boolean> {
+  const marker = await importInProgress(dataDir, scope);
+  if (marker !== undefined) {
+    if (!sameExport(marker, manifest)) throw otherImport();
+    return true;
+  }
+  await mkdir(tenantPaths(dataDir, scope).tmp, { recursive: true });
+  try {
+    await writeFile(
+      markerPath(dataDir, scope),
+      JSON.stringify({ sourceTenantId: manifest.tenant.id, exportedAt: manifest.exportedAt } satisfies Marker),
+      { mode: 0o600, flag: 'wx' },
+    );
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+    // Another run wrote one between the read and the write: this export's, or a refusal.
+    if (!sameExport(await importInProgress(dataDir, scope), manifest)) throw otherImport();
+    return true;
+  }
+  return false;
+}
+
 /** Whether `marker` is this export's. */
 export function sameExport(marker: Marker | undefined, manifest: ExportManifest): boolean {
   return (
@@ -379,15 +414,8 @@ export async function importInto(
   if (foreign.length > 0) {
     throw refuse('import-format', `the export names tables no export holds: ${foreign.join(', ')}`);
   }
-  const marker = await importInProgress(deps.dataDir, scope);
-  const resumed = sameExport(marker, manifest);
+  const resumed = await claimMarker(deps.dataDir, scope, manifest);
   const tmp = tenantPaths(deps.dataDir, scope).tmp;
-  await mkdir(tmp, { recursive: true });
-  await writeFile(
-    markerPath(deps.dataDir, scope),
-    JSON.stringify({ sourceTenantId: manifest.tenant.id, exportedAt: manifest.exportedAt } satisfies Marker),
-    { mode: 0o600 },
-  );
   const work = join(tmp, `import-${randomBytes(6).toString('hex')}`);
   try {
     await unpack(path, manifest, work, deps.maxBytes ?? IMPORT_MAX_BYTES);
@@ -475,7 +503,16 @@ export async function assertImportTarget(
   scope: TenantScope,
   manifest: ExportManifest,
 ): Promise<void> {
-  if (sameExport(await importInProgress(deps.dataDir, scope), manifest)) return;
+  const marker = await importInProgress(deps.dataDir, scope);
+  if (marker !== undefined) {
+    if (sameExport(marker, manifest)) return;
+    throw otherImport();
+  }
+  await assertEmpty(deps, scope);
+}
+
+/** No user and no workspace in `scope`. */
+async function assertEmpty(deps: Pick<ImportDeps, 'db'>, scope: TenantScope): Promise<void> {
   const rows = await deps
     .db(scope)
     .query<{ taken: boolean }>('select exists (select 1 from users) or exists (select 1 from workspaces) as taken');
@@ -519,20 +556,27 @@ export async function importHosted(
   await checkExportChain(path);
   const slug = options.slug ?? manifest.tenant.slug;
   const stopped = await lifecycle.importing(slug);
-  const marker = stopped === undefined ? undefined : await importInProgress(deps.dataDir, stopped.scope);
-  const resumable = stopped !== undefined && (marker === undefined || sameExport(marker, manifest));
+  if (stopped !== undefined) {
+    // A tenant an import made and did not finish: this export's resumes; another's is never merged into it; one with
+    // no marker yet (a crash right after it was made) resumes only while it holds nothing.
+    const marker = await importInProgress(deps.dataDir, stopped.scope);
+    if (marker === undefined) await assertEmpty(deps, stopped.scope);
+    else if (!sameExport(marker, manifest)) throw otherImport();
+  }
   const seats = options.seats ?? manifest.tenant.seats ?? undefined;
-  const target = resumable
-    ? stopped
-    : await lifecycle.create({
-        slug,
-        name: options.name ?? manifest.tenant.name,
-        edition: options.edition ?? (manifest.tenant.edition === 'enterprise' ? 'enterprise' : 'team'),
-        ...(seats !== undefined ? { seats } : {}),
-        editionSource: 'operator',
-        suspendedReason: 'importing',
-      });
-  const report = await importInto(deps, target.scope, path, manifest);
-  const resumed = await lifecycle.resume(slug);
-  return { tenant: resumed ?? target, scope: target.scope, report };
+  const target =
+    stopped ??
+    (await lifecycle.create({
+      slug,
+      name: options.name ?? manifest.tenant.name,
+      edition: options.edition ?? (manifest.tenant.edition === 'enterprise' ? 'enterprise' : 'team'),
+      ...(seats !== undefined ? { seats } : {}),
+      editionSource: 'operator',
+      suspendedReason: 'importing',
+    }));
+  // The export's identity on the new tenant at once, so a crash from here on resumes this export and no other.
+  const resumed = stopped !== undefined && (await claimMarker(deps.dataDir, target.scope, manifest));
+  const report = { ...(await importInto(deps, target.scope, path, manifest)), resumed };
+  const active = await lifecycle.resume(slug);
+  return { tenant: active ?? target, scope: target.scope, report };
 }
