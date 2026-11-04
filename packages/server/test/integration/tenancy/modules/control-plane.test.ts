@@ -1,0 +1,174 @@
+/**
+ * The control plane's tenant routes with two tenants (slice 7 Task 24, hosted edition spec §22.9, §22.11, §22.13):
+ * each tenant's server admins see and download their own exports only, ask for their own deletion only (typing their
+ * own slug), and read their own billing; a member who is no server admin, and nobody signed in, reach none of it. On
+ * a self-hosted server the export routes are served and the hosted-only ones are not.
+ */
+import { mkdir, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { controlPlaneModule } from '../../../../src/control-plane/module.js';
+import { tenantRoot } from '../../../../src/tenancy/paths.js';
+import { ensureControlRole } from '../../../../src/tenancy/roles.js';
+import { describeDb } from '../../../helpers/database.js';
+import { identityHarness, signedInUser, type IdentityHarness, type SignedInUser } from '../../../helpers/identity.js';
+import { twoTenants, type Tenant, type TwoTenants } from './two-tenants.js';
+
+/** Each suite's set-up builds servers and repositories: under load that is past the 10 s default. */
+const SETUP_MS = 120_000;
+
+const EXPORT_A = '0a0a0a0a-0000-4000-8000-00000000000a';
+const EXPORT_B = '0b0b0b0b-0000-4000-8000-00000000000b';
+
+/** A ready export of `tenant`'s, its row and its file. */
+async function readyExport(dataDir: string, tenant: Pick<Tenant, 'tdb' | 'scope'>, id: string, body: string) {
+  const dir = join(tenantRoot(dataDir, tenant.scope), 'exports');
+  await mkdir(dir, { recursive: true });
+  await writeFile(join(dir, `${id}.tar.gz`), body);
+  await tenant.tdb.query(
+    `insert into tenant_exports (id, requested_by, status, size_bytes, sha256, ready_at, expires_at)
+     values ($1, 'operator', 'ready', $2, 'x', now(), now() + interval '7 days')`,
+    [id, Buffer.byteLength(body)],
+  );
+}
+
+describeDb('the tenant routes, two tenants (spec §22.9, §22.11)', () => {
+  let t: TwoTenants;
+  let adminA: SignedInUser;
+  let adminB: SignedInUser;
+  let memberA: SignedInUser;
+  beforeAll(async () => {
+    t = await twoTenants({ modules: () => [controlPlaneModule({ startLoop: false })] });
+    await ensureControlRole(t.h.db.owner, t.h.db.controlUrl, t.h.db.url);
+    adminA = await t.a.user({ email: 'admin@acme.example', serverAdmin: true });
+    adminB = await t.b.user({ email: 'admin@beta.example', serverAdmin: true });
+    memberA = await t.a.user({ email: 'member@acme.example' });
+    await readyExport(t.h.dataDir, t.a, EXPORT_A, 'acme export bytes');
+    await readyExport(t.h.dataDir, t.b, EXPORT_B, 'beta export bytes');
+    await t.a.tdb.query(
+      `insert into subscriptions (provider, provider_ref, plan, seats, status, past_due_since, last_event_at)
+       values ('paddle', 'sub_test_acme', 'team', 5, 'past_due', now() - interval '4 days', now())`,
+    );
+  }, SETUP_MS);
+  afterAll(() => t.close(), SETUP_MS);
+
+  it("lists and serves a tenant's own exports only", async () => {
+    const listA = await t.a.call<{ exports: { id: string }[] }>(adminA, 'GET', '/tenant/exports');
+    expect(listA.body.exports.map((row) => row.id)).toEqual([EXPORT_A]);
+    const listB = await t.b.call<{ exports: { id: string }[] }>(adminB, 'GET', '/tenant/exports');
+    expect(listB.body.exports.map((row) => row.id)).toEqual([EXPORT_B]);
+    const own = await t.a.inject({
+      method: 'GET',
+      url: `/api/v1/tenant/exports/${EXPORT_A}/file`,
+      headers: adminA.headers,
+    });
+    expect(own.statusCode).toBe(200);
+    expect(own.body).toBe('acme export bytes');
+    expect(own.headers['content-disposition']).toMatch(
+      /^attachment; filename="wirebench-export-acme-\d{8}T\d{6}Z\.tar\.gz"$/,
+    );
+    // B's admin, A's id, on B's host: B has no such export.
+    const cross = await t.b.inject({
+      method: 'GET',
+      url: `/api/v1/tenant/exports/${EXPORT_A}/file`,
+      headers: adminB.headers,
+    });
+    expect(cross.statusCode).toBe(404);
+    expect(cross.body).not.toContain('acme');
+    // A's admin's token on B's host is no session there.
+    const wrongHost = await t.b.inject({
+      method: 'GET',
+      url: `/api/v1/tenant/exports/${EXPORT_B}/file`,
+      headers: adminA.headers,
+    });
+    expect(wrongHost.statusCode).toBe(401);
+  });
+
+  it('serves server admins only, behind a session', async () => {
+    expect((await t.a.call(memberA, 'GET', '/tenant/exports')).status).toBe(403);
+    expect((await t.a.call(undefined, 'GET', '/tenant/exports')).status).toBe(401);
+    expect((await t.a.call(memberA, 'GET', `/tenant/exports/${EXPORT_A}/file`)).status).toBe(403);
+    expect((await t.a.call(undefined, 'GET', `/tenant/exports/${EXPORT_A}/file`)).status).toBe(401);
+    expect((await t.a.call(memberA, 'POST', '/tenant/exports')).status).toBe(403);
+    expect((await t.a.call(memberA, 'GET', '/tenant/billing')).status).toBe(403);
+    expect((await t.a.call(memberA, 'POST', '/tenant/deletion', { slug: 'acme' })).status).toBe(403);
+  });
+
+  it('queues one export at a time per tenant', async () => {
+    const first = await t.a.call<{ export: { id: string; status: string } }>(adminA, 'POST', '/tenant/exports');
+    expect(first).toMatchObject({ status: 202, body: { export: { status: 'queued' } } });
+    expect((await t.a.call<{ code: string }>(adminA, 'POST', '/tenant/exports')).body.code).toBe(
+      'control-plane-export-running',
+    );
+    // B's queue is its own.
+    expect((await t.b.call(adminB, 'POST', '/tenant/exports')).status).toBe(202);
+    await t.a.tdb.query("delete from tenant_exports where status = 'queued'");
+    await t.b.tdb.query("delete from tenant_exports where status = 'queued'");
+  });
+
+  it("reads a tenant's own billing", async () => {
+    const a = await t.a.call<{ subscription: { status: string; pastDueDaysLeft: number } | null }>(
+      adminA,
+      'GET',
+      '/tenant/billing',
+    );
+    expect(a.body.subscription).toMatchObject({ status: 'past_due', seats: 5, pastDueDaysLeft: 10 });
+    const b = await t.b.call<{ subscription: unknown }>(adminB, 'GET', '/tenant/billing');
+    expect(b).toMatchObject({ status: 200, body: { subscription: null, deletion: null } });
+  });
+
+  it("asks for a tenant's own deletion only, confirmed by its slug, and cancels it", async () => {
+    // Typing the other tenant's slug confirms nothing.
+    const wrong = await t.b.call<{ code: string }>(adminB, 'POST', '/tenant/deletion', { slug: 'acme' });
+    expect(wrong).toMatchObject({ status: 400, body: { code: 'control-plane-deletion-unconfirmed' } });
+    const asked = await t.b.call<{ deletion: { deletingAt: string } }>(adminB, 'POST', '/tenant/deletion', {
+      slug: 'beta',
+    });
+    expect(asked.status).toBe(202);
+    expect(asked.body.deletion.deletingAt).toEqual(expect.any(String));
+    const rows = await t.h.db.query<{ slug: string; deleting: boolean }>(
+      'select slug, deleting_at is not null as deleting from tenants where slug in ($1, $2) order by slug',
+      ['acme', 'beta'],
+    );
+    expect(rows.rows).toEqual([
+      { slug: 'acme', deleting: false },
+      { slug: 'beta', deleting: true },
+    ]);
+    const billing = await t.b.call<{ deletion: unknown }>(adminB, 'GET', '/tenant/billing');
+    expect(billing.body.deletion).toMatchObject({ deletingAt: asked.body.deletion.deletingAt });
+    expect(await t.b.call(adminB, 'DELETE', '/tenant/deletion')).toMatchObject({
+      status: 200,
+      body: { cancelled: true },
+    });
+    expect(await t.b.call(adminB, 'DELETE', '/tenant/deletion')).toMatchObject({
+      status: 200,
+      body: { cancelled: false },
+    });
+  });
+});
+
+describeDb('the tenant routes, self-hosted (spec §22.9)', () => {
+  let h: IdentityHarness;
+  let admin: SignedInUser;
+  beforeAll(async () => {
+    h = await identityHarness({ modules: () => [controlPlaneModule({ startLoop: false })] });
+    admin = await signedInUser(h, { email: 'admin@example.com', serverAdmin: true });
+  }, SETUP_MS);
+  afterAll(() => h.close(), SETUP_MS);
+
+  const send = (method: 'GET' | 'POST' | 'DELETE', url: string) =>
+    h.app.inject({ method, url: `/api/v1${url}`, headers: admin.headers });
+
+  describe('export routes', () => {
+    it('are served', async () => {
+      expect((await send('GET', '/tenant/exports')).statusCode).toBe(200);
+      expect((await send('POST', '/tenant/exports')).statusCode).toBe(202);
+    });
+  });
+
+  it('serves no billing and no deletion', async () => {
+    expect((await send('GET', '/tenant/billing')).statusCode).toBe(404);
+    expect((await send('POST', '/tenant/deletion')).statusCode).toBe(404);
+    expect((await send('DELETE', '/tenant/deletion')).statusCode).toBe(404);
+  });
+});

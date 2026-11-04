@@ -26,6 +26,7 @@ import { TenantDeletion } from './delete.js';
 import { ExportRunner, exportsStep } from './export/runner.js';
 import { CONTROL_LOOP_MS, ControlLoop, type LoopStep } from './loop.js';
 import { mailStep, type ControlSend } from './mail.js';
+import { tenantRoutes } from './tenant-routes.js';
 import { TenantLifecycle } from './tenants.js';
 import type { SetTimer } from '../hooks/env.js';
 import { sendAlertMail } from '../schedules/alerts/smtp.js';
@@ -164,6 +165,20 @@ export function controlPlaneModule(options: ControlPlaneOptions = {}): ServerMod
     }
     return runner;
   };
+  const lifecycles = new WeakMap<ServerContext, TenantLifecycle>();
+  const lifecycleOf = (ctx: ServerContext, control: ControlDb): TenantLifecycle => {
+    let lifecycle = lifecycles.get(ctx);
+    if (lifecycle === undefined) {
+      lifecycle = new TenantLifecycle({
+        control,
+        tenancy: ctx.tenancy,
+        hooks: ctx.hooks,
+        ...(options.now !== undefined ? { now: options.now } : {}),
+      });
+      lifecycles.set(ctx, lifecycle);
+    }
+    return lifecycle;
+  };
   const module: ServerModule = {
     name: NAME,
     migrationsDir: CONTROL_PLANE_MIGRATIONS_DIR,
@@ -171,6 +186,13 @@ export function controlPlaneModule(options: ControlPlaneOptions = {}): ServerMod
       // In hosted mode, the check that the pool was handed over; its loop runs the exports there.
       const control = controlOf(ctx, options.control);
       if (control === undefined) selfHostedExports(app, ctx, runnerOf(ctx), options);
+      // The tenant's own routes (spec §22.9, §22.11): the exports on every server, billing and deletion hosted.
+      tenantRoutes({
+        db: ctx.tenancy.db,
+        runner: runnerOf(ctx),
+        ...(control !== undefined ? { lifecycle: lifecycleOf(ctx, control) } : {}),
+        now: options.now ?? (() => new Date()),
+      })(app);
       return Promise.resolve();
     },
     registerPublic: (app, ctx) => {
@@ -184,12 +206,7 @@ export function controlPlaneModule(options: ControlPlaneOptions = {}): ServerMod
           'hosted mode needs WIREBENCH_SERVER_PADDLE_WEBHOOK_SECRET and WIREBENCH_SERVER_PADDLE_TEAM_PRICE_ID',
         );
       }
-      const lifecycle = new TenantLifecycle({
-        control,
-        tenancy: ctx.tenancy,
-        hooks: ctx.hooks,
-        ...(options.now !== undefined ? { now: options.now } : {}),
-      });
+      const lifecycle = lifecycleOf(ctx, control);
       const deps: ApplyDeps = { control, tenancy: ctx.tenancy, lifecycle, log: ctx.log };
       const apply =
         options.apply ??

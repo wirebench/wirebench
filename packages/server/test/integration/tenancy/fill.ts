@@ -9,6 +9,8 @@
  */
 import { markStepsDone } from '../../helpers/tenancy.js';
 import { createHash, generateKeyPairSync, randomBytes, randomUUID, sign } from 'node:crypto';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import type { RouteOptions } from 'fastify';
 import { expect } from 'vitest';
 import { controlPlaneModule } from '../../../src/control-plane/module.js';
@@ -36,6 +38,8 @@ import { syncModule } from '../../../src/sync/module.js';
 import { teamsModule } from '../../../src/teams/module.js';
 import type { PendingWrites } from '../../../src/pending-writes.js';
 import { terminalSharesModule } from '../../../src/terminal-shares/module.js';
+import { tenantRoot } from '../../../src/tenancy/paths.js';
+import { ensureControlRole } from '../../../src/tenancy/roles.js';
 import { isDefaultTenant } from '../../../src/tenancy/tenancy.js';
 import { browserBuildFixture, type BrowserBuildFixture } from '../../helpers/browser-build.js';
 import { SCOPED_TABLES } from '../../helpers/catalog.js';
@@ -87,6 +91,8 @@ export interface Filled {
   readonly shareId: string;
   readonly sessionLogId: string;
   readonly pairingId: string;
+  /** A ready export, its row and its file (spec §22.9). */
+  readonly exportId: string;
   readonly agent: AgentKey;
   /** Every id of the tenant's this fill wrote or read back. */
   readonly ids: Set<string>;
@@ -195,6 +201,8 @@ export async function isolationWorld(options: { readonly policiesDisabled?: bool
   });
   // The host probes need the migration's steps done, as a start-up leaves them (spec §19.10).
   await markStepsDone(t.h.db.owner);
+  // The deletion routes write the tenants through the control role (spec §22.2), as a hosted start-up grants it.
+  await ensureControlRole(t.h.db.owner, t.h.db.controlUrl, t.h.db.url);
   const a = await fill(t, t.a);
   const b = await fill(t, t.b);
   return {
@@ -517,9 +525,14 @@ export async function fill(t: TwoTenants, tenant: Tenant): Promise<Filled> {
      values ('paddle', $1, 'team', 5, 'active', $2)`,
     [`sub_${slug}`, at],
   );
+  const exportId = note(randomUUID());
+  const exports = join(tenantRoot(t.h.dataDir, tenant.scope), 'exports');
+  await mkdir(exports, { recursive: true });
+  await writeFile(join(exports, `${exportId}.tar.gz`), `the export of ${slug}`);
   await tenant.tdb.query(
-    "insert into tenant_exports (id, requested_by, status, requested_at) values ($1, $2, 'ready', $3)",
-    [`export-${slug}`, browser.user.id, at],
+    `insert into tenant_exports (id, requested_by, status, size_bytes, requested_at, ready_at, expires_at)
+     values ($1, $2, 'ready', $3, $4, $4, $4::timestamptz + interval '7 days')`,
+    [exportId, browser.user.id, Buffer.byteLength(`the export of ${slug}`), at],
   );
   await tenant.tdb.query(
     "insert into tenant_settings (section, value, updated_at, updated_by) values ('mail', $1, $2, $3)",
@@ -563,6 +576,7 @@ export async function fill(t: TwoTenants, tenant: Tenant): Promise<Filled> {
     shareId: share.shareId,
     sessionLogId,
     pairingId,
+    exportId,
     agent,
     ids,
   };

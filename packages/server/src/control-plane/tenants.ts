@@ -345,6 +345,15 @@ export class TenantLifecycle {
     return row === undefined ? undefined : { ...row, scope: await this.#scope(row) };
   }
 
+  /** The tenant `id`'s row as it is now, or `undefined` once it is gone. */
+  async current(id: string): Promise<TenantRow | undefined> {
+    const rows = await this.#deps.control.query<TenantRow & Record<string, unknown>>(
+      `select ${TENANT_COLUMNS} from tenants where id = $1::uuid`,
+      [id],
+    );
+    return rows.rows[0];
+  }
+
   /** The tenant with this id, whatever its status, for its own unit (the billing path's subscription row). */
   async tenantScope(id: string): Promise<TenantScope> {
     const scope = await this.#writes.scope(id);
