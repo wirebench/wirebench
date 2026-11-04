@@ -106,6 +106,8 @@ export async function main(
     case 'admin-tenant-resume':
     case 'admin-tenant-rename':
     case 'admin-tenant-delete':
+    case 'admin-tenant-export':
+    case 'admin-tenant-import':
       return runAdminTenant(command, io);
     case 'admin-instances':
       return runInstances(io);

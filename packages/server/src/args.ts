@@ -33,8 +33,9 @@ type TenantAdminCommand =
   | { readonly command: 'admin-schedules-runs'; readonly id: string; readonly limit: number };
 
 /**
- * The operator's tenant lifecycle commands (hosted edition spec §22.14): hosted mode only. The slug is positional;
- * `--tenant` is not used. `export`, `import` and `settings` arrive with their parts.
+ * The operator's tenant lifecycle commands (hosted edition spec §22.14): hosted mode only, but for `export` and
+ * `import`, which run on every server. The slug is positional; `--tenant` is not used. `settings` arrives with its
+ * part.
  */
 export type AdminTenantCommand =
   | { readonly command: 'admin-tenant-list' }
@@ -58,7 +59,18 @@ export type AdminTenantCommand =
   | { readonly command: 'admin-tenant-suspend'; readonly slug: string }
   | { readonly command: 'admin-tenant-resume'; readonly slug: string }
   | { readonly command: 'admin-tenant-rename'; readonly slug: string; readonly to: string }
-  | { readonly command: 'admin-tenant-delete'; readonly slug: string; readonly cancel: boolean };
+  | { readonly command: 'admin-tenant-delete'; readonly slug: string; readonly cancel: boolean }
+  /** No slug on a self-hosted server: it exports its one tenant (spec §22.9). */
+  | { readonly command: 'admin-tenant-export'; readonly slug?: string; readonly out: string }
+  | {
+      readonly command: 'admin-tenant-import';
+      readonly file: string;
+      /** Hosted mode: the new tenant's, the export's own by default (spec §22.10). */
+      readonly slug?: string;
+      readonly name?: string;
+      readonly edition?: 'team' | 'enterprise';
+      readonly seats?: number;
+    };
 
 export type ServerCommand =
   | { readonly command: 'serve' }
@@ -165,11 +177,19 @@ Usage:
   wirebench-server admin tenant delete <slug> [--cancel]
                                     Hosted mode: the tenant and its data are deleted 14 days on;
                                     --cancel takes the request back until then
+  wirebench-server admin tenant export [<slug>] --out <file>
+                                    A tenant's export: its tables, repositories and audit chain, no
+                                    sealed value. No slug on a self-hosted server: its one tenant.
+                                    The file holds password hashes: keep it as safe as the database
+  wirebench-server admin tenant import <file> [--slug <slug>] [--name <name>] [--edition team|enterprise] [--seats <n>]
+                                    Restore an export: hosted mode makes a new tenant, a self-hosted
+                                    server fills its own, which must be empty. Run it again to resume
   wirebench-server --version
   wirebench-server --help
 
 Every admin command but admin instances, admin tenancy and admin tenant takes --tenant <slug>: the tenant it works in. Hosted
-mode requires it; a self-hosted server has one tenant and refuses it. admin tenant names its tenant as an argument.
+mode requires it; a self-hosted server has one tenant and refuses it. admin tenant names its tenant as an argument, and
+runs in hosted mode only but for export and import.
 
 Configuration is read from WIREBENCH_SERVER_* environment variables; see README.md.
 `;
@@ -201,12 +221,14 @@ const OPTIONS = {
   seats: { type: 'string' },
   subscription: { type: 'boolean' },
   cancel: { type: 'boolean' },
+  out: { type: 'string' },
 } as const;
 
 const TENANT_USAGE =
   'usage: wirebench-server admin tenant list | create --slug <slug> --name <name> --email <email> [--edition team|enterprise] [--seats <n>]' +
   ' | set-edition <slug> <team|enterprise> [--seats <n>|unlimited] | set-edition <slug> --subscription | suspend <slug> | resume <slug>' +
-  ' | rename <slug> <new-slug> | delete <slug> [--cancel]';
+  ' | rename <slug> <new-slug> | delete <slug> [--cancel] | export [<slug>] --out <file>' +
+  ' | import <file> [--slug <slug>] [--name <name>] [--edition team|enterprise] [--seats <n>]';
 
 /** `--edition`, or an edition argument: a hosted edition is Team or Enterprise (spec §22.4). */
 function parseEdition(value: string): 'team' | 'enterprise' {
@@ -307,12 +329,18 @@ export function parseServerArgs(argv: readonly string[]): ServerCommand {
   }
   const isTenantCommand = word === 'admin' && second === 'tenant';
   const isCreate = isTenantCommand && third === 'create';
-  for (const key of ['slug', 'name', 'email', 'edition'] as const) {
-    if (parsed.values[key] !== undefined && !isCreate)
-      throw new UsageError(`--${key} applies to admin tenant create only`);
+  const isImport = isTenantCommand && third === 'import';
+  if (parsed.values.email !== undefined && !isCreate)
+    throw new UsageError('--email applies to admin tenant create only');
+  for (const key of ['slug', 'name', 'edition'] as const) {
+    if (parsed.values[key] !== undefined && !isCreate && !isImport)
+      throw new UsageError(`--${key} applies to admin tenant create and import only`);
   }
-  if (parsed.values.seats !== undefined && !(isCreate || (isTenantCommand && third === 'set-edition'))) {
-    throw new UsageError('--seats applies to admin tenant create and set-edition only');
+  if (parsed.values.seats !== undefined && !(isCreate || isImport || (isTenantCommand && third === 'set-edition'))) {
+    throw new UsageError('--seats applies to admin tenant create, set-edition and import only');
+  }
+  if (parsed.values.out !== undefined && !(isTenantCommand && third === 'export')) {
+    throw new UsageError('--out applies to admin tenant export only');
   }
   if (parsed.values.subscription !== undefined && !(isTenantCommand && third === 'set-edition')) {
     throw new UsageError('--subscription applies to admin tenant set-edition only');
@@ -496,6 +524,7 @@ function parseTenantCommand(
     readonly seats?: string;
     readonly subscription?: boolean;
     readonly cancel?: boolean;
+    readonly out?: string;
   },
 ): AdminTenantCommand {
   /** `admin tenant <verb>` and `args` positionals more, exactly. */
@@ -548,6 +577,23 @@ function parseTenantCommand(
     case 'delete':
       positionals(1);
       return { command: 'admin-tenant-delete', slug: first!, cancel: values.cancel === true };
+    case 'export': {
+      if (count !== 3 && count !== 4) throw new UsageError(TENANT_USAGE);
+      if (values.out === undefined) throw new UsageError('admin tenant export needs --out <file>');
+      return { command: 'admin-tenant-export', ...(first !== undefined ? { slug: first } : {}), out: values.out };
+    }
+    case 'import': {
+      positionals(1);
+      const seats = parseSeats(values.seats);
+      return {
+        command: 'admin-tenant-import',
+        file: first!,
+        ...(values.slug !== undefined ? { slug: values.slug } : {}),
+        ...(values.name !== undefined ? { name: values.name } : {}),
+        ...(values.edition !== undefined ? { edition: parseEdition(values.edition) } : {}),
+        ...(seats !== undefined ? { seats } : {}),
+      };
+    }
     default:
       throw new UsageError(TENANT_USAGE);
   }

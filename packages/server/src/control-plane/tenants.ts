@@ -330,6 +330,21 @@ export class TenantLifecycle {
     return { ...row, scope };
   }
 
+  /**
+   * The tenant `slug` names while an import made it and has not finished (suspended, `importing`, spec §22.10): the
+   * one a crashed `admin tenant import` resumes. `undefined` otherwise.
+   */
+  async importing(slug: string): Promise<(TenantRow & { scope: TenantScope }) | undefined> {
+    if (RESERVED_SLUGS.has(slug)) return undefined;
+    const rows = await this.#deps.control.query<TenantRow & Record<string, unknown>>(
+      `select ${TENANT_COLUMNS} from tenants
+        where slug = $1 and status = 'suspended' and suspended_reason = 'importing'`,
+      [slug],
+    );
+    const row = rows.rows[0];
+    return row === undefined ? undefined : { ...row, scope: await this.#scope(row) };
+  }
+
   /** The tenant with this id, whatever its status, for its own unit (the billing path's subscription row). */
   async tenantScope(id: string): Promise<TenantScope> {
     const scope = await this.#writes.scope(id);
