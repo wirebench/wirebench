@@ -1,8 +1,11 @@
 /**
  * The hosted deployment recipe (hosted edition spec §21.5, ADR-0038): Traefik in front with one certificate for the
- * apex and the wildcard by DNS-01 at Hetzner, the server and PostgreSQL behind it with no published port. Issuance
- * itself needs a real domain, so it is a manual test (`docs/manual-tests/2026-11-03-wildcard-certificate.md`); this
- * checks the files say what the spec says.
+ * apex and the wildcard by DNS-01 at Hetzner, the server and PostgreSQL behind it with no published port; and, for
+ * custom domains (§23.4), Traefik's HTTP provider polling the server's internal proxy listener and a second resolver
+ * issuing by HTTP-01. Issuance itself needs a real domain, so it is a manual test
+ * (`docs/manual-tests/2026-11-03-wildcard-certificate.md`, `2026-11-04-custom-domain.md`; the custom domain's flow also
+ * runs against Pebble in `test/integration/custom-domains/pebble.test.ts`); this checks the files say what the spec
+ * says.
  */
 import { execFile } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
@@ -22,7 +25,12 @@ interface Service {
   readonly secrets?: readonly string[];
 }
 
-async function compose(): Promise<{ services: Record<string, Service>; secrets: Record<string, { file: string }> }> {
+interface Secret {
+  readonly file?: string;
+  readonly environment?: string;
+}
+
+async function compose(): Promise<{ services: Record<string, Service>; secrets: Record<string, Secret> }> {
   return parse(await readFile(join(DIR, 'compose.yaml'), 'utf8')) as never;
 }
 
@@ -99,6 +107,49 @@ describe('the hosted deployment recipe', () => {
       expect(regexp.test(host), host).toBe(false);
   });
 
+  it('polls the server’s proxy listener for the custom domains every 10 seconds, with the token', async () => {
+    const command = (await compose()).services['traefik']!.command!;
+    expect(command).toContain('--providers.http.endpoint=http://server:8081/proxy/traefik');
+    expect(command).toContain('--providers.http.pollInterval=10s');
+    // A provider header takes a value, not a file: compose puts the token in from `.env`.
+    expect(command).toContain('--providers.http.headers.Authorization=Bearer ${PROXY_TOKEN:?set PROXY_TOKEN in .env}');
+  });
+
+  it('issues custom domains by HTTP-01 on the web entry point, with the first resolver’s storage, contact and CA', async () => {
+    const command = (await compose()).services['traefik']!.command!;
+    const value = (flag: string) => command.find((line) => line.startsWith(`${flag}=`))?.slice(flag.length + 1);
+    expect(value('--certificatesresolvers.le-http.acme.httpchallenge.entrypoint')).toBe('web');
+    for (const setting of ['email', 'storage', 'caserver']) {
+      expect(value(`--certificatesresolvers.le-http.acme.${setting}`), setting).toBe(
+        value(`--certificatesresolvers.le.acme.${setting}`),
+      );
+    }
+    expect(command.some((line) => line.startsWith('--certificatesresolvers.le-http.acme.dnschallenge'))).toBe(false);
+    // The challenge router takes precedence over the redirect, so the redirect stays.
+    expect(command).toContain('--entrypoints.web.http.redirections.entrypoint.to=websecure');
+  });
+
+  it('gives the server the proxy listener, its token as a file secret and the proxy’s TLS address, publishing nothing', async () => {
+    const { services, secrets } = await compose();
+    const server = services['server']!;
+    expect(server.environment!['WIREBENCH_SERVER_PROXY_LISTEN']).toBe('0.0.0.0:8081');
+    expect(server.environment!['WIREBENCH_SERVER_PROXY_TOKEN_FILE']).toBe('/run/secrets/proxy_token');
+    expect(server.environment!['WIREBENCH_SERVER_PROXY_TLS_ADDRESS']).toBe('traefik:443');
+    expect(server.environment!['WIREBENCH_SERVER_PROXY_TLS_CA_FILE']).toBeUndefined();
+    expect(server.secrets).toEqual(['proxy_token']);
+    // One value in `.env` for both sides, so Traefik's header and the server's file cannot drift.
+    expect(secrets['proxy_token']).toEqual({ environment: 'PROXY_TOKEN' });
+    expect(server.ports).toBeUndefined();
+    for (const [name, service] of Object.entries(services)) {
+      for (const port of service.ports ?? []) expect(port, name).not.toMatch(/8081/);
+    }
+  });
+
+  it('lists the proxy token in env.example as a placeholder only', async () => {
+    const text = await readFile(join(DIR, 'env.example'), 'utf8');
+    expect(text).toMatch(/^PROXY_TOKEN=$/m);
+  });
+
   it('names no real domain', async () => {
     for (const file of ['compose.yaml', 'dynamic.yaml', 'env.example', 'README.md']) {
       const text = await readFile(join(DIR, file), 'utf8');
@@ -125,6 +176,7 @@ describe('the hosted deployment recipe', () => {
         WIREBENCH_SECRETS_KEY: 'k',
         SMTP_URL: 'smtp://mail.site.test:587',
         SMTP_FROM: 'teams@site.test',
+        PROXY_TOKEN: 't',
       };
       await expect(
         run('docker', ['compose', '-f', join(DIR, 'compose.yaml'), 'config', '--quiet'], { env }),

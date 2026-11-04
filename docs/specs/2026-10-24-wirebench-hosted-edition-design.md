@@ -3204,7 +3204,10 @@ Owner rulings (2026-11-04, popup):
   `live` in `tenant_hosts` and the state to `active`. Until then the resolver does not map the name, so a request that
   reaches it early answers `404`.
 - **The recipe** (`deploy/hosted/`) adds `--providers.http.endpoint=http://server:8081/proxy/traefik`, its poll
-  interval and its header, read from the same `_FILE` secret. It also adds a second resolver, `le-http`, with
+  interval and its header. Traefik's provider headers take a value, not a file, so the header is
+  `Bearer ${PROXY_TOKEN}` by compose's interpolation from `.env`, and the server reads the same variable as a file:
+  a compose secret whose source is `PROXY_TOKEN`, at `WIREBENCH_SERVER_PROXY_TOKEN_FILE`. One value, so the two
+  cannot drift. It also adds a second resolver, `le-http`, with
   `httpChallenge.entryPoint=web` and the same storage, and the server's new variables. The DNS records the operator
   creates are unchanged: `custom.<app-domain>` is under the wildcard.
 

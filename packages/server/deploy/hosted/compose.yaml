@@ -1,12 +1,17 @@
 # Wirebench Server, hosted edition (hosted spec §21.5, ADR-0038): Traefik in front, the only public listener, with one
 # Let's Encrypt certificate for <app-domain> and *.<app-domain> issued by ACME DNS-01 at Hetzner DNS; the server and
-# PostgreSQL behind it, neither with a published port. README.md beside this file is the runbook.
+# PostgreSQL behind it, neither with a published port. A team's custom domain (spec §23.4) gets a certificate of its
+# own by HTTP-01: Traefik polls the server's internal proxy listener for the names to route. README.md beside this file
+# is the runbook.
 #
 # Hosted mode starts once the control plane (slice 7) lifts its refusal; until then the server refuses
 # WIREBENCH_SERVER_MODE=hosted at start-up, and this file documents the deployment it will run.
 #
 # Settings go in `.env` beside this file (`env.example` lists them; copy it to `.env`), and the Hetzner DNS API token in
 # `secrets/hetzner_api_token`, mode 600. Then `docker compose up -d`.
+#
+# `PROXY_TOKEN` in `.env` is the proxy listener's bearer token. Traefik's HTTP provider takes a header value, not a file,
+# so compose puts it into the header and also hands it to the server as the `proxy_token` secret: one value, two readers.
 name: wirebench-hosted
 
 services:
@@ -25,6 +30,16 @@ services:
       - --certificatesresolvers.le.acme.caserver=${ACME_CA_SERVER:-https://acme-v02.api.letsencrypt.org/directory}
       - --certificatesresolvers.le.acme.dnschallenge.provider=hetzner
       - --certificatesresolvers.le.acme.dnschallenge.resolvers=1.1.1.1:53,9.9.9.9:53
+      # Custom domains (spec §23.4): one certificate per verified name, by HTTP-01 on `web`, whose challenge router
+      # Traefik puts ahead of the redirect above. Same storage, contact and CA as `le`.
+      - --certificatesresolvers.le-http.acme.email=${ACME_EMAIL:?set ACME_EMAIL in .env}
+      - --certificatesresolvers.le-http.acme.storage=/letsencrypt/acme.json
+      - --certificatesresolvers.le-http.acme.caserver=${ACME_CA_SERVER:-https://acme-v02.api.letsencrypt.org/directory}
+      - --certificatesresolvers.le-http.acme.httpchallenge.entrypoint=web
+      # The routers for those names, from the server's internal listener, which no public router points at.
+      - --providers.http.endpoint=http://server:8081/proxy/traefik
+      - --providers.http.pollInterval=10s
+      - --providers.http.headers.Authorization=Bearer ${PROXY_TOKEN:?set PROXY_TOKEN in .env}
       - --log.level=INFO
     environment:
       # Read by the dynamic file's templates.
@@ -63,6 +78,13 @@ services:
       # app.<app-domain> mails people the links of their teams (spec §21.4).
       WIREBENCH_SERVER_SMTP_URL: ${SMTP_URL:?set SMTP_URL in .env}
       WIREBENCH_SERVER_SMTP_FROM: ${SMTP_FROM:?set SMTP_FROM in .env}
+      # Custom domains (spec §23.4): the listener Traefik polls, on the compose network only, and where the certificate
+      # probe finds Traefik's TLS.
+      WIREBENCH_SERVER_PROXY_LISTEN: 0.0.0.0:8081
+      WIREBENCH_SERVER_PROXY_TOKEN_FILE: /run/secrets/proxy_token
+      WIREBENCH_SERVER_PROXY_TLS_ADDRESS: traefik:443
+    secrets:
+      - proxy_token
     volumes:
       - wirebench-data:/data
 
@@ -84,6 +106,9 @@ services:
 secrets:
   hetzner_api_token:
     file: ./secrets/hetzner_api_token
+  # The same `PROXY_TOKEN` as Traefik's header, as a file for the server.
+  proxy_token:
+    environment: PROXY_TOKEN
 
 volumes:
   letsencrypt:

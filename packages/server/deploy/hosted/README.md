@@ -52,12 +52,63 @@ changes.
 ## Starting
 
 1. Copy `env.example` to `.env` and fill it in: the two names, the ACME contact address, both database passwords, the
-   secrets key (`openssl rand -base64 32`) and the SMTP sender the entry's mail goes out through.
+   secrets key (`openssl rand -base64 32`), the SMTP sender the entry's mail goes out through, and `PROXY_TOKEN`
+   (`openssl rand -hex 32`), which Traefik and the server share for custom domains.
 2. `docker compose up -d`.
 3. Check: `https://<app-domain>/` redirects to `https://app.<app-domain>/`, which shows the "Find your team" page, and
    the certificate's subject names both `<app-domain>` and `*.<app-domain>`.
 
 `.env`, `server.env` and `secrets/` are in this folder's `.gitignore`: never commit them.
+
+## Custom domains
+
+An Enterprise team can serve the product at a name of its own, such as `wirebench.<customer-domain>` (hosted edition
+spec §23). The server proves the name and tells Traefik about it; Traefik gets the name its own certificate by
+HTTP-01. Nothing in this folder changes per customer, and the DNS records above stay as they are:
+`custom.<app-domain>`, which every custom name points at, is already under the wildcard.
+
+**What the customer creates.** A team admin claims the name in Settings, which shows two records for the customer's
+own DNS:
+
+| Type    | Name                | Value                                   |
+| ------- | ------------------- | --------------------------------------- |
+| `CNAME` | `<name>`            | `custom.<app-domain>`                   |
+| `TXT`   | `_wirebench.<name>` | `wirebench-domain-verification=<token>` |
+
+An apex (`example.com` itself) cannot hold a CNAME, so a customer uses a name under it. A provider that flattens a
+CNAME at the apex passes when its addresses equal `custom.<app-domain>`'s.
+
+**What happens.** The server checks the records hourly (on demand at most once a minute). Once both pass, the name is
+`verified` and held for that team. Traefik polls the server's internal proxy listener (`server:8081`, never published)
+every 10 seconds, finds a router for the name, and asks Let's Encrypt for its certificate through the `le-http`
+resolver: a challenge file on the `web` entry point, which Traefik answers ahead of its redirect to `https`. The server
+probes `traefik:443` with the name every 2 minutes; when a trusted certificate for it answers, the name is `active`
+and becomes the team's primary name, and the team's server admins get a mail. A name that stops passing is re-checked
+every 6 hours, `failing` but still served, and released after 72 hours (`lapsed`).
+
+**The token.** Every poll carries `Authorization: Bearer <PROXY_TOKEN>`. Traefik's provider header takes a value, not
+a file, so the token is set once in `.env` as `PROXY_TOKEN`: compose puts it into Traefik's header and also hands it
+to the server as the `proxy_token` secret, which the server reads from `WIREBENCH_SERVER_PROXY_TOKEN_FILE`. It is one
+value, so the two cannot drift. Make it with `openssl rand -hex 32`; changing it means `docker compose up -d` for
+both services. It shows in Traefik's container command line (`docker inspect`), so keep the Docker socket to the
+operators. Don't run Traefik at `--log.level=DEBUG` in production: the provider's header, the token, can then appear in
+its log as well as its argv. A compose secret with an `environment:` source, as `proxy_token` is, needs Docker Compose
+2.24 or newer.
+
+**What the operator sees.** `wirebench-server admin domains list` prints every team's claim: its slug, the name, the
+state and when it was last checked, never a token. Traefik's log shows one ACME order per verified name and the
+router's name, `custom-` and a hash of the host. Let's Encrypt's rate limits apply per registered domain of the
+customer's name, so one customer cannot use up another's. While any team's names cannot be read, `/proxy/traefik`
+answers `503` and Traefik keeps the routers of its last good poll, so a newly verified name waits until every team
+reads again.
+
+**Removing a name** (abuse, a support case): `wirebench-server admin domains remove --tenant <slug>`. The name is
+released at once, its router goes at Traefik's next poll, and the team's primary goes back to `<slug>.<app-domain>`.
+The certificate stays in `acme.json` until it expires and is never served again, since no router names it.
+`admin domains check --tenant <slug>` checks a name now.
+
+Before the first customer, run `docs/manual-tests/2026-11-04-custom-domain.md` against Let's Encrypt's staging
+endpoint.
 
 ## The public suffix list
 

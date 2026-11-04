@@ -141,17 +141,22 @@ const cachedServerCerts = new Map<string, TestCertificate>();
  */
 export function generateServerCert(
   ca: TestCertificate,
-  options?: { readonly commonName?: string; readonly sans?: readonly string[] },
+  options?: {
+    readonly commonName?: string;
+    readonly sans?: readonly string[];
+    /** How long from now it stays valid; a negative value makes one that has already expired. */
+    readonly validityMs?: number;
+  },
 ): TestCertificate {
   const commonName = options?.commonName ?? 'localhost';
   const sans = options?.sans ?? ['localhost', '127.0.0.1'];
   const issuer = forge.pki.certificateFromPem(ca.certPem).subject.getField('CN') as { value: string } | null;
-  const cacheKey = `${issuer?.value ?? ''}|${commonName}|${sans.join(',')}`;
+  const cacheKey = `${issuer?.value ?? ''}|${commonName}|${sans.join(',')}|${String(options?.validityMs ?? '')}`;
   const cached = cachedServerCerts.get(cacheKey);
   if (cached !== undefined) return cached;
 
   const keys = forge.pki.rsa.generateKeyPair({ bits: 2048, e: 0x10001 });
-  const cert = newCertificate(keys.publicKey, commonName);
+  const cert = newCertificate(keys.publicKey, commonName, options?.validityMs);
   cert.setExtensions([
     { name: 'basicConstraints', cA: false, critical: true },
     { name: 'keyUsage', digitalSignature: true, keyEncipherment: true, critical: true },
