@@ -51,7 +51,8 @@ export type AdminTenantCommand =
       readonly slug: string;
       /** Absent with `subscription`: back to the subscription's edition and seats. */
       readonly edition?: 'team' | 'enterprise';
-      readonly seats?: number;
+      /** `null`: `--seats unlimited`. */
+      readonly seats?: number | null;
       readonly subscription: boolean;
     }
   | { readonly command: 'admin-tenant-suspend'; readonly slug: string }
@@ -139,7 +140,7 @@ Usage:
                                     Hosted mode: a tenant whose edition the operator sets, and a
                                     server-admin invitation for the email, mailed through the
                                     server's SMTP or printed without it
-  wirebench-server admin tenant set-edition <slug> <team|enterprise> [--seats <n>]
+  wirebench-server admin tenant set-edition <slug> <team|enterprise> [--seats <n>|unlimited]
   wirebench-server admin tenant set-edition <slug> --subscription
                                     Hosted mode: the operator's edition and seats, or back to the
                                     subscription's
@@ -190,13 +191,18 @@ const OPTIONS = {
 
 const TENANT_USAGE =
   'usage: wirebench-server admin tenant list | create --slug <slug> --name <name> --email <email> [--edition team|enterprise] [--seats <n>]' +
-  ' | set-edition <slug> <team|enterprise> [--seats <n>] | set-edition <slug> --subscription | suspend <slug> | resume <slug>' +
+  ' | set-edition <slug> <team|enterprise> [--seats <n>|unlimited] | set-edition <slug> --subscription | suspend <slug> | resume <slug>' +
   ' | rename <slug> <new-slug> | delete <slug> [--cancel]';
 
 /** `--edition`, or an edition argument: a hosted edition is Team or Enterprise (spec §22.4). */
 function parseEdition(value: string): 'team' | 'enterprise' {
   if (value !== 'team' && value !== 'enterprise') throw new UsageError('the edition must be team or enterprise');
   return value;
+}
+
+/** `set-edition`'s `--seats`: a number, or `unlimited` for no limit. */
+function parseSetSeats(value: string | undefined): number | null | undefined {
+  return value === 'unlimited' ? null : parseSeats(value);
 }
 
 function parseSeats(value: string | undefined): number | undefined {
@@ -494,7 +500,7 @@ function parseTenantCommand(
         return { command: 'admin-tenant-set-edition', slug: first!, subscription: true };
       }
       positionals(2);
-      const seats = parseSeats(values.seats);
+      const seats = parseSetSeats(values.seats);
       return {
         command: 'admin-tenant-set-edition',
         slug: first!,

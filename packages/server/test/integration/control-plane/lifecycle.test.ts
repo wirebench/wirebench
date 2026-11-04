@@ -183,6 +183,14 @@ describeDb('the lifecycle service (hosted spec §22.2)', () => {
     expect((await r.control.query('select 1 from tenants where slug = $1', ['race'])).rows).toHaveLength(1);
   });
 
+  it('setEdition: seats null clears the limit, no seats keeps them', async () => {
+    await r.lifecycle.create({ slug: 'acme', name: 'Acme', edition: 'team', seats: 5, editionSource: 'operator' });
+    expect(await r.lifecycle.setEdition('acme', { edition: 'enterprise', seats: 200 })).toMatchObject({ seats: 200 });
+    expect(await r.lifecycle.setEdition('acme', { edition: 'enterprise' })).toMatchObject({ seats: 200 });
+    expect(await r.lifecycle.setEdition('acme', { edition: 'enterprise', seats: null })).toMatchObject({ seats: null });
+    expect(await r.lifecycle.setEdition('acme', { edition: 'enterprise' })).toMatchObject({ seats: null });
+  });
+
   it('setEdition: the operator’s edition and seats, or back to the subscription’s', async () => {
     const created = await r.lifecycle.create({
       slug: 'acme',

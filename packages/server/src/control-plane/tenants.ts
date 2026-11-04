@@ -68,7 +68,12 @@ export interface NewHostedTenant {
 
 /** What `setEdition` changes to: the operator's edition, or back to the subscription's (`--subscription`). */
 export type EditionChange =
-  { readonly edition: HostedEdition; readonly seats?: number } | { readonly subscription: true };
+  | {
+      readonly edition: HostedEdition;
+      /** `null`: no limit, the edition's default (`--seats unlimited`). Absent keeps the seats. */ readonly seats?:
+        number | null;
+    }
+  | { readonly subscription: true };
 
 /** A tenant as `admin tenant list` shows it: its row, with its subscription's status when it has one. */
 export interface TenantListing extends TenantRow {
@@ -175,16 +180,18 @@ export class TenantLifecycle {
   async setEdition(slug: string, change: EditionChange, actor: LifecycleActor = OPERATOR): Promise<TenantRow> {
     if ('edition' in change) {
       checkEdition(change.edition);
-      checkSeats(change.seats);
+      checkSeats(change.seats ?? undefined);
     }
     const row = await this.#deps.control.transaction(async (tx) => {
       const tenant = await lockedTenant(tx, slug);
       refuseDeleting(tenant);
       if ('edition' in change) {
-        return this.#update(tx, tenant.id, `edition = $2, seats = coalesce($3, seats), edition_source = 'operator'`, [
-          change.edition,
-          change.seats ?? null,
-        ]);
+        return this.#update(
+          tx,
+          tenant.id,
+          `edition = $2, seats = case when $4::boolean then $3::integer else seats end, edition_source = 'operator'`,
+          [change.edition, change.seats ?? null, change.seats !== undefined],
+        );
       }
       const subscription = await tx.query<{ seats: number }>(
         'select seats from subscriptions where tenant_id = $1::uuid',
@@ -307,8 +314,8 @@ export class TenantLifecycle {
       );
       await tx.query(
         `insert into tenant_slugs_retired (slug, tenant_id, retired_at, redirect_to, redirect_until)
-         values ($1, $2::uuid, $3::timestamptz, $4, $5::timestamptz)`,
-        [slug, tenant.id, now, to, new Date(now.getTime() + REDIRECT_DAYS * DAY_MS)],
+         values ($1, $2::uuid, $3::timestamptz, $4, now() + make_interval(days => $5::integer))`,
+        [slug, tenant.id, now, to, REDIRECT_DAYS],
       );
       return updated;
     });

@@ -625,6 +625,7 @@ argument, never `--tenant`; on a self-hosted server each command refuses with `a
     wirebench-server admin tenant list
     wirebench-server admin tenant create --slug acme --name "Acme GmbH" --email admin@acme.example --edition enterprise --seats 50
     wirebench-server admin tenant set-edition acme enterprise --seats 80
+    wirebench-server admin tenant set-edition acme enterprise --seats unlimited
     wirebench-server admin tenant set-edition acme --subscription
     wirebench-server admin tenant suspend acme
     wirebench-server admin tenant resume acme
@@ -633,7 +634,7 @@ argument, never `--tenant`; on a self-hosted server each command refuses with `a
 
 `create` makes the tenant with the operator's edition (Team by default) and a server-admin invitation for the email,
 mailed through `WIREBENCH_SERVER_SMTP_URL` or printed when SMTP is unset. A hosted tenant's edition and seats are its
-row's, set by its subscription or by `set-edition`; a license file is refused with `licensing-hosted`, in the app and
+row's, set by its subscription or by `set-edition` (`--seats unlimited` clears the limit back to the edition's default; no `--seats` keeps them); a license file is refused with `licensing-hosted`, in the app and
 by `admin license`. `rename` keeps the old name redirecting (`308`, same path and query) to the new one for 30 days,
 then answers `404`; a retired name is never given out again. `delete` runs 14 days on, and `--cancel` takes it back
 until then. Each command records `tenant.<verb>` in the tenant's own audit log and tells every running instance

@@ -8,7 +8,7 @@ import { auditHook } from '../../../src/audit-log/hook.js';
 import type { ServerConfig } from '../../../src/config.js';
 import { openControlDb, type ControlDb } from '../../../src/control-plane/control-db.js';
 import { REDIRECT_DAYS, TenantLifecycle } from '../../../src/control-plane/tenants.js';
-import type { TenantResolver } from '../../../src/tenancy/resolve.js';
+import { TenantResolver } from '../../../src/tenancy/resolve.js';
 import { ensureControlRole } from '../../../src/tenancy/roles.js';
 import { describeDb } from '../../helpers/database.js';
 import { identityHarness, type IdentityHarness } from '../../helpers/identity.js';
@@ -16,7 +16,6 @@ import { identityHarness, type IdentityHarness } from '../../helpers/identity.js
 const APP_DOMAIN = 'example.test';
 const hosted = (config: ServerConfig): ServerConfig => ({ ...config, mode: 'hosted', appDomain: APP_DOMAIN });
 const NOW = new Date('2026-11-04T12:00:00.000Z');
-const DAY_MS = 24 * 60 * 60 * 1000;
 
 describeDb('rename and retired redirects (hosted spec §22.8)', () => {
   let h: IdentityHarness;
@@ -48,12 +47,14 @@ describeDb('rename and retired redirects (hosted spec §22.8)', () => {
   it('moves the slug, retires the old one for 30 days, and audits tenant.renamed', async () => {
     const renamed = await lifecycle.rename('acme', 'acme-gmbh');
     expect(renamed).toMatchObject({ slug: 'acme-gmbh' });
-    const retired = await control.query<{ slug: string; to: string; until: Date; tenant: string }>(
-      `select slug, redirect_to as "to", redirect_until as "until", tenant_id::text as tenant from tenant_slugs_retired`,
+    const retired = await control.query<{ slug: string; to: string; days: number; tenant: string }>(
+      `select slug, redirect_to as "to", tenant_id::text as tenant,
+              extract(epoch from (redirect_until - now())) / 86400 as days from tenant_slugs_retired`,
     );
-    expect(retired.rows).toEqual([
-      { slug: 'acme', to: 'acme-gmbh', until: new Date(NOW.getTime() + REDIRECT_DAYS * DAY_MS), tenant: renamed.id },
-    ]);
+    // One clock decides: the database's own, 30 days on from the transaction.
+    expect(retired.rows).toMatchObject([{ slug: 'acme', to: 'acme-gmbh', tenant: renamed.id }]);
+    expect(Number(retired.rows[0]!.days)).toBeGreaterThan(REDIRECT_DAYS - 0.01);
+    expect(Number(retired.rows[0]!.days)).toBeLessThanOrEqual(REDIRECT_DAYS);
     const audit = await h.ctx.tenancy
       .db(renamed.scope)
       .query<{ action: string; details: Record<string, unknown> }>(
@@ -101,5 +102,30 @@ describeDb('rename and retired redirects (hosted spec §22.8)', () => {
     await expect(lifecycle.rename('beta', 'beta')).rejects.toMatchObject({ code: 'control-plane-slug-taken' });
     await expect(lifecycle.rename('beta', 'billing')).rejects.toMatchObject({ code: 'tenancy-slug-reserved' });
     await expect(lifecycle.rename('nobody', 'fresh')).rejects.toMatchObject({ code: 'control-plane-tenant-unknown' });
+  });
+
+  it('redirectOf checks the end on a stale map: past `until` it is gone without a reload', async () => {
+    await lifecycle.rename('acme', 'acme-gmbh');
+    const loaded = await control.query<{ slug: string; to: string; until: Date }>(
+      `select slug, redirect_to as "to", redirect_until as "until" from tenant_slugs_retired`,
+    );
+    const until = loaded.rows[0]!.until.getTime();
+    let clock = until - 60_000;
+    const stale = new TenantResolver({
+      appDomain: APP_DOMAIN,
+      directory: {
+        resolvable: () => Promise.resolve([]),
+        onChange: () => () => undefined,
+        redirects: () => Promise.resolve([{ slug: 'acme', to: 'acme-gmbh', until: loaded.rows[0]!.until }]),
+      },
+      now: () => clock,
+      log: { warn: () => undefined },
+      setInterval: () => ({}),
+    });
+    await stale.invalidate();
+    expect(stale.redirectOf(`acme.${APP_DOMAIN}`)).toBeDefined();
+    clock = until + 1;
+    // No reload between: the stale entry itself is refused.
+    expect(stale.redirectOf(`acme.${APP_DOMAIN}`)).toBeUndefined();
   });
 });

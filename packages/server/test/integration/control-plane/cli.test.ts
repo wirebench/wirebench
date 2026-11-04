@@ -147,6 +147,22 @@ describeDb('admin tenant (hosted spec §22.14)', () => {
     expect(sent[0]!.text).toMatch(/https:\/\/acme\.example\.test\/invite\/[A-Za-z0-9_-]{43}/);
   });
 
+  it('a failed mail prints the host and code, never the SMTP URL or its password', async () => {
+    const mail: InvitationMail = () =>
+      Promise.reject(
+        Object.assign(new Error('connect failed for smtp://ops:hunter2secret@mail.test:587'), { code: 'ECONNREFUSED' }),
+      );
+    const made = await create('acme', {
+      configure: hosted({ smtpUrl: 'smtp://ops:hunter2secret@mail.test:587', smtpFrom: 'ops@wirebench.test' }),
+      mail,
+    });
+    expect(made.code).toBe(1);
+    expect(made.stderr).toContain('mail.test');
+    expect(made.stderr).toContain('ECONNREFUSED');
+    expect(made.stderr).not.toContain('hunter2secret');
+    expect(made.stdout).not.toContain('hunter2secret');
+  });
+
   it('list, set-edition, suspend, resume, rename and delete', async () => {
     await create('acme');
     await create('beta');
@@ -168,6 +184,20 @@ describeDb('admin tenant (hosted spec §22.14)', () => {
       }),
     ).toMatchObject({ code: 0 });
     expect(await row('acme')).toMatchObject({ edition: 'enterprise', seats: 40, edition_source: 'operator' });
+    // `--seats unlimited` clears the limit (null); no flag after it keeps that.
+    expect(
+      await run({
+        command: 'admin-tenant-set-edition',
+        slug: 'acme',
+        edition: 'enterprise',
+        seats: null,
+        subscription: false,
+      }),
+    ).toMatchObject({ code: 0 });
+    expect(await row('acme')).toMatchObject({ edition: 'enterprise', seats: null });
+    expect((await run({ command: 'admin-tenant-list' })).stdout).toMatch(
+      /\nacme\s+active\s+enterprise \(operator\)\s+-\s/,
+    );
     expectRefused(
       await run({ command: 'admin-tenant-set-edition', slug: 'acme', subscription: true }),
       'control-plane-no-subscription',

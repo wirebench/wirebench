@@ -216,8 +216,11 @@ export async function runAdminTenant(
             ].join('\n'),
           });
         } catch (error) {
+          // Never the error's text: a transport's message can carry the SMTP URL, password included.
+          const code = (error as { code?: unknown } | null)?.code;
+          const shown = typeof code === 'string' && /^[A-Za-z0-9_-]{1,40}$/.test(code) ? `, ${code}` : '';
           io.stderr.write(
-            `the invitation could not be mailed (${error instanceof Error ? error.message : String(error)}); send its link yourself\n`,
+            `the invitation could not be mailed (SMTP host ${smtpHost(config.smtpUrl)}${shown}); send its link yourself\n`,
           );
           io.stdout.write(`${invited.url}\nExpires ${invited.expiresAt}\n`);
           return 1;
@@ -285,5 +288,14 @@ export async function runAdminTenant(
     await bus?.stop();
     await control.close();
     await db.close();
+  }
+}
+
+/** The SMTP URL's host alone: never its credentials. */
+function smtpHost(url: string): string {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return 'unknown';
   }
 }

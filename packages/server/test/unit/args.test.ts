@@ -304,6 +304,13 @@ describe('admin tenant (hosted edition spec §22.14)', () => {
       seats: 9,
       subscription: false,
     });
+    expect(parseServerArgs(['admin', 'tenant', 'set-edition', 'acme', 'enterprise', '--seats', 'unlimited'])).toEqual({
+      command: 'admin-tenant-set-edition',
+      slug: 'acme',
+      edition: 'enterprise',
+      seats: null,
+      subscription: false,
+    });
     expect(parseServerArgs(['admin', 'tenant', 'set-edition', 'acme', '--subscription'])).toEqual({
       command: 'admin-tenant-set-edition',
       slug: 'acme',
