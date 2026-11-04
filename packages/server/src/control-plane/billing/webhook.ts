@@ -4,12 +4,15 @@
  * before its signature passes. It answers:
  *
  * - `401`, empty, when the signature fails; the log holds the reason code, never the header or the body;
+ * - `429`, empty, with `retry-after`, past {@link WEBHOOK_RATE} posts a minute from one client address, checked before
+ *   the signature so a flood costs no HMAC; Paddle retries a `429` like any other failure;
  * - `200` once the event is applied, recorded, a duplicate, or not one it applies;
  * - `500` on a database failure, so Paddle retries;
  *
  * and never another status of its own.
  */
 import type { FastifyInstance } from 'fastify';
+import { RateLimiter } from '../../identity/rate-limit.js';
 import { ENTRY_ROUTE } from '../../tenancy/resolve.js';
 import type { BillingOutcome, MappedEvent } from './events.js';
 import { mapPaddleEvent } from './paddle.js';
@@ -19,6 +22,9 @@ export const PADDLE_WEBHOOK_PATH = '/billing/paddle';
 
 /** Paddle's events are a few kilobytes; a megabyte is far past any. */
 export const WEBHOOK_BODY_LIMIT = 1024 * 1024;
+
+/** Posts a minute per client address: far above Paddle's own rate from its few sending addresses. */
+export const WEBHOOK_RATE = 300;
 
 export interface PaddleWebhookOptions {
   /** The notification destination's secret key. */
@@ -35,6 +41,7 @@ function codeOf(error: unknown): string {
 
 export function registerPaddleWebhook(app: FastifyInstance, options: PaddleWebhookOptions): void {
   const now = options.now ?? Date.now;
+  const clients = new RateLimiter({ capacity: WEBHOOK_RATE, refillPerMs: WEBHOOK_RATE / 60_000, now });
   // Its own scope, so the raw parser and its limit reach no other route.
   void app.register((scope, _options, registered) => {
     scope.removeAllContentTypeParsers();
@@ -44,6 +51,10 @@ export function registerPaddleWebhook(app: FastifyInstance, options: PaddleWebho
     scope.post(PADDLE_WEBHOOK_PATH, { ...ENTRY_ROUTE, bodyLimit: WEBHOOK_BODY_LIMIT }, async (request, reply) => {
       void reply.header('cache-control', 'no-store');
       const log = request.log;
+      const client = clients.take(`ip:${request.ip}`);
+      if (!client.allowed) {
+        return reply.code(429).header('retry-after', String(client.retryAfterSeconds)).send();
+      }
       const body = Buffer.isBuffer(request.body) ? request.body : Buffer.alloc(0);
       const check = verifyPaddleSignature(request.headers['paddle-signature'], body, options.secret, now());
       if (!check.ok) {

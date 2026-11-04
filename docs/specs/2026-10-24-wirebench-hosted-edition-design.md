@@ -2775,6 +2775,8 @@ create table tenant_settings (tenant_id …, section text not null, value jsonb 
   decision if the settings screen ever needs a "change seats" button.
 - **The webhook,** `POST /billing/paddle` on the entry host (`ENTRY_ROUTE`, so no tenant resolves):
   - raw body, at most 1 MiB, never parsed before the signature passes;
+  - at most 300 posts a minute from one client address, checked before the signature, past which it answers `429`
+    with `retry-after` (Paddle retries it like any failure);
   - **signature:** the `Paddle-Signature` header is `ts=<unix>;h1=<hex>` with possibly several `h1` (Paddle sends
     more than one while a secret rotates). The signed payload is `<ts>:<raw body>`, HMAC-SHA256 under the secret;
     any `h1` that matches, compared in constant time, passes. `ts` must be within 300 s of now (my call: wider than
