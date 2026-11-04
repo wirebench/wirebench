@@ -70,14 +70,27 @@ async function ask<T>(query: () => Promise<readonly T[]>): Promise<Answer<T>> {
 
 const bare = (name: string): string => name.toLowerCase().replace(/\.$/, '');
 
+/** The longest DNS value a message quotes. */
+export const QUOTED_MAX = 120;
+
+/**
+ * A value from someone else's DNS, fit to quote in a message that is stored and mailed: control characters
+ * removed, and at most {@link QUOTED_MAX} characters.
+ */
+export function quoted(value: string): string {
+  const clean = value.replace(/[\u0000-\u001f\u007f-\u009f]/g, '');
+  return clean.length > QUOTED_MAX ? `${clean.slice(0, QUOTED_MAX)}…` : clean;
+}
+
 /** The addresses of one answer, lower-cased and sorted; an absent record is the empty set. */
 function addresses(answer: Answer<string>): readonly string[] | undefined {
   if (answer.kind === 'failed') return undefined;
   return answer.kind === 'none' ? [] : [...new Set(answer.values.map((value) => value.toLowerCase()))].sort();
 }
 
-const same = (a: readonly string[], b: readonly string[]): boolean =>
-  a.length === b.length && a.every((value, index) => value === b[index]);
+/** Every address of `mine` is among `theirs`: round-robin answers return a different part of the set each time. */
+const within = (mine: readonly string[], theirs: readonly string[]): boolean =>
+  mine.every((value) => theirs.includes(value));
 
 async function checkCname(
   lookup: DnsLookup,
@@ -88,7 +101,7 @@ async function checkCname(
   if (cname.kind === 'found') {
     const values = cname.values.map(bare);
     if (values.includes(target)) return { verdict: 'ok', message: `The CNAME at ${name} points to ${target}.` };
-    return { verdict: 'wrong', message: `The CNAME at ${name} points to ${values[0]!}, not ${target}.` };
+    return { verdict: 'wrong', message: `The CNAME at ${name} points to ${quoted(values[0]!)}, not ${target}.` };
   }
   if (cname.kind === 'failed') {
     return { verdict: 'missing', message: `The CNAME lookup for ${name} ${cname.why}.` };
@@ -109,7 +122,8 @@ async function checkCname(
   if (mine.a.length + mine.aaaa.length === 0) {
     return { verdict: 'missing', message: `There is no CNAME at ${name}: it should point to ${target}.` };
   }
-  if (theirs.a.length + theirs.aaaa.length > 0 && same(mine.a, theirs.a) && same(mine.aaaa, theirs.aaaa)) {
+  // Each family the name answers in must sit within the target's; a family the name lacks is not compared.
+  if (within(mine.a, theirs.a) && within(mine.aaaa, theirs.aaaa)) {
     return { verdict: 'ok', message: `${name} answers with ${target}'s addresses (a flattened CNAME).` };
   }
   return {

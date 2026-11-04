@@ -167,7 +167,7 @@ async function move(
   check: () => { observation: { featured: boolean; passed: boolean }; lastResult: LastResult },
 ): Promise<Moved | undefined> {
   return deps.tenancy.db(scope).transaction(async (tx) => {
-    const current = await getClaim(tx);
+    const current = await getClaim(tx, { forUpdate: true });
     if (current === undefined || current.token !== token) return undefined;
     const { observation, lastResult: seen } = check();
     const since = { createdAt: current.createdAt, failingSince: current.failingSince };
@@ -187,7 +187,7 @@ async function move(
       failingSince: to === 'failing' ? (current.failingSince ?? now) : null,
       ...(to === 'verified' && current.state !== 'verified' ? { verifiedAt: now } : {}),
     };
-    await record(tx, token, write);
+    if (!(await record(tx, token, write))) throw claimGone();
     const notice = await audited(deps, tx, current, to, lastResult.message);
     const claim = (await getClaim(tx))!;
     return notice === undefined ? { claim } : { claim, notice };
@@ -203,23 +203,32 @@ async function probeName(deps: CheckDeps, scope: TenantScope, claim: Claim, now:
     probed = { verdict: 'missing', message: `The certificate check failed: ${(error as Error).message}` };
   }
   return deps.tenancy.db(scope).transaction(async (tx) => {
-    const current = await getClaim(tx);
+    const current = await getClaim(tx, { forUpdate: true });
     if (current === undefined || current.token !== claim.token || current.state !== 'verified') return undefined;
     const base = current.lastResult ?? { cname: 'ok', txt: 'ok', message: '' };
     const lastResult: LastResult = { ...base, certificate: probed.verdict, message: probed.message };
     const live = probed.verdict === 'ok' && (await setLive(tx, current.name, true));
     const to: DomainState = live ? 'active' : 'verified';
-    await record(tx, current.token, {
+    const written = await record(tx, current.token, {
       state: to,
       lastResult,
       checkedAt: current.checkedAt ?? now,
       failingSince: null,
       ...(live ? { activeAt: now } : {}),
     });
+    if (!written) throw claimGone();
     const notice = await audited(deps, tx, current, to, probed.message);
     const after = (await getClaim(tx))!;
     return notice === undefined ? { claim: after } : { claim: after, notice };
   });
+}
+
+/**
+ * The claim went between the read and the record. The row lock makes that impossible; this is the second line: the
+ * unit rolls back, so a `hold` or `setLive` made in it never outlives its claim.
+ */
+function claimGone(): Error {
+  return new Error('the custom-domain claim was removed during its check; nothing was kept');
 }
 
 /** Records the move from `current.state` to `to`, if it is one, and answers the mail it calls for. */

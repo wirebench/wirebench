@@ -3,7 +3,7 @@
  * under `.test`.
  */
 import { describe, expect, it } from 'vitest';
-import { systemLookup, verifyRecords, type DnsLookup } from '../../../src/custom-domains/dns.js';
+import { QUOTED_MAX, quoted, systemLookup, verifyRecords, type DnsLookup } from '../../../src/custom-domains/dns.js';
 
 const APP = 'app.test';
 const NAME = 'app.customer.test';
@@ -92,14 +92,54 @@ describe('verifyRecords', () => {
       txt: GOOD_TXT,
     });
     expect((await verifyRecords(lookup, NAME, TOKEN, APP)).cname).toBe('missing');
-    // The name's A matches but its AAAA is empty while the target has one: not equal.
-    const half = fake({
+    // The target has addresses, the name none: still missing.
+    const none = fake({
       cname: { [NAME]: dnsError('ENODATA') },
-      a: { [NAME]: ['192.0.2.1'], 'custom.app.test': ['192.0.2.1'] },
+      a: { [NAME]: dnsError('ENODATA'), 'custom.app.test': ['192.0.2.1'] },
       aaaa: { [NAME]: dnsError('ENODATA'), 'custom.app.test': ['2001:db8::1'] },
       txt: GOOD_TXT,
     });
-    expect((await verifyRecords(half, NAME, TOKEN, APP)).cname).toBe('wrong');
+    expect((await verifyRecords(none, NAME, TOKEN, APP)).cname).toBe('missing');
+  });
+
+  it('passes a flattened name whose addresses are a part of the target’s, as round-robin answers are', async () => {
+    const target = { 'custom.app.test': ['192.0.2.1', '192.0.2.2', '192.0.2.3'] };
+    for (const mine of [['192.0.2.2'], ['192.0.2.3', '192.0.2.1']]) {
+      const lookup = fake({
+        cname: { [NAME]: dnsError('ENODATA') },
+        a: { [NAME]: mine, ...target },
+        aaaa: { [NAME]: dnsError('ENODATA'), 'custom.app.test': ['2001:db8::1'] },
+        txt: GOOD_TXT,
+      });
+      expect((await verifyRecords(lookup, NAME, TOKEN, APP)).cname, mine.join()).toBe('ok');
+    }
+    // One address outside the target's set, or a family the target has none of: wrong.
+    for (const [a, aaaa] of [
+      [['192.0.2.2', '198.51.100.7'], undefined],
+      [['192.0.2.2'], ['2001:db8::99']],
+    ] as const) {
+      const lookup = fake({
+        cname: { [NAME]: dnsError('ENODATA') },
+        a: { [NAME]: [...a], ...target },
+        aaaa: {
+          [NAME]: aaaa === undefined ? dnsError('ENODATA') : [...aaaa],
+          'custom.app.test': dnsError('ENODATA'),
+        },
+        txt: GOOD_TXT,
+      });
+      expect((await verifyRecords(lookup, NAME, TOKEN, APP)).cname, a.join()).toBe('wrong');
+    }
+  });
+
+  it('quotes a DNS value at most 120 characters long, without control characters', async () => {
+    const hostile = `evil\u0007\r\nSubject: x\u001b[31m.${'a'.repeat(300)}.test`;
+    const result = await verifyRecords(fake({ cname: { [NAME]: [hostile] }, txt: GOOD_TXT }), NAME, TOKEN, APP);
+    expect(result.cname).toBe('wrong');
+    expect(result.message).not.toMatch(/[\u0000-\u001f\u007f]/);
+    expect(result.message).toContain('evilsubject: x[31m.');
+    expect(result.message).toContain(`${'a'.repeat(QUOTED_MAX - 19)}…, not custom.app.test.`);
+    expect(quoted('x'.repeat(200))).toBe(`${'x'.repeat(QUOTED_MAX)}…`);
+    expect(quoted('plain.customer.test')).toBe('plain.customer.test');
   });
 
   it('finds the token among other TXT strings at the name', async () => {

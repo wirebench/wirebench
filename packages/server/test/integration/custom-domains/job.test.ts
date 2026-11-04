@@ -21,7 +21,7 @@ import { FAILING_FOR_MS, PENDING_FOR_MS } from '../../../src/custom-domains/stat
 import { TenantAdmin } from '../../../src/tenancy/directory.js';
 import type { TenantScope } from '../../../src/tenancy/scope.js';
 import { createTenancy, directoryOf, type Tenancy } from '../../../src/tenancy/tenancy.js';
-import type { TenantDb } from '../../../src/tenancy/tenant-db.js';
+import { outsideTenantUnit, type TenantDb, type TenantQuerier } from '../../../src/tenancy/tenant-db.js';
 import { describeDb, testDatabase, type TestDatabase } from '../../helpers/database.js';
 
 const APP = 'app.test';
@@ -417,6 +417,48 @@ describeDb('the custom-name check job (hosted spec §23.2)', () => {
     expect(result.failed).toContain(scopeA.tenantId);
     expect((await claimOf(a))?.state).toBe('pending');
     expect((await claimOf(b))?.state).toBe('verified');
+  });
+
+  it('keeps nothing in tenant_hosts when the claim is removed between the check’s read and its hold', async () => {
+    const made = await claimA();
+    dns.prove(NAME, made.token);
+    let removal: Promise<unknown> | undefined;
+    // The check's unit, as the job gets it, except that its insert into tenant_hosts first starts the admin's
+    // removal on another connection and gives it time to reach the row: the read has happened, the hold has not.
+    const racing: Pick<Tenancy, 'db' | 'forEachTenant'> = {
+      forEachTenant: (job, fn, log) => tenancy.forEachTenant(job, fn, log),
+      db: (scope) => {
+        const real = tenancy.db(scope);
+        return new Proxy(real, {
+          get(target, key, receiver) {
+            if (key !== 'transaction') return Reflect.get(target, key, receiver) as unknown;
+            return <T>(fn: (tx: TenantQuerier) => Promise<T>) =>
+              target.transaction((tx) =>
+                fn(
+                  new Proxy(tx, {
+                    get(inner, name, innerReceiver) {
+                      if (name !== 'query') return Reflect.get(inner, name, innerReceiver) as unknown;
+                      return async (text: string, values?: unknown[]) => {
+                        if (removal === undefined && /^insert into tenant_hosts/.test(text)) {
+                          removal = outsideTenantUnit(() => a.transaction((other) => removeClaim(other)));
+                          await new Promise((resolve) => setTimeout(resolve, 300));
+                        }
+                        return inner.query(text, values);
+                      };
+                    },
+                  }),
+                ),
+              );
+          },
+        });
+      },
+    };
+    await checkPass({ ...deps(), tenancy: racing });
+    expect(removal).toBeDefined();
+    // The removal waited on the check's row lock, then released the name the check had just held.
+    expect(await removal).toMatchObject({ name: NAME, token: made.token });
+    expect(await claimOf(a)).toBeUndefined();
+    expect(await hosts()).toEqual([]);
   });
 
   it('checks one tenant on demand, due or not', async () => {

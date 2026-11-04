@@ -54,9 +54,17 @@ export function newToken(): string {
 const COLUMNS = `name, token, state, created_by as "createdBy", created_at as "createdAt", checked_at as "checkedAt",
   verified_at as "verifiedAt", active_at as "activeAt", failing_since as "failingSince", last_result as "lastResult"`;
 
-/** The tenant's claim, or undefined. */
-export async function getClaim(tx: TenantQuerier): Promise<Claim | undefined> {
-  return (await tx.query<Claim>(`select ${COLUMNS} from custom_domains`)).rows[0];
+/**
+ * The tenant's claim, or undefined. With `forUpdate`, the row stays locked until the unit ends: the check and the
+ * removal both take it, so a removal cannot slip between a check's read and its `hold`, and leave a name held with
+ * no claim.
+ */
+export async function getClaim(
+  tx: TenantQuerier,
+  options: { readonly forUpdate?: boolean } = {},
+): Promise<Claim | undefined> {
+  const lock = options.forUpdate === true ? ' for update' : '';
+  return (await tx.query<Claim>(`select ${COLUMNS} from custom_domains${lock}`)).rows[0];
 }
 
 /**
@@ -146,7 +154,8 @@ export async function setLive(tx: TenantQuerier, name: string, live: boolean): P
 
 /** Removes the tenant's claim, releasing its name first. Answers the removed claim, or undefined when there was none. */
 export async function removeClaim(tx: TenantQuerier): Promise<Claim | undefined> {
-  const existing = await getClaim(tx);
+  // Locked, so a check that holds the name commits first and the release below sees its row.
+  const existing = await getClaim(tx, { forUpdate: true });
   if (existing === undefined) return undefined;
   await release(tx, existing.name);
   await tx.query('delete from custom_domains where token = $1', [existing.token]);
