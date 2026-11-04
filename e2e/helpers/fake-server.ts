@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { connect as connectTcp, type AddressInfo } from 'node:net';
 import type { Duplex } from 'node:stream';
@@ -94,6 +94,13 @@ export interface FakeServerOptions {
    * routes and socket answer, enough for an owner and viewers: replay, presence, control and input.
    */
   readonly terminalShares?: boolean;
+  /**
+   * Answer as a hosted team with the `custom-domains` feature (hosted edition spec §23.6): the four
+   * `/api/v1/tenant/domain` routes, for server admins. **Check now** passes at once and the name is `verified`;
+   * {@link FakeServer.setDomainState} plays the job that moves it on. Without it the routes answer
+   * `404 custom-domains-hosted-only`, as a self-hosted server does.
+   */
+  readonly customDomains?: { readonly appDomain: string };
 }
 
 /** One team session log as the fake holds it. */
@@ -193,6 +200,8 @@ export interface FakeServer {
   catchUrlOf(workspaceId: string, name: string): string;
   /** How the next **Run now** of a schedule ends; `failed` until set. */
   setScheduleOutcome(outcome: 'passed' | 'failed'): void;
+  /** Moves the claimed custom name to `state`, as the check job would (spec §23.2). */
+  setDomainState(state: string): void;
   close(): Promise<void>;
 }
 
@@ -465,6 +474,17 @@ export async function startFakeServer(options: FakeServerOptions = {}): Promise<
           expiresAt: installedLicense.expiresAt,
         };
   const auditEvents = [...(options.auditEvents ?? [])];
+  /** The hosted team's one custom name (spec §23.6), and when it was last checked on demand. */
+  let customDomain:
+    | {
+        name: string;
+        state: string;
+        token: string;
+        lastResult: { cname: string; txt: string; message: string } | null;
+        checkedAt: string | null;
+      }
+    | undefined;
+  let lastDomainCheck = 0;
   /** Pending SAML flows by id: the loopback port, the PKCE challenge and, once the IdP answered, the grant. */
   const samlFlows = new Map<string, { port: number; challenge: string; grant?: string }>();
   const scimTokens: { id: string; name: string; createdAt: string; lastUsedAt: null }[] = [];
@@ -1782,6 +1802,70 @@ export async function startFakeServer(options: FakeServerOptions = {}): Promise<
         }
         return problem(response, 404, 'not-found');
       }
+      if (path.pathname === '/api/v1/tenant/domain' || path.pathname === '/api/v1/tenant/domain/check') {
+        if (options.customDomains === undefined) return problem(response, 404, 'custom-domains-hosted-only');
+        if (email === undefined) return problem(response, 401, 'identity-unauthenticated');
+        if (users.get(email.toLowerCase())?.serverAdmin !== true) return problem(response, 403, 'identity-forbidden');
+        const wire = () =>
+          customDomain === undefined
+            ? {}
+            : {
+                name: customDomain.name,
+                state: customDomain.state,
+                records: [
+                  { type: 'CNAME', name: customDomain.name, value: `custom.${options.customDomains!.appDomain}` },
+                  {
+                    type: 'TXT',
+                    name: `_wirebench.${customDomain.name}`,
+                    value: `wirebench-domain-verification=${customDomain.token}`,
+                  },
+                ],
+                lastResult: customDomain.lastResult,
+                checkedAt: customDomain.checkedAt,
+              };
+        if (path.pathname.endsWith('/check')) {
+          if (request.method !== 'POST') return problem(response, 405, 'not-found');
+          if (Date.now() - lastDomainCheck < 60_000) {
+            response.writeHead(429, { 'content-type': 'application/json', 'retry-after': '60' });
+            response.end(
+              JSON.stringify({
+                code: 'custom-domains-check-rate-limited',
+                message: 'This name was checked less than a minute ago. Try again shortly.',
+              }),
+            );
+            return;
+          }
+          lastDomainCheck = Date.now();
+          if (customDomain !== undefined) {
+            customDomain.state = customDomain.state === 'active' ? 'active' : 'verified';
+            customDomain.checkedAt = at();
+            customDomain.lastResult = {
+              cname: 'ok',
+              txt: 'ok',
+              message: `The CNAME at ${customDomain.name} points to custom.${options.customDomains.appDomain}. The TXT record at _wirebench.${customDomain.name} holds this claim's token.`,
+            };
+          }
+          return send(response, 200, wire());
+        }
+        if (request.method === 'GET') return send(response, 200, wire());
+        if (request.method === 'PUT') {
+          if (customDomain !== undefined) return problem(response, 409, 'custom-domains-one-per-tenant');
+          const body = (await readJson(request)) as { name: string };
+          customDomain = {
+            name: body.name.toLowerCase(),
+            state: 'pending',
+            token: randomBytes(32).toString('base64url'),
+            lastResult: null,
+            checkedAt: null,
+          };
+          return send(response, 200, wire());
+        }
+        if (request.method === 'DELETE') {
+          customDomain = undefined;
+          return send(response, 204);
+        }
+        return problem(response, 405, 'not-found');
+      }
       if (path.pathname === '/api/v1/license') {
         if (email === undefined) return problem(response, 401, 'identity-unauthenticated');
         if (users.get(email.toLowerCase())?.serverAdmin !== true) return problem(response, 403, 'identity-forbidden');
@@ -2084,6 +2168,10 @@ export async function startFakeServer(options: FakeServerOptions = {}): Promise<
       })),
     setScheduleOutcome: (outcome) => {
       scheduleOutcome = outcome;
+    },
+    setDomainState: (state) => {
+      if (customDomain === undefined) throw new Error('the fake server has no custom domain claimed');
+      customDomain.state = state;
     },
     catchUrlOf: (workspaceId, name) => {
       const hook = [...catchUrls.values()].find(

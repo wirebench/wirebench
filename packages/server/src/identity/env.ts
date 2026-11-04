@@ -1,6 +1,6 @@
 import type { ModuleConfig } from '../config.js';
 import type { ServerContext } from '../context.js';
-import { tenantUrl, type ScopeSource } from '../tenancy/urls.js';
+import { primaryUrl, type ScopeSource } from '../tenancy/urls.js';
 import type { OidcProvider } from './oidc.js';
 import type { TenantRateLimiter } from './rate-limit.js';
 
@@ -34,8 +34,8 @@ export function identitySettings(config: ModuleConfig): IdentitySettings {
     tokenIdleMs: config.tokenIdleDays * DAY_MS,
     tokenMaxMs: config.tokenMaxDays * DAY_MS,
     invitationMs: config.invitationDays * DAY_MS,
-    redirectUri: (of) => `${tenantUrl(config, of)}/api/v1/auth/oidc/callback`,
-    browserRedirectUri: (of) => `${tenantUrl(config, of)}/api/v1/auth/oidc/browser-callback`,
+    redirectUri: (of) => `${primaryUrl(config, of)}/api/v1/auth/oidc/callback`,
+    browserRedirectUri: (of) => `${primaryUrl(config, of)}/api/v1/auth/oidc/browser-callback`,
   };
 }
 

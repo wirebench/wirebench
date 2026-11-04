@@ -9,7 +9,7 @@ import type { FastifyInstance } from 'fastify';
 import type { ServerContext, ServerModule } from '../context.js';
 import { TenantRateLimiter } from '../identity/rate-limit.js';
 import type { TenantQuerier } from '../tenancy/tenant-db.js';
-import { tenantUrl, urlWithoutScope } from '../tenancy/urls.js';
+import { primaryUrl, urlWithoutScope } from '../tenancy/urls.js';
 import { samlSettings, ssoUrls, type SsoEnv } from './env.js';
 import * as repo from './repo.js';
 import { authSamlRoutes, browserSamlStartRoutes } from './routes/auth-saml.js';
@@ -93,7 +93,7 @@ export function ssoModule(options: SsoOptions = {}): ServerModule {
           db: ctx.tenancy.db,
           ...(options.now !== undefined ? { now: () => now().getTime() } : {}),
         }),
-        urlsFor: (of) => ssoUrls(tenantUrl(ctx.config, of)),
+        urlsFor: (of) => ssoUrls(primaryUrl(ctx.config, of)),
         saml,
       };
       shared = env;

@@ -12,6 +12,7 @@ import { afterAll, beforeAll, expect, it } from 'vitest';
 import type { ServerConfig } from '../../../src/config.js';
 import { controlPlaneModule } from '../../../src/control-plane/module.js';
 import { paddleSignature } from '../../../src/control-plane/billing/signature.js';
+import { WEBHOOK_RATE } from '../../../src/control-plane/billing/webhook.js';
 import { TenantAdmin } from '../../../src/tenancy/directory.js';
 import { ensureControlRole } from '../../../src/tenancy/roles.js';
 import { directoryOf } from '../../../src/tenancy/tenancy.js';
@@ -124,6 +125,25 @@ describeDb('the billing webhook (spec §22.5)', () => {
     expect(again.statusCode).toBe(200);
     const rows = await h.db.owner.query('select outcome from billing_events where event_id = $1', ['evt_test_web_1']);
     expect(rows.rows).toEqual([{ outcome: 'applied' }]);
+  });
+
+  it('answers 429 with retry-after past its rate from one address, before the signature is checked', async () => {
+    const from = (remoteAddress: string) =>
+      h.app.inject({
+        method: 'POST',
+        url: '/billing/paddle',
+        headers: { 'content-type': 'application/json', host: ENTRY },
+        payload: '{}',
+        remoteAddress,
+      });
+    // The bucket refills (WEBHOOK_RATE a minute) while the loop runs, so the limit lands near WEBHOOK_RATE, not on it.
+    for (let i = 0; i < WEBHOOK_RATE - 10; i += 1) expect((await from('203.0.113.7')).statusCode).toBe(401);
+    let limited = await from('203.0.113.7');
+    for (let i = 0; i < 40 && limited.statusCode !== 429; i += 1) limited = await from('203.0.113.7');
+    expect([limited.statusCode, limited.body]).toEqual([429, '']);
+    expect(Number(limited.headers['retry-after'])).toBeGreaterThan(0);
+    // Another address keeps its own budget.
+    expect((await from('203.0.113.8')).statusCode).toBe(401);
   });
 
   it('answers 401 and an empty body to an unsigned, a wrongly signed, a stale or a changed event', async () => {

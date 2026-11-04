@@ -20,6 +20,13 @@
  * `running` runs in the claiming unit, under a per-tenant lock, and a full tenant is an empty turn of the rotation
  * while the per-server cap stays.
  *
+ * A suspended (or deleting) tenant fires nothing and starts nothing (hosted edition spec §22.7), but the pass still
+ * visits it: each due schedule's next fire moves past now with no run, so on its resume each schedule's next run is
+ * the one after then, never a catch-up of what it missed (one tick, 15 s, is the granularity, as for any fire). A
+ * run of it that was queued ends `skipped` (reason `suspended`), so none starts as a catch-up on the resume either; a
+ * stale running one still ends `interrupted`. Each claim reads the status again, so a run ending, or a kick, between
+ * two passes starts nothing of a tenant suspended since the last one.
+ *
  * A start claims only in the tenants with a run waiting (Task 17 perf): each pass asks every licensed tenant, in
  * the unit it already has, and a claim that finds nothing takes its tenant off the list until the next pass. So a
  * slot coming free costs no unit in the tenants that have nothing queued, however many there are.
@@ -27,6 +34,7 @@
 import type { LicenseService } from '../context.js';
 import { newId } from '../identity/tokens.js';
 import { lockRunSlots } from '../operations/budgets.js';
+import { tenantStopped } from '../tenancy/directory.js';
 import type { TenantScope } from '../tenancy/scope.js';
 import type { TenantQuerier } from '../tenancy/tenant-db.js';
 import type { Tenancy } from '../tenancy/tenancy.js';
@@ -177,6 +185,11 @@ export class Scheduler {
     await this.env.tenancy.forEachTenant(
       SCHEDULER_JOB,
       async (tx, scope) => {
+        // Suspended (spec §22.7): nothing fires or starts, and nothing is left due to catch up on its resume.
+        if (await tenantStopped(tx)) {
+          await this.passOver(tx);
+          return;
+        }
         // Without the feature nothing new fires or starts in this tenant; its runs under way finish.
         if (!(await this.env.license().state(scope, tx)).features.includes('scheduled-runs')) return;
         licensed.push(scope);
@@ -224,6 +237,27 @@ export class Scheduler {
     return due.length;
   }
 
+  /**
+   * A stopped tenant's pass: its stale runs still end `interrupted` (their alerts wait in the outbox), its queued runs
+   * end `skipped` (review M2), and each due schedule's next fire moves past now without a run.
+   */
+  private async passOver(tx: TenantQuerier): Promise<void> {
+    const now = this.env.now();
+    await repo.skipQueuedRuns(tx, 'suspended', now);
+    for (const run of await repo.interruptStaleRuns(tx, now)) {
+      await enqueueAlertsOrWarn(tx, this.env, run.scheduleId, {
+        ...run,
+        status: 'errored',
+        reason: 'interrupted',
+        summary: null,
+        results: [],
+      });
+    }
+    for (const schedule of await repo.claimDueSchedules(tx, now, FIRE_BATCH)) {
+      await repo.setNextRunAt(tx, schedule.id, nextFire(schedule.cron, schedule.timeZone, now));
+    }
+  }
+
   /** Starts queued runs while this server has room, one start at a time. */
   private startQueued(): Promise<number> {
     const next = this.starts.then(
@@ -265,6 +299,8 @@ export class Scheduler {
         runId = await this.env.tenancy.db(scope).transaction(async (tx) => {
           // The tenant's run slots (spec §20.7), counted under its lock so two servers cannot both take the last.
           await lockRunSlots(tx);
+          // Suspended since the pass that listed it (spec §22.7, review M1): a freed slot or a kick starts nothing.
+          if (await tenantStopped(tx)) return undefined;
           if ((await repo.countRunningRuns(tx)) >= this.env.settings.runSlots) return FULL;
           return (await claim(tx, 1, this.env.now()))[0];
         });

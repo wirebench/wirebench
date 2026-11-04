@@ -156,6 +156,7 @@ import { desktopCaptureSource, linkedServerOf } from '../hooks/capture-source.js
 import { registerCiTokenChannels } from '../ipc/ci-tokens.js';
 import { registerLicenseChannels } from '../ipc/license.js';
 import { registerProvisioningChannels } from '../ipc/provisioning.js';
+import { registerDomainChannels } from '../ipc/domain.js';
 import { registerAuditChannels } from '../ipc/audit.js';
 import { registerHooksChannels } from '../ipc/hooks.js';
 import { registerSchedulesChannels } from '../ipc/schedules.js';
@@ -1588,6 +1589,7 @@ export async function createHost(platform: HostPlatform, embedder: HostOptions =
   registerCiTokenChannels(handlerTable, { client: serverClient, accounts: accountService });
   registerLicenseChannels(handlerTable, { client: serverClient, accounts: accountService });
   registerProvisioningChannels(handlerTable, { client: serverClient, accounts: accountService });
+  registerDomainChannels(handlerTable, { client: serverClient, accounts: accountService });
   registerAuditChannels(handlerTable, {
     client: serverClient,
     accounts: accountService,

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, expect, it } from 'vitest';
 import { CaptureSweeper } from '../../../src/hooks/sweep.js';
 import { newId } from '../../../src/identity/tokens.js';
 import * as repo from '../../../src/schedules/repo.js';
+import { directoryOf } from '../../../src/tenancy/tenancy.js';
 import { describeDb } from '../../helpers/database.js';
 import { quietLog } from '../../helpers/schedule-runs.js';
 import { schedulesHarness, type SchedulesCast } from '../../helpers/schedules.js';
@@ -69,6 +70,25 @@ describeDb('schedule retention (scheduled-runs spec §3.6)', () => {
     expect(await sweeper.runOnce()).toBe(3);
     expect(await ids('schedule_runs')).toEqual([stuck, recent].sort());
     expect((await c.h.tdb.query('select 1 from schedule_results')).rowCount).toBe(0);
+    await sweeper.stop();
+  });
+
+  it('keeps deleting a suspended tenant’s old runs: the job loop still visits it (hosted spec §22.7)', async () => {
+    const old = await run(100);
+    const recent = await run(10);
+    await c.h.db.query("update tenants set status = 'suspended', suspended_reason = 'canceled' where id = $1::uuid", [
+      directoryOf(c.h.ctx.tenancy).defaultScope().tenantId,
+    ]);
+    const sweeper = new CaptureSweeper({
+      target: { tenancy: c.h.ctx.tenancy, job: 'schedule-run-retention', deleteBefore: repo.deleteRunsBefore },
+      maxAgeDays: 90,
+      now: () => c.h.clock.now,
+      setTimer: c.timers.setTimer,
+      log: quietLog(),
+    });
+    expect(await sweeper.runOnce()).toBe(1);
+    expect(await ids('schedule_runs')).toEqual([recent]);
+    expect(old).not.toBe(recent);
     await sweeper.stop();
   });
 

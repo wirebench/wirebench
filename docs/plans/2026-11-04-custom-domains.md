@@ -226,7 +226,8 @@ ADR-0040; issue #830.
   sees, how to remove a name for abuse).
 - Modify: `packages/server/test/unit/deploy-hosted.test.ts` (the parse test).
 - Create:
-  - `packages/server/test/docker/custom-domains-pebble.test.ts`: skips without Docker. Runs Traefik, Pebble,
+  - `packages/server/test/integration/custom-domains/pebble.test.ts` (built there, beside the other Docker-gated
+    integration tests, so no new vitest project is needed): skips without Docker. Runs Traefik, Pebble,
     `pebble-challtestsrv` as Traefik's resolver and a stub server answering `/proxy/traefik`, then asserts issuance
     and that the probe sees the name.
   - `docs/manual-tests/2026-11-04-custom-domain.md`: against Let's Encrypt staging, once a domain exists.

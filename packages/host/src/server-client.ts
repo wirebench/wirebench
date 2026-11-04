@@ -31,6 +31,7 @@ import {
   type DesktopAuditBatch,
   captureSchema,
   ciTokenCreatedSchema,
+  customDomainResponseSchema,
   ciTokensResponseSchema,
   type CiTokenCreated,
   type CiTokenSummary,
@@ -96,6 +97,7 @@ import {
   type CatchUrl,
   type CatchUrlCreateRequest,
   type CatchUrlUpdateRequest,
+  type CustomDomain,
   type HttpExchange,
   type HttpRequest,
   type InvitationAcceptRequest,
@@ -826,6 +828,44 @@ export class ServerClient {
     });
   }
 
+  // ---- custom domain (hosted edition spec §23.6): a hosted tenant's server admins, with the feature --------
+
+  /** The tenant's claim, or `undefined` when it has none (the server answers `{}`). */
+  async getCustomDomain(url: string, token: string): Promise<CustomDomain | undefined> {
+    return claimOf(
+      await this.call(url, { method: 'GET', path: CUSTOM_DOMAIN_PATH, token, schema: customDomainResponseSchema }),
+    );
+  }
+
+  /** A refused name arrives as its reason's code (`custom-name-ours`, ...), a second claim as `custom-domains-one-per-tenant`. */
+  async claimCustomDomain(url: string, token: string, name: string): Promise<CustomDomain | undefined> {
+    return claimOf(
+      await this.call(url, {
+        method: 'PUT',
+        path: CUSTOM_DOMAIN_PATH,
+        token,
+        body: { name },
+        schema: customDomainResponseSchema,
+      }),
+    );
+  }
+
+  /** At most once a minute: a `429` carries `retryAfterMs` in its details. */
+  async checkCustomDomain(url: string, token: string): Promise<CustomDomain | undefined> {
+    return claimOf(
+      await this.call(url, {
+        method: 'POST',
+        path: `${CUSTOM_DOMAIN_PATH}/check`,
+        token,
+        schema: customDomainResponseSchema,
+      }),
+    );
+  }
+
+  async removeCustomDomain(url: string, token: string): Promise<void> {
+    await this.call<unknown>(url, { method: 'DELETE', path: CUSTOM_DOMAIN_PATH, token });
+  }
+
   // ---- audit log (audit-log spec §3.4): server admins on Enterprise ------------------------------
 
   /**
@@ -1039,6 +1079,12 @@ export class ServerClient {
     throw new WirebenchError('server-bad-response', `${origin} answered ${String(exchange.status)}`, { details });
   }
 }
+
+const CUSTOM_DOMAIN_PATH = '/api/v1/tenant/domain';
+
+/** `{}` is no claim. */
+const claimOf = (answer: z.infer<typeof customDomainResponseSchema>): CustomDomain | undefined =>
+  'name' in answer ? (answer as CustomDomain) : undefined;
 
 /** A `Retry-After` as milliseconds: whole seconds or an HTTP-date. Anything else is ignored. */
 function parseRetryAfter(value: string | undefined, now: number = Date.now()): number | undefined {

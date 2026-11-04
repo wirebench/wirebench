@@ -18,7 +18,7 @@ import { auditSource, recordAudit, type InvitationAcceptedHook, type ServerHooks
 import { findUserById } from '../../identity/repo.js';
 import { createInvitation, revokeOpenInvitation } from '../../identity/invitations.js';
 import { jsonSchema } from '../../schema.js';
-import { tenantUrl } from '../../tenancy/urls.js';
+import { primaryUrl } from '../../tenancy/urls.js';
 import type { TeamsEnv } from '../env.js';
 import { invitationNotFound, userExistsInvite } from '../errors.js';
 import * as repo from '../repo.js';
@@ -85,7 +85,7 @@ export const teamInvitationRoutes =
               serverAdmin: false,
               createdBy: request.caller!.id,
               source: auditSource(request),
-              serverUrl: tenantUrl(env.invitations.ctx.config, request),
+              serverUrl: primaryUrl(env.invitations.ctx.config, request),
             },
             (tx, invitationId) => repo.insertTeamInvitation(tx, { invitationId, teamId, role: body.role }),
           );

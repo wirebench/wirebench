@@ -243,6 +243,28 @@ export class HostInstances {
     }
   }
 
+  /**
+   * The tenants in `tenantIds` stopped (suspended or deleting, spec §22.7): their sockets, open or waiting for an
+   * eviction, close with `code` and `reason` at once, and each of their instances is evicted, which runs the host's
+   * quit path and gives its lease back. Resolves once those evictions have finished. Other tenants are untouched.
+   */
+  async stopTenants(tenantIds: ReadonlySet<string>, code: number, reason: string): Promise<void> {
+    for (const [socket, wait] of this.waiting) {
+      if (wait.gone || !tenantIds.has(wait.tenantId)) continue;
+      wait.gone = true;
+      socket.close(code, reason);
+    }
+    const evictions: Promise<void>[] = [];
+    for (const instance of [...this.instances.values()]) {
+      if (!tenantIds.has(instance.user.tenant.tenantId)) continue;
+      for (const socket of instance.sockets.splice(0)) socket.close(code, reason);
+      this.evict(instance);
+      const eviction = this.evicting.get(keyOf(instance.user));
+      if (eviction !== undefined) evictions.push(eviction);
+    }
+    await Promise.all(evictions);
+  }
+
   /** The device tokens of the open host sockets, by tenant: what a bus resync re-validates (review I1). */
   heldSessions(): HeldSessions {
     const held: HeldSessions = new Map();

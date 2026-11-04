@@ -438,6 +438,19 @@ export class LiveHub {
     for (const socket of sockets) closeQuietly(socket, code, reason);
   }
 
+  /**
+   * The sockets of the tenants in `tenantIds` close with `code` and `reason`, the rest stay (hosted edition spec
+   * §22.7: a suspended or deleting tenant's sockets close `4403 tenant-suspended`). They are detached first, so the
+   * presence that follows reaches only the sockets left.
+   */
+  closeTenants(tenantIds: ReadonlySet<string>, code: number, reason: string): void {
+    const sockets = [...this.bySocket].filter(([, state]) => tenantIds.has(state.session.tenant.tenantId));
+    if (sockets.length === 0) return;
+    const changed = this.detach(sockets.map(([socket]) => socket));
+    for (const [socket] of sockets) closeQuietly(socket, code, reason);
+    this.announcePresence(changed);
+  }
+
   /** Settles once every subscribe and access re-check under way has finished. Tests use it in place of sleeping. */
   async idle(): Promise<void> {
     while (this.pending.size > 0) await Promise.allSettled([...this.pending]);

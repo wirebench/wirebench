@@ -41,6 +41,7 @@ describeDb('webhook-capture repository (§3.2, §3.4)', () => {
       'agent',
       'entry',
       'control-plane',
+      'custom-domains',
     ]);
   });
 

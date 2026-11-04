@@ -3613,6 +3613,48 @@ export const scimGroupLinkRequestWireSchema = provisioningRequestWireSchema.exte
   teamId: z.string().nullable(),
 });
 
+// --- Custom domain (hosted edition spec §23.6) ---------------------------------------------------
+
+/**
+ * A hosted tenant's one custom name, as `GET /api/v1/tenant/domain` answers it, restated for the bridge; the
+ * renderer imports only the types. The TXT record's value holds the claim's token, which only the tenant's own
+ * server admins see. `lastResult.message` can quote DNS content, so the renderer shows it as text.
+ */
+export const domainRequestWireSchema = z.object({ url: z.string() });
+export const domainClaimRequestWireSchema = domainRequestWireSchema.extend({ name: z.string().min(1).max(253) });
+export const customDomainStateWireSchema = z.enum([
+  'pending',
+  'verified',
+  'active',
+  'failing',
+  'lapsed',
+  'paused',
+  'expired',
+]);
+export type CustomDomainStateWire = z.infer<typeof customDomainStateWireSchema>;
+const customDomainVerdictWireSchema = z.enum(['ok', 'missing', 'wrong']);
+export const customDomainWireSchema = z.object({
+  name: z.string(),
+  state: customDomainStateWireSchema,
+  records: z.array(z.object({ type: z.enum(['CNAME', 'TXT']), name: z.string(), value: z.string() })),
+  lastResult: z
+    .object({
+      cname: customDomainVerdictWireSchema,
+      txt: customDomainVerdictWireSchema,
+      certificate: customDomainVerdictWireSchema.optional(),
+      /** Both records passed, but another team holds the name; never which. */
+      heldElsewhere: z.literal(true).optional(),
+      message: z.string(),
+    })
+    .nullable(),
+  checkedAt: z.string().nullable(),
+});
+export type CustomDomainWire = z.infer<typeof customDomainWireSchema>;
+/** `null`: the tenant has claimed no name. */
+export const domainResponseWireSchema = z.object({ domain: customDomainWireSchema.nullable() });
+export type DomainResponseWire = z.infer<typeof domainResponseWireSchema>;
+export const domainRemoveResponseWireSchema = z.object({ removed: z.literal(true) });
+
 // --- Server audit log (audit-log spec §3.4, §5.3) ------------------------------------------------
 
 /** What `GET /api/v1/audit` answers, restated for the bridge; the renderer imports only the types. */

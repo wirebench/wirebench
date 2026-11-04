@@ -20,6 +20,12 @@ All notable changes to this project are documented here. The format follows
   name the hosted edition's two domains; `app.<app-domain>` emails a person the sign-in links of their teams, the apex
   redirects there, and slugs such as `app`, `api` and the area names are reserved. A deployment recipe in
   `packages/server/deploy/hosted/` issues one wildcard certificate with Traefik. A self-hosted server is unchanged.
+- **Custom domains (hosted, not yet switched on).** On the hosted Enterprise edition, a team's server admin can serve
+  the team at a name of its own, such as `wirebench.example.com`, beside `<slug>.<app-domain>`. The new **Domain** tab
+  in **Manage teams** claims the name, shows the CNAME and TXT records to create with a copy button each, checks them
+  (**Check now**, at most once a minute), says in plain words where the name stands, and removes it. Once the
+  certificate is live the name becomes the team's primary, and the tab says to update the identity provider's
+  redirect URI or ACS URL. A name whose records go missing for 72 hours is released. A self-hosted server is unchanged.
 - **Colour themes.** Nine colour themes beside Default — Field kit, Sandstone, Dusk, Seed, Pith,
   Rind, Plume, Kiln and Trail — each in dark and light, chosen in Settings → Appearance or with **Theme: choose colour theme…**,
   which previews them as you move through the list; the mode (Dark, Light, System) stays a separate choice.

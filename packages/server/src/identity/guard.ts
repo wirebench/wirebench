@@ -13,6 +13,8 @@ import { sessionToken } from './cookies.js';
 import { forbidden, originRefused, unauthenticated, userDisabled } from './errors.js';
 import * as repo from './repo.js';
 import { bearerToken, hashToken } from './tokens.js';
+import { tenantStopped } from '../tenancy/directory.js';
+import { tenantSuspendedError } from '../tenancy/resolve.js';
 import type { TenantDb } from '../tenancy/tenant-db.js';
 import { tenantUrl } from '../tenancy/urls.js';
 
@@ -74,7 +76,16 @@ export interface TokenCaller {
  * request's tenant: a token is found by its hash within that tenant only.
  */
 export async function callerForToken(
-  env: { readonly db: TenantDb; readonly settings: IdentitySettings; readonly now: () => Date },
+  env: {
+    readonly db: TenantDb;
+    readonly settings: IdentitySettings;
+    readonly now: () => Date;
+    /**
+     * A socket's `auth` (hosted edition spec §22.7, review I1): the tenant's status is read afresh in the same unit,
+     * and a suspended or deleting one throws `tenant-suspended`, whatever the tenant map still says.
+     */
+    readonly refuseStopped?: boolean;
+  },
   token: string,
   via: Caller['via'] = 'bearer',
 ): Promise<TokenCaller> {
@@ -83,6 +94,7 @@ export async function callerForToken(
   // One unit for the lookup, the lazy delete and the touch (Task 8 review M3): every authenticated request
   // pays for it. A refusal is answered after the unit, so the lazy delete commits rather than rolling back.
   const outcome = await env.db.transaction(async (tx) => {
+    if (env.refuseStopped === true && (await tenantStopped(tx))) return 'stopped';
     const found = await repo.tokenByHash(tx, hash);
     if (found === undefined || !sameHash(found.token.tokenHash, hash) || found.token.revokedAt !== null)
       return 'unauthenticated';
@@ -98,6 +110,7 @@ export async function callerForToken(
       await repo.touchToken(tx, found.token.id, now);
     return found;
   });
+  if (outcome === 'stopped') throw tenantSuspendedError();
   if (outcome === 'unauthenticated') throw unauthenticated();
   if (outcome === 'disabled') throw userDisabled();
   const found = outcome;
