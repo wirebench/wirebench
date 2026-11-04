@@ -467,9 +467,17 @@ describe('check:tenant-scope', () => {
         'packages/server/src/config.ts',
         'packages/server/src/serve.ts',
         'packages/server/src/tenancy/cli.ts',
+        'packages/server/src/control-plane/cli.ts',
       ]) {
         expect(findControlPlane(file, 'const url = config.controlDatabaseUrl;'), file).toEqual([]);
       }
+      // `admin tenant` opens its pools; the rest of the control plane takes the pool from serve.ts.
+      expect(
+        findControlPlane('packages/server/src/control-plane/tenants.ts', 'config.controlDatabaseUrl'),
+      ).toMatchObject([{ rule: 'control-url' }]);
+      const pool = "import { createDatabase } from '../db/pool.js';";
+      expect(findRawDatabase('packages/server/src/control-plane/cli.ts', pool)).toEqual([]);
+      expect(findRawDatabase('packages/server/src/control-plane/tenants.ts', pool)).toMatchObject([{ rule: 'raw-db' }]);
     });
 
     it('keeps SQL naming the control tables to src/control-plane/', () => {

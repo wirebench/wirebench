@@ -1,5 +1,6 @@
 import { HELP_TEXT, parseServerArgs, UsageError } from './args.js';
 import { ConfigError, describeConfig, instanceModeOf, loadConfig, MULTI_NEEDS_ENTERPRISE } from './config.js';
+import { runAdminTenant } from './control-plane/cli.js';
 import { runAdmin } from './identity/cli.js';
 import { ExitCode, packageVersion, type ServerIo } from './io.js';
 import { BUILTIN_MODULES } from './modules.js';
@@ -95,6 +96,14 @@ export async function main(
     case 'admin-scim-group-link':
     case 'admin-scim-group-unlink':
       return runAdmin(command, io);
+    case 'admin-tenant-list':
+    case 'admin-tenant-create':
+    case 'admin-tenant-set-edition':
+    case 'admin-tenant-suspend':
+    case 'admin-tenant-resume':
+    case 'admin-tenant-rename':
+    case 'admin-tenant-delete':
+      return runAdminTenant(command, io);
     case 'admin-instances':
       return runInstances(io);
     case 'admin-tenancy-role':

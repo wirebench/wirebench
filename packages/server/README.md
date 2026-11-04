@@ -489,6 +489,28 @@ control plane will switch on, and a self-hosted server ignores them (`config che
 `api`, `www`, the area and protocol names and the brand names are reserved. The deployment recipe, with Traefik issuing
 one wildcard certificate by DNS-01 and the public suffix list step, is in [`deploy/hosted/`](deploy/hosted/README.md).
 
+## Hosted tenants
+
+In hosted mode the operator manages the tenants from the command line (hosted edition spec §22.14). The slug is an
+argument, never `--tenant`; on a self-hosted server each command refuses with `admin-tenant-hosted-only`.
+
+    wirebench-server admin tenant list
+    wirebench-server admin tenant create --slug acme --name "Acme GmbH" --email admin@acme.example --edition enterprise --seats 50
+    wirebench-server admin tenant set-edition acme enterprise --seats 80
+    wirebench-server admin tenant set-edition acme --subscription
+    wirebench-server admin tenant suspend acme
+    wirebench-server admin tenant resume acme
+    wirebench-server admin tenant rename acme acme-gmbh
+    wirebench-server admin tenant delete acme [--cancel]
+
+`create` makes the tenant with the operator's edition (Team by default) and a server-admin invitation for the email,
+mailed through `WIREBENCH_SERVER_SMTP_URL` or printed when SMTP is unset. A hosted tenant's edition and seats are its
+row's, set by its subscription or by `set-edition`; a license file is refused with `licensing-hosted`, in the app and
+by `admin license`. `rename` keeps the old name redirecting (`308`, same path and query) to the new one for 30 days,
+then answers `404`; a retired name is never given out again. `delete` runs 14 days on, and `--cancel` takes it back
+until then. Each command records `tenant.<verb>` in the tenant's own audit log and tells every running instance
+through the notification bus.
+
 ## Local agent
 
 A browser tab cannot reach the user's `localhost`, a host only their network knows, or a team secret: the

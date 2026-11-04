@@ -49,8 +49,8 @@
  *   functions that open the control pool and hand it to the control-plane module's factory (`withControlPool`), and
  *   any import of `control-db`, outside it and `serve.ts` (which opens the pool and hands it over; the pool is never
  *   on the shared context, and a `control` read off a context, `ctx.control` or `ctx['control']`, is refused
- *   everywhere); `controlDatabaseUrl` outside `config.ts`, `serve.ts`
- *   and `tenancy/cli.ts` (`admin tenancy role`, which creates the role), in the forms the database URLs are refused
+ *   everywhere); `controlDatabaseUrl` outside `config.ts`, `serve.ts`, `tenancy/cli.ts` (`admin tenancy role`, which
+ *   creates the role) and `control-plane/cli.ts` (`admin tenant`, which opens the pool), in the forms the database URLs are refused
  *   in; and SQL naming `signups`, `billing_events`, `tenant_slugs_retired` or `tenant_deletions` outside
  *   `src/control-plane/` (`tenancy/grants.ts` lists them for the roles, and `tenancy/redirects.ts` reads
  *   `tenant_slugs_retired`'s redirects for the resolver, that table only). `from tenants` and `join tenants` are allowed
@@ -139,6 +139,8 @@ export const RAW_DB_ALLOWED: readonly string[] = [
   // The control role's pool (spec §22.2): `openControlDb` builds it, and only `serve.ts` calls that. The control-plane
   // rules below keep `ControlDb` and the control URL to `src/control-plane/`.
   'packages/server/src/control-plane/control-db.ts',
+  // `admin tenant` (spec §22.14): it opens the app pool for the tenants' units and the bus, as `admin` does.
+  'packages/server/src/control-plane/cli.ts',
 ];
 const RAW_DB_DIRS: readonly string[] = ['packages/server/src/db/', TENANCY_DIR];
 /** The raw pool and its types (`db/pool.ts`, `db/querier.ts`), by the end of a module specifier. */
@@ -198,6 +200,8 @@ export const CONTROL_URL_ALLOWED: readonly string[] = [
   'packages/server/src/config.ts',
   'packages/server/src/serve.ts',
   'packages/server/src/tenancy/cli.ts',
+  // `admin tenant` (spec §22.14): the operator's lifecycle commands open the control pool themselves.
+  'packages/server/src/control-plane/cli.ts',
 ];
 const CONTROL_URL = 'controlDatabaseUrl';
 /** The control plane's own unscoped tables (migration `0023`, spec §22.3), by name, in SQL text. */
@@ -535,7 +539,7 @@ if (process.argv[1] !== undefined && fileURLToPath(import.meta.url) === process.
       'notify-sql': 'pg_notify or LISTEN outside src/operations/',
       'control-db': 'the control pool (ControlDb, control-db) outside src/control-plane/ and serve.ts',
       'context-control': 'a control pool read off the context; serve.ts hands it to the control-plane module alone',
-      'control-url': 'controlDatabaseUrl outside config.ts, serve.ts and tenancy/cli.ts',
+      'control-url': 'controlDatabaseUrl outside config.ts, serve.ts, tenancy/cli.ts and control-plane/cli.ts',
       'control-sql':
         'SQL naming signups, billing_events, tenant_slugs_retired or tenant_deletions outside src/control-plane/',
     } as const;
