@@ -115,6 +115,12 @@ export type TenantEntry = HostedTenant;
 /** The code every route of a suspended tenant but its sign-in page and its catch URLs answers (spec §22.7). */
 export const TENANT_SUSPENDED = 'tenant-suspended';
 
+/**
+ * The close code of a suspended or deleting tenant's sockets (spec §22.7), with {@link TENANT_SUSPENDED} as the reason:
+ * HTTP's 403, as the live, host and terminal-share sockets spell it.
+ */
+export const TENANT_STOPPED_CLOSE = 4403;
+
 /** The `403` body of a suspended tenant's routes: `reason` beside the usual `{ code, message }`. */
 export function suspendedBody(reason: SuspendedReason): {
   readonly code: typeof TENANT_SUSPENDED;

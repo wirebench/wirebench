@@ -9,7 +9,7 @@
  */
 import { WirebenchError } from '@wirebench/engine';
 import type { FastifyBaseLogger } from 'fastify';
-import { announce, remote, type ServerHooks } from '../context.js';
+import { announce, cluster, remote, type ServerHooks } from '../context.js';
 import type { Database } from '../db/querier.js';
 import type { BusEvents } from '../operations/bus.js';
 import type { Querier } from '../db/querier.js';
@@ -42,6 +42,13 @@ export interface Tenancy {
     fn: (tx: TenantQuerier, scope: TenantScope, name: string) => Promise<JobOutcome>,
     log: Pick<FastifyBaseLogger, 'error'>,
   ): Promise<JobPass>;
+  /**
+   * Runs `listener` with the ids of every tenant that serves nothing now, suspended or deleting (spec §22.7), each time
+   * a `tenantsChanged` from any instance, or a bus that listens again after a loss, may have stopped one: what the live
+   * hub, the host instances and the terminal shares close that tenant's sockets, hosts and shares by, on every
+   * instance. Only told when there is at least one such tenant. Ids, never scopes.
+   */
+  onTenantsStopped(listener: (tenantIds: ReadonlySet<string>) => void): void;
   /** `/healthz`: whether the database answers `select 1`, which reads no table and needs no tenant. */
   reachable(): Promise<void>;
   /**
@@ -61,6 +68,8 @@ export interface Tenancy {
 const directories = new WeakMap<Tenancy, TenantDirectory>();
 const tenantKeys = new WeakMap<Tenancy, TenantKeys>();
 const shared = new WeakSet<Tenancy>();
+/** Each tenancy's check of its stopped tenants, which {@link shareTenancyCaches} runs. */
+const stoppedChecks = new WeakMap<Tenancy, (log: Pick<FastifyBaseLogger, 'warn'>) => void>();
 
 export function createTenancy(db: Database, options: TenancyOptions = {}): Tenancy {
   const factory = tenantDbFactory(db, options);
@@ -70,8 +79,12 @@ export function createTenancy(db: Database, options: TenancyOptions = {}): Tenan
   directory.onChange(() => {
     keys.invalidate();
   });
+  const stoppedListeners: ((tenantIds: ReadonlySet<string>) => void)[] = [];
   const tenancy: Tenancy = {
     db: factory,
+    onTenantsStopped: (listener) => {
+      stoppedListeners.push(listener);
+    },
     forEachTenant: (job, fn, log) => forEachTenant({ directory, db: factory, log }, job, fn),
     forEachResolvableTenant: async (job, fn, log) => {
       const named = await directory.resolvableNamed();
@@ -92,6 +105,24 @@ export function createTenancy(db: Database, options: TenancyOptions = {}): Tenan
   };
   directories.set(tenancy, directory);
   tenantKeys.set(tenancy, keys);
+  stoppedChecks.set(tenancy, (log) => {
+    if (stoppedListeners.length === 0) return;
+    directory.stoppedIds().then(
+      (ids) => {
+        if (ids.size === 0) return;
+        for (const listener of stoppedListeners) {
+          try {
+            listener(ids);
+          } catch (error) {
+            log.warn({ err: error }, "a stopped tenant's sockets could not all be closed");
+          }
+        }
+      },
+      (error: unknown) => {
+        log.warn({ err: error }, 'the stopped tenants could not be read');
+      },
+    );
+  });
   return tenancy;
 }
 
@@ -104,6 +135,10 @@ export function createTenancy(db: Database, options: TenancyOptions = {}): Tenan
  *   `tenantKeysChanged`. A write here never reaches them: the directory's change already dropped the keys, and a key
  *   this process just wrote is the right one, which dropping would only make it read back.
  * - A bus that listens again after a loss may have missed either, so every key is dropped then too.
+ *
+ * - Every instance's `cluster` listener, and a bus that listens again after a loss, read the stopped tenants (spec
+ *   §22.7) and tell {@link Tenancy.onTenantsStopped}'s listeners: closing a suspended tenant's sockets is each
+ *   instance's own work, so it runs on every one, the writing one included.
  *
  * The tenant map's own listeners are `server.ts`'s, where the resolver is made. Idempotent per `tenancy`.
  */
@@ -123,13 +158,23 @@ export function shareTenancyCaches(tenancy: Tenancy, hooks: ServerHooks, bus: Bu
       keys.invalidate();
     }),
   );
+  const checkStopped = stoppedChecks.get(tenancy);
+  if (checkStopped !== undefined) {
+    hooks.tenantsChanged.push(
+      cluster(() => {
+        checkStopped(log);
+      }),
+    );
+  }
   hooks.tenantKeysChanged.push(
     remote(({ tenantId }) => {
       keys.invalidate(tenantId);
     }),
   );
   bus.onListen(({ reconnected }) => {
-    if (reconnected) keys.invalidate();
+    if (!reconnected) return;
+    keys.invalidate();
+    checkStopped?.(log);
   });
 }
 

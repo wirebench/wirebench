@@ -411,12 +411,13 @@ describe('the context a module registers with (spec §19.8 guard 2)', () => {
     const ctx = await testContext();
     // `dataKey` (Task 23) takes a scope the module already has and hands none out; `stepDone` (Task 24) a boolean.
     // `forEachResolvableTenant` (domains spec §21.4) is the job loop over the resolvable tenants: a scope only
-    // inside its unit, as `forEachTenant` gives one.
+    // inside its unit, as `forEachTenant` gives one. `onTenantsStopped` (spec §22.7) hands out tenant ids, never scopes.
     expect(Object.keys(ctx.tenancy).sort()).toEqual([
       'dataKey',
       'db',
       'forEachResolvableTenant',
       'forEachTenant',
+      'onTenantsStopped',
       'reachable',
       'stepDone',
     ]);

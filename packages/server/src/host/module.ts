@@ -38,6 +38,7 @@ import { SendBudgets, sendBudgetSettings } from '../operations/budgets.js';
 import { endGoneSessions } from '../operations/sessions.js';
 import { hashToken } from '../identity/tokens.js';
 import { realTimer } from '../live/module.js';
+import { TENANT_SUSPENDED } from '../tenancy/resolve.js';
 import { tenantUrl } from '../tenancy/urls.js';
 import { isServedChannel } from './allowlist.js';
 import { browserClientRoutes } from './browser-client.js';
@@ -398,6 +399,12 @@ export function hostModule(options: HostModuleOptions = {}): ServerModule {
       });
       // Spec §20.5: on `SIGTERM`, before the app closes, each host runs its quit path and gives its lease back, and only
       // then do its sockets close `4503 host-draining`.
+      // Spec §22.7: a suspended or deleting tenant's host sockets close, and its hosts go with their leases.
+      ctx.tenancy.onTenantsStopped((tenantIds) => {
+        instances.stopTenants(tenantIds, HOST_CLOSE.forbidden, TENANT_SUSPENDED).catch((error: unknown) => {
+          ctx.log.warn({ err: error }, "a stopped tenant's hosts could not all be evicted");
+        });
+      });
       ctx.instance.onDrain(() => instances.drain());
       app.addHook('onClose', async () => {
         await instances.closeAll();

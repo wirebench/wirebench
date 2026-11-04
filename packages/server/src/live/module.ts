@@ -27,6 +27,7 @@ import { effectiveRole } from '../teams/roles.js';
 import { liveOriginRefused } from './errors.js';
 import { LiveHub, type LiveHubDeps } from './hub.js';
 import { runLiveSocket, type LiveConnection, type SocketLoopDeps } from './socket.js';
+import { TENANT_STOPPED_CLOSE, TENANT_SUSPENDED } from '../tenancy/resolve.js';
 import type { TenantScope } from '../tenancy/scope.js';
 
 declare module 'fastify' {
@@ -183,14 +184,14 @@ export function liveModule(options: LiveOptions = {}): ServerModule {
       });
       // A plain GET (a proxy that strips `Upgrade`) is answered 404 by the plugin (§3.5).
       // This route's sockets, authenticated or not: a drain closes them `1012`, and no other route's (spec §20.5).
-      const routeSockets = new Set<WebSocket>();
+      const routeSockets = new Map<WebSocket, string>();
       app.get(ROUTE, { websocket: true, onRequest: originCheck(ctx.config) }, (socket, request) => {
         // Draining: the balancer moves the desktop to another instance once its back-off ends.
         if (ctx.instance.draining) {
           socket.close(LIVE_CLOSE.serviceRestart, SERVICE_RESTART);
           return;
         }
-        routeSockets.add(socket);
+        routeSockets.set(socket, request.tenant.tenantId);
         socket.once('close', () => routeSockets.delete(socket));
         runLiveSocket(socket, loopFor(request.tenant));
       });
@@ -198,10 +199,20 @@ export function liveModule(options: LiveOptions = {}): ServerModule {
       // shutdown's `preClose` finds open later is another route's, and closes `1001` as before.
       ctx.instance.onDrain(() => {
         hub.closeAll(LIVE_CLOSE.serviceRestart, SERVICE_RESTART);
-        for (const socket of routeSockets) {
+        for (const socket of routeSockets.keys()) {
           if (socket.readyState === socket.OPEN) socket.close(LIVE_CLOSE.serviceRestart, SERVICE_RESTART);
         }
         return Promise.resolve();
+      });
+      // Spec §22.7: a suspended or deleting tenant's sockets close on every instance, those still waiting for `auth`
+      // included, which the hub does not hold yet.
+      ctx.tenancy.onTenantsStopped((tenantIds) => {
+        hub.closeTenants(tenantIds, TENANT_STOPPED_CLOSE, TENANT_SUSPENDED);
+        for (const [socket, tenantId] of routeSockets) {
+          if (tenantIds.has(tenantId) && socket.readyState === socket.OPEN) {
+            socket.close(TENANT_STOPPED_CLOSE, TENANT_SUSPENDED);
+          }
+        }
       });
 
       // `cluster`: every instance's events reach this process's sockets (spec §20.3).

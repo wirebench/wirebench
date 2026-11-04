@@ -9,6 +9,7 @@
 import { randomBytes } from 'node:crypto';
 import {
   TERMINAL_SHARE_CAPABILITY,
+  TERMINAL_SHARE_CLOSE,
   TERMINAL_SHARE_LIMITS,
   teamWorkspaceParamsSchema,
   terminalShareCreateRequestSchema,
@@ -33,6 +34,7 @@ import { shareNotFound } from './errors.js';
 import { ShareRegistry, type ShareRegistryDeps } from './registry.js';
 import { ShareRelay, shareLocationBeat, shareLocations } from './relay.js';
 import { runRelayedViewer, runShareSocket } from './socket.js';
+import { TENANT_SUSPENDED } from '../tenancy/resolve.js';
 import type { TenantScope } from '../tenancy/scope.js';
 import { outsideTenantUnit } from '../tenancy/tenant-db.js';
 
@@ -288,6 +290,10 @@ export function terminalSharesModule(options: TerminalSharesOptions = {}): Serve
           registry.sessionEnded(event);
         }),
       );
+      // Spec §22.7: a suspended or deleting tenant's shares end on every instance, their sockets closing 4403.
+      ctx.tenancy.onTenantsStopped((tenantIds) => {
+        registry.endTenants(tenantIds, TERMINAL_SHARE_CLOSE.forbidden, TENANT_SUSPENDED);
+      });
       // A bus that missed events may have missed an `accessChanged` or a `sessionEnded` (review I1): each held
       // tenant's access is checked again, and the gone tokens' sockets go as if their session's end had come.
       ctx.bus.onListen(({ reconnected }) => {
