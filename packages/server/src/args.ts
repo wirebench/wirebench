@@ -58,7 +58,16 @@ export type AdminTenantCommand =
   | { readonly command: 'admin-tenant-suspend'; readonly slug: string }
   | { readonly command: 'admin-tenant-resume'; readonly slug: string }
   | { readonly command: 'admin-tenant-rename'; readonly slug: string; readonly to: string }
-  | { readonly command: 'admin-tenant-delete'; readonly slug: string; readonly cancel: boolean };
+  | { readonly command: 'admin-tenant-delete'; readonly slug: string; readonly cancel: boolean }
+  | {
+      readonly command: 'admin-tenant-settings';
+      readonly slug: string;
+      readonly action: 'get' | 'set' | 'clear';
+      /** Every section for `get` when absent. */
+      readonly section?: string;
+      /** `set`'s JSON document. */
+      readonly file?: string;
+    };
 
 export type ServerCommand =
   | { readonly command: 'serve' }
@@ -152,6 +161,12 @@ Usage:
   wirebench-server admin tenant delete <slug> [--cancel]
                                     Hosted mode: the tenant and its data are deleted 14 days on;
                                     --cancel takes the request back until then
+  wirebench-server admin tenant settings <slug> get [<section>]
+  wirebench-server admin tenant settings <slug> set <section> --file <json>
+  wirebench-server admin tenant settings <slug> clear <section>
+                                    Hosted mode: a tenant's sign-in, forwarding, mail, retention and
+                                    budget settings; secrets show only as set or not, and budgets
+                                    are the operator's alone
   wirebench-server --version
   wirebench-server --help
 
@@ -187,12 +202,14 @@ const OPTIONS = {
   seats: { type: 'string' },
   subscription: { type: 'boolean' },
   cancel: { type: 'boolean' },
+  file: { type: 'string' },
 } as const;
 
 const TENANT_USAGE =
   'usage: wirebench-server admin tenant list | create --slug <slug> --name <name> --email <email> [--edition team|enterprise] [--seats <n>]' +
   ' | set-edition <slug> <team|enterprise> [--seats <n>|unlimited] | set-edition <slug> --subscription | suspend <slug> | resume <slug>' +
-  ' | rename <slug> <new-slug> | delete <slug> [--cancel]';
+  ' | rename <slug> <new-slug> | delete <slug> [--cancel]' +
+  ' | settings <slug> get [<section>] | settings <slug> set <section> --file <json> | settings <slug> clear <section>';
 
 /** `--edition`, or an edition argument: a hosted edition is Team or Enterprise (spec §22.4). */
 function parseEdition(value: string): 'team' | 'enterprise' {
@@ -297,6 +314,9 @@ export function parseServerArgs(argv: readonly string[]): ServerCommand {
   if (parsed.values.subscription !== undefined && !(isTenantCommand && third === 'set-edition')) {
     throw new UsageError('--subscription applies to admin tenant set-edition only');
   }
+  if (parsed.values.file !== undefined && !(isTenantCommand && third === 'settings')) {
+    throw new UsageError('--file applies to admin tenant settings set only');
+  }
   if (parsed.values.cancel !== undefined && !(isTenantCommand && third === 'delete')) {
     throw new UsageError('--cancel applies to admin tenant delete only');
   }
@@ -382,7 +402,14 @@ export function parseServerArgs(argv: readonly string[]): ServerCommand {
               throw new UsageError(SCHEDULES_USAGE);
           }
         case 'tenant':
-          return parseTenantCommand(third, fourth, fifth, parsed.positionals.length, parsed.values);
+          return parseTenantCommand(
+            third,
+            fourth,
+            fifth,
+            parsed.positionals.length,
+            parsed.values,
+            parsed.positionals[5],
+          );
         case 'instances':
           if (third !== undefined) throw new UsageError('usage: wirebench-server admin instances');
           return { command: 'admin-instances' };
@@ -467,7 +494,9 @@ function parseTenantCommand(
     readonly seats?: string;
     readonly subscription?: boolean;
     readonly cancel?: boolean;
+    readonly file?: string;
   },
+  third?: string,
 ): AdminTenantCommand {
   /** `admin tenant <verb>` and `args` positionals more, exactly. */
   const positionals = (args: number): void => {
@@ -519,6 +548,31 @@ function parseTenantCommand(
     case 'delete':
       positionals(1);
       return { command: 'admin-tenant-delete', slug: first!, cancel: values.cancel === true };
+    case 'settings': {
+      if (second === 'get') {
+        if (count !== 5 && count !== 6) throw new UsageError(TENANT_USAGE);
+        if (values.file !== undefined) throw new UsageError('--file applies to admin tenant settings set only');
+        return {
+          command: 'admin-tenant-settings',
+          slug: first!,
+          action: 'get',
+          ...(third !== undefined ? { section: third } : {}),
+        };
+      }
+      if (second !== 'set' && second !== 'clear') throw new UsageError(TENANT_USAGE);
+      positionals(3);
+      if (second === 'set' && values.file === undefined)
+        throw new UsageError('admin tenant settings set needs --file <json>');
+      if (second === 'clear' && values.file !== undefined)
+        throw new UsageError('--file applies to admin tenant settings set only');
+      return {
+        command: 'admin-tenant-settings',
+        slug: first!,
+        action: second,
+        section: third!,
+        ...(values.file !== undefined ? { file: values.file } : {}),
+      };
+    }
     default:
       throw new UsageError(TENANT_USAGE);
   }

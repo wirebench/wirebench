@@ -20,6 +20,7 @@ import { invitationRoutes } from './routes/invitations.js';
 import { invitePageRoutes } from './routes/invite-page.js';
 import { meRoutes } from './routes/me.js';
 import { userRoutes } from './routes/users.js';
+import { settingsRoutes } from '../settings/routes.js';
 import { sweepExpired } from './sessions.js';
 import { TenantOidcProviders } from './tenant-oidc.js';
 import type { TenantScope } from '../tenancy/scope.js';
@@ -125,6 +126,11 @@ export function identityModule(options: IdentityOptions = {}): ServerModule {
       meRoutes(identity)(app);
       invitationRoutes(identity)(app);
       userRoutes(identity)(app);
+      // Spec §22.12: a tenant's settings, for its server admins; behind identity's guard, as the user routes are.
+      settingsRoutes(ctx, {
+        allowInsecure: ctx.config.allowInsecurePublicUrl,
+        egress: options.oidcEgress ?? ctx.egress,
+      })(app);
 
       const interval = options.sweepIntervalMs ?? DAY_MS;
       if (interval > 0) {

@@ -1,7 +1,7 @@
 /**
  * `wirebench-server admin tenant …` (hosted edition spec §22.14): the operator's lifecycle commands, on the control
- * role through {@link TenantLifecycle}. `list`, `create`, `set-edition`, `suspend`, `resume`, `rename` and
- * `delete [--cancel]`; `export`, `import` and `settings` come with their parts. Each runs in hosted mode only and
+ * role through {@link TenantLifecycle}. `list`, `create`, `set-edition`, `suspend`, `resume`, `rename`,
+ * `delete [--cancel]` and `settings`; `export` and `import` come with their parts. Each runs in hosted mode only and
  * refuses elsewhere with `admin-tenant-hosted-only`. The slug is positional, never `--tenant`.
  *
  * It opens the control pool from the control role's URL, and the app pool for the tenants' units (the audit rows,
@@ -9,13 +9,21 @@
  * every running instance reloads its tenant map: the bus starts before the command and is drained before exit.
  */
 import { randomUUID } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
 import type { KeyObject } from 'node:crypto';
 import { WirebenchError } from '@wirebench/engine';
 import type { FastifyBaseLogger } from 'fastify';
 import type { ServerCommand } from '../args.js';
 import { auditHook } from '../audit-log/hook.js';
-import { ConfigError, forgetDatabaseUrls, loadConfig, migrationUrlOf, type ServerConfig } from '../config.js';
-import { SYSTEM_SOURCE, serverHooks } from '../context.js';
+import {
+  ConfigError,
+  egressPolicyOf,
+  forgetDatabaseUrls,
+  loadConfig,
+  migrationUrlOf,
+  type ServerConfig,
+} from '../config.js';
+import { SYSTEM_SOURCE, serverHooks, type ServerHooks } from '../context.js';
 import { pendingMigrations } from '../db/migrate.js';
 import { ADMIN_APPLICATION_NAME, createDatabase, openSession } from '../db/pool.js';
 import { identitySettings } from '../identity/env.js';
@@ -26,6 +34,9 @@ import { cachedServerId, createLicenseService } from '../licensing/service.js';
 import { BUILTIN_MODULES } from '../modules.js';
 import { NotificationBus } from '../operations/bus.js';
 import { sendAlertMail } from '../schedules/alerts/smtp.js';
+import { clearSection, saveSection } from '../settings/save.js';
+import { isSettingsSection } from '../settings/sections.js';
+import { createTenantSettings, type TenantSettings } from '../settings/service.js';
 import { allMigrations, StartupError } from '../serve.js';
 import type { TenantRow } from '../tenancy/directory.js';
 import { environmentKeyRoot } from '../tenancy/keys.js';
@@ -253,6 +264,13 @@ export async function runAdminTenant(
         );
         return ExitCode.Ok;
       }
+      case 'admin-tenant-settings':
+        return await tenantSettings(command, io, {
+          config,
+          lifecycle,
+          settings: createTenantSettings({ config, tenancy, hooks, bus }),
+          hooks,
+        });
       case 'admin-tenant-delete': {
         if (command.cancel) {
           const row = await lifecycle.cancelDeletion(command.slug);
@@ -289,6 +307,68 @@ export async function runAdminTenant(
     await control.close();
     await db.close();
   }
+}
+
+/**
+ * `admin tenant settings <slug> get|set|clear` (spec §22.12, §22.14): the operator's view and writes of one tenant's
+ * settings, in its own unit, with the API's checks and its `settings.changed` event. The operator may write
+ * `budgets`. A secret is printed only as set or not.
+ */
+async function tenantSettings(
+  command: Extract<AdminTenantCommand, { command: 'admin-tenant-settings' }>,
+  io: ServerIo,
+  deps: {
+    readonly config: ServerConfig;
+    readonly lifecycle: TenantLifecycle;
+    readonly settings: TenantSettings;
+    readonly hooks: ServerHooks;
+  },
+): Promise<number> {
+  if (command.section !== undefined && !isSettingsSection(command.section)) {
+    io.stderr.write(`settings-unknown-section: there is no settings section named "${command.section.slice(0, 40)}"\n`);
+    return ExitCode.Config;
+  }
+  const section = command.section;
+  const scope = await deps.lifecycle.tenantScope(command.slug);
+  const options = { by: 'operator', operator: true, source: SYSTEM_SOURCE } as const;
+  if (command.action === 'set') {
+    let input: unknown;
+    try {
+      input = JSON.parse(await readFile(command.file!, 'utf8'));
+    } catch (error) {
+      const code = (error as { code?: unknown }).code;
+      io.stderr.write(
+        `settings-file-unreadable: ${command.file!} ${typeof code === 'string' ? `could not be read (${code})` : 'is not JSON'}\n`,
+      );
+      return ExitCode.Config;
+    }
+    await saveSection(
+      {
+        settings: deps.settings,
+        hooks: deps.hooks,
+        allowInsecure: deps.config.allowInsecurePublicUrl,
+        egress: egressPolicyOf(deps.config),
+      },
+      scope,
+      section!,
+      input,
+      options,
+    );
+    io.stdout.write(`Saved the ${section!} settings of ${command.slug}\n`);
+    return ExitCode.Ok;
+  }
+  if (command.action === 'clear') {
+    const cleared = await clearSection({ settings: deps.settings, hooks: deps.hooks }, scope, section!, options);
+    io.stdout.write(
+      cleared
+        ? `Cleared the ${section!} settings of ${command.slug}\n`
+        : `${command.slug} has no ${section!} settings\n`,
+    );
+    return ExitCode.Ok;
+  }
+  const view = await deps.settings.view(scope, { operator: true });
+  io.stdout.write(`${JSON.stringify(section === undefined ? view : { [section]: view[section] }, null, 2)}\n`);
+  return ExitCode.Ok;
 }
 
 /** The SMTP URL's host alone: never its credentials. */

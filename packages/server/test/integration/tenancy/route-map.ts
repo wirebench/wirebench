@@ -706,6 +706,17 @@ export const ROUTE_MAP: Readonly<Record<string, RouteCase>> = {
     }),
   },
 
+  // ---- a tenant's settings (spec §22.12): the sender's own, never another tenant's
+  'GET /api/v1/tenant/settings': { cls: 'own', request: (ctx) => json(ctx, 'GET', api('/tenant/settings')) },
+  'PUT /api/v1/tenant/settings/:section': {
+    cls: 'own',
+    request: (ctx) => json(ctx, 'PUT', api('/tenant/settings/retention'), { hooksKeep: 100 }),
+  },
+  'DELETE /api/v1/tenant/settings/:section': {
+    cls: 'own',
+    request: (ctx) => json(ctx, 'DELETE', api('/tenant/settings/retention')),
+  },
+
   // ---- SAML: a tenant's own setting (spec §22.12), which neither world tenant has
   'POST /api/v1/auth/saml/start': {
     cls: 'federated',

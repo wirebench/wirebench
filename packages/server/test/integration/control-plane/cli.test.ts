@@ -4,6 +4,9 @@
  * running instance hears.
  */
 import { randomUUID } from 'node:crypto';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import Fastify from 'fastify';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { AdminTenantCommand } from '../../../src/args.js';
@@ -102,6 +105,7 @@ describeDb('admin tenant (hosted spec §22.14)', () => {
       ['admin', 'tenant', 'resume', 'acme'],
       ['admin', 'tenant', 'rename', 'acme', 'acme-ag'],
       ['admin', 'tenant', 'delete', 'acme'],
+      ['admin', 'tenant', 'settings', 'acme', 'get'],
     ]) {
       const out = io();
       expect(await main(argv, out.io), argv.join(' ')).toBe(2);
@@ -260,5 +264,77 @@ describeDb('admin tenant (hosted spec §22.14)', () => {
       }),
     ).toBe(2);
     expect(out.stderr()).toContain('WIREBENCH_SERVER_CONTROL_DATABASE_URL');
+  });
+
+  it('settings get, set and clear: the operator writes budgets, a secret shows only as set, each write is recorded', async () => {
+    expect((await create('acme')).code).toBe(0);
+    const dir = await mkdtemp(join(tmpdir(), 'wb-settings-'));
+    try {
+      const file = join(dir, 'budgets.json');
+      await writeFile(file, JSON.stringify({ sendsPerMinute: 60, runSlots: 1 }));
+      const set = await run({
+        command: 'admin-tenant-settings',
+        slug: 'acme',
+        action: 'set',
+        section: 'budgets',
+        file,
+      });
+      expect(set.code, set.stderr).toBe(0);
+      const forward = join(dir, 'forward.json');
+      await writeFile(forward, JSON.stringify({ url: 'https://siem.acme.test/in', token: 'cli-forward-token-55aa' }));
+      expect(
+        (
+          await run({
+            command: 'admin-tenant-settings',
+            slug: 'acme',
+            action: 'set',
+            section: 'auditForward',
+            file: forward,
+          })
+        ).code,
+      ).toBe(0);
+      const bad = join(dir, 'bad.json');
+      await writeFile(bad, JSON.stringify({ url: 'http://siem.acme.test/in' }));
+      expectRefused(
+        await run({
+          command: 'admin-tenant-settings',
+          slug: 'acme',
+          action: 'set',
+          section: 'auditForward',
+          file: bad,
+        }),
+        'settings-forward-url',
+      );
+      const got = await run({ command: 'admin-tenant-settings', slug: 'acme', action: 'get' });
+      expect(got.code).toBe(0);
+      expect(got.stdout).not.toContain('cli-forward-token-55aa');
+      const view = JSON.parse(got.stdout) as Record<
+        string,
+        { value: Record<string, unknown> | null; writable: boolean }
+      >;
+      expect(view.budgets).toMatchObject({ writable: true, value: { sendsPerMinute: 60, runSlots: 1 } });
+      expect(view.auditForward!.value).toMatchObject({ token: { set: true } });
+      const cleared = await run({
+        command: 'admin-tenant-settings',
+        slug: 'acme',
+        action: 'clear',
+        section: 'budgets',
+      });
+      expect(cleared.stdout).toContain('Cleared the budgets settings of acme');
+      const changed = await control.query<{ details: unknown }>(
+        "select details from audit_events where action = 'settings.changed' order by at, id",
+      );
+      expect(changed.rows.map((row) => row.details)).toEqual([
+        { section: 'budgets' },
+        { section: 'auditForward' },
+        { section: 'budgets' },
+      ]);
+      expectRefused(
+        await run({ command: 'admin-tenant-settings', slug: 'nobody', action: 'get' }),
+        'control-plane-tenant-unknown',
+      );
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });

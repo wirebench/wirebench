@@ -324,6 +324,12 @@ export class TenantLifecycle {
     return { ...row, scope };
   }
 
+  /** `slug`'s scope, for a write in the tenant's own unit (`admin tenant settings`, spec §22.14). */
+  async tenantScope(slug: string): Promise<TenantScope> {
+    const row = await this.#deps.control.transaction((tx) => lockedTenant(tx, slug));
+    return this.#scope(row);
+  }
+
   async #update(tx: ControlTx, id: string, set: string, params: readonly unknown[]): Promise<TenantRow> {
     const rows = await tx.query<TenantRow & Record<string, unknown>>(
       `update tenants set ${set} where id = $1::uuid returning ${TENANT_COLUMNS}`,
