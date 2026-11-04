@@ -22,10 +22,10 @@ import * as teamsRepo from '../../../../src/teams/repo.js';
 import { isDefaultTenant } from '../../../../src/tenancy/tenancy.js';
 import { describeDb } from '../../../helpers/database.js';
 import type { SignedInUser } from '../../../helpers/identity.js';
-import { license, testKeys } from '../../../helpers/licensing.js';
+import { testKeys } from '../../../helpers/licensing.js';
 import { quietLog } from '../../../helpers/schedule-runs.js';
 import { manualTimers } from '../../../helpers/timers.js';
-import { countIn, hosted, twoTenants, type Tenant, type TwoTenants } from './two-tenants.js';
+import { countIn, hosted, twoTenants, type Tenant, type TwoTenants, setEdition } from './two-tenants.js';
 
 const KEY = 'test-chain-key-0123456789abcdefghij';
 const DAY = 86_400_000;
@@ -60,10 +60,7 @@ describeDb('the audit log in two tenants (tenancy Task 18)', () => {
     });
     for (const tenant of [t.a, t.b]) {
       roots[tenant.slug] = await tenant.user({ email: 'root@example.com', serverAdmin: true });
-      const installed = await tenant.call(root(tenant), 'PUT', '/license', {
-        license: license(keys, { edition: 'enterprise' }),
-      });
-      expect(installed.status).toBe(200);
+      await setEdition(t, tenant, 'enterprise');
       const team = await teamsRepo.insertTeam(tenant.tdb, { id: newId(), name: 'Ops', at: t.h.clock.now });
       await teamsRepo.insertMember(tenant.tdb, {
         teamId: team.id,

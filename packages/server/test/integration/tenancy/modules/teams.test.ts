@@ -13,7 +13,7 @@ import { describeDb } from '../../../helpers/database.js';
 import type { SignedInUser } from '../../../helpers/identity.js';
 import { license, testKeys } from '../../../helpers/licensing.js';
 import { SCHEDULES_KEY } from '../../../helpers/schedules.js';
-import { countIn, twoTenants, type Tenant, type TwoTenants } from './two-tenants.js';
+import { countIn, twoTenants, type Tenant, type TwoTenants, setEdition } from './two-tenants.js';
 
 const PASSWORD = 'correct horse battery';
 const keys = testKeys();
@@ -139,9 +139,11 @@ describeDb('teams and licensing in two tenants (tenancy Task 18)', () => {
     expect(await t.h.repos.exists(t.a.scope, id)).toBe(true);
   });
 
-  it('a license installed in A leaves B on Community: meta, the feature gate and the seat cap', async () => {
+  it('an edition set on A leaves B on Community: meta, the feature gate and the seat cap', async () => {
+    await setEdition(t, t.a, 'enterprise');
+    // Hosted mode takes no license file (spec §22.4): the row is the edition.
     const install = await t.a.call(root(t.a), 'PUT', '/license', { license: license(keys, { edition: 'enterprise' }) });
-    expect(install.status).toBe(200);
+    expect(install.status).toBe(409);
     const meta = async (tenant: Tenant) =>
       (await tenant.call<{ edition: string }>(undefined, 'GET', '/meta')).body.edition;
     expect(await meta(t.a)).toBe('enterprise');
@@ -161,7 +163,7 @@ describeDb('teams and licensing in two tenants (tenancy Task 18)', () => {
     expect(gated.body.code).toBe('licensing-feature-required');
   });
 
-  it("seats count only the tenant's users, and a remove in B leaves A's license", async () => {
+  it("seats count only the tenant's users, and a remove in B is refused and leaves A's edition", async () => {
     // B is on Community (5 seats): its root plus four more fill it, whatever A has.
     for (let i = 0; i < 6; i += 1) await t.a.user({ email: `a-extra${i}@example.com` });
     const used = async (tenant: Tenant) =>
@@ -175,10 +177,9 @@ describeDb('teams and licensing in two tenants (tenancy Task 18)', () => {
     expect(refused.status).toBe(409);
     expect(refused.body.code).toBe('licensing-seat-limit');
     expect((await t.a.call(root(t.a), 'POST', '/invitations', { email: 'sixth@example.com' })).status).toBe(201);
-    // B removing (nothing) leaves A's row.
-    expect((await t.b.call(root(t.b), 'DELETE', '/license')).status).toBe(204);
+    // B's remove is refused in hosted mode, and A's edition stays.
+    expect((await t.b.call(root(t.b), 'DELETE', '/license')).status).toBe(409);
     expect((await t.a.call<{ edition: string }>(root(t.a), 'GET', '/license')).body.edition).toBe('enterprise');
-    expect(await countIn(t.a, 'license')).toBe(1);
   });
 
   it("two acceptances racing for a tenant's last seat are serialised, and A's seat lock never blocks B", async () => {

@@ -12,6 +12,7 @@ import type { Querier } from '../db/querier.js';
 import type { TenantKeys } from './keys.js';
 import { scopeOf, type TenantScope } from './scope.js';
 import { checkSlug } from './slugs.js';
+import type { TenantQuerier } from './tenant-db.js';
 
 /**
  * A lost `server_identity` row. It holds the id licenses are bound to, so the advice is to restore it, never to
@@ -22,6 +23,10 @@ export const MISSING_SERVER_ID =
 
 export type TenantEdition = 'community' | 'team' | 'enterprise';
 export type TenantStatus = 'active' | 'suspended' | 'deleting';
+/** Who set the edition (spec §22.4): a license (self-hosted), a Team subscription, or the operator. */
+export type EditionSource = 'license' | 'subscription' | 'operator';
+/** Why a tenant is suspended (spec §22.7). */
+export type SuspendedReason = 'unpaid' | 'canceled' | 'operator' | 'importing';
 
 export interface TenantRow {
   readonly id: string;
@@ -30,6 +35,16 @@ export interface TenantRow {
   readonly edition: TenantEdition;
   readonly status: TenantStatus;
   readonly region: 'eu';
+  /** The edition's seats in hosted mode (spec §22.4); `null` is no limit. A self-hosted tenant's license has its own. */
+  readonly seats: number | null;
+  readonly editionSource: EditionSource;
+  readonly suspendedReason: SuspendedReason | null;
+  readonly suspendedAt: Date | null;
+  readonly deletionRequestedAt: Date | null;
+  /** `'operator'` or a user id (spec §22.11). */
+  readonly deletionRequestedBy: string | null;
+  /** When the deletion job runs (spec §22.11). */
+  readonly deletingAt: Date | null;
 }
 
 export interface NewTenant {
@@ -37,9 +52,19 @@ export interface NewTenant {
   readonly name: string;
   readonly edition?: TenantEdition;
   readonly region?: 'eu';
+  readonly seats?: number;
+  readonly editionSource?: EditionSource;
+  /** `suspended` needs a reason: an import creates its tenant `importing` (spec §22.10). */
+  readonly status?: 'active' | 'suspended';
+  readonly suspendedReason?: SuspendedReason;
 }
 
-const COLUMNS = 'id::text as id, slug, name, edition, status, region';
+/** Every column of {@link TenantRow}, in its names: what the directory and the control plane read a row with. */
+export const TENANT_COLUMNS = `id::text as id, slug, name, edition, status, region, seats,
+  edition_source as "editionSource", suspended_reason as "suspendedReason", suspended_at as "suspendedAt",
+  deletion_requested_at as "deletionRequestedAt", deletion_requested_by as "deletionRequestedBy",
+  deleting_at as "deletingAt"`;
+const COLUMNS = TENANT_COLUMNS;
 
 export class TenantDirectory {
   // `#` fields, so a module cannot reach the raw querier at run time either.
@@ -152,6 +177,25 @@ export class TenantDirectory {
   }
 }
 
+/**
+ * The edition and seats of the unit's own tenant (spec §22.4): what the license service reads in hosted mode, where
+ * the tenant row, not a license, says them. The one read of `tenants` the licensing module makes, so it lives here,
+ * where `check:tenant-scope` allows the table; it reads only the unit's tenant.
+ *
+ * @throws WirebenchError `tenancy-tenant-unknown` when the unit's tenant has no row
+ */
+export async function hostedEdition(
+  tx: TenantQuerier,
+): Promise<{ readonly edition: TenantEdition; readonly seats: number | null }> {
+  const rows = await tx.query<{ edition: TenantEdition; seats: number | null }>(
+    'select edition, seats from tenants where id = $1::uuid',
+    [tx.scope.tenantId],
+  );
+  const row = rows.rows[0];
+  if (row === undefined) throw new WirebenchError('tenancy-tenant-unknown', 'the unit’s tenant has no row');
+  return row;
+}
+
 /** Each directory's data keys, kept off the class so nothing outside this file reaches them through it. */
 const directoryKeys = new WeakMap<TenantDirectory, TenantKeys>();
 
@@ -162,10 +206,16 @@ const directoryKeys = new WeakMap<TenantDirectory, TenantKeys>();
 export class TenantAdmin {
   readonly #db: Querier;
   readonly #directory: TenantDirectory;
+  readonly #announce: boolean;
 
-  constructor(db: Querier, directory: TenantDirectory) {
+  /**
+   * `announce: false` (the control plane, spec §22.2): `db` is a transaction not committed yet, so the directory's
+   * change is told by the caller after the commit; told now, a reload would read the map without the new tenant.
+   */
+  constructor(db: Querier, directory: TenantDirectory, options: { readonly announce?: boolean } = {}) {
     this.#db = db;
     this.#directory = directory;
+    this.#announce = options.announce ?? true;
   }
 
   /**
@@ -178,15 +228,32 @@ export class TenantAdmin {
     if (slug === 'slug-invalid')
       throw new WirebenchError('tenancy-slug-invalid', 'that slug is not a valid tenant slug');
     if (slug === 'slug-reserved') throw new WirebenchError('tenancy-slug-reserved', 'that slug is reserved');
+    const status = input.status ?? 'active';
+    if ((status === 'suspended') !== (input.suspendedReason !== undefined)) {
+      throw new WirebenchError('tenancy-status-invalid', 'a suspended tenant needs a reason, and only a suspended one');
+    }
     const id = randomUUID();
     const dataKey = (await directoryKeys.get(this.#directory)?.wrapNew(id)) ?? null;
     const rows = await this.#db.query<TenantRow & Record<string, unknown>>(
-      `insert into tenants (id, slug, name, edition, region, data_key) values ($1::uuid, $2, $3, $4, $5, $6)
+      `insert into tenants (id, slug, name, edition, region, data_key, seats, edition_source, status,
+         suspended_reason, suspended_at)
+       values ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10, case when $10::text is null then null else now() end)
        returning ${COLUMNS}`,
-      [id, input.slug, input.name, input.edition ?? 'community', input.region ?? 'eu', dataKey],
+      [
+        id,
+        input.slug,
+        input.name,
+        input.edition ?? 'community',
+        input.region ?? 'eu',
+        dataKey,
+        input.seats ?? null,
+        input.editionSource ?? 'license',
+        status,
+        input.suspendedReason ?? null,
+      ],
     );
     const row = rows.rows[0]!;
-    this.#directory.changed();
+    if (this.#announce) this.#directory.changed();
     return { ...row, scope: scopeOf(row) };
   }
 }
