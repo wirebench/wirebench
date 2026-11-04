@@ -30,6 +30,7 @@ import type { FastifyBaseLogger } from 'fastify';
 import { problem } from '../../problem.js';
 import { TENANT_COLUMNS, type TenantRow } from '../../tenancy/directory.js';
 import { SERVER_SCHEMA } from '../../tenancy/running-lock.js';
+import type { TenantQuerier } from '../../tenancy/tenant-db.js';
 import type { Tenancy } from '../../tenancy/tenancy.js';
 import type { ControlDb } from '../control-db.js';
 import type { ControlTx } from '../slugs.js';
@@ -57,14 +58,26 @@ export interface ApplyDeps {
   readonly lifecycle: TenantLifecycle;
   readonly log: Pick<FastifyBaseLogger, 'info' | 'warn' | 'error'>;
   /**
-   * Part E's hook (spec §22.6): completes the signup a `created` names, in this control transaction, which holds the
-   * ref lock and has locked the `signups` row (`for update`). Called only for a row whose `tenant_id` is null and
-   * whose status is not `completed`: a row bound to a tenant is a resubscription, applied here. Absent until then,
-   * and the event is recorded `signup-pending`, with no tenant made.
+   * Signup's hook (spec §22.6, `signup/complete.ts`): completes the signup a `created` names, in this control
+   * transaction, which holds the ref lock and has locked the `signups` row (`for update`). Called for a row whose
+   * status is not `completed` and whose `tenant_id` is null, or is set while its `password_hash` is still there (a
+   * completion whose second half failed, which Paddle's retry runs again); a row bound to a tenant with no password
+   * is a resubscription, applied here. Absent, the event is recorded `signup-pending`, with no tenant made.
    */
-  readonly completeSignup?: (tx: ControlTx, event: SubscriptionEvent) => Promise<BillingOutcome>;
+  readonly completeSignup?: (tx: ControlTx, event: SubscriptionEvent) => Promise<SignupCompletion>;
   /** The clock {@link UNKNOWN_REF_RETRY_MS} is counted on. */
   readonly now?: () => Date;
+}
+
+/** What completing a signup came to; `finish` runs once the control transaction committed. */
+export interface SignupCompletion {
+  readonly outcome: BillingOutcome;
+  readonly tenantId?: string;
+  /**
+   * The completion's second half, in the new tenant's own unit. A failure drops the event's claim and answers 500,
+   * so Paddle's retry runs it again.
+   */
+  readonly finish?: () => Promise<void>;
 }
 
 interface CurrentSubscription {
@@ -96,11 +109,21 @@ export async function recordUnapplied(deps: ApplyDeps, event: UnappliedEvent): P
 export async function applySubscriptionEvent(deps: ApplyDeps, event: SubscriptionEvent): Promise<BillingOutcome> {
   const pending: PendingChange[] = [];
   let tenantId: string | undefined;
+  let finish: (() => Promise<void>) | undefined;
   const outcome = await deps.control.transaction(async (tx): Promise<BillingOutcome> => {
     if (!(await claimEvent(tx, event, 'pending'))) return 'duplicate';
-    const decided = await decide(deps, tx, event, pending, (id) => {
-      tenantId = id;
-    });
+    const decided = await decide(
+      deps,
+      tx,
+      event,
+      pending,
+      (id) => {
+        tenantId = id;
+      },
+      (fn) => {
+        finish = fn;
+      },
+    );
     await tx.query('update billing_events set outcome = $3 where provider = $1 and event_id = $2', [
       event.provider,
       event.eventId,
@@ -108,6 +131,22 @@ export async function applySubscriptionEvent(deps: ApplyDeps, event: Subscriptio
     ]);
     return decided;
   });
+  if (finish !== undefined) {
+    try {
+      await finish();
+    } catch (error) {
+      // The signup is bound to its tenant and keeps its hash: dropping the claim lets Paddle's retry finish it.
+      deps.log.error(
+        { eventId: event.eventId, reason: codeOf(error), ...(tenantId !== undefined ? { tenantId } : {}) },
+        'a signup could not be finished; the event is answered 500 for Paddle to retry',
+      );
+      await deps.control.query('delete from billing_events where provider = $1 and event_id = $2', [
+        event.provider,
+        event.eventId,
+      ]);
+      throw problem('billing-signup-unfinished', 'a signup could not be finished', 503);
+    }
+  }
   // After the commit: each change's audit row and the directory's change. The event is applied either way, so a
   // failure here is logged, not answered: Paddle's retry would be a duplicate.
   for (const change of pending) {
@@ -132,6 +171,7 @@ function codeOf(error: unknown): string {
 interface SignupRow {
   readonly tenantId: string | null;
   readonly status: string;
+  readonly hasPassword: boolean;
 }
 
 /** The tenant a `created` pays for, by its signup id alone; or the outcome when there is none to apply it to here. */
@@ -139,14 +179,15 @@ async function signupTenant(
   deps: ApplyDeps,
   tx: ControlTx,
   event: SubscriptionEvent,
-): Promise<{ tenantId: string } | { outcome: BillingOutcome }> {
+): Promise<{ tenantId: string } | SignupCompletion> {
   if (event.signup === undefined || !UUID.test(event.signup)) {
     deps.log.warn({ eventId: event.eventId }, 'a created billing event names no signup');
     return { outcome: 'unmatched' };
   }
   const signup = (
     await tx.query<SignupRow & Record<string, unknown>>(
-      `select tenant_id::text as "tenantId", status from signups where id = $1::uuid for update`,
+      `select tenant_id::text as "tenantId", status, password_hash is not null as "hasPassword"
+       from signups where id = $1::uuid for update`,
       [event.signup],
     )
   ).rows[0];
@@ -154,9 +195,9 @@ async function signupTenant(
     deps.log.warn({ eventId: event.eventId }, 'a created billing event names no open signup');
     return { outcome: 'unmatched' };
   }
-  if (signup.tenantId === null) {
-    // Part E (spec §22.6) completes the signup here; until then no tenant is made.
-    return { outcome: deps.completeSignup !== undefined ? await deps.completeSignup(tx, event) : 'signup-pending' };
+  if (signup.tenantId === null || signup.hasPassword) {
+    // A new team's signup (spec §22.6), or one whose completion did not finish: `signup/complete.ts`.
+    return deps.completeSignup !== undefined ? await deps.completeSignup(tx, event) : { outcome: 'signup-pending' };
   }
   return { tenantId: signup.tenantId };
 }
@@ -167,6 +208,7 @@ async function decide(
   event: SubscriptionEvent,
   pending: PendingChange[],
   found: (tenantId: string) => void,
+  finishing: (finish: () => Promise<void>) => void,
 ): Promise<BillingOutcome> {
   await tx.query(BILLING_REF_LOCK, [event.provider, event.ref]);
   const holders = (
@@ -178,7 +220,11 @@ async function decide(
   let tenantId: string;
   if (event.kind === 'created') {
     const signup = await signupTenant(deps, tx, event);
-    if ('outcome' in signup) return signup.outcome;
+    if ('outcome' in signup) {
+      if (signup.tenantId !== undefined) found(signup.tenantId);
+      if (signup.finish !== undefined) finishing(signup.finish);
+      return signup.outcome;
+    }
     tenantId = signup.tenantId;
   } else {
     const holder = holders[0];
@@ -259,27 +305,34 @@ async function writeSubscription(
         ? current.pastDueSince
         : event.occurredAt
       : null;
-  await deps.tenancy.db(scope).transaction((tx) =>
-    tx.query(
-      `insert into subscriptions (provider, provider_ref, customer_ref, plan, seats, status, current_period_end,
+  await deps.tenancy.db(scope).transaction((tx) => upsertSubscription(tx, event, pastDueSince));
+}
+
+/** The tenant's subscription row as `event` says, in the tenant's unit `tx`: a value set, so writing twice is once. */
+export async function upsertSubscription(
+  tx: TenantQuerier,
+  event: SubscriptionEvent,
+  pastDueSince: Date | null,
+): Promise<void> {
+  await tx.query(
+    `insert into subscriptions (provider, provider_ref, customer_ref, plan, seats, status, current_period_end,
          past_due_since, last_event_at)
        values ($1, $2, $3, $4, $5, $6, $7::timestamptz, $8::timestamptz, $9::timestamptz)
        on conflict (tenant_id) do update set provider = excluded.provider, provider_ref = excluded.provider_ref,
          customer_ref = excluded.customer_ref, plan = excluded.plan, seats = excluded.seats, status = excluded.status,
          current_period_end = excluded.current_period_end, past_due_since = excluded.past_due_since,
          last_event_at = excluded.last_event_at`,
-      [
-        event.provider,
-        event.ref,
-        event.customerRef,
-        TEAM_PLAN,
-        event.seats,
-        event.status,
-        event.periodEnd,
-        pastDueSince,
-        event.occurredAt,
-      ],
-    ),
+    [
+      event.provider,
+      event.ref,
+      event.customerRef,
+      TEAM_PLAN,
+      event.seats,
+      event.status,
+      event.periodEnd,
+      pastDueSince,
+      event.occurredAt,
+    ],
   );
 }
 

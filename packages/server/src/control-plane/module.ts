@@ -22,6 +22,8 @@ import type { SetTimer } from '../hooks/env.js';
 import { sendAlertMail } from '../schedules/alerts/smtp.js';
 import { EntryQueue } from '../entry/queue.js';
 import { entryHostOf } from '../tenancy/resolve.js';
+import { signupCompleter } from './signup/complete.js';
+import { signupExpiryStep } from './signup/expiry.js';
 import { registerSignupRoutes, renderSignupMail, type SignupMailItem } from './signup/routes.js';
 
 /** Migration `0023`: the tenants' new columns, the control tables and the three scoped ones. */
@@ -92,7 +94,21 @@ export function controlPlaneModule(options: ControlPlaneOptions = {}): ServerMod
         hooks: ctx.hooks,
         ...(options.now !== undefined ? { now: options.now } : {}),
       });
-      const deps: ApplyDeps = { control, tenancy: ctx.tenancy, lifecycle, log: ctx.log };
+      const deps: ApplyDeps = {
+        control,
+        tenancy: ctx.tenancy,
+        lifecycle,
+        log: ctx.log,
+        completeSignup: signupCompleter({
+          control,
+          tenancy: ctx.tenancy,
+          lifecycle,
+          hooks: ctx.hooks,
+          license: ctx.license,
+          log: ctx.log,
+          ...(options.now !== undefined ? { now: options.now } : {}),
+        }),
+      };
       const apply =
         options.apply ??
         ((mapped: MappedEvent) =>
@@ -156,7 +172,7 @@ export function controlPlaneModule(options: ControlPlaneOptions = {}): ServerMod
           }),
         );
       }
-      steps.push(billingEventsRetentionStep());
+      steps.push(billingEventsRetentionStep(), signupExpiryStep());
       const loop = new ControlLoop({
         control,
         steps,
