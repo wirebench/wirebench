@@ -25,6 +25,7 @@ describe('live-updates module wiring (§5.1)', () => {
       'host',
       'agent',
       'entry',
+      'control-plane',
     ]);
   });
 

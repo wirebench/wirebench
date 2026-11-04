@@ -624,7 +624,8 @@ export interface ServerModule {
     | 'terminal-shares'
     | 'host'
     | 'agent'
-    | 'entry';
+    | 'entry'
+    | 'control-plane';
   /**
    * The module's `NNNN_name.sql` files, merged with the host's in version order (`serve.ts`
    * `allMigrations`). By convention `packages/server/migrations/<module>/` (e.g.

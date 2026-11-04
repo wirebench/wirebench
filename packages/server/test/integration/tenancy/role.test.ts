@@ -32,6 +32,8 @@ const ROLE_SQL = `select current_user::text as name, r.rolsuper as superuser, r.
  */
 const READ = ['SELECT'];
 const DML = ['DELETE', 'INSERT', 'SELECT', 'UPDATE'];
+/** The control plane's own unscoped tables (spec §22.2, §22.3): only the control role touches them. */
+const NONE: readonly string[] = [];
 const EXPECTED_GRANTS: Readonly<Record<string, readonly string[]>> = {
   agent_nonces: DML,
   agent_pairing_codes: DML,
@@ -39,6 +41,7 @@ const EXPECTED_GRANTS: Readonly<Record<string, readonly string[]>> = {
   audit_chain_anchor: DML,
   audit_events: DML,
   audit_forward_queue: DML,
+  billing_events: NONE,
   browser_flows: DML,
   captures: DML,
   catch_urls: DML,
@@ -69,9 +72,15 @@ const EXPECTED_GRANTS: Readonly<Record<string, readonly string[]>> = {
   server_instances: DML,
   session_log_chunks: DML,
   session_logs: DML,
+  signups: NONE,
+  subscriptions: DML,
   team_invitations: DML,
   team_members: DML,
   teams: DML,
+  tenant_deletions: NONE,
+  tenant_exports: DML,
+  tenant_settings: DML,
+  tenant_slugs_retired: NONE,
   terminal_share_locations: DML,
   tenants: DML,
   users: DML,

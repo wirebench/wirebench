@@ -12,6 +12,7 @@ import type { Database } from '../../../src/db/querier.js';
 import { checkAppRole, checkControlRole } from '../../../src/tenancy/checks.js';
 import { runTenancyRoleWith } from '../../../src/tenancy/cli.js';
 import { ensureControlRole } from '../../../src/tenancy/roles.js';
+import { CONTROL_TABLES } from '../../../src/tenancy/grants.js';
 import { SCOPED_TABLES } from '../../helpers/catalog.js';
 import {
   APP_ROLE,
@@ -138,11 +139,11 @@ describeDb('the control role (hosted spec §22.2)', () => {
     const expected = Object.fromEntries(
       Object.keys(granted).map((table) => [
         table,
-        table === 'tenants' ? DML : SCOPED_TABLES.includes(table) ? ['SELECT'] : [],
+        CONTROL_TABLES.includes(table) ? DML : SCOPED_TABLES.includes(table) ? ['SELECT'] : [],
       ]),
     );
     expect(granted).toEqual(expected);
-    expect(Object.keys(granted)).toEqual(expect.arrayContaining([...SCOPED_TABLES, 'tenants']));
+    expect(Object.keys(granted)).toEqual(expect.arrayContaining([...SCOPED_TABLES, ...CONTROL_TABLES]));
     // A second run changes nothing and refuses nothing.
     expect(await ensureControlRole(db.owner, db.controlUrl, db.url)).toMatchObject({ exists: true });
   });

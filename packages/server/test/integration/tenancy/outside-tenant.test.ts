@@ -85,6 +85,16 @@ describeDb('scoped tables outside a tenant unit (hosted spec §19.4, plan Task 1
     await tdb.query(
       "insert into terminal_share_locations (share_id, holder, created_at) values ('share-0022', gen_random_uuid(), now())",
     );
+    // 0023's three.
+    await tdb.query(
+      "insert into subscriptions (provider, provider_ref, plan, seats, status, last_event_at) values ('paddle', 'sub-0023', 'team', 5, 'active', now())",
+    );
+    await tdb.query(
+      "insert into tenant_exports (id, requested_by, status) values ('export-0023', 'operator', 'ready')",
+    );
+    await tdb.query(
+      "insert into tenant_settings (section, value, updated_by) values ('mail', '{}'::jsonb, 'operator')",
+    );
   });
   afterAll(async () => {
     await app.close();

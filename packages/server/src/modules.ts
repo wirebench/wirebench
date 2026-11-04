@@ -2,6 +2,7 @@ import type { ServerModule } from './context.js';
 import { agentModule } from './agent/module.js';
 import { auditLogModule } from './audit-log/module.js';
 import { ciTokensModule } from './ci-tokens/module.js';
+import { controlPlaneModule } from './control-plane/module.js';
 import { entryModule } from './entry/module.js';
 import { hooksModule } from './hooks/module.js';
 import { hostModule } from './host/module.js';
@@ -42,6 +43,8 @@ import { terminalSharesModule } from './terminal-shares/module.js';
  * which does not listen yet. It too registers nothing while the browser client is off.
  * entry comes last: it registers only public routes, on `app.<app-domain>`, and only in hosted mode (hosted edition
  * spec §21.4).
+ * control-plane comes after entry: its migration `0023` scopes its tables with `0020`'s `tenant_scope()`, which the
+ * version order runs first whatever the module order, and it serves nothing outside hosted mode (spec §22.3).
  */
 export const BUILTIN_MODULES: readonly ServerModule[] = [
   identityModule(),
@@ -59,4 +62,5 @@ export const BUILTIN_MODULES: readonly ServerModule[] = [
   hostModule(),
   agentModule(),
   entryModule(),
+  controlPlaneModule(),
 ];

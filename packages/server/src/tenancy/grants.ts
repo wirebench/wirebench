@@ -6,6 +6,7 @@
  * The app role owns nothing, so row-level security applies to it whether forced or not. It gets:
  * - `usage` on the schema, and no `create`;
  * - `select` only on the tables in `READ_ONLY_TABLES`, plus `update (tenancy_step)` on `server_identity`;
+ * - nothing on the tables in `CONTROL_ONLY_TABLES`, which only the control role touches (spec §22.2);
  * - `select, insert, update, delete` on every other table, and by default on every table the owner creates
  *   later.
  *
@@ -22,10 +23,21 @@ import { WirebenchError } from '@wirebench/engine';
 export const READ_ONLY_TABLES: readonly string[] = ['schema_migrations', 'server_identity'];
 
 /**
- * The tables the control role reads and writes (spec §22.2): `tenants`, and the control plane's own tables, which
- * slice 7 Task 2 (migration `0023`) adds here. The one list: `controlRoleGrants` and its test read it.
+ * The control plane's own unscoped tables (migration `0023`, spec §22.3): only the control role touches them, so the
+ * app role holds nothing on them, not even what the owner's default privileges gave it when `0023` created them.
  */
-export const CONTROL_TABLES: readonly string[] = ['tenants'];
+export const CONTROL_ONLY_TABLES: readonly string[] = [
+  'tenant_slugs_retired',
+  'signups',
+  'billing_events',
+  'tenant_deletions',
+];
+
+/**
+ * The tables the control role reads and writes (spec §22.2): `tenants`, and the control plane's own tables. The one
+ * list: `controlRoleGrants` and its test read it.
+ */
+export const CONTROL_TABLES: readonly string[] = ['tenants', ...CONTROL_ONLY_TABLES];
 
 export interface AppRoleNames {
   /** The schema the server's tables live in. */
@@ -61,6 +73,7 @@ export function appRoleGrants(names: AppRoleNames): readonly string[] {
   const owner = quoteIdent(names.owner);
   const app = quoteIdent(names.app);
   const readOnly = READ_ONLY_TABLES.map(quoteLiteral).join(', ');
+  const controlOnly = CONTROL_ONLY_TABLES.map(quoteLiteral).join(', ');
   return [
     `grant usage on schema ${schema} to ${app}`,
     // Ordinary, partitioned and foreign tables, views and materialised views: what `on all tables` covers.
@@ -84,6 +97,9 @@ begin
       ) then
         execute format('grant update (tenancy_step) on %I.%I to %I', ${quoteLiteral(names.schema)}, t, ${quoteLiteral(names.app)});
       end if;
+    elsif t = any (array[${controlOnly}]::text[]) then
+      -- The owner's default privileges granted these at create time: taken back, all of them.
+      execute format('revoke all on %I.%I from %I', ${quoteLiteral(names.schema)}, t, ${quoteLiteral(names.app)});
     else
       execute format('grant select, insert, update, delete on %I.%I to %I', ${quoteLiteral(names.schema)}, t, ${quoteLiteral(names.app)});
     end if;
