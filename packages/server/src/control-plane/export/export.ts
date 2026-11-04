@@ -21,6 +21,7 @@ import { mkdir, rename, rm, stat } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { once } from 'node:events';
 import { WirebenchError, type GitCli } from '@wirebench/engine';
+import { z } from 'zod';
 import { keyId } from '../../audit-log/chain/canonical.js';
 import { readAnchor } from '../../audit-log/repo.js';
 import type { RepoStore } from '../../repos/repo-store.js';
@@ -117,6 +118,57 @@ export interface ExportResult {
   readonly sha256: string;
 }
 
+const HEX64 = z.string().regex(/^[0-9a-f]{64}$/);
+const COUNT = z.number().int().nonnegative();
+const SEQ = z.string().regex(/^[0-9]{1,19}$/);
+
+/** What a manifest must be (format 1) before any of it is used: names a path or a statement is built from included. */
+const MANIFEST_SCHEMA = z.object({
+  format: z.literal(EXPORT_FORMAT),
+  version: z.string().max(100),
+  tenant: z.object({
+    id: z.string().regex(/^[0-9a-f-]{36}$/),
+    slug: z.string().max(63),
+    name: z.string().max(200),
+    edition: z.string().max(40),
+    region: z.string().max(40),
+    seats: COUNT.nullable(),
+  }),
+  exportedAt: z.string().max(40),
+  tablesReadAt: z.string().max(40),
+  bundlesAt: z.string().max(40),
+  tables: z.record(
+    z.string().regex(/^[a-z_]{1,63}$/),
+    z.object({
+      rows: COUNT,
+      bytes: COUNT,
+      sha256: HEX64,
+      columns: z.array(z.object({ name: z.string().regex(/^[a-z_][a-z0-9_]{0,62}$/), type: z.string().max(100) })),
+    }),
+  ),
+  workspaces: z.record(
+    z.string().regex(/^[0-9A-HJKMNP-TV-Z]{26}$/),
+    z.object({ bundle: HEX64.nullable(), bytes: COUNT.nullable() }),
+  ),
+  chain: z
+    .object({
+      keyHex: z.string().regex(/^(?:[0-9a-f]{2}){1,1024}$/),
+      keyId: z.string().regex(/^[0-9a-f]{16}$/),
+      anchor: z
+        .object({ seq: SEQ, hash: HEX64, keyId: z.string().regex(/^[0-9a-f]{16}$/), headSeq: SEQ, mac: HEX64 })
+        .nullable(),
+      unsealedLeftOut: COUNT,
+    })
+    .nullable(),
+  omitted: z.array(
+    z.object({
+      table: z.string().max(63),
+      id: z.string().max(200),
+      what: z.enum(['catch URL secret', 'signature secret', 'schedule secrets', 'alert targets', 'sealed setting']),
+    }),
+  ),
+});
+
 /** The most `manifest.json` may hold: past it, no reader parses it (an export's is a few kilobytes). */
 export const MANIFEST_MAX_BYTES = 16 * 1024 * 1024;
 
@@ -133,11 +185,19 @@ export function parseManifest(data: Buffer, code: string): ExportManifest {
   } catch {
     throw new WirebenchError(code, 'the manifest is not JSON');
   }
-  const manifest = parsed as ExportManifest;
-  if (manifest.format !== EXPORT_FORMAT) {
-    throw new WirebenchError(code, `the export is format ${String(manifest.format)}; this server reads format 1`);
+  const format = (parsed as { format?: unknown } | null)?.format;
+  if (format !== EXPORT_FORMAT) {
+    throw new WirebenchError(code, `the export is format ${String(format)}; this server reads format 1`);
   }
-  return manifest;
+  const checked = MANIFEST_SCHEMA.safeParse(parsed);
+  if (!checked.success) {
+    const issue = checked.error.issues[0];
+    throw new WirebenchError(
+      code,
+      `the manifest is not valid at ${issue?.path.join('.') ?? '?'}: ${issue?.message ?? ''}`,
+    );
+  }
+  return checked.data;
 }
 
 /** `<tenantRoot>/exports`: where the server keeps a tenant's exports (spec §22.9). Never a link. */
@@ -237,15 +297,28 @@ async function writeTable(
     .join(', ');
   const key = filter?.key ?? (await keyOf(tx, table));
   const order = key.length > 0 ? `order by ${key.map(quoted).join(', ')}` : '';
-  const where = filter === undefined ? '' : `where ${filter.where}`;
   const hash = createHash('sha256');
   const out = createWriteStream(path, { mode: 0o600 });
   let rows = 0;
   let bytes = 0;
+  // Keyset paging on the key, each page after the last one's key, read as text and cast back to each column's type;
+  // a table with no key (none exported has none) falls back to offsets.
+  const types = new Map(columns.map((column) => [column.name, column.type]));
+  const keyText = key.map((name, i) => `(${quoted(name)})::text as "__key${String(i)}"`).join(', ');
+  const after =
+    key.length === 0
+      ? ''
+      : `(${key.map(quoted).join(', ')}) > (${key.map((name, i) => `$${String(i + 1)}::${types.get(name) ?? 'text'}`).join(', ')})`;
+  let last: string[] | undefined;
   try {
     for (let offset = 0; ; offset += PAGE) {
+      const conditions = [filter?.where, last === undefined ? undefined : after].filter(
+        (c) => c !== undefined && c !== '',
+      );
+      const where = conditions.length === 0 ? '' : `where ${conditions.join(' and ')}`;
       const page = await tx.query<Record<string, unknown>>(
-        `select ${select} from ${quoted(table)} ${where} ${order} limit ${String(PAGE)} offset ${String(offset)}`,
+        `select ${select}${keyText === '' ? '' : `, ${keyText}`} from ${quoted(table)} ${where} ${order} limit ${String(PAGE)}${key.length === 0 ? ` offset ${String(offset)}` : ''}`,
+        last ?? [],
       );
       for (const row of page.rows) {
         const line = `${JSON.stringify(Object.fromEntries(columns.map((column) => [column.name, row[column.name] ?? null])))}\n`;
@@ -254,6 +327,8 @@ async function writeTable(
         if (!out.write(line, 'utf8')) await once(out, 'drain');
         rows++;
       }
+      const tail = page.rows.at(-1);
+      if (tail !== undefined) last = key.map((_, i) => String(tail[`__key${String(i)}`]));
       if (page.rows.length < PAGE) break;
     }
   } finally {

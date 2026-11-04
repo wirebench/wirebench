@@ -8,7 +8,11 @@
  *   ({@link EXPORT_LOCK_CLASS}), checks that none runs, and claims the oldest queued, so two instances never run two.
  * - **At most three kept.** Once one is ready, the ready ones past the newest {@link EXPORT_KEEP} expire.
  * - **Seven days.** A ready export expires {@link EXPORT_DAYS} after it was made: the sweep deletes the file and
- *   marks the row. A `running` row left by a process that died is `failed` after {@link EXPORT_STALE_MS}.
+ *   marks the row.
+ * - **A running export holds a lease.** Its claim sets `expires_at` to {@link EXPORT_STALE_MS} on, so a `running`
+ *   row a dead process left is `failed` by the sweep once the lease ends, counted from the claim, not the request.
+ *   The row turns `ready` only while it is still `running`, and an export of a tenant being deleted fails.
+ *   (`expires_at` means "until when this state holds" in both states, so no column was added.)
  *
  * In hosted mode the control loop runs it ({@link exportsStep}); a self-hosted server, which has no control loop,
  * runs the same functions from the module's own timer.
@@ -166,9 +170,10 @@ export class ExportRunner {
       const running = await tx.query("select 1 from tenant_exports where status = 'running' limit 1");
       if (running.rows.length > 0) return undefined;
       const rows = await tx.query<ExportRow>(
-        `update tenant_exports set status = 'running', error = null
+        `update tenant_exports set status = 'running', error = null, expires_at = $1::timestamptz
           where id = (select id from tenant_exports where status = 'queued' order by requested_at, id limit 1)
           returning ${COLUMNS}`,
+        [new Date(this.#now().getTime() + EXPORT_STALE_MS)],
       );
       return rows.rows[0];
     });
@@ -187,6 +192,7 @@ export class ExportRunner {
     let manifest: ExportManifest;
     let row: ExportRow;
     try {
+      await this.#refuseDeleting(scope);
       const result = await writeExport(
         {
           db: this.#deps.db,
@@ -203,11 +209,16 @@ export class ExportRunner {
       manifest = result.manifest;
       const now = this.#now();
       row = await db.transaction(async (tx) => {
+        await this.#refuseDeleting(scope, tx);
         const updated = await tx.query<ExportRow>(
           `update tenant_exports set status = 'ready', size_bytes = $2, sha256 = $3, ready_at = $4::timestamptz,
-             expires_at = $5::timestamptz where id = $1 returning ${COLUMNS}`,
+             expires_at = $5::timestamptz where id = $1 and status = 'running' returning ${COLUMNS}`,
           [claimed.id, result.size, result.sha256, now, new Date(now.getTime() + EXPORT_DAYS * DAY_MS)],
         );
+        // The sweep failed it while it ran (its lease ended): its file goes, and so does this result.
+        if (updated.rows.length === 0) {
+          throw problem('control-plane-export-interrupted', 'the export ran past its lease and was failed', 409);
+        }
         await recordAudit(this.#deps.hooks, tx, {
           // The job writes it, for whoever asked: `details.by` names them, as the lifecycle's rows do.
           ...SYSTEM_SOURCE,
@@ -232,6 +243,20 @@ export class ExportRunner {
     await this.#keepNewest(scope);
     await this.#mailReady(scope, row, manifest.tenant.name);
     return row;
+  }
+
+  /**
+   * @throws WirebenchError `control-plane-tenant-deleting` once the tenant is being deleted: its export would hold
+   *   what the deletion is removing
+   */
+  async #refuseDeleting(scope: TenantScope, tx?: TenantQuerier): Promise<void> {
+    const db = tx ?? this.#deps.db(scope);
+    const status = (
+      await db.query<{ status: string }>('select status from tenants where id = $1::uuid', [scope.tenantId])
+    ).rows[0]?.status;
+    if (status === undefined || status === 'deleting') {
+      throw problem('control-plane-tenant-deleting', 'the team is being deleted', 409);
+    }
   }
 
   /** Expires the ready exports past the newest {@link EXPORT_KEEP}. */
@@ -261,8 +286,8 @@ export class ExportRunner {
     for (const { id } of due.rows) await this.#expire(scope, id);
     const stale = await this.#deps.db(scope).query<{ id: string }>(
       `update tenant_exports set status = 'failed', error = 'export-interrupted'
-          where status = 'running' and requested_at <= $1::timestamptz returning id`,
-      [new Date(now.getTime() - EXPORT_STALE_MS)],
+          where status = 'running' and expires_at <= $1::timestamptz returning id`,
+      [now],
     );
     for (const { id } of stale.rows) await rm(this.path(scope, id), { force: true });
   }

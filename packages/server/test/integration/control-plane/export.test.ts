@@ -141,6 +141,51 @@ describeDb('a tenant export (spec §22.9)', () => {
       expect(audit.rows[0]!.details).toMatchObject({ exportId: queued.id, by: 'operator' });
     });
 
+    it('pages a table past a thousand rows by its key, every row once', async () => {
+      await x.f.h.tdb.query(
+        "insert into teams (id, name) select 'T' || lpad(n::text, 25, '0'), 'Team ' || n from generate_series(1, 1201) n",
+      );
+      const runner = x.runner();
+      const queued = await runner.request(x.scope, 'operator');
+      await runner.runNext(x.scope);
+      const entries = await entriesOf(runner.path(x.scope, queued.id));
+      const ids = entries
+        .get('tables/teams.ndjson')!
+        .toString()
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => (JSON.parse(line) as { id: string }).id);
+      expect(ids.length).toBeGreaterThan(1201);
+      expect(new Set(ids).size).toBe(ids.length);
+    });
+
+    it('fails a run whose lease ended, counted from the claim, and an export of a tenant being deleted', async () => {
+      const runner = x.runner();
+      const stale = await runner.request(x.scope, 'operator');
+      // Asked for long ago, claimed just now: the lease is what counts.
+      await x.f.h.tdb.query(
+        "update tenant_exports set status = 'running', requested_at = $2::timestamptz - interval '1 day', expires_at = $2::timestamptz + interval '1 hour' where id = $1",
+        [stale.id, x.f.h.clock.now],
+      );
+      await runner.sweep(x.scope);
+      expect((await runner.list(x.scope))[0]).toMatchObject({ id: stale.id, status: 'running' });
+      x.f.h.clock.advance(2 * 60 * 60 * 1000);
+      await runner.sweep(x.scope);
+      expect((await runner.list(x.scope))[0]).toMatchObject({
+        id: stale.id,
+        status: 'failed',
+        error: 'export-interrupted',
+      });
+      await x.f.h.db.owner.query("update tenants set status = 'deleting' where id = $1::uuid", [x.scope.tenantId]);
+      const late = await runner.request(x.scope, 'operator');
+      expect(await runner.runNext(x.scope)).toMatchObject({
+        id: late.id,
+        status: 'failed',
+        error: 'control-plane-tenant-deleting',
+      });
+      await x.f.h.db.owner.query("update tenants set status = 'active' where id = $1::uuid", [x.scope.tenantId]);
+    });
+
     it('runs one export per tenant at a time', async () => {
       const runner = x.runner();
       await runner.request(x.scope, 'operator');

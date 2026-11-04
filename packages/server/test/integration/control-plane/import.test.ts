@@ -351,6 +351,35 @@ describeDb('a tenant import (spec §22.10)', () => {
       expect(done).toMatchObject({ tenant: { status: 'active' }, report: { resumed: true } });
     });
 
+    it('refuses a manifest that is not one, before anything is written', async () => {
+      const file = join(dir, 'x.tar.gz');
+      await exportOf({ h: x.f.h, scope: x.scope, key: CHAIN_KEY }, file);
+      const sources: TarSource[] = [];
+      for await (const entry of readTarGz(file)) {
+        let data = await entry.buffer();
+        if (entry.name === 'manifest.json') {
+          const manifest = JSON.parse(data.toString()) as { tables: Record<string, unknown> };
+          manifest.tables['../tenants'] = manifest.tables['teams'];
+          data = Buffer.from(JSON.stringify(manifest));
+        }
+        sources.push({ name: entry.name, data });
+      }
+      const forged = join(dir, 'forged-manifest.tar.gz');
+      await writeTarGz(forged, sources);
+      const back = await syncHarness();
+      closing.push(() => back.close());
+      await expect(
+        importSelfHosted(
+          importDeps(back, () => CHAIN_KEY),
+          back.tdb.scope,
+          forged,
+        ),
+      ).rejects.toMatchObject({
+        code: 'import-format',
+        message: expect.stringContaining('not valid at tables') as string,
+      });
+    });
+
     it('resumes an import a crash stopped half-way through its tables', async () => {
       const file = join(dir, 'x.tar.gz');
       await exportOf({ h: x.f.h, scope: x.scope, key: CHAIN_KEY }, file);
