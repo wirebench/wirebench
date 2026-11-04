@@ -467,7 +467,8 @@ found, and the state:
 
 A check that cannot reach DNS counts as a failed check: a resolver outage that lasts 72 hours lapses the name as
 missing records would. A lapsed or paused name is proved again by a passing check, which moves it back through
-**Records found**, so nobody can take over a name that was let go without proving it first. Any number of teams may
+**Records found**, so nobody can take over a name that was let go without proving it first. A name in **Records
+missing** whose records come back returns straight to **Active**: it was never released. Any number of teams may
 claim a name while it is unproved, and the first to pass holds it. A team whose records are right but whose name
 another team already holds is told so, never which team.
 

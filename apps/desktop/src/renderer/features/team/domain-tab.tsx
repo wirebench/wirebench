@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { CustomDomainStateWire } from '@shared/wire-base.js';
 import { Button } from '../../components/button.js';
 import { ConfirmDialog } from '../../components/confirm-dialog.js';
@@ -29,7 +29,7 @@ export const DOMAIN_STATE_WORDS: Readonly<Record<CustomDomainStateWire, { label:
   lapsed: {
     label: 'Lapsed',
     detail:
-      'The records were missing for 72 hours, so the name is no longer served. Put the records back and choose Check now to prove it again.',
+      'The records were missing for 72 hours, so the name is no longer served, and sign-in through an identity provider is back on the team’s own address. Put the records back and choose Check now to prove it again.',
   },
   paused: {
     label: 'Paused',
@@ -82,15 +82,23 @@ export function DomainTab({ url }: { readonly url: string }) {
   const store = useDomainStore();
   const [name, setName] = useState('');
   const [confirmRemove, setConfirmRemove] = useState(false);
+  // After Claim, focus moves to the claim's heading; once the claim is gone, back to the name field.
+  const [focus, setFocus] = useState<'heading' | 'input' | undefined>(undefined);
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    const current = useDomainStore.getState();
-    if (current.url !== url || !current.loaded) void current.load(url);
-  }, [url]);
+    if (focus === 'heading') headingRef.current?.focus();
+    if (focus === 'input') inputRef.current?.focus();
+    if (focus !== undefined) setFocus(undefined);
+  }, [focus, store.domain]);
 
   const claim = async (): Promise<void> => {
     if (name.trim().length === 0) return;
-    if (await store.claim(url, name)) setName('');
+    if (await store.claim(url, name)) {
+      setName('');
+      setFocus('heading');
+    }
   };
 
   const domain = store.domain;
@@ -102,6 +110,13 @@ export function DomainTab({ url }: { readonly url: string }) {
         <p data-testid="domain-error" role="alert" className="text-xs text-status-danger">
           {store.error}
         </p>
+      )}
+      {store.loadFailed && (
+        <div>
+          <Button data-testid="domain-retry" disabled={store.busy} onClick={() => void store.load(url)}>
+            Retry
+          </Button>
+        </div>
       )}
 
       {domain === undefined ? (
@@ -122,6 +137,7 @@ export function DomainTab({ url }: { readonly url: string }) {
               }}
             >
               <input
+                ref={inputRef}
                 data-testid="domain-name-input"
                 aria-label="Domain name"
                 placeholder="wirebench.example.com"
@@ -132,6 +148,7 @@ export function DomainTab({ url }: { readonly url: string }) {
                 value={name}
                 onChange={(event) => {
                   setName(event.target.value);
+                  if (store.error !== undefined) store.clearError();
                 }}
               />
               <Button
@@ -148,7 +165,13 @@ export function DomainTab({ url }: { readonly url: string }) {
       ) : (
         <>
           <section aria-labelledby="domain-heading" className="flex flex-col gap-2">
-            <h3 id="domain-heading" className="font-medium text-fg-default">
+            <h3
+              id="domain-heading"
+              ref={headingRef}
+              tabIndex={-1}
+              data-testid="domain-heading"
+              className="font-medium text-fg-default outline-none"
+            >
               Custom domain
             </h3>
             <dl className="grid grid-cols-[8rem_1fr] gap-x-3 gap-y-1">
@@ -177,7 +200,7 @@ export function DomainTab({ url }: { readonly url: string }) {
                 {domain.lastResult.message}
               </p>
             )}
-            {looksLikeApex(domain.name) && (
+            {looksLikeApex(domain.name) && domain.state !== 'active' && (
               <p data-testid="domain-apex-hint" role="note" className="text-xs text-status-warning">
                 A name at the top of a domain, such as example.com, cannot hold a CNAME record, so its check passes only
                 if your DNS provider flattens the record. A subdomain such as wirebench.example.com always works.
@@ -233,10 +256,10 @@ export function DomainTab({ url }: { readonly url: string }) {
                   <tr key={record.type} data-testid={`domain-record-${String(index)}`}>
                     <td data-testid={`domain-record-${String(index)}-type`}>{record.type}</td>
                     <td>
-                      <span className="flex min-w-0 items-center gap-1">
+                      <span className="flex min-w-0 items-start gap-1">
                         <span
                           data-testid={`domain-record-${String(index)}-name`}
-                          className="truncate font-mono text-xs"
+                          className="font-mono text-xs break-all"
                         >
                           {record.name}
                         </span>
@@ -248,10 +271,10 @@ export function DomainTab({ url }: { readonly url: string }) {
                       </span>
                     </td>
                     <td>
-                      <span className="flex min-w-0 items-center gap-1">
+                      <span className="flex min-w-0 items-start gap-1">
                         <span
                           data-testid={`domain-record-${String(index)}-value`}
-                          className="truncate font-mono text-xs"
+                          className="font-mono text-xs break-all"
                         >
                           {record.value}
                         </span>
@@ -284,7 +307,9 @@ export function DomainTab({ url }: { readonly url: string }) {
         testId="domain-remove-confirm"
         confirmTestId="domain-remove-confirm-button"
         onConfirm={() => {
-          void store.remove(url);
+          void store.remove(url).then((gone) => {
+            if (gone) setFocus('input');
+          });
         }}
       />
     </div>

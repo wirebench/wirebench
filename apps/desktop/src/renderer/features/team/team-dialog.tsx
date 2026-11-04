@@ -71,12 +71,11 @@ export function TeamDialog() {
     ...(isAdmin ? [{ id: 'invitations' as const, label: 'Invitations' }] : []),
   ];
   const tabs: TabItem<TeamTab>[] = team === undefined ? adminTabs : [...teamTabs, ...adminTabs];
+  // A Domain tab that is no longer offered (another server, or the feature gone) falls back like the others.
+  const tab: TeamTab =
+    store.tab === 'domain' && !domainShown ? (team === undefined ? 'license' : 'members') : store.tab;
   const activeTab: TeamTab =
-    team === undefined
-      ? store.tab === 'audit' || store.tab === 'provisioning' || (store.tab === 'domain' && domainShown)
-        ? store.tab
-        : 'license'
-      : store.tab;
+    team === undefined ? (tab === 'audit' || tab === 'provisioning' || tab === 'domain' ? tab : 'license') : tab;
 
   const submitNew = async (): Promise<void> => {
     if (newName.trim().length === 0) return;
