@@ -34,7 +34,7 @@ import * as repo from './repo.js';
 // (control-plane/cli.ts).
 type AdminCommand = Exclude<
   Extract<ServerCommand, { command: `admin-${string}` }>,
-  { command: `admin-tenancy-${string}` | `admin-tenant-${string}` | 'admin-instances' }
+  { command: `admin-tenancy-${string}` | `admin-tenant-${string}` | 'admin-instances' | 'admin-audit-verify-export' }
 >;
 
 /**

@@ -62,6 +62,16 @@ export type AdminTenantCommand =
 
 export type ServerCommand =
   | { readonly command: 'serve' }
+  /**
+   * `admin audit verify --export <file>` (hosted edition spec §22.9): an export's chain, verified from the file alone,
+   * with no database and no configuration, so it names no tenant.
+   */
+  | {
+      readonly command: 'admin-audit-verify-export';
+      readonly file: string;
+      readonly head?: { readonly seq: bigint; readonly hash: string };
+      readonly json: boolean;
+    }
   | { readonly command: 'migrate'; readonly check: boolean }
   | { readonly command: 'config-check' }
   /**
@@ -109,6 +119,9 @@ Usage:
                                     Write the audit log as NDJSON to stdout
   wirebench-server admin audit verify [--head <seq>:<hex>] [--json]
                                     Check the audit log's chain; exit 1 when a link is broken
+  wirebench-server admin audit verify --export <file> [--head <seq>:<hex>] [--json]
+                                    Check a tenant export's audit chain from the file alone, with no
+                                    database; exit 1 when a link is broken
   wirebench-server admin schedules list [--workspace <id>]
   wirebench-server admin schedules enable <id>
   wirebench-server admin schedules disable <id>
@@ -174,6 +187,7 @@ const OPTIONS = {
   action: { type: 'string' },
   workspace: { type: 'string' },
   head: { type: 'string' },
+  export: { type: 'string' },
   json: { type: 'boolean' },
   limit: { type: 'string' },
   'print-sql': { type: 'boolean' },
@@ -219,7 +233,7 @@ const SCHEDULES_USAGE =
 
 const AUDIT_USAGE =
   'usage: wirebench-server admin audit export [--from <iso>] [--to <iso>] [--action <name or group.>] [--workspace <id>]' +
-  ' | verify [--head <seq>:<hex>] [--json]';
+  ' | verify [--head <seq>:<hex>] [--json] | verify --export <file> [--head <seq>:<hex>] [--json]';
 
 /** `<seq>:<hex>`, as the sealer logs a head: a sequence number from 1 and a 32-byte hash in hex. */
 const HEAD = /^([1-9][0-9]{0,18}):([0-9a-fA-F]{64})$/;
@@ -266,6 +280,12 @@ export function parseServerArgs(argv: readonly string[]): ServerCommand {
   for (const key of ['head', 'json'] as const) {
     if (parsed.values[key] !== undefined && !isAuditVerify) {
       throw new UsageError(`--${key} applies to admin audit verify only`);
+    }
+  }
+  if (parsed.values.export !== undefined) {
+    if (!isAuditVerify) throw new UsageError('--export applies to admin audit verify only');
+    if (parsed.values.tenant !== undefined) {
+      throw new UsageError('--export verifies a file: it names no tenant, so --tenant does not go with it');
     }
   }
   if (parsed.values['print-sql'] !== undefined && !(word === 'admin' && second === 'tenancy' && third === 'role')) {
@@ -335,6 +355,15 @@ export function parseServerArgs(argv: readonly string[]): ServerCommand {
           return inTenant({ command: 'admin-revoke-invitation', id: third });
         case 'audit': {
           if (third === 'verify') {
+            if (parsed.values.export !== undefined) {
+              if (fourth !== undefined) throw new UsageError(AUDIT_USAGE);
+              return {
+                command: 'admin-audit-verify-export',
+                file: parsed.values.export,
+                ...(parsed.values.head !== undefined ? { head: parseHead(parsed.values.head) } : {}),
+                json: parsed.values.json === true,
+              };
+            }
             return inTenant({
               command: 'admin-audit-verify',
               ...(parsed.values.head !== undefined ? { head: parseHead(parsed.values.head) } : {}),
