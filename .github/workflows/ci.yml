@@ -42,6 +42,7 @@ jobs:
       code: ${{ steps.filter.outputs.code }}
       server_integration: ${{ steps.filter.outputs.server_integration }}
       tenancy_postgres: ${{ steps.filter.outputs.tenancy_postgres }}
+      hosted_e2e: ${{ steps.filter.outputs.hosted_e2e }}
       server_upgrade: ${{ steps.filter.outputs.server_upgrade }}
       browser_e2e: ${{ steps.filter.outputs.browser_e2e }}
       image_smoke: ${{ steps.filter.outputs.image_smoke }}
@@ -589,6 +590,55 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @wirebench/engine... build
       - run: pnpm vitest run --project server-integration packages/server/test/integration/tenancy/
+
+  # The hosted server end to end (hosted edition spec §22.17, slice 7 Task 33): started from a hosted environment
+  # through `loadConfig` and `serve`, as an operator starts one, on a real listener with the three roles, mail through
+  # a local SMTP sink, and a fake Paddle posting webhook fixtures signed with a placeholder secret as Paddle documents
+  # (`Paddle-Signature: ts=…;h1=…`). Signup, payment, sign-in, suspension, the operator's export (verified offline)
+  # and the deletion. The test skips without WIREBENCH_SERVER_HOSTED_E2E, so server-integration does not run it twice.
+  # No real Paddle account, key or domain is involved; the first sandbox run is
+  # docs/manual-tests/2026-11-04-paddle-sandbox.md.
+  hosted-e2e:
+    # A short job: it starts after `check` (see `jobs`).
+    needs: [changes, check]
+    if: ${{ !cancelled() && needs.changes.outputs.hosted_e2e == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: wirebench
+          POSTGRES_PASSWORD: wirebench
+          POSTGRES_DB: wirebench_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U wirebench" --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      WIREBENCH_REQUIRE_GIT: '1'
+      WIREBENCH_SERVER_TEST_DATABASE_URL: postgres://wirebench:wirebench@127.0.0.1:5432/wirebench_test
+      WIREBENCH_SERVER_REQUIRE_DB: '1'
+      WIREBENCH_SERVER_HOSTED_E2E: '1'
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      # The owner, the app role and the control role (§19.4, §22.2): only a superuser may create the last.
+      - name: Create the test database roles
+        run: docker exec -i ${{ job.services.postgres.id }} psql -v ON_ERROR_STOP=1 -U wirebench -d wirebench_test < scripts/ci/server-test-roles.sql
+      - run: pnpm install --frozen-lockfile
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      - run: pnpm --filter @wirebench/engine... build
+      - run: pnpm vitest run --project server-integration packages/server/test/integration/control-plane/hosted-e2e.test.ts packages/server/test/integration/control-plane/hosted-serve.test.ts
+      # The recipe itself parses with its new variables, placeholders only (the parse test also runs in `test`).
+      - run: pnpm vitest run --project server-unit packages/server/test/unit/deploy-hosted.test.ts
 
   # Builds the container image the way a release tag will and proves it actually runs a
   # project: `docker run --version` sanity-checks the entrypoint, then `cli:smoke --via docker`

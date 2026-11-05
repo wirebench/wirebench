@@ -39,6 +39,8 @@ export function hostedEnv(options: HostedEnvOptions): Record<string, string> {
     WIREBENCH_SERVER_SMTP_FROM: `teams@${TEST_SITE_DOMAIN}`,
     // A key made for the test only, which encrypts nothing that outlives it.
     WIREBENCH_SERVER_SECRETS_KEY: Buffer.alloc(32, 7).toString('base64'),
+    // Each tenant's audit chain key is derived from it (spec §19.7), so an export verifies offline.
+    WIREBENCH_SERVER_AUDIT_CHAIN_KEY: 'placeholder-audit-chain-key-for-tests-only',
     WIREBENCH_SERVER_BROWSER_CLIENT: options.browserClient === true ? 'true' : 'false',
     WIREBENCH_SERVER_INSTANCE_URL: `http://127.0.0.1:${String(options.internalPort)}`,
     WIREBENCH_SERVER_INTERNAL_HOST: '127.0.0.1',

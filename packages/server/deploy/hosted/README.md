@@ -1,9 +1,11 @@
-# Hosted deployment: names, certificates and the public suffix list
+# Hosted deployment: names, certificates, roles, billing and the public suffix list
 
-The operator's runbook for the hosted edition's names (hosted edition spec §21, ADR-0038). It runs end to end once the
-control plane (slice 7) lifts the server's refusal of `WIREBENCH_SERVER_MODE=hosted`; until then it is the recipe that
-slice will start. No domain is owned yet, so every name below is a placeholder: `<app-domain>` for the product,
-`<site-domain>` for the public site.
+The operator's runbook for the hosted edition (hosted edition spec §21, §22; ADR-0038, ADR-0039): the server in
+`WIREBENCH_SERVER_MODE=hosted`, where teams sign up at `app.<app-domain>/signup`, pay through Paddle, and each get
+`<slug>.<app-domain>`. No domain is owned yet, so every name below is a placeholder: `<app-domain>` for the product,
+`<site-domain>` for the public site. There is no Paddle account yet either: every Paddle value in this folder is a
+`test_…` or `pri_test…` placeholder. Hosting is in the EU only, and there is no free tier: a team exists once its
+first payment arrives.
 
 ## The two names
 
@@ -49,14 +51,64 @@ Another DNS provider is a change in `compose.yaml`: replace `dnschallenge.provid
 code and its token variable, as the lego documentation for the Traefik version in use lists them. Nothing in the server
 changes.
 
+## The database roles
+
+Hosted mode needs three roles, and refuses to start without them (spec §19.4, §22.2):
+
+| Role                | URL                                       | What it does                                                     |
+| ------------------- | ----------------------------------------- | ---------------------------------------------------------------- |
+| `wirebench`         | `WIREBENCH_SERVER_MIGRATION_DATABASE_URL` | Owns the schema and migrates it; the image's superuser here      |
+| `wirebench_app`     | `WIREBENCH_SERVER_DATABASE_URL`           | Runs every query, under row-level security; never a superuser    |
+| `wirebench_control` | `WIREBENCH_SERVER_CONTROL_DATABASE_URL`   | The control plane alone: `bypassrls`, never a superuser or owner |
+
+The server refuses a superuser, `BYPASSRLS` or owning app role in hosted mode (`tenancy-role-bypasses`), a migration
+URL naming the app role (`control-plane-migration-url-shared`), and a control role that is a superuser, may create
+roles or databases, owns anything or is the app role or the owner (`control-plane-role-*`).
+
+Only a superuser, or a role that itself has `BYPASSRLS`, may create a `BYPASSRLS` role. Here the owner is the image's
+superuser, so `docker compose run --rm server admin tenancy role` creates both roles with the passwords from `.env`
+(as SCRAM verifiers, never the password) and grants them. With an owner that is no superuser (a managed database),
+`admin tenancy role --print-sql` prints the statements: a superuser runs the `create role` lines once, the owner the
+rest. The server grants both roles again at every start, so a table a later migration adds is covered.
+
+## Billing: Paddle
+
+Paddle is the merchant of record: it takes the payment, charges the VAT and sends the invoices. Enterprise is invoiced
+by Verathic directly and set with `admin tenant set-edition`, outside Paddle. The server never calls Paddle's API and
+holds no API key: it renders Paddle.js's checkout overlay on the signup page and receives Paddle's webhooks at
+`https://app.<app-domain>/billing/paddle`, each checked against the `Paddle-Signature` header before it is read.
+
+In Paddle's dashboard (sandbox first):
+
+1. Create the **Team** product with a per-seat monthly price, and put its id (`pri_…`) in `.env` as
+   `PADDLE_TEAM_PRICE_ID`.
+2. Create a **client-side token** and put it in `.env` as `PADDLE_CLIENT_TOKEN`, with `PADDLE_ENVIRONMENT=sandbox` for
+   a `test_…` token or `production` for a `live_…` one; the server refuses a token that does not match.
+3. Approve `https://app.<app-domain>` as a checkout domain (the signup page's origin).
+4. Create a **notification destination** for `https://app.<app-domain>/billing/paddle` with the `subscription.*`
+   events, and put its secret key (`pdl_ntfset_…`) alone in `secrets/paddle_webhook_secret`, mode 600. It is a secret:
+   the server reads it from the file, never prints it, and keeps it off every log line.
+
+A subscription that goes `past_due` gets Paddle's own retries and 14 days' grace, then the team is suspended `unpaid`;
+a canceled one suspends the team at the end of its period and keeps its data until a server admin or the operator asks
+for its deletion. Before the first real customer, run `docs/manual-tests/2026-11-04-paddle-sandbox.md` against the
+sandbox.
+
 ## Starting
 
-1. Copy `env.example` to `.env` and fill it in: the two names, the ACME contact address, both database passwords, the
-   secrets key (`openssl rand -base64 32`), the SMTP sender the entry's mail goes out through, and `PROXY_TOKEN`
-   (`openssl rand -hex 32`), which Traefik and the server share for custom domains.
-2. `docker compose up -d`.
-3. Check: `https://<app-domain>/` redirects to `https://app.<app-domain>/`, which shows the "Find your team" page, and
-   the certificate's subject names both `<app-domain>` and `*.<app-domain>`.
+1. Copy `env.example` to `.env` and fill it in: the two names, the ACME contact address, the three database passwords,
+   the secrets key (`openssl rand -base64 32`), the audit chain key (`openssl rand -base64 48`; never change it: every
+   team's chain is sealed under a key derived from it, and its exports verify by it), the SMTP sender the entry's and the teams' mail goes out through,
+   `PROXY_TOKEN` (`openssl rand -hex 32`), which Traefik and the server share for custom domains, and the three Paddle
+   values. Put the Paddle webhook secret in `secrets/paddle_webhook_secret`.
+2. `docker compose run --rm server config check`: every variable hosted mode requires is named if missing, and every
+   one it refuses (`WIREBENCH_SERVER_OIDC_*`, `_SAML_*`, `_AUDIT_FORWARD_*`, which are each team's own settings in
+   hosted mode) is named if set.
+3. `docker compose up -d db`, then `docker compose run --rm server admin tenancy role` (above).
+4. `docker compose up -d`.
+5. Check: `https://<app-domain>/` redirects to `https://app.<app-domain>/`, which shows the "Find your team" page;
+   `https://app.<app-domain>/signup` shows the signup form; and the certificate's subject names both `<app-domain>`
+   and `*.<app-domain>`. `wirebench-server admin tenant list` lists the teams.
 
 `.env`, `server.env` and `secrets/` are in this folder's `.gitignore`: never commit them.
 

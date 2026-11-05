@@ -2,7 +2,9 @@
  * The hosted deployment recipe (hosted edition spec §21.5, ADR-0038): Traefik in front with one certificate for the
  * apex and the wildcard by DNS-01 at Hetzner, the server and PostgreSQL behind it with no published port; and, for
  * custom domains (§23.4), Traefik's HTTP provider polling the server's internal proxy listener and a second resolver
- * issuing by HTTP-01. Issuance itself needs a real domain, so it is a manual test
+ * issuing by HTTP-01; and for the control plane (§22.1, §22.2, §22.5), the control role, the instance address and the
+ * Paddle settings, the webhook secret as a file and every Paddle value a placeholder. Issuance itself needs a real
+ * domain, so it is a manual test
  * (`docs/manual-tests/2026-11-03-wildcard-certificate.md`, `2026-11-04-custom-domain.md`; the custom domain's flow also
  * runs against Pebble in `test/integration/custom-domains/pebble.test.ts`); this checks the files say what the spec
  * says.
@@ -136,13 +138,50 @@ describe('the hosted deployment recipe', () => {
     expect(server.environment!['WIREBENCH_SERVER_PROXY_TOKEN_FILE']).toBe('/run/secrets/proxy_token');
     expect(server.environment!['WIREBENCH_SERVER_PROXY_TLS_ADDRESS']).toBe('traefik:443');
     expect(server.environment!['WIREBENCH_SERVER_PROXY_TLS_CA_FILE']).toBeUndefined();
-    expect(server.secrets).toEqual(['proxy_token']);
+    expect(server.secrets).toContain('proxy_token');
     // One value in `.env` for both sides, so Traefik's header and the server's file cannot drift.
     expect(secrets['proxy_token']).toEqual({ environment: 'PROXY_TOKEN' });
     expect(server.ports).toBeUndefined();
     for (const [name, service] of Object.entries(services)) {
       for (const port of service.ports ?? []) expect(port, name).not.toMatch(/8081/);
     }
+  });
+
+  it('gives the server the control role, the instance address and the migration owner apart from the app role', async () => {
+    const env = (await compose()).services['server']!.environment!;
+    expect(env['WIREBENCH_SERVER_CONTROL_DATABASE_URL']).toMatch(
+      /^postgres:\/\/wirebench_control:\$\{WIREBENCH_CONTROL_DB_PASSWORD:\?[^}]+\}@db:5432\/wirebench$/,
+    );
+    expect(env['WIREBENCH_SERVER_MIGRATION_DATABASE_URL']).toMatch(/^postgres:\/\/wirebench:/);
+    expect(env['WIREBENCH_SERVER_INSTANCE_URL']).toBe('http://server:8091');
+    expect(env['WIREBENCH_SERVER_SECRETS_KEY']).toContain('${WIREBENCH_SECRETS_KEY');
+    expect(env['WIREBENCH_SERVER_AUDIT_CHAIN_KEY']).toContain('${WIREBENCH_AUDIT_CHAIN_KEY');
+    // Each a team's own setting in hosted mode (spec §22.1), which the server refuses by name.
+    for (const name of Object.keys(env)) expect(name).not.toMatch(/^WIREBENCH_SERVER_(OIDC|SAML|AUDIT_FORWARD)_/);
+  });
+
+  it('gives the server the Paddle settings, the webhook secret only as a file secret', async () => {
+    const { services, secrets } = await compose();
+    const server = services['server']!;
+    const env = server.environment!;
+    expect(env['WIREBENCH_SERVER_PADDLE_ENVIRONMENT']).toContain('${PADDLE_ENVIRONMENT');
+    expect(env['WIREBENCH_SERVER_PADDLE_CLIENT_TOKEN']).toContain('${PADDLE_CLIENT_TOKEN');
+    expect(env['WIREBENCH_SERVER_PADDLE_TEAM_PRICE_ID']).toContain('${PADDLE_TEAM_PRICE_ID');
+    expect(env['WIREBENCH_SERVER_PADDLE_WEBHOOK_SECRET_FILE']).toBe('/run/secrets/paddle_webhook_secret');
+    expect(env['WIREBENCH_SERVER_PADDLE_WEBHOOK_SECRET']).toBeUndefined();
+    expect(server.secrets).toContain('paddle_webhook_secret');
+    expect(secrets['paddle_webhook_secret']!.file).toBe('./secrets/paddle_webhook_secret');
+  });
+
+  it('lists the new settings in env.example as placeholders only, and no Paddle secret', async () => {
+    const text = await readFile(join(DIR, 'env.example'), 'utf8');
+    expect(text).toMatch(/^WIREBENCH_CONTROL_DB_PASSWORD=$/m);
+    expect(text).toMatch(/^WIREBENCH_AUDIT_CHAIN_KEY=$/m);
+    expect(text).toMatch(/^PADDLE_ENVIRONMENT=sandbox$/m);
+    expect(text).toMatch(/^PADDLE_CLIENT_TOKEN=test_[A-Za-z0-9_]+$/m);
+    expect(text).toMatch(/^PADDLE_TEAM_PRICE_ID=pri_test[A-Za-z0-9_]*$/m);
+    expect(text).not.toMatch(/^PADDLE_WEBHOOK_SECRET=/m);
+    expect(text).not.toMatch(/=live_|pdl_ntfset_[A-Za-z0-9]/);
   });
 
   it('lists the proxy token in env.example as a placeholder only', async () => {
@@ -177,6 +216,11 @@ describe('the hosted deployment recipe', () => {
         SMTP_URL: 'smtp://mail.site.test:587',
         SMTP_FROM: 'teams@site.test',
         PROXY_TOKEN: 't',
+        WIREBENCH_CONTROL_DB_PASSWORD: 'c',
+        WIREBENCH_AUDIT_CHAIN_KEY: 'k',
+        PADDLE_ENVIRONMENT: 'sandbox',
+        PADDLE_CLIENT_TOKEN: 'test_placeholder',
+        PADDLE_TEAM_PRICE_ID: 'pri_test_team',
       };
       await expect(
         run('docker', ['compose', '-f', join(DIR, 'compose.yaml'), 'config', '--quiet'], { env }),
