@@ -1,8 +1,11 @@
 /**
  * Each tenant's SAML sign-in in hosted mode (hosted edition spec §22.12): a provider built from the IdP metadata the
  * tenant's server admin pasted into its `saml` setting (never fetched by the server), on the tenant's own entity ID
- * and ACS URLs, and kept until the setting changes on any instance or the tenant is renamed: its URLs are built from
- * its slug, so a provider is kept with the slug it was built for and built again for a new one. A tenant with no
+ * and ACS URLs, and kept until the setting changes on any instance or those URLs move. They are built from the
+ * tenant's primary URL (§23.5), its slug's or its live custom name's, so a provider is kept with the URLs it was built
+ * on and built again when a rename or a custom name going live or away changes them: the request's scope carries the
+ * new slug or host once the tenant map is read again (`tenantHostsChanged` and `tenantsChanged` on every instance),
+ * so no event of its own is needed, and none can be missed. A tenant with no
  * setting, or whose metadata no longer parses, has none, and its SAML routes answer as a server without SAML.
  */
 import type { FastifyBaseLogger } from 'fastify';
@@ -13,7 +16,7 @@ import { parseIdpMetadata } from './saml-metadata.js';
 import { samlProvider } from './saml.js';
 
 export class TenantSamlProviders {
-  readonly #cache = new Map<string, { readonly slug: string; readonly state: Promise<SamlState | undefined> }>();
+  readonly #cache = new Map<string, { readonly urls: string; readonly state: Promise<SamlState | undefined> }>();
 
   constructor(
     private readonly deps: {
@@ -30,9 +33,12 @@ export class TenantSamlProviders {
 
   samlFor(scope: TenantScope): Promise<SamlState | undefined> {
     const held = this.#cache.get(scope.tenantId);
-    // A renamed tenant's request carries its new slug: the old provider's entity ID and ACS URL are not its own.
-    if (held !== undefined && held.slug === scope.slug) return held.state;
-    const entry = { slug: scope.slug, state: this.#build(scope) };
+    const urls = this.deps.urlsFor(scope);
+    // A renamed tenant's request carries its new slug, and one whose custom name went live or away its new primary
+    // host: the old provider's entity ID and ACS URL are not its own then.
+    const key = `${urls.entityId} ${urls.acsUrl}`;
+    if (held !== undefined && held.urls === key) return held.state;
+    const entry = { urls: key, state: this.#build(scope, urls) };
     this.#cache.set(scope.tenantId, entry);
     entry.state.catch(() => {
       if (this.#cache.get(scope.tenantId) === entry) this.#cache.delete(scope.tenantId);
@@ -40,7 +46,7 @@ export class TenantSamlProviders {
     return entry.state;
   }
 
-  async #build(scope: TenantScope): Promise<SamlState | undefined> {
+  async #build(scope: TenantScope, urls: SsoUrls): Promise<SamlState | undefined> {
     const setting = await this.deps.settings.of(scope, 'saml');
     if (setting === undefined) return undefined;
     let metadata;
@@ -56,7 +62,6 @@ export class TenantSamlProviders {
         );
       return undefined;
     }
-    const urls = this.deps.urlsFor(scope);
     return {
       provider: samlProvider(metadata, {
         entityId: urls.entityId,
