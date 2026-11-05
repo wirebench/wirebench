@@ -851,7 +851,10 @@ describeDb('the host socket and its token’s age (hosted edition spec §17.3)',
     await client.waitFor((frame) => frame.type === 'hello');
     // Idle past its limit: the next request with it is refused and the token deleted.
     h.clock.advance(DAY_MS + 1);
-    void client.call('team.list');
+    // A valid request, so the call reaches the server. Without its `url` the host refuses it on its own, and only
+    // the host's launch-time `GET /me` could close the socket, which hangs when that call ran before the clock moved.
+    // The socket closes before the reply, so the call rejects; the close is what this test checks.
+    void client.call('team.list', { url: PUBLIC_URL }).catch(() => undefined);
     expect(await client.closed).toEqual({ code: 4401 });
     await vi.waitFor(() => expect(h.instances().size).toBe(0));
   });
