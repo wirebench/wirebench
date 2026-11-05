@@ -291,7 +291,10 @@ describe.skipIf(process.platform !== 'win32')('the Windows helper script', () =>
     const dir = mkdtempSync(join(tmpdir(), 'wb-helper-'));
     dirs.push(dir);
     writeFileSync(join(dir, 'device-helper.ps1'), readFileSync(HELPER_SCRIPT));
-    const answer = await new DeviceHelper({ platform: 'win32', dir }).run('status');
+    // A real PowerShell start plus the Windows Hello probe takes about 19 s on a hosted runner, against the
+    // helper's own 20 s for a quick command; the test checks the answer's shape, not how fast it comes.
+    const helper = new DeviceHelper({ platform: 'win32', dir, timeouts: { prompt: 55_000, quick: 55_000 } });
+    const answer = await helper.run('status');
     expect(typeof answer['supported']).toBe('boolean');
     if (answer['supported'] === false) expect(typeof answer['reason']).toBe('string');
   });
