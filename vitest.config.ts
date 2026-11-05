@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { relative, resolve } from 'node:path';
 import { defineConfig } from 'vitest/config';
 import { BaseSequencer, type TestSpecification } from 'vitest/node';
-import { assignShards, TIMINGS_PATH, timingKey, type ShardTimings } from './scripts/vitest-shards.ts';
+import { assignShards, spawnsGit, TIMINGS_PATH, timingKey, type ShardTimings } from './scripts/vitest-shards.ts';
 
 // CI splits the coverage run across runners (`ci.yml`, the `coverage` matrix). Each shard covers only part of
 // the suite, so it skips the thresholds and the reports and writes a blob instead; the `coverage-report` job
@@ -11,7 +11,7 @@ const coverageShard = process.env['WIREBENCH_COVERAGE_SHARD'] === '1';
 
 /**
  * `--shard=i/n` by recorded time instead of by file count, so CI's shards take about as long as each other
- * (`scripts/vitest-shards.ts`). Only `shard` is replaced; the order within a shard is Vitest's own.
+ * (`scripts/vitest-shards.ts`), with the files that spawn git spread across the shards. Only `shard` is replaced; the order within a shard is Vitest's own.
  */
 class TimedShardSequencer extends BaseSequencer {
   override shard(files: TestSpecification[]): Promise<TestSpecification[]> {
@@ -20,7 +20,8 @@ class TimedShardSequencer extends BaseSequencer {
     const timings = JSON.parse(readFileSync(TIMINGS_PATH, 'utf8')) as ShardTimings;
     const weights = timings[process.platform] ?? { defaultMs: 1, files: {} };
     const key = (spec: TestSpecification) => timingKey(spec.project.name, relative(root, spec.moduleId));
-    const shardOf = assignShards(files.map(key), weights, shard.count);
+    const spread = new Set(files.filter((spec) => spawnsGit(readFileSync(spec.moduleId, 'utf8'))).map(key));
+    const shardOf = assignShards(files.map(key), weights, shard.count, spread);
     return Promise.resolve(files.filter((spec) => shardOf.get(key(spec)) === shard.index - 1));
   }
 }

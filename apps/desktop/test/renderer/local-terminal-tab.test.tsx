@@ -1,5 +1,5 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // jsdom has no canvas or layout, so the terminal is a recording stand-in.
 const xterm = vi.hoisted(() => {
@@ -91,6 +91,12 @@ const close = vi.fn();
 const writeText = vi.fn();
 const OPENED = (sessionId: string, shell = 'zsh') => ({ ok: true, value: { sessionId, shell } });
 const text = (bytes: Uint8Array | undefined) => new TextDecoder().decode(bytes);
+
+// The editor area loads the tab lazily. Its first load transforms the terminal's whole module graph, which on a
+// busy Windows runner outlasted the 1 s `waitFor` of the file's first test; load it here, outside any test.
+beforeAll(async () => {
+  await import('../../src/renderer/features/ssh/local-terminal-tab.js');
+}, 30_000);
 
 beforeEach(() => {
   xterm.FakeTerminal.instances = [];

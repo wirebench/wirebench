@@ -5,6 +5,7 @@ import {
   LISTED_FROM_MS,
   parseFileTimes,
   platformTimings,
+  spawnsGit,
   TIMINGS_PATH,
   timingKey,
   type ShardTimings,
@@ -60,6 +61,36 @@ describe('assignShards', () => {
 
   it('answers the same whatever order the files come in', () => {
     expect(assignShards([...keys].reverse(), weights, 3)).toEqual(assignShards(keys, weights, 3));
+  });
+
+  it('spreads the files that spawn git over the shards before balancing the rest', () => {
+    // By time alone the three light files d, e and f all land on the fourth shard, beside nothing else.
+    expect(new Set(['p|d', 'p|e', 'p|f'].map((key) => assignShards(keys, weights, 4).get(key)))).toEqual(new Set([3]));
+    const spread = new Set(['p|d', 'p|e', 'p|f']);
+    const shardOf = assignShards(keys, weights, 4, spread);
+    expect(new Set([...spread].map((key) => shardOf.get(key))).size).toBe(3);
+    expect([...shardOf.keys()].sort()).toEqual(keys);
+  });
+
+  it('puts two git files on one shard only once every shard has one', () => {
+    const many = ['p|g1', 'p|g2', 'p|g3', 'p|g4', 'p|g5', 'p|heavy'];
+    const heavy = { defaultMs: 1, files: { 'p|heavy': 100, 'p|g1': 9, 'p|g2': 8, 'p|g3': 7, 'p|g4': 6, 'p|g5': 5 } };
+    const spread = new Set(many.filter((key) => key !== 'p|heavy'));
+    const shardOf = assignShards(many, heavy, 2, spread);
+    const perShard = [0, 0];
+    for (const key of spread) perShard[shardOf.get(key)!]! += 1;
+    // By time alone `heavy` takes a shard and all five git files land on the other one.
+    expect(perShard.sort()).toEqual([2, 3]);
+  });
+});
+
+describe('spawnsGit', () => {
+  it('knows a test file by its import of the git fixture', () => {
+    expect(spawnsGit("import { describeGit } from './git-fixture.js';")).toBe(true);
+    expect(spawnsGit("import { mkTempDir } from './sync/git-fixture.js';\n")).toBe(true);
+    expect(spawnsGit("import {\n  describeGit,\n  mkTempDir,\n} from './git-fixture.js';")).toBe(true);
+    expect(spawnsGit("import { describe } from 'vitest';")).toBe(false);
+    expect(spawnsGit('  expect(spawnsGit("import { a } from \'./git-fixture.js\';")).toBe(true);')).toBe(false);
   });
 });
 
