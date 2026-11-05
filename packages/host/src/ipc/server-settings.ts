@@ -1,11 +1,14 @@
 /**
  * `serverSettings.*`, `tenantBilling.get`, `tenantExports.*` and `tenantDeletion.*` (hosted edition spec §22.9–§22.13):
  * the *Server* page of Settings, on the account's session. The server checks every save and every role; main only
- * adds the token. An export is saved by main: it picks the file, and opens it only once the server has answered 2xx,
- * so a refusal leaves no empty file behind. The renderer never sees the token, nor a URL that holds one.
+ * adds the token. An export is saved by main: it picks the file, and writes it only once the server has answered 2xx,
+ * through a temporary file renamed into place on success, so neither a refusal nor a broken download leaves a file. The renderer never sees the token, nor a URL that holds one.
  */
+import { randomBytes } from 'node:crypto';
 import { once } from 'node:events';
 import { createWriteStream, type WriteStream } from 'node:fs';
+import { rename, rm } from 'node:fs/promises';
+import { basename, dirname, join } from 'node:path';
 import { channels } from '@wirebench/wire/ipc';
 import type { RecordsWritePicks } from '../dialog-picks.js';
 import type { NativeDialogs } from '../native-dialogs.js';
@@ -38,6 +41,51 @@ export interface ServerSettingsChannelDeps {
 export const exportFileName = (at: Date): string =>
   `wirebench-export-${at.toISOString().slice(0, 19).replace(/[-:]/g, '')}Z.tar.gz`;
 
+/**
+ * Streams an export into `path` without ever leaving a broken file there: the bytes go to a temporary file beside it
+ * (same directory, so the rename is atomic), each chunk waits for `drain` when the disk is slower than the network,
+ * and only a stream that ended well is renamed into place. Any failure, the server's, the network's or the disk's,
+ * removes the temporary file and leaves whatever was at `path` untouched. Resolves the bytes written.
+ */
+export async function saveExport(
+  path: string,
+  stream: (open: () => (chunk: Uint8Array) => Promise<void> | void) => Promise<void>,
+): Promise<number> {
+  const temp = join(dirname(path), `.${basename(path)}.${randomBytes(6).toString('hex')}.part`);
+  const state: { out?: WriteStream; error?: Error; size: number } = { size: 0 };
+  try {
+    await stream(() => {
+      const file = createWriteStream(temp, { flags: 'wx' });
+      // An unhandled 'error' on a stream would be an uncaught exception in main.
+      file.on('error', (e) => {
+        state.error ??= e;
+      });
+      state.out = file;
+      return async (chunk) => {
+        if (state.error !== undefined) throw state.error;
+        state.size += chunk.byteLength;
+        // Waits for the disk; `once` rejects on an 'error' while waiting, so a failed write ends it, never hangs.
+        if (!file.write(chunk)) await once(file, 'drain');
+      };
+    });
+    const file = state.out;
+    if (file === undefined) throw new Error('the export stream never opened');
+    file.end();
+    await once(file, 'close');
+    if (state.error !== undefined) throw state.error;
+    await rename(temp, path);
+    return state.size;
+  } catch (error) {
+    const file = state.out;
+    if (file !== undefined && !file.closed) {
+      file.destroy();
+      await once(file, 'close').catch(() => undefined);
+    }
+    await rm(temp, { force: true });
+    throw state.error ?? error;
+  }
+}
+
 export function registerServerSettingsChannels(table: HandlerTable, deps: ServerSettingsChannelDeps): void {
   const c = deps.client;
   registerHandler(table, channels.serverSettings.get, (r) =>
@@ -67,32 +115,10 @@ export function registerServerSettingsChannels(table: HandlerTable, deps: Server
       defaultPath: exportFileName((deps.now ?? (() => new Date()))()),
     });
     if (path === undefined) return { saved: false as const };
-    let out: WriteStream | undefined;
-    let size = 0;
-    let writeError: Error | undefined;
-    try {
-      await withToken(deps, r.url, (url, token) =>
-        c.streamTenantExport(url, token, r.id, () => {
-          const file = createWriteStream(path);
-          // An unhandled 'error' on a stream would be an uncaught exception in main.
-          file.on('error', (e) => {
-            writeError ??= e;
-          });
-          out = file;
-          return (chunk) => {
-            size += chunk.byteLength;
-            file.write(chunk);
-          };
-        }),
-      );
-    } finally {
-      if (out !== undefined && !out.destroyed && !out.closed) {
-        out.end();
-        await once(out, 'close');
-      }
-    }
-    if (writeError !== undefined) throw writeError;
-    return { saved: true as const, path, sizeBytes: size };
+    const sizeBytes = await saveExport(path, (open) =>
+      withToken(deps, r.url, (url, token) => c.streamTenantExport(url, token, r.id, open)),
+    );
+    return { saved: true as const, path, sizeBytes };
   });
 
   registerHandler(table, channels.tenantDeletion.request, (r) =>

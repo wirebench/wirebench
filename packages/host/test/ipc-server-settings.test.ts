@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -98,12 +98,27 @@ function exchange(status: number, body?: unknown, headers: Record<string, string
   } as unknown as HttpExchange;
 }
 
-/** A fake server's answer to a streamed download: the status, and the chunks it sends on a 2xx. */
-function streamed(request: HttpRequest, status: number, chunks: readonly Uint8Array[], body?: unknown): HttpExchange {
+/**
+ * A fake server's answer to a streamed download: the status, and the chunks it sends on a 2xx, each held until the
+ * sink is ready for the next, as the HTTP client's pump does. `end` is how the stream ended; a sink that throws ends
+ * it as an error, as the pump reports it.
+ */
+async function streamed(
+  request: HttpRequest,
+  status: number,
+  chunks: readonly Uint8Array[],
+  body?: unknown,
+  end: { readonly by: 'server' | 'error'; readonly error?: string } = { by: 'server' },
+): Promise<HttpExchange> {
   const sink = request.stream?.accept(status, {});
   if (sink !== undefined) {
-    for (const chunk of chunks) sink.onChunk(chunk);
-    return { ...exchange(status), body: new Uint8Array(), streamEnd: { by: 'server' } } as unknown as HttpExchange;
+    let streamEnd = end;
+    try {
+      for (const chunk of chunks) await sink.onChunk(chunk);
+    } catch (error) {
+      streamEnd = { by: 'error', error: String(error) };
+    }
+    return { ...exchange(status), body: new Uint8Array(), streamEnd };
   }
   return exchange(status, body);
 }
@@ -111,15 +126,15 @@ function streamed(request: HttpRequest, status: number, chunks: readonly Uint8Ar
 let sent: HttpRequest[];
 const pickSaveFile = vi.fn<() => Promise<string | undefined>>();
 
-function register(answer: (request: HttpRequest, path: string) => HttpExchange): void {
+function register(answer: (request: HttpRequest, path: string) => HttpExchange | Promise<HttpExchange>): void {
   sent = [];
   handlers.clear();
   table.clear();
   registerServerSettingsChannels(table, {
     client: new ServerClient({
-      send: (request: HttpRequest) => {
+      send: async (request: HttpRequest) => {
         sent.push(request);
-        return Promise.resolve(answer(request, new URL(request.url).pathname));
+        return answer(request, new URL(request.url).pathname);
       },
     }),
     accounts: { tokenFor: () => Promise.resolve(TOKEN), markSignedOut: vi.fn() },
@@ -282,6 +297,49 @@ describe('tenantExports.* (spec §22.9)', () => {
       error: { code: 'control-plane-export-unknown' },
     });
     expect(existsSync(path)).toBe(false);
+  });
+
+  it('writes a large export through backpressure, whole', async () => {
+    const path = join(dir, 'large.tar.gz');
+    pickSaveFile.mockResolvedValue(path);
+    const chunk = new Uint8Array(256 * 1024).fill(7);
+    const chunks = Array.from({ length: 64 }, () => chunk);
+    register((request) => streamed(request, 200, chunks));
+    expect(await invoke('tenantExports.download', { url: SERVER, id: EXPORT.id })).toEqual({
+      ok: true,
+      value: { saved: true, path, sizeBytes: 64 * chunk.byteLength },
+    });
+    const written = await readFile(path);
+    expect(written.byteLength).toBe(64 * chunk.byteLength);
+    expect(written.every((byte) => byte === 7)).toBe(true);
+    expect(await readdir(dir)).toEqual(['large.tar.gz']);
+  });
+
+  it('removes the partial file when the stream breaks, and keeps a good file already there', async () => {
+    const path = join(dir, 'kept.tar.gz');
+    await writeFile(path, 'the good export from yesterday');
+    pickSaveFile.mockResolvedValue(path);
+    register((request) =>
+      streamed(request, 200, [new Uint8Array([1, 2, 3])], undefined, { by: 'error', error: 'socket hang up' }),
+    );
+    expect(await invoke('tenantExports.download', { url: SERVER, id: EXPORT.id })).toMatchObject({
+      ok: false,
+      error: { code: 'server-unreachable' },
+    });
+    expect(await readFile(path, 'utf8')).toBe('the good export from yesterday');
+    expect(await readdir(dir)).toEqual(['kept.tar.gz']);
+  });
+
+  it('removes the partial file when the disk refuses the write, and says why', async () => {
+    // The chosen folder is gone by the time the bytes arrive: the temporary file cannot be opened.
+    const path = join(dir, 'gone', 'export.tar.gz');
+    pickSaveFile.mockResolvedValue(path);
+    register((request) => streamed(request, 200, [new Uint8Array([1, 2]), new Uint8Array([3])]));
+    const answer = await invoke('tenantExports.download', { url: SERVER, id: EXPORT.id });
+    expect(answer).toMatchObject({ ok: false });
+    expect(JSON.stringify(answer)).toContain('ENOENT');
+    expect(existsSync(path)).toBe(false);
+    expect(await readdir(dir)).toEqual([]);
   });
 
   it('suggests a file name from the time of the download', () => {

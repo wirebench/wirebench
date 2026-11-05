@@ -56,8 +56,8 @@ describe('ServerClient audit (audit-log spec §3.4, plan ruling 16)', () => {
       send: (req) => {
         requests.push(req);
         const sink = req.stream!.accept(200, { 'content-type': 'application/x-ndjson' })!;
-        sink.onChunk(new TextEncoder().encode('{"a":1}\n'));
-        sink.onChunk(new TextEncoder().encode('{"a":2}\n'));
+        void sink.onChunk(new TextEncoder().encode('{"a":1}\n'));
+        void sink.onChunk(new TextEncoder().encode('{"a":2}\n'));
         return Promise.resolve({
           status: 200,
           headers: {},
@@ -81,7 +81,7 @@ describe('ServerClient audit (audit-log spec §3.4, plan ruling 16)', () => {
   it('a stream that ends in an error rejects as server-unreachable', async () => {
     const client = new ServerClient({
       send: (req) => {
-        req.stream!.accept(200, {})!.onChunk(new TextEncoder().encode('{"a":1}\n'));
+        void req.stream!.accept(200, {})!.onChunk(new TextEncoder().encode('{"a":1}\n'));
         return Promise.resolve({
           status: 200,
           headers: {},

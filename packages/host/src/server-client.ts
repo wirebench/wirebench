@@ -944,13 +944,13 @@ export class ServerClient {
 
   /**
    * Streams a ready export's file. `open` is called once the server has answered 2xx, so a refusal leaves no file
-   * behind; the token goes in the `Authorization` header, never in the URL (spec §6).
+   * behind; a chunk handler that returns a promise holds the stream until it settles (backpressure); the token goes in the `Authorization` header, never in the URL (spec §6).
    */
   async streamTenantExport(
     url: string,
     token: string,
     id: string,
-    open: () => (chunk: Uint8Array) => void,
+    open: () => (chunk: Uint8Array) => void | Promise<void>,
   ): Promise<void> {
     const origin = normalizeServerUrl(url);
     const options = (await this.deps.options?.(origin)) ?? {};

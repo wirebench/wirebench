@@ -589,7 +589,9 @@ async function pumpStream(
   const source: Readable = decoder === undefined ? body : pipeline(body, decoder, () => undefined);
   try {
     for await (const chunk of source as AsyncIterable<Uint8Array>) {
-      sink.onChunk(chunk);
+      // Only a sink that asks for backpressure is waited on: the others keep their timing.
+      const held = sink.onChunk(chunk);
+      if (held !== undefined) await held;
     }
     return { by: 'server' };
   } catch (err) {
