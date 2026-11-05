@@ -5,7 +5,9 @@
  *
  * Per tenant:
  *
- * 1. In the loop's unit, read the claim. Nothing network-bound runs inside a unit, so the rest runs after it.
+ * 1. In the loop's unit, read the claim, and skip a tenant that serves nothing now (suspended or deleting): its claim
+ *    keeps its state and clocks, and it keeps its name. Nothing network-bound runs inside a unit, so the rest runs
+ *    after it.
  * 2. Read the tenant's features. Without `custom-domains`, the claim is `paused` and its name released at once,
  *    whether or not a check is due.
  * 3. When a check is due (hourly while `pending`, every 6 hours otherwise, never once `expired`), ask DNS
@@ -34,6 +36,7 @@ import { domainEmail, type DomainNotice, type Mailer } from './mail.js';
 import {
   getClaim,
   hold,
+  isLive,
   record,
   release,
   serverAdminEmails,
@@ -74,11 +77,21 @@ export interface CheckDeps {
   readonly hooks: ServerHooks;
   /** The features the tenant's license grants, read through its scope (slice 7's per-tenant state plugs in here). */
   readonly features: (scope: TenantScope) => Promise<readonly string[]>;
+  /**
+   * Whether the unit's tenant serves nothing now, suspended or deleting (slice 7's `tenantStopped`). Its claim is left
+   * exactly as it is: no DNS, no move, no mail. A suspended tenant keeps its name (spec §23.2).
+   */
+  readonly stopped: (tx: TenantQuerier) => Promise<boolean>;
   /** The certificate probe; without one a verified name stays `verified`. */
   readonly probe?: CertificateProbe;
   /** The mail sender; without one nothing is mailed. */
   readonly mail?: Mailer;
   readonly log: Pick<FastifyBaseLogger, 'error' | 'warn'>;
+  /**
+   * Called once a unit that may have changed what the resolver maps has committed: a name made live, made not live
+   * or released (spec §23.5). The module reloads the tenant map here and, through the bus, on every instance.
+   */
+  readonly hostsChanged?: () => void;
 }
 
 /** The job's name in the loop's log lines. */
@@ -123,7 +136,7 @@ export async function checkPass(deps: CheckDeps): Promise<JobPass> {
     CHECK_JOB,
     async (tx, scope) => {
       const seen = await getClaim(tx);
-      if (seen === undefined || seen.state === 'expired') return;
+      if (seen === undefined || seen.state === 'expired' || (await deps.stopped(tx))) return;
       return { afterUnit: () => checkClaim(deps, scope, seen, false).then(() => undefined) };
     },
     deps.log,
@@ -135,9 +148,13 @@ export async function checkPass(deps: CheckDeps): Promise<JobPass> {
  * afterwards, or undefined when there is none.
  */
 export async function checkTenant(deps: CheckDeps, scope: TenantScope): Promise<Claim | undefined> {
-  const seen = await deps.tenancy.db(scope).transaction((tx) => getClaim(tx));
-  if (seen === undefined) return undefined;
-  return checkClaim(deps, scope, seen, true);
+  const read = await deps.tenancy
+    .db(scope)
+    .transaction(async (tx) => ({ seen: await getClaim(tx), stopped: await deps.stopped(tx) }));
+  if (read.seen === undefined) return undefined;
+  // A stopped tenant's claim is answered as it is: nothing is checked until it runs again.
+  if (read.stopped) return read.seen;
+  return checkClaim(deps, scope, read.seen, true);
 }
 
 async function checkClaim(deps: CheckDeps, scope: TenantScope, seen: Claim, force: boolean): Promise<Claim> {
@@ -189,20 +206,26 @@ async function move(
   now: Date,
   check: () => { observation: { featured: boolean; passed: boolean }; lastResult: LastResult },
 ): Promise<Moved | undefined> {
-  return deps.tenancy.db(scope).transaction(async (tx) => {
+  let routed = false;
+  const moved = await deps.tenancy.db(scope).transaction(async (tx) => {
     const current = await getClaim(tx, { forUpdate: true });
     if (current === undefined || current.token !== token) return undefined;
     const { observation, lastResult: seen } = check();
     const since = { createdAt: current.createdAt, failingSince: current.failingSince };
-    let to = next(current.state, observation, now, since);
+    // A failing name still live returns to active on a pass (spec §23.2): it is read only for that case.
+    const live = current.state === 'failing' && (await isLive(tx, current.name));
+    let to = next(current.state, observation, now, since, live);
     let lastResult: LastResult = seen;
     if (to === 'verified' && (await hold(tx, current.name)) === 'held-elsewhere') {
       // Another tenant proved the name first: this claim stays where it was, and learns nothing about who.
-      to = next(current.state, { ...observation, passed: false }, now, since);
+      to = next(current.state, { ...observation, passed: false }, now, since, live);
       lastResult = { ...seen, heldElsewhere: true, message: 'Another team holds this name, so it cannot be used.' };
     }
-    if (to === 'verified' && current.state !== 'verified') await setLive(tx, current.name, false);
-    if (isHeld(current.state) && !isHeld(to)) await release(tx, current.name);
+    if (to === 'verified' && current.state !== 'verified') {
+      await setLive(tx, current.name, false);
+      routed = true;
+    }
+    if (isHeld(current.state) && !isHeld(to) && (await release(tx, current.name))) routed = true;
     const write: CheckRecord = {
       state: to,
       lastResult,
@@ -215,6 +238,8 @@ async function move(
     const claim = (await getClaim(tx))!;
     return notice === undefined ? { claim } : { claim, notice };
   });
+  if (routed) deps.hostsChanged?.();
+  return moved;
 }
 
 /** Probes a verified name and, on a pass, marks it live and the claim `active`. */
@@ -225,7 +250,7 @@ async function probeName(deps: CheckDeps, scope: TenantScope, claim: Claim, now:
   } catch (error) {
     probed = { verdict: 'missing', message: `The certificate check failed: ${(error as Error).message}` };
   }
-  return deps.tenancy.db(scope).transaction(async (tx) => {
+  const probedMove = await deps.tenancy.db(scope).transaction(async (tx) => {
     const current = await getClaim(tx, { forUpdate: true });
     if (current === undefined || current.token !== claim.token || current.state !== 'verified') return undefined;
     const base = current.lastResult ?? { cname: 'ok', txt: 'ok', message: '' };
@@ -249,6 +274,9 @@ async function probeName(deps: CheckDeps, scope: TenantScope, claim: Claim, now:
     const after = (await getClaim(tx))!;
     return notice === undefined ? { claim: after } : { claim: after, notice };
   });
+  // Live now: the resolver maps the name from here on.
+  if (probedMove?.claim.state === 'active') deps.hostsChanged?.();
+  return probedMove;
 }
 
 /**
@@ -276,7 +304,10 @@ async function audited(
     target: { kind: 'custom-domain' },
     details: { name: current.name, from: current.state, to },
   });
-  if (deps.mail === undefined || !NOTICES.includes(to)) return undefined;
+  // A failing name back to active never stopped serving: nothing new for the admins to act on.
+  if (deps.mail === undefined || !NOTICES.includes(to) || (to === 'active' && current.state === 'failing')) {
+    return undefined;
+  }
   return { kind: to as DomainNotice, to: await serverAdminEmails(tx), detail };
 }
 

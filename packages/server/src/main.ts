@@ -95,6 +95,9 @@ export async function main(
     case 'admin-scim-group-list':
     case 'admin-scim-group-link':
     case 'admin-scim-group-unlink':
+    case 'admin-domains-list':
+    case 'admin-domains-check':
+    case 'admin-domains-remove':
       return runAdmin(command, io);
     case 'admin-tenant-list':
     case 'admin-tenant-create':

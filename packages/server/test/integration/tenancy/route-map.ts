@@ -15,6 +15,7 @@
  */
 import { agentRedeemMessage, agentRequestMessage, LIVE_PATH, TERMINAL_SHARE_PATH } from '@wirebench/engine';
 import type { InjectOptions, LightMyRequestResponse } from 'fastify';
+import { claim, removeClaim } from '../../../src/custom-domains/repo.js';
 import { mintSecret, newId, pkceChallenge } from '../../../src/identity/tokens.js';
 import { license } from '../../helpers/licensing.js';
 import {
@@ -116,6 +117,18 @@ async function headOf(ctx: Ctx): Promise<string | null> {
   return res.body.head;
 }
 
+/**
+ * Removes the sender's custom-domain claim and, with `claimAgain`, claims `<slug>.customer.test` again, pending. Through
+ * the repository, not the routes: the suspended sweep builds every template as a tenant whose routes refuse it.
+ */
+async function reclaim(ctx: Ctx, claimAgain: boolean): Promise<void> {
+  const name = `${ctx.from.tenant.slug}.customer.test`;
+  await ctx.from.tenant.tdb.transaction(async (tx) => {
+    await removeClaim(tx);
+    if (claimAgain) await claim(tx, { name, createdBy: null, now: ctx.w.t.h.clock.now });
+  });
+}
+
 /** An agent-signed request of `pairingId`, by `key`, on the tenant `ctx.from` is (the path is the server's). */
 function signedAgent(
   ctx: Ctx,
@@ -167,6 +180,16 @@ export const ROUTE_MAP: Readonly<Record<string, RouteCase>> = {
       url: '/',
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
       payload: 'email=a%40acme.test',
+    }),
+  },
+  // The billing webhook (spec §22.5), on the entry host only: a signature is never checked on a tenant's host.
+  'POST /billing/paddle': {
+    cls: 'entry',
+    request: () => ({
+      method: 'POST',
+      url: '/billing/paddle',
+      headers: { 'content-type': 'application/json', 'paddle-signature': 'ts=1;h1=' + '0'.repeat(64) },
+      payload: '{}',
     }),
   },
   'GET /*': { cls: 'own', request: (ctx) => ({ method: 'GET', url: '/workspaces', headers: asTab(ctx) }) },
@@ -852,6 +875,27 @@ export const ROUTE_MAP: Readonly<Record<string, RouteCase>> = {
   'DELETE /scim/v2/Groups/:id': {
     cls: 'refused',
     request: async (ctx) => scim(ctx, 'DELETE', `/Groups/${await fresh.scimGroup(ctx.a)}`),
+  },
+
+  // ---- custom domains (slice 8): the sender's own claim, which fill made (`<slug>.customer.test`)
+  'GET /api/v1/tenant/domain': { cls: 'own', request: (ctx) => json(ctx, 'GET', api('/tenant/domain')) },
+  'PUT /api/v1/tenant/domain': {
+    cls: 'own',
+    // One claim per tenant: the sender's goes first, and the claim made again is the one fill made.
+    request: async (ctx) => {
+      await reclaim(ctx, false);
+      return json(ctx, 'PUT', api('/tenant/domain'), { name: `${ctx.from.tenant.slug}.customer.test` });
+    },
+  },
+  'POST /api/v1/tenant/domain/check': {
+    cls: 'own',
+    request: (ctx) => json(ctx, 'POST', api('/tenant/domain/check')),
+  },
+  'DELETE /api/v1/tenant/domain': {
+    cls: 'own',
+    request: (ctx) => json(ctx, 'DELETE', api('/tenant/domain')),
+    // The table sweeps need the sender's claim back.
+    after: (ctx) => reclaim(ctx, true),
   },
 
   // ---- sockets: the socket sweep's, one case each (`SOCKET_ROUTES`)

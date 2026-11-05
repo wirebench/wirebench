@@ -77,6 +77,32 @@ describe('the hosted map', () => {
     expect(hostKey('[::1]:80')).toBe('[::1]:80');
   });
 
+  it('maps a live custom name to the same entry as the slug, and drops it with the scope that carried it (spec §23.5)', async () => {
+    const custom = scopeOf({
+      id: '00000000-0000-4000-8000-00000000000a',
+      slug: 'acme',
+      customHost: 'wb.customer.test',
+    });
+    const fake = fakeDirectory([custom]);
+    const resolver = new TenantResolver({
+      appDomain: 'example.test',
+      directory: fake.directory,
+      log: { warn: vi.fn() },
+      setInterval: () => ({}),
+      clearInterval: () => undefined,
+    });
+    await resolver.invalidate();
+    expect(resolver.resolve('acme.example.test')).toBe(custom);
+    expect(resolver.resolve('WB.customer.test.')).toBe(custom);
+    expect(resolver.resolve('x.wb.customer.test')).toBeUndefined();
+    expect(resolver.entryOf('wb.customer.test')).toBe(resolver.entryOf('acme.example.test'));
+    // The name is no longer live: the scope comes back without it, and so does the map.
+    fake.directory.hosted.mockImplementation(() => Promise.resolve([{ scope: ACME, status: 'active' as const }]));
+    await resolver.invalidate();
+    expect(resolver.resolve('wb.customer.test')).toBeUndefined();
+    expect(resolver.resolve('acme.example.test')).toBe(ACME);
+  });
+
   it('resolves exactly <slug>.<appDomain>, reloads on a directory write, and runs one more read after a busy one', async () => {
     const scopes = [ACME];
     const fake = fakeDirectory(scopes);

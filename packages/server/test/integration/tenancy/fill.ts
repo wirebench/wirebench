@@ -12,6 +12,8 @@ import { createHash, generateKeyPairSync, randomBytes, randomUUID, sign } from '
 import type { LightMyRequestResponse, RouteOptions } from 'fastify';
 import { expect } from 'vitest';
 import { controlPlaneModule } from '../../../src/control-plane/module.js';
+import type { DnsLookup } from '../../../src/custom-domains/dns.js';
+import { customDomainsModule } from '../../../src/custom-domains/module.js';
 import { entryModule } from '../../../src/entry/module.js';
 import { agentModule } from '../../../src/agent/module.js';
 import { chainKeys } from '../../../src/audit-log/chain/keys.js';
@@ -37,7 +39,7 @@ import { syncModule } from '../../../src/sync/module.js';
 import { teamsModule } from '../../../src/teams/module.js';
 import type { PendingWrites } from '../../../src/pending-writes.js';
 import { terminalSharesModule } from '../../../src/terminal-shares/module.js';
-import { isDefaultTenant } from '../../../src/tenancy/tenancy.js';
+import { isDefaultTenant, tenantHostsChanged } from '../../../src/tenancy/tenancy.js';
 import { browserBuildFixture, type BrowserBuildFixture } from '../../helpers/browser-build.js';
 import { SCOPED_TABLES } from '../../helpers/catalog.js';
 import { testDatabase } from '../../helpers/database.js';
@@ -113,6 +115,17 @@ export interface World {
   quiet(): Promise<void>;
   close(): Promise<void>;
 }
+
+/** The world's DNS: no name has a record, so no claim passes its check. */
+const noDns: DnsLookup = {
+  cname: () => Promise.reject(Object.assign(new Error('not found'), { code: 'ENOTFOUND' })),
+  a: () => Promise.reject(Object.assign(new Error('not found'), { code: 'ENOTFOUND' })),
+  aaaa: () => Promise.reject(Object.assign(new Error('not found'), { code: 'ENOTFOUND' })),
+  txt: () => Promise.reject(Object.assign(new Error('not found'), { code: 'ENOTFOUND' })),
+};
+
+/** The custom name fill holds live for `tenant`: `<slug>.customer.test`. */
+export const customHostOf = (tenant: Tenant): string => `${tenant.slug}.customer.test`;
 
 /** The license key pair the world's licensing module trusts. */
 export const LICENSE_KEYS = testKeys();
@@ -191,6 +204,15 @@ export async function isolationWorld(options: { readonly policiesDisabled?: bool
         agentModule({ now, sweepIntervalMs: 0 }),
         entryModule(),
         controlPlaneModule(),
+        // No DNS: every lookup answers ENOTFOUND, so a check leaves the claim pending.
+        customDomainsModule({
+          now,
+          lookup: noDns,
+          probe: null,
+          mail: null,
+          setTimer: timers.setTimer,
+          allowTestNames: true,
+        }),
       ];
       modules.push('identity', ...list.map((module) => module.name));
       return list;
@@ -200,6 +222,8 @@ export async function isolationWorld(options: { readonly policiesDisabled?: bool
   await markStepsDone(t.h.db.owner);
   const a = await fill(t, t.a);
   const b = await fill(t, t.b);
+  // The two custom names went live by hand: the map reads them again, as the module's own change would make it.
+  tenantHostsChanged(t.h.ctx.tenancy);
   return {
     t,
     a,
@@ -530,12 +554,15 @@ export async function fill(t: TwoTenants, tenant: Tenant): Promise<Filled> {
     [JSON.stringify({ from: `@${slug}` }), at, browser.user.id],
   );
 
-  // ---- 0024's claim (slice 8), by hand until its routes land: the name carries the slug, the token stays per tenant.
-  await tenant.tdb.query('insert into custom_domains (name, token, created_by, created_at) values ($1, $2, $3, $4)', [
-    `${slug}.customer.test`,
-    `token-${slug}`,
-    browser.user.id,
-    at,
+  // ---- 0024's claim (slice 8), by hand: the name carries the slug, the token stays per tenant. It is held and live,
+  // as an active claim's is, so the resolver maps it to the tenant beside its slug (spec §23.5).
+  await tenant.tdb.query(
+    "insert into custom_domains (name, token, state, created_by, created_at) values ($1, $2, 'active', $3, $4)",
+    [customHostOf(tenant), `token-${slug}`, browser.user.id, at],
+  );
+  await tenant.tdb.query('insert into tenant_hosts (host, tenant_id, live) values ($1, $2::uuid, true)', [
+    customHostOf(tenant),
+    tenant.scope.tenantId,
   ]);
 
   // ---- the audit log: forward one recorded event (no sink is configured), so the queue holds a row too

@@ -329,7 +329,7 @@ async function tenantSettings(
     return ExitCode.Config;
   }
   const section = command.section;
-  const scope = await deps.lifecycle.tenantScope(command.slug);
+  const scope = await deps.lifecycle.tenantScopeBySlug(command.slug);
   const options = { by: 'operator', operator: true, source: SYSTEM_SOURCE } as const;
   if (command.action === 'set') {
     let input: unknown;

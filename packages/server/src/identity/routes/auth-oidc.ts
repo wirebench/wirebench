@@ -19,7 +19,7 @@ import {
 import { timingSafeEqual } from 'node:crypto';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { jsonSchema } from '../../schema.js';
-import { tenantUrl } from '../../tenancy/urls.js';
+import { primaryUrl } from '../../tenancy/urls.js';
 import { FLOW_EXPIRED_MESSAGE, finishBrowserSignIn, refusalMessage, takeBrowserFlow } from '../browser-flows.js';
 import { requireProvider, type IdentityEnv } from '../env.js';
 import { flowInvalid } from '../errors.js';
@@ -143,7 +143,7 @@ export const authOidcRoutes =
         let claims: OidcClaims;
         try {
           claims = await provider.exchange({
-            callbackUrl: new URL(request.url, tenantUrl(env.ctx.config, request)),
+            callbackUrl: new URL(request.url, primaryUrl(env.ctx.config, request)),
             state: flow.state,
             nonce: flow.nonce,
           });
@@ -205,7 +205,7 @@ export const authOidcRoutes =
           let claims: OidcClaims;
           try {
             claims = await provider.exchange({
-              callbackUrl: new URL(request.url, tenantUrl(env.ctx.config, request)),
+              callbackUrl: new URL(request.url, primaryUrl(env.ctx.config, request)),
               state: query.state,
               nonce: flow.nonce ?? '',
               codeVerifier: flow.codeVerifier ?? '',

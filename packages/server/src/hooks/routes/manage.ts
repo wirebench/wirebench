@@ -29,7 +29,7 @@ import {
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { announce, auditSource, recordAudit } from '../../context.js';
-import { tenantUrl } from '../../tenancy/urls.js';
+import { primaryUrl } from '../../tenancy/urls.js';
 import { isForeignKeyViolation, isUniqueViolation } from '../../db/errors.js';
 import type { TenantQuerier } from '../../tenancy/tenant-db.js';
 import { newId } from '../../identity/tokens.js';
@@ -179,7 +179,7 @@ export const manageRoutes =
       },
       async (request): Promise<ListedCatchUrl[]> => {
         const rows = await repo.catchUrlsOfWorkspace(tdb(request), request.workspaceAccess!.workspaceId);
-        const hooks = rows.map((row) => toCatchUrl(row, tenantUrl(config, request), viewOf(request)));
+        const hooks = rows.map((row) => toCatchUrl(row, primaryUrl(config, request), viewOf(request)));
         // A CI token never sees the catch secret: a leaked one could forge the captures it reads
         // (callback-assertion §3). It needs a hook's id and name only.
         return request.ciCaller === undefined ? hooks : hooks.map(withoutUrl);
@@ -238,7 +238,7 @@ export const manageRoutes =
         announce(env.ctx.hooks.hooksChanged, { tenantId: request.tenant.tenantId, workspaceId }, request.log);
         return reply
           .code(201)
-          .send(toCatchUrl(await found(tdb(request), workspaceId, id), tenantUrl(config, request), viewOf(request)));
+          .send(toCatchUrl(await found(tdb(request), workspaceId, id), primaryUrl(config, request), viewOf(request)));
       },
     );
 
@@ -319,7 +319,7 @@ export const manageRoutes =
         }
         if (!updated) throw catchUrlNotFound();
         announce(env.ctx.hooks.hooksChanged, { tenantId: request.tenant.tenantId, workspaceId }, request.log);
-        return toCatchUrl(await found(tdb(request), workspaceId, hookId), tenantUrl(config, request), viewOf(request));
+        return toCatchUrl(await found(tdb(request), workspaceId, hookId), primaryUrl(config, request), viewOf(request));
       },
     );
 
@@ -345,7 +345,7 @@ export const manageRoutes =
           });
         });
         announce(env.ctx.hooks.hooksChanged, { tenantId: request.tenant.tenantId, workspaceId }, request.log);
-        return toCatchUrl(await found(tdb(request), workspaceId, hookId), tenantUrl(config, request), viewOf(request));
+        return toCatchUrl(await found(tdb(request), workspaceId, hookId), primaryUrl(config, request), viewOf(request));
       },
     );
 

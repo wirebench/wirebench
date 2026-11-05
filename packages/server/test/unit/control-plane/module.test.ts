@@ -68,15 +68,54 @@ describe('the control-plane module (spec §22.3)', () => {
     await expect(register(ctx)).rejects.toMatchObject({ code: 'control-plane-control-db-missing' });
   });
 
-  it('registers in hosted mode with the control pool, and serves nothing yet', async () => {
+  it('refuses to serve in hosted mode without the Paddle settings', async () => {
     // A pool connects lazily: nothing listens on port 1, and nothing here queries it.
     const pool = openControlDb('postgres://control:pw@127.0.0.1:1/none');
     closers.push(() => pool.close());
     const ctx = await testContext({ config: { ...base(), mode: 'hosted' } });
-    expect(await register(ctx, controlPlaneModule({ control: pool }))).toEqual([]);
-    // Nothing of the pool reaches the shared context, which every module sees.
+    await expect(register(ctx, controlPlaneModule({ control: pool }))).rejects.toMatchObject({
+      code: 'control-plane-paddle-missing',
+    });
+  });
+
+  it('registers in hosted mode with the control pool and the secret: the billing webhook alone', async () => {
+    const pool = openControlDb('postgres://control:pw@127.0.0.1:1/none');
+    closers.push(() => pool.close());
+    const ctx = await testContext({
+      config: { ...base(), mode: 'hosted', appDomain: 'app.test', paddleTeamPriceId: 'pri_test_team' },
+    });
+    const app = Fastify();
+    apps.push(app);
+    // The entry constraint the resolver registers in a built server (`tenancy/resolve.ts`).
+    app.addConstraintStrategy({
+      name: 'wirebenchEntry',
+      storage: () => {
+        const handlers = new Map<unknown, unknown>();
+        return {
+          get: (value) => (handlers.get(value) as never) ?? null,
+          set: (value, h) => void handlers.set(value, h),
+        };
+      },
+      deriveConstraint: () => undefined,
+      mustMatchWhenDerived: false,
+    });
+    const routes: string[] = [];
+    app.addHook('onRoute', (route) => {
+      routes.push(`${String(route.method)} ${route.url}`);
+    });
+    const module = withControlPool([controlPlaneModule()], pool, {
+      paddleWebhookSecret: 'pdl_ntfset_test_placeholder_webhook_secret',
+    })[0]!;
+    await app.register(async (scope) => {
+      await module.register(scope, ctx);
+      await module.registerPublic?.(scope, ctx);
+    });
+    await app.ready();
+    expect(routes).toEqual(['POST /billing/paddle']);
+    // Nothing of the pool or the secret reaches the shared context, which every module sees.
     expect(Object.keys(ctx)).not.toContain('control');
     expect(Object.values(ctx)).not.toContain(pool);
+    expect(JSON.stringify(ctx.config)).not.toContain('pdl_ntfset_');
   });
 
   it('hands the pool to the control-plane entry alone, and leaves the list as it was without one', () => {

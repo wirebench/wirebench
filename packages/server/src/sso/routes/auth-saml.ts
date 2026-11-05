@@ -20,6 +20,7 @@ import { ANONYMOUS_SOURCE, auditSource, recordAudit } from '../../context.js';
 import {
   FLOW_EXPIRED_MESSAGE,
   finishBrowserSignIn,
+  onPrimaryHost,
   refusalMessage,
   safeRedirectPath,
   startBrowserFlow,
@@ -375,6 +376,8 @@ export const browserSamlStartRoutes =
         ],
       },
       async (request, reply) => {
+        const moved = onPrimaryHost(env.ctx.config, request, reply);
+        if (moved !== undefined) return moved;
         const saml = await requireSaml(env, request);
         const requestId = `_${randomBytes(20).toString('hex')}`;
         const relayState = await startBrowserFlow(env, request, reply, {

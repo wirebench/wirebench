@@ -660,7 +660,7 @@ self-hosted teams on their own, which is why they would come first whenever the 
 | 5 | `operations` | **Built** (#828, #833 and #836, 2026-11-04, for #821; ADR-0037 accepted; §20 records what changed from this row). `LISTEN`/`NOTIFY` hub fan-out, advisory locks, sticky host sockets, per-tenant budgets, metrics by tenant id | 4 | partly (multi-instance self-hosted) |
 | 6 | `domains` | **Built** (#825, #826 and #827, 2026-11-03, for #822; ADR-0038; §21 records what changed from this row). The two names as settings, the wildcard certificate in a Traefik recipe by DNS-01, the `app.` entry with emailed links, reserved slugs; the public suffix submission is an operator step for when a domain is registered | 4 | no |
 | 7 | `control-plane` | Signup, subscriptions, edition from subscription, suspension, export, deletion, operator commands; per-tenant settings (OIDC, SAML, SCIM, audit forwarding, SMTP sender, retention), today's environment variables becoming the default tenant's (§19.1, §19.12) | 4, 5, 6 | no |
-| 8 | `custom-domains` | CNAME plus TXT verification for Enterprise tenants; §23 records the design (#830, ADR-0040): a second full name that becomes the primary, a CNAME to `custom.<app-domain>`, one per tenant, an HTTP-01 certificate per name through Traefik's HTTP provider | 6, 7 | no |
+| 8 | `custom-domains` | **Built** (#835, #837, #839 and #842, 2026-11-04, for #830; ADR-0040; §23 records what changed from this row). CNAME plus TXT verification for Enterprise tenants: a second full name that becomes the primary, a CNAME to `custom.<app-domain>`, one per tenant, an HTTP-01 certificate per name through Traefik's HTTP provider, the Domain tab | 6, 7 | no |
 
 The 2026-10-15 trigger (ten self-hosted paying customers) gates slices 5 to 8. Slices 1 to 4 may be
 scheduled earlier on their own merits, each with its own spec amendment and issue when that happens.
@@ -2775,6 +2775,8 @@ create table tenant_settings (tenant_id …, section text not null, value jsonb 
   decision if the settings screen ever needs a "change seats" button.
 - **The webhook,** `POST /billing/paddle` on the entry host (`ENTRY_ROUTE`, so no tenant resolves):
   - raw body, at most 1 MiB, never parsed before the signature passes;
+  - at most 300 posts a minute from one client address, checked before the signature, past which it answers `429`
+    with `retry-after` (Paddle retries it like any failure);
   - **signature:** the `Paddle-Signature` header is `ts=<unix>;h1=<hex>` with possibly several `h1` (Paddle sends
     more than one while a secret rotates). The signed payload is `<ts>:<raw body>`, HMAC-SHA256 under the secret;
     any `h1` that matches, compared in constant time, passes. `ts` must be within 300 s of now (my call: wider than
@@ -2782,8 +2784,11 @@ create table tenant_settings (tenant_id …, section text not null, value jsonb 
     A failure answers `401` with an empty body and logs the reason code, never the header;
   - **replay and order:** `billing_events (provider, event_id)` is inserted first; a duplicate answers `200` and does
     nothing. An event older than the subscription's `last_event_at` is recorded and not applied (Paddle does not
-    promise order);
-  - answers `200` once applied, `500` on a database failure so Paddle retries, never another status.
+    promise order). An event other than `created` whose ref no tenant holds, less than 24 hours old, answers `500`
+    and its `billing_events` row rolls back, so Paddle retries it after the `created` it may have overtaken (a cancel
+    delivered first must not be lost); older, it is recorded `unmatched`;
+  - answers `200` once applied or recorded, `500` on a database failure or an unknown ref as above so Paddle
+    retries, never another status.
 - **The adapter,** `control-plane/billing/paddle.ts`, is the only file that knows Paddle's shapes. It turns an event
   into the control plane's own vocabulary (§5.6), and ignores every event type outside `subscription.*`:
 
@@ -2795,17 +2800,28 @@ create table tenant_settings (tenant_id …, section text not null, value jsonb 
 
   The event carries `ref` (`data.id`), `customerRef`, `status` (`active`, `trialing`, `past_due`, `paused`,
   `canceled`), `seats` (the summed `quantity` of items whose `price.id` is the Team price; zero refuses with
-  `billing-no-team-item`), `periodEnd` (`current_billing_period.ends_at`), `occurredAt`, and from `custom_data` either
-  `signup` (a signup id, §22.6) or `tenant` (a tenant id, for a resubscription).
-- **Applying an event,** in one control transaction:
-  - `created` with a `signup`: completes that signup (§22.6). With a `tenant`: attaches the subscription to it,
-    replacing a canceled one. With neither: recorded, `outcome = 'unmatched'`, logged by event id.
+  `billing-no-team-item`), `periodEnd` (`current_billing_period.ends_at`), `occurredAt`, and from `custom_data` only
+  `signup`: a `signups` row id the server minted (a random UUIDv4, never one the browser makes up). The buyer's
+  checkout sets `custom_data`, and Paddle signs whatever it was given, so no tenant id is ever read from it: one
+  would let anyone pay to replace, then cancel, another tenant's subscription.
+- **Applying an event,** in one control transaction, under an advisory lock on the provider and the ref (no index
+  spans the tenants' `subscriptions` rows, so two events naming one ref for two tenants wait on each other, and the
+  second is refused `billing-ref-conflict`):
+  - `created` is matched only by its `signup`. A signups row with no `tenant_id`: completes that signup (§22.6). A
+    row whose `tenant_id` is set is that tenant's **resubscription** (Part E serves the checkout for it): the
+    subscription is attached, replacing one that is `canceled` or `paused` (or none), and the row is marked
+    `completed`. Over a live one (`active`, `trialing`, `past_due`) it is refused, `not-applied`, logged by tenant
+    id. A missing, unknown or completed signup: recorded, `outcome = 'unmatched'`, logged by event id.
+  - every other event finds its tenant only by the stored ref.
   - `updated`: updates the row; `active` or `trialing` sets the tenant `team` (when its source is `subscription`)
     and its seats, clears `past_due_since`, and resumes a tenant suspended for `unpaid` or `canceled`; `past_due`
     sets `past_due_since` once; `paused` suspends at once with `canceled`.
   - `deleted`: suspends at once with `canceled` (Paddle sends it when the period ends, so the customer had what they
     paid for). Data is kept until a deletion is asked for (ruling 3).
-- **The grace sweep** (§22.15) suspends with `unpaid` any tenant whose `past_due_since` is 14 days old (ruling 2).
+- **The grace sweep** (§22.15) suspends with `unpaid` any tenant whose `past_due_since` is 14 days old (ruling 2),
+  and with `canceled` any active tenant whose edition is the subscription's and whose subscription is `canceled` or
+  `paused`: a cancel recorded while the tenant was suspended for `importing` or `operator` is acted on once that
+  suspension is lifted.
   Each tenant's server admins are mailed through the operator's SMTP when it goes past due, three days before the
   suspension, and when it is suspended. The mails hold the team's name and a link to the tenant's sign-in page,
   nothing from Paddle.
@@ -2819,7 +2835,8 @@ Routes on the entry host, server-rendered in the entry page's style, no cookie a
    moves it), the email's syntax, the name (1–80 characters, plain text), and the slug: `checkSlug`, then free in
    `tenants`, open `signups` and `tenant_slugs_retired` under the slug lock (§22.3). A taken or reserved slug
    re-renders the form saying so; this is the one place a slug's existence is answered, and slugs are public names.
-   On success it inserts the signup (24 h expiry, the slug held that long), mails a link
+   On success it inserts the signup (its id `crypto.randomUUID()`, since `signups.id` has no default and the id is
+   what a `created` is matched by, §22.5; 24 h expiry, the slug held that long), mails a link
    `https://app.<app-domain>/signup/<token>`, and answers "Check your inbox". An address that already has teams may
    sign up another; the answer is the same either way.
 2. **`GET /signup/<token>`**: the token is 32 random bytes, stored as a hash, single-use for the password step. The
@@ -3161,10 +3178,15 @@ Owner rulings (2026-11-04, popup):
   | `paused` | The feature is gone (the edition left Enterprise): released | no |
   | `expired` | Pending for 7 days without a pass | no |
 
-  A pass from `failing`, `lapsed` or `paused` goes back through `verified`, so an attacker who takes over a lapsed
-  name has to prove it again. `paused` is set by the check job, which reads the feature through the tenant's scope.
-  A suspended tenant keeps its name. The resolver drops every host of a tenant that is not `active` in
-  `tenants.status` (§19.5), so a suspension takes effect at the next map reload, and resuming needs no new check.
+  A pass from `lapsed` or `paused` goes back through `verified`, since both released the name, so an attacker who
+  takes over a lapsed name has to prove it again. A pass from `failing` returns the name to `active` while it is
+  still live: it never released the name, so it needs no fresh proof and is never taken offline. A name that failed
+  before it went live goes to `verified` and waits for its certificate. `paused` is set by the check job, which reads
+  the feature through the tenant's scope.
+  A suspended tenant keeps its name. The check job leaves a stopped tenant (suspended or deleting) alone: no DNS
+  check, no move and no mail, so a failing name does not age toward `lapsed` while its tenant is suspended. Its
+  custom host stays on the map on the slug's entry, so it answers as the slug does (§22.7, §23.5), and resuming needs
+  no new check.
 - **Mail.** The tenant's server admins get one plain-text mail, through the tenant's SMTP sender (slice 7), when a
   name becomes `active`, `failing` or `lapsed`. Nothing is mailed without SMTP. Each change is an audit event in the
   tenant's chain: `custom-domain.claimed|verified|activated|failing|lapsed|paused|removed`. The token never appears in
@@ -3222,9 +3244,13 @@ Owner rulings (2026-11-04, popup):
 ### 23.5 Two names, one tenant (amends §19.5)
 
 - **Resolution.** `TenantResolver` keys its map by full host name (§19.12), so each live custom name is one more key
-  next to `<slug>.<app-domain>`. `directory.resolvable()` gains a join on `tenant_hosts where live`, still limited to
-  active tenants other than the default one. A custom name that is not live answers `404`, empty and `no-store`, like
-  any unknown host. The apex and entry branches (§21.3) run first and are unchanged.
+  next to `<slug>.<app-domain>`, on the same `TenantEntry` as the slug's. The directory's read that feeds the map
+  carries each tenant's live custom host (`tenant_hosts where live`) as `TenantScope.customHost`, for exactly the
+  tenants the slug keys cover. The custom host has no status of its own: whatever the entry says of the tenant applies
+  to both names, so a suspended tenant's custom host answers as its slug does (§22), and resuming needs no new check.
+  A custom name that is not live answers `404`, empty and `no-store`, like any unknown host. When the check job makes
+  a name live, or a name is released, the directory's change reloads this instance's map and `tenantsChanged` reloads
+  every other's (§20.3). The apex and entry branches (§21.3) run first and are unchanged.
 - **`tenantUrl` splits in two** (`tenancy/urls.ts`):
   - `tenantUrl(config, request)` is the URL of the host the request came on, slug or custom. Every check that
     compares with what the browser is showing reads this: `Origin`, the cookie's `Secure` choice, the browser

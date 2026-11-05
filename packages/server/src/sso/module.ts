@@ -9,7 +9,7 @@ import type { FastifyInstance } from 'fastify';
 import type { ServerContext, ServerModule } from '../context.js';
 import { TenantRateLimiter } from '../identity/rate-limit.js';
 import type { TenantQuerier } from '../tenancy/tenant-db.js';
-import { tenantUrl, urlWithoutScope } from '../tenancy/urls.js';
+import { primaryUrl, urlWithoutScope } from '../tenancy/urls.js';
 import type { ScopeSource } from '../tenancy/urls.js';
 import { samlSettings, ssoUrls, type SamlState, type SsoEnv, type SsoUrls } from './env.js';
 import * as repo from './repo.js';
@@ -85,7 +85,7 @@ export function ssoModule(options: SsoOptions = {}): ServerModule {
           'saml sign-in on',
         );
       }
-      const urlsFor = (of: ScopeSource): SsoUrls => ssoUrls(tenantUrl(ctx.config, of));
+      const urlsFor = (of: ScopeSource): SsoUrls => ssoUrls(primaryUrl(ctx.config, of));
       const tenants =
         ctx.config.mode === 'hosted'
           ? new TenantSamlProviders({ settings: ctx.settings, urlsFor, log: () => ctx.log })

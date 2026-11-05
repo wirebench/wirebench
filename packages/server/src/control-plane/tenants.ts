@@ -56,6 +56,23 @@ export interface LifecycleActor {
 /** The operator's command line (spec §22.14): the system actor, with `by: 'operator'` in every row's details. */
 export const OPERATOR: LifecycleActor = { source: { actor: { kind: 'system' } }, by: 'operator' };
 
+/** The billing path (spec §22.5): the webhook and the grace sweep, with `by: 'billing'` in every row's details. */
+export const BILLING: LifecycleActor = { source: { actor: { kind: 'system' } }, by: 'billing' };
+
+/**
+ * A change made in a caller's control transaction (the billing path's): once that transaction committed, `after()`
+ * writes the tenant's audit row and tells the directory, as each verb here does after its own.
+ */
+export interface PendingChange {
+  readonly row: TenantRow;
+  after(): Promise<void>;
+}
+
+/** Suspends with `$2` at `$3`, keeping the first suspension's time. */
+const SUSPEND = `status = 'suspended', suspended_reason = $2,
+  suspended_at = case when status = 'suspended' then suspended_at else $3::timestamptz end`;
+const RESUME = `status = 'active', suspended_reason = null, suspended_at = null`;
+
 export interface NewHostedTenant {
   readonly slug: string;
   readonly name: string;
@@ -220,13 +237,7 @@ export class TenantLifecycle {
     const row = await this.#deps.control.transaction(async (tx) => {
       const tenant = await lockedTenant(tx, slug);
       refuseDeleting(tenant);
-      return this.#update(
-        tx,
-        tenant.id,
-        `status = 'suspended', suspended_reason = $2,
-         suspended_at = case when status = 'suspended' then suspended_at else $3::timestamptz end`,
-        [reason, this.#now()],
-      );
+      return this.#update(tx, tenant.id, SUSPEND, [reason, this.#now()]);
     });
     await this.#after(await this.#scope(row), actor, 'tenant.suspended', { reason });
     return row;
@@ -237,12 +248,7 @@ export class TenantLifecycle {
     const changed = await this.#deps.control.transaction(async (tx) => {
       const tenant = await lockedTenant(tx, slug);
       if (tenant.status !== 'suspended') return { row: tenant, was: undefined };
-      const row = await this.#update(
-        tx,
-        tenant.id,
-        `status = 'active', suspended_reason = null, suspended_at = null`,
-        [],
-      );
+      const row = await this.#update(tx, tenant.id, RESUME, []);
       return { row, was: tenant.suspendedReason };
     });
     if (changed.was === undefined) return undefined;
@@ -325,9 +331,74 @@ export class TenantLifecycle {
   }
 
   /** `slug`'s scope, for a write in the tenant's own unit (`admin tenant settings`, spec §22.14). */
-  async tenantScope(slug: string): Promise<TenantScope> {
+  async tenantScopeBySlug(slug: string): Promise<TenantScope> {
     const row = await this.#deps.control.transaction((tx) => lockedTenant(tx, slug));
     return this.#scope(row);
+  }
+
+  /** The tenant with this id, whatever its status, for its own unit (the billing path's subscription row). */
+  async tenantScope(id: string): Promise<TenantScope> {
+    const scope = await this.#writes.scope(id);
+    if (scope === undefined) throw problem('control-plane-tenant-unknown', 'no tenant has that id', 404);
+    return scope;
+  }
+
+  /**
+   * Suspends the tenant `id` in the caller's control transaction `tx`, which has locked its row (the billing path
+   * and the grace sweep, spec §22.5). Commit, then run the change's `after()`.
+   */
+  async suspendWithin(
+    tx: ControlTx,
+    id: string,
+    reason: SuspendedReason,
+    actor: LifecycleActor,
+  ): Promise<PendingChange> {
+    const row = await this.#update(tx, id, SUSPEND, [reason, this.#now()]);
+    return { row, after: async () => this.#after(await this.#scope(row), actor, 'tenant.suspended', { reason }) };
+  }
+
+  /** Resumes the suspended tenant `id` in `tx`, as {@link suspendWithin}: an `active` subscription's (spec §22.5). */
+  async resumeWithin(tx: ControlTx, id: string, actor: LifecycleActor): Promise<PendingChange> {
+    const was = (
+      await tx.query<{ reason: SuspendedReason | null }>(
+        'select suspended_reason as reason from tenants where id = $1::uuid',
+        [id],
+      )
+    ).rows[0]?.reason;
+    const row = await this.#update(tx, id, RESUME, []);
+    return {
+      row,
+      after: async () => this.#after(await this.#scope(row), actor, 'tenant.resumed', { previousReason: was ?? null }),
+    };
+  }
+
+  /**
+   * A Team subscription's edition and seats on the tenant `id`, in `tx` (spec §22.4): only when its edition source is
+   * `subscription`, and only when either changes; `undefined` otherwise, nothing changed.
+   */
+  async subscriptionEditionWithin(
+    tx: ControlTx,
+    id: string,
+    seats: number,
+    actor: LifecycleActor,
+  ): Promise<PendingChange | undefined> {
+    const rows = await tx.query<TenantRow & Record<string, unknown>>(
+      `update tenants set edition = 'team', seats = $2
+       where id = $1::uuid and edition_source = 'subscription' and (edition <> 'team' or seats is distinct from $2)
+       returning ${TENANT_COLUMNS}`,
+      [id, seats],
+    );
+    const row = rows.rows[0];
+    if (row === undefined) return undefined;
+    return {
+      row,
+      after: async () =>
+        this.#after(await this.#scope(row), actor, 'tenant.edition_set', {
+          edition: row.edition,
+          seats: row.seats,
+          editionSource: row.editionSource,
+        }),
+    };
   }
 
   async #update(tx: ControlTx, id: string, set: string, params: readonly unknown[]): Promise<TenantRow> {

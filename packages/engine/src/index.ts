@@ -2400,6 +2400,26 @@ export {
   ciWhoamiResponseSchema,
 } from '#core/server-api/ci-tokens';
 export {
+  CUSTOM_DOMAIN_NAME_MAX_LENGTH,
+  CUSTOM_DOMAIN_STATES,
+  customDomainClaimRequestSchema,
+  customDomainRecordSchema,
+  customDomainResponseSchema,
+  customDomainResultSchema,
+  customDomainSchema,
+  customDomainStateSchema,
+  customDomainVerdictSchema,
+} from '#core/server-api/custom-domains';
+export type {
+  CustomDomain,
+  CustomDomainClaimRequest,
+  CustomDomainRecord,
+  CustomDomainResponse,
+  CustomDomainResult,
+  CustomDomainState,
+  CustomDomainVerdict,
+} from '#core/server-api/custom-domains';
+export {
   AGENT_EMPTY_BODY_SHA256,
   AGENT_HEADERS,
   AGENT_LIMITS,

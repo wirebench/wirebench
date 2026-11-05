@@ -686,7 +686,8 @@ export interface ServerModule {
     | 'host'
     | 'agent'
     | 'entry'
-    | 'control-plane';
+    | 'control-plane'
+    | 'custom-domains';
   /**
    * The module's `NNNN_name.sql` files, merged with the host's in version order (`serve.ts`
    * `allMigrations`). By convention `packages/server/migrations/<module>/` (e.g.

@@ -214,6 +214,18 @@ export const CONTROL_URL_ALLOWED: readonly string[] = [
   'packages/server/src/control-plane/cli.ts',
 ];
 const CONTROL_URL = 'controlDatabaseUrl';
+/** The Paddle webhook's secret (spec §22.5): read by the config, handed over by the start-up, used by the module. */
+export const PADDLE_SECRET_ALLOWED: readonly string[] = [
+  'packages/server/src/config.ts',
+  'packages/server/src/serve.ts',
+  'packages/server/src/control-plane/module.ts',
+];
+const PADDLE_SECRET = 'paddleWebhookSecret';
+/** Each secret the `control-url` rule keeps to its files. */
+const CONTROL_SECRETS: readonly (readonly [string, readonly string[]])[] = [
+  [CONTROL_URL, CONTROL_URL_ALLOWED],
+  [PADDLE_SECRET, PADDLE_SECRET_ALLOWED],
+];
 /** The control plane's own unscoped tables (migration `0023`, spec §22.3), by name, in SQL text. */
 const CONTROL_SQL = /(?<![\w"])"?(?:signups|billing_events|tenant_slugs_retired|tenant_deletions)"?(?![\w"])/i;
 /** Outside `src/control-plane/`, the list the roles' grants read them from. */
@@ -419,7 +431,7 @@ export function findRawDatabase(file: string, content: string): ScopeHit[] {
 
 /**
  * The control plane's rules (spec §22.2): its pool's names and module outside `src/control-plane/` and `serve.ts`, its
- * URL outside {@link CONTROL_URL_ALLOWED}, and SQL text naming its tables outside `src/control-plane/`. Read from the
+ * URL outside {@link CONTROL_URL_ALLOWED} and the Paddle secret outside {@link PADDLE_SECRET_ALLOWED}, and SQL text naming its tables outside `src/control-plane/`. Read from the
  * syntax tree, as the other rules are, so a comment never counts.
  */
 export function findControlPlane(file: string, content: string): ScopeHit[] {
@@ -432,7 +444,7 @@ export function findControlPlane(file: string, content: string): ScopeHit[] {
   };
   const inControlPlane = file.startsWith(CONTROL_PLANE_DIR);
   const poolAllowed = inControlPlane || CONTROL_DB_ALLOWED.includes(file);
-  const urlAllowed = CONTROL_URL_ALLOWED.includes(file);
+  const guarded = CONTROL_SECRETS.filter(([, allowed]) => !allowed.includes(file)).map(([name]) => name);
   const sqlAllowed = inControlPlane || CONTROL_SQL_ALLOWED.includes(file);
   /** `ctx`, `context`, or a property of that name (`server.ctx`), through parentheses, casts and `!`. */
   const isContext = (expression: ts.Expression): boolean => {
@@ -483,12 +495,14 @@ export function findControlPlane(file: string, content: string): ScopeHit[] {
         hit(node, 'control-db');
       if (ts.isIdentifier(node) && CONTROL_DB_NAMES.includes(node.text)) hit(node, 'control-db');
     }
-    if (!urlAllowed) {
-      if (ts.isPropertyAccessExpression(node) && node.name.text === CONTROL_URL) hit(node.name, 'control-url');
-      else if (ts.isStringLiteralLike(node) && node.text === CONTROL_URL) hit(node, 'control-url');
+    if (guarded.length > 0) {
+      if (ts.isPropertyAccessExpression(node) && guarded.includes(node.name.text)) hit(node.name, 'control-url');
+      else if (ts.isStringLiteralLike(node) && guarded.includes(node.text)) hit(node, 'control-url');
       else if (ts.isBindingElement(node) && ts.isObjectBindingPattern(node.parent)) {
         const key = node.propertyName ?? node.name;
-        if ((ts.isIdentifier(key) || ts.isStringLiteralLike(key)) && key.text === CONTROL_URL) hit(node, 'control-url');
+        if ((ts.isIdentifier(key) || ts.isStringLiteralLike(key)) && guarded.includes(key.text)) {
+          hit(node, 'control-url');
+        }
       }
     }
     if (!sqlAllowed) {
