@@ -7,16 +7,20 @@ import type { FastifyBaseLogger } from 'fastify';
 
 export const ENTRY_QUEUE_LIMIT = 200;
 
-export class EntryQueue {
-  readonly #waiting: string[] = [];
+/**
+ * `T` is what waits: an address for the entry's lookup, a message for the signup's mail (spec §22.6), which is
+ * queued the same way so the time to answer does not say whether the mail was sent.
+ */
+export class EntryQueue<T = string> {
+  readonly #waiting: T[] = [];
   readonly #limit: number;
-  readonly #run: (address: string) => Promise<void>;
+  readonly #run: (item: T) => Promise<void>;
   readonly #log: Pick<FastifyBaseLogger, 'warn' | 'error'>;
   #draining: Promise<void> | undefined;
   #closed = false;
 
   constructor(options: {
-    readonly run: (address: string) => Promise<void>;
+    readonly run: (item: T) => Promise<void>;
     readonly log: Pick<FastifyBaseLogger, 'warn' | 'error'>;
     readonly limit?: number;
   }) {
@@ -26,7 +30,7 @@ export class EntryQueue {
   }
 
   /** Queues `address`; `false` when the queue was full or closed and it was dropped. Never waits for the run. */
-  push(address: string): boolean {
+  push(address: T): boolean {
     if (this.#closed) return false;
     if (this.#waiting.length >= this.#limit) {
       this.#log.warn({ limit: this.#limit }, 'the entry queue is full; a lookup was dropped');

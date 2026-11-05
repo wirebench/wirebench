@@ -394,4 +394,49 @@ describe('buildServer', () => {
     expect(text).not.toContain('7ZC5Q0V7R3T9XK2M4N6P8QAB7Y');
     expect(text).not.toContain('x=1');
   });
+
+  it("never logs a signup's token carried in the /signup/:token path, nor in its status poll", async () => {
+    const lines: string[] = [];
+    const logStream = new Writable({
+      write(chunk: Buffer, _encoding, callback) {
+        lines.push(chunk.toString('utf-8'));
+        callback();
+      },
+    });
+    const ctx = await testContext({ dataDir });
+    const app = await buildServer(
+      { ...ctx, config: { ...ctx.config, logLevel: 'info' } },
+      {
+        logStream,
+        modules: [
+          {
+            name: 'control-plane',
+            register: () => Promise.resolve(),
+            // eslint-disable-next-line @typescript-eslint/require-await -- registerPublic is async; this one has no await
+            registerPublic: async (root) => {
+              root.get('/signup', async (_request, reply) => reply.type('text/html').send('<p>form</p>'));
+              root.get('/signup/:token', async (_request, reply) => reply.type('text/html').send('<p>step</p>'));
+              root.post('/signup/:token', async (_request, reply) => reply.type('text/html').send('<p>checkout</p>'));
+              root.get('/signup/:token/status', async (_request, reply) => reply.send({ status: 'pending' }));
+            },
+          },
+        ],
+      },
+    );
+    const token = 'Sgn-T0ken_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+    for (const [method, url] of [
+      ['GET', `/signup/${token}`],
+      ['POST', `/signup/${token}`],
+      ['GET', `/signup/${token}/status`],
+      ['GET', '/signup'],
+    ] as const) {
+      expect((await app.inject({ method, url })).statusCode).toBe(200);
+    }
+    await app.close();
+    const text = lines.join('');
+    expect(text).toContain('/signup/[redacted]"');
+    expect(text).toContain('/signup/[redacted]/status');
+    expect(text).toContain('"url":"/signup"');
+    expect(text).not.toContain(token);
+  });
 });

@@ -94,9 +94,30 @@ describeDb('migration 0023: the control plane (hosted spec §22.2, §22.3)', () 
     expect(BUILTIN_MODULES.find((module) => module.name === 'control-plane')?.migrationsDir).toBe(
       CONTROL_PLANE_MIGRATIONS_DIR,
     );
-    // Slice 8's 0024 follows it; this file pins 0023 by number, not as the last.
+    // Slice 8's 0024 and this module's 0025 follow it; this file pins 0023 by number, not as the last.
     const ledger = await db.owner.query<{ v: string }>('select name as v from schema_migrations where version = 23');
     expect(ledger.rows[0]!.v).toBe('control-plane');
+  });
+
+  it("is followed by 0025, the control plane's too, adding what a signup's completion bound it to, all nullable", async () => {
+    const migrations = await allMigrations(BUILTIN_MODULES);
+    expect(migrations.at(-1)).toMatchObject({ version: 25, name: 'signup-ref' });
+    const columns = (await columnsOf(db.owner)).filter((column) => column.table === 'signups').slice(-8);
+    expect(columns.map(({ column, type, notNull }) => [column, type, notNull])).toEqual([
+      ['provider', 'text', false],
+      ['provider_ref', 'text', false],
+      ['customer_ref', 'text', false],
+      ['subscription_status', 'text', false],
+      ['current_period_end', 'timestamp with time zone', false],
+      ['paid_seats', 'integer', false],
+      ['event_occurred_at', 'timestamp with time zone', false],
+      ['bound_at', 'timestamp with time zone', false],
+    ]);
+    expect((await rowSecurityOf(db.owner)).find((row) => row.table === 'signups')).toEqual({
+      table: 'signups',
+      enabled: false,
+      forced: false,
+    });
   });
 
   it("adds the tenants' billing and lifecycle columns, defaulting an existing tenant to a license", async () => {
