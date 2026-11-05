@@ -132,7 +132,7 @@ describeDb('the audit forward outbox and forwarder (issue #209)', () => {
   const forwarder = (sink: ForwardSink, extra: Partial<ConstructorParameters<typeof AuditForwarder>[0]> = {}) =>
     new AuditForwarder({
       tenancy,
-      sink,
+      sinkFor: () => Promise.resolve(sink),
       license: () => licensed(['audit-log'], () => tdb.scope.tenantId),
       now: clock,
       setTimer: manualTimer().setTimer,
@@ -228,12 +228,15 @@ describeDb('the audit forward outbox and forwarder (issue #209)', () => {
         const pass = await f.runOnce();
         expect(pass.outcome).toBe('failed');
         delays.push(pass.nextDelayMs);
+        // The loop's timer: the next pass comes once the backoff is over (the clock adds a second per read).
+        tick += pass.nextDelayMs;
       }
       expect(delays).toEqual([5_000, 10_000, 20_000, 40_000, 80_000, 160_000, 300_000, 300_000, 300_000]);
       expect(FORWARD_BACKOFF_MAX_MS).toBe(300_000);
       expect(await queued()).toBe('1');
       expect(lines.filter((l) => l.level === 'warn')).toHaveLength(1);
       sink.failure = undefined;
+      tick += 300_000;
       expect(await f.runOnce()).toEqual({ outcome: 'sent', sent: 1, nextDelayMs: FORWARD_BUSY_MS });
       expect(lines.filter((l) => l.level === 'info')).toHaveLength(1);
       expect(await queued()).toBe('0');
@@ -366,6 +369,8 @@ describeDb('the audit forward outbox and forwarder (issue #209)', () => {
       await forwarding(tdb, event(2));
       timer.fire();
       await f.runOnce();
+      // The timer fires once the tenant's backoff is over.
+      tick += 5_000;
       timer.fire();
       await f.runOnce();
       expect(timer.delays()).toEqual([FORWARD_BUSY_MS, FORWARD_IDLE_MS, 5_000, 10_000]);
@@ -374,13 +379,13 @@ describeDb('the audit forward outbox and forwarder (issue #209)', () => {
       expect(sink.closed).toBe(false);
     });
 
-    it('a pass that rejects is logged and the loop re-arms', async () => {
+    it('a logger that throws mid-pass fails only that tenant’s try, and the loop re-arms', async () => {
       await forwarding(tdb, event(1));
       const timer = manualTimer();
       const sink = new FakeSink();
       sink.failure = new Error('down');
-      const { lines, log } = recordingLog();
-      // A logger that throws makes the pass itself reject, past its own catch.
+      const { log } = recordingLog();
+      // A logger that throws while the failure is recorded: the job loop holds it to the tenant, after the lease is freed.
       const throwing = Object.assign(Object.create(log) as FastifyBaseLogger, {
         warn: () => {
           throw new Error('logger broke');
@@ -388,10 +393,10 @@ describeDb('the audit forward outbox and forwarder (issue #209)', () => {
       });
       const f = forwarder(sink, { setTimer: timer.setTimer, log: throwing });
       f.start();
-      await expect(f.runOnce()).rejects.toThrow('logger broke');
+      expect((await f.runOnce()).outcome).toBe('failed');
       expect(timer.delays()).toEqual([FORWARD_BACKOFF_MIN_MS]);
-      expect(lines.filter((l) => l.level === 'error')).toHaveLength(1);
       sink.failure = undefined;
+      tick += FORWARD_BACKOFF_MIN_MS;
       timer.fire();
       expect((await f.runOnce()).outcome).toBe('sent');
       await f.stop();

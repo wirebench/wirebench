@@ -32,6 +32,11 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 export interface SweeperDeps {
   readonly target: SweepTarget;
   readonly maxAgeDays: number;
+  /**
+   * The age in `scope`'s tenant, asked in its unit each sweep (spec §22.12: the tenant's retention, at most the
+   * operator's); `maxAgeDays` for every tenant without it.
+   */
+  readonly maxAgeDaysFor?: (scope: TenantScope) => Promise<number>;
   readonly now: () => Date;
   readonly setTimer: SetTimer;
   readonly log: FastifyBaseLogger;
@@ -86,41 +91,48 @@ export class CaptureSweeper {
   }
 
   private async sweep(): Promise<number> {
-    const cutoff = new Date(this.deps.now().getTime() - this.deps.maxAgeDays * DAY_MS);
     const batch = this.deps.batchSize ?? SWEEP_BATCH;
-    return this.sweepTenants(this.deps.target, cutoff, batch);
+    return this.sweepTenants(this.deps.target, batch);
+  }
+
+  /** `scope`'s cutoff: now less its age, the tenant's own when the deps can tell it. */
+  private async cutoffFor(scope: TenantScope, at: number): Promise<Date> {
+    const days = this.deps.maxAgeDaysFor === undefined ? this.deps.maxAgeDays : await this.deps.maxAgeDaysFor(scope);
+    return new Date(at - days * DAY_MS);
   }
 
   /**
-   * The first pass goes through the job loop, one batch in each tenant's unit. Later passes visit only the
-   * tenants whose last batch was full and committed (Task 10 review M1, M2): a tenant whose unit failed is
-   * logged by the loop and waits for the next interval, so a commit that keeps failing never spins.
+   * The first pass goes through the job loop, one batch in each tenant's unit, at that tenant's cutoff. Later passes
+   * visit only the tenants whose last batch was full and committed (Task 10 review M1, M2): a tenant whose unit failed
+   * is logged by the loop and waits for the next interval, so a commit that keeps failing never spins.
    */
-  private async sweepTenants(target: SweepTarget, cutoff: Date, batch: number): Promise<number> {
+  private async sweepTenants(target: SweepTarget, batch: number): Promise<number> {
+    const at = this.deps.now().getTime();
     let total = 0;
-    const counts = new Map<string, { readonly scope: TenantScope; readonly deleted: number }>();
+    const counts = new Map<string, { readonly scope: TenantScope; readonly cutoff: Date; readonly deleted: number }>();
     const pass = await target.tenancy.forEachTenant(
       target.job,
       async (tx, scope) => {
-        counts.set(scope.tenantId, { scope, deleted: await target.deleteBefore(tx, cutoff, batch) });
+        const cutoff = await this.cutoffFor(scope, at);
+        counts.set(scope.tenantId, { scope, cutoff, deleted: await target.deleteBefore(tx, cutoff, batch) });
       },
       this.deps.log,
     );
     // Counted only once the unit committed: a failed one deleted nothing.
-    let full: TenantScope[] = [];
-    for (const [tenantId, { scope, deleted }] of counts) {
+    let full: { readonly scope: TenantScope; readonly cutoff: Date }[] = [];
+    for (const [tenantId, { scope, cutoff, deleted }] of counts) {
       if (pass.failed.includes(tenantId)) continue;
       total += deleted;
-      if (deleted >= batch) full.push(scope);
+      if (deleted >= batch) full.push({ scope, cutoff });
     }
     while (!this.stopped && full.length > 0) {
-      const next: TenantScope[] = [];
-      for (const scope of full) {
+      const next: typeof full = [];
+      for (const { scope, cutoff } of full) {
         if (this.stopped) break;
         try {
           const deleted = await target.tenancy.db(scope).transaction((tx) => target.deleteBefore(tx, cutoff, batch));
           total += deleted;
-          if (deleted >= batch) next.push(scope);
+          if (deleted >= batch) next.push({ scope, cutoff });
         } catch (error) {
           this.deps.log.error({ err: error, job: target.job, tenantId: scope.tenantId }, 'a job failed for one tenant');
         }

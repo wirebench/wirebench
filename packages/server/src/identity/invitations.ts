@@ -144,7 +144,8 @@ export async function lookupInvitation(
 ): Promise<InvitationLookupResponse> {
   const row = await openInvitationBySecret(env, scope, secret);
   if (row === undefined) throw invitationInvalid();
-  return { email: row.email, methods: { local: env.settings.local, oidc: env.settings.oidc !== undefined } };
+  const oidc = env.oidcOffered !== undefined ? await env.oidcOffered(scope) : env.settings.oidc !== undefined;
+  return { email: row.email, methods: { local: env.settings.local, oidc } };
 }
 
 /**

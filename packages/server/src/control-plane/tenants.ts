@@ -360,6 +360,12 @@ export class TenantLifecycle {
     return { ...row, scope };
   }
 
+  /** `slug`'s scope, for a write in the tenant's own unit (`admin tenant settings`, spec §22.14). */
+  async tenantScopeBySlug(slug: string): Promise<TenantScope> {
+    const row = await this.#deps.control.transaction((tx) => lockedTenant(tx, slug));
+    return this.#scope(row);
+  }
+
   /**
    * The tenant `slug` names while an import made it and has not finished (suspended, `importing`, spec §22.10): the
    * one a crashed `admin tenant import` resumes. `undefined` otherwise.

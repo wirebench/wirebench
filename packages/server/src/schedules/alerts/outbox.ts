@@ -9,6 +9,7 @@
 import type { ScheduleRunStatus, ScheduleRunSummary } from '@wirebench/engine';
 import type { FastifyBaseLogger } from 'fastify';
 import type { LicenseService } from '../../context.js';
+import type { TenantSettings } from '../../settings/service.js';
 import { tenantStopped } from '../../tenancy/directory.js';
 import type { TenantScope } from '../../tenancy/scope.js';
 import type { TenantQuerier } from '../../tenancy/tenant-db.js';
@@ -204,18 +205,49 @@ function reasonOf(error: unknown): string {
   return error instanceof Error ? `${error.name}: ${error.message}` : 'unknown error';
 }
 
-/** Sends one alert to one target; throws why it did not arrive. */
-export type DeliverAlert = (target: StoredAlertTarget, payload: AlertPayload) => Promise<void>;
+/** Sends one alert of `scope`'s tenant to one target; throws why it did not arrive. */
+export type DeliverAlert = (target: StoredAlertTarget, payload: AlertPayload, scope: TenantScope) => Promise<void>;
 
-/** Delivery over SMTP and HTTPS under the server's settings. `options` are for tests: a CA, a deadline. */
+/** The mail an alert of a tenant goes through, and whether it is the tenant's own (so under the egress rule). */
+export interface TenantMail {
+  readonly smtp: NonNullable<SchedulesSettings['smtp']>;
+  readonly own: boolean;
+}
+
+/** `smtpFor` over `ctx.settings`: the tenant's own SMTP when it set one, else the operator's (spec §22.12). */
+export function tenantMail(
+  settings: Pick<TenantSettings, 'of' | 'smtp'>,
+): (scope: TenantScope) => Promise<TenantMail | undefined> {
+  return async (scope) => {
+    const own = await settings.of(scope, 'smtp');
+    if (own !== undefined) return { smtp: own, own: true };
+    const operator = await settings.smtp(scope);
+    return operator === undefined ? undefined : { smtp: operator, own: false };
+  };
+}
+
+/**
+ * Delivery over SMTP and HTTPS under the server's settings. `smtpFor` is the tenant's mail (hosted: its own SMTP,
+ * else the operator's, spec §22.12); without it, the server's. A tenant's own mail server goes under `egress`, as
+ * every HTTPS target does; the operator's does not. The rest of `options` are for tests: a CA, a deadline.
+ */
 export function alertDelivery(
   settings: Pick<SchedulesSettings, 'secretKey' | 'alertHosts' | 'smtp'>,
-  options: Pick<HttpsDeliveryOptions, 'ca' | 'timeoutMs' | 'egress'>,
+  options: Pick<HttpsDeliveryOptions, 'ca' | 'timeoutMs' | 'egress'> & {
+    readonly smtpFor?: (scope: TenantScope) => Promise<TenantMail | undefined>;
+  },
 ): DeliverAlert {
-  return async (target, payload) => {
+  return async (target, payload, scope) => {
     if (target.kind === 'email') {
-      if (settings.smtp === undefined) throw new Error('this server has no mail settings');
-      await sendAlertMail(settings.smtp, target.to, renderEmail(payload), options);
+      const mail: TenantMail | undefined =
+        options.smtpFor !== undefined
+          ? await options.smtpFor(scope)
+          : settings.smtp === undefined
+            ? undefined
+            : { smtp: settings.smtp, own: false };
+      if (mail === undefined) throw new Error('this server has no mail settings');
+      const { egress, ...rest } = options;
+      await sendAlertMail(mail.smtp, target.to, renderEmail(payload), { ...rest, ...(mail.own ? { egress } : {}) });
       return;
     }
     const key = settings.secretKey;
@@ -361,7 +393,7 @@ export class AlertOutbox {
     try {
       // A target removed since the alert was queued gets nothing; one that took its place gets it.
       if (target === undefined) throw new Error('the alert target was removed');
-      await this.env.deliver(target, row.payload);
+      await this.env.deliver(target, row.payload, scope);
     } catch (error) {
       const attempts = row.attempts + 1;
       const message = messageOf(error);

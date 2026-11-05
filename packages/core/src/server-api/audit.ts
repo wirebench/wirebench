@@ -110,6 +110,11 @@ export const AUDIT_ACTIONS = [
   'tenant.export_downloaded',
   'tenant.imported',
   /**
+   * A tenant's settings section was saved or cleared (hosted edition spec §22.12): `details.section` names it, and
+   * nothing of its value is ever recorded.
+   */
+  'settings.changed',
+  /**
    * A custom name was claimed or removed through the routes or the admin command (hosted edition spec §23.6), or its
    * check moved it (§23.2): by name only, never its token.
    */
@@ -144,6 +149,7 @@ export const AUDIT_ACTION_GROUPS = [
   'agent',
   'tenant',
   'custom_domain',
+  'settings',
 ] as const;
 export type AuditActionGroup = (typeof AUDIT_ACTION_GROUPS)[number];
 

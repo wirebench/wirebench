@@ -21,8 +21,8 @@ import type { FastifyInstance, FastifyReply } from 'fastify';
 import { jsonSchema } from '../../schema.js';
 import { primaryUrl } from '../../tenancy/urls.js';
 import { FLOW_EXPIRED_MESSAGE, finishBrowserSignIn, refusalMessage, takeBrowserFlow } from '../browser-flows.js';
-import type { IdentityEnv } from '../env.js';
-import { flowInvalid, methodDisabled } from '../errors.js';
+import { requireProvider, type IdentityEnv } from '../env.js';
+import { flowInvalid } from '../errors.js';
 import { INVITE_PAGE_CSP, renderReturnPage } from '../invite-page.js';
 import { linkClaims } from '../linking.js';
 import type { OidcClaims } from '../oidc.js';
@@ -80,8 +80,7 @@ export const authOidcRoutes =
         },
       },
       async (request, reply) => {
-        const provider = env.provider;
-        if (provider === undefined) throw methodDisabled();
+        const provider = await requireProvider(env, request);
         const body = request.body as OidcStartRequest;
         const now = env.now();
         const id = newId();
@@ -115,8 +114,7 @@ export const authOidcRoutes =
         schema: { querystring: jsonSchema(oidcCallbackQuerySchema, { io: 'input' }) },
       },
       async (request, reply) => {
-        const provider = env.provider;
-        if (provider === undefined) throw methodDisabled();
+        const provider = await requireProvider(env, request);
         const query = request.query as OidcCallbackQuery;
         const db = env.ctx.tenancy.db(request.tenant);
         const refused = (reason: string, email?: string) =>
@@ -183,8 +181,7 @@ export const authOidcRoutes =
           schema: { querystring: jsonSchema(oidcCallbackQuerySchema, { io: 'input' }) },
         },
         async (request, reply) => {
-          const provider = env.provider;
-          if (provider === undefined) throw methodDisabled();
+          const provider = await requireProvider(env, request);
           const query = request.query as OidcCallbackQuery;
           const flow = await takeBrowserFlow(env, request, reply, 'oidc', query.state);
           if (flow === undefined) return sendSignInPage(reply, env.ctx, { status: 400, message: FLOW_EXPIRED_MESSAGE });
@@ -235,7 +232,7 @@ export const authOidcRoutes =
         },
       },
       async (request, reply) => {
-        if (env.provider === undefined) throw methodDisabled();
+        await requireProvider(env, request);
         const body = request.body as OidcCompleteRequest;
         const db = env.ctx.tenancy.db(request.tenant);
         const flow = await repo.flowById(db, body.flowId);

@@ -11,6 +11,7 @@ import type { FastifyInstance } from 'fastify';
 import type { ServerContext, ServerModule } from '../context.js';
 import type { SetTimer } from '../hooks/env.js';
 import { CaptureSweeper } from '../hooks/sweep.js';
+import type { TenantScope } from '../tenancy/scope.js';
 import { realTimer } from '../live/module.js';
 import { removeLogsBefore } from './repo.js';
 import { sessionLogRoutes } from './routes.js';
@@ -34,15 +35,27 @@ export function sessionLogsModule(options: SessionLogsOptions = {}): ServerModul
     register(app: FastifyInstance, ctx: ServerContext): Promise<void> {
       // The workspace `recordSessionLogs` switch and these routes; a server without it hides both in the desktop.
       ctx.meta.addCapability(SESSION_LOGS_CAPABILITY);
+      const hosted = ctx.config.mode === 'hosted';
       sessionLogRoutes({
         tenancy: ctx.tenancy,
         hooks: ctx.hooks,
         license: () => ctx.license,
         now,
         maxLogBytes: ctx.config.sessionLogMaxMb * 1024 * 1024,
+        // Hosted, the tenant's own cap, within the operator's (spec §22.12).
+        ...(hosted
+          ? {
+              maxLogBytesFor: async (scope: TenantScope) =>
+                (await ctx.settings.retention(scope)).sessionLogMaxMb * 1024 * 1024,
+            }
+          : {}),
       })(app);
       const sweeper = new CaptureSweeper({
         maxAgeDays: ctx.config.auditMaxAgeDays,
+        // Hosted, the tenant's own audit age, within the operator's (spec §22.12): a session log is kept as long.
+        ...(hosted
+          ? { maxAgeDaysFor: async (scope: TenantScope) => (await ctx.settings.retention(scope)).auditMaxAgeDays }
+          : {}),
         now,
         setTimer,
         log: ctx.log,

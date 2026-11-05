@@ -13,7 +13,8 @@
  */
 import { Agent as HttpAgent, request as httpRequest, type IncomingMessage } from 'node:http';
 import { Agent as HttpsAgent, request as httpsRequest } from 'node:https';
-import type { AuditEvent } from '@wirebench/engine';
+import { isIP } from 'node:net';
+import { checkEgress, checkedLookup, type AuditEvent, type EgressPolicy } from '@wirebench/engine';
 import { isLoopback } from '../../config.js';
 import type { ForwardSink } from './forwarder.js';
 import { reason, trustAnchors } from './trust.js';
@@ -24,6 +25,11 @@ export interface HttpsSinkOptions {
   /** A PEM bundle added to the system roots. */
   readonly ca?: string;
   readonly timeoutMs: number;
+  /**
+   * The egress rule (spec §17.5): a hosted tenant's collector is its own URL, so it may not reach the server's own
+   * network. Unset, the operator's own collector, reached as configured.
+   */
+  readonly egress?: EgressPolicy;
 }
 
 export class HttpsSink implements ForwardSink {
@@ -31,6 +37,7 @@ export class HttpsSink implements ForwardSink {
   private readonly token: string | undefined;
   private readonly timeoutMs: number;
   private readonly agent: HttpAgent;
+  private readonly egress: EgressPolicy | undefined;
   private closed = false;
 
   constructor(options: HttpsSinkOptions) {
@@ -41,6 +48,7 @@ export class HttpsSink implements ForwardSink {
       throw new Error('an audit forward to http:// is accepted only for a loopback host; use https://');
     this.token = options.token;
     this.timeoutMs = options.timeoutMs;
+    this.egress = options.egress;
     const ca = trustAnchors(options.ca);
     this.agent =
       this.url.protocol === 'https:'
@@ -51,6 +59,8 @@ export class HttpsSink implements ForwardSink {
   async send(events: AuditEvent[]): Promise<void> {
     if (this.closed) throw new Error('the HTTPS audit sink is closed');
     if (events.length === 0) return;
+    const literal = this.url.hostname.startsWith('[') ? this.url.hostname.slice(1, -1) : this.url.hostname;
+    if (this.egress !== undefined && isIP(literal) !== 0) checkEgress(this.url.hostname, literal, this.egress);
     const body = JSON.stringify({ events });
     const deadline = Date.now() + this.timeoutMs;
     const first = await this.attempt(body, this.timeoutMs);
@@ -78,6 +88,7 @@ export class HttpsSink implements ForwardSink {
         {
           method: 'POST',
           agent: this.agent,
+          ...(this.egress !== undefined ? { lookup: checkedLookup(this.egress) } : {}),
           headers: {
             'content-type': 'application/json',
             'content-length': Buffer.byteLength(body),

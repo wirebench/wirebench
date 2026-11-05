@@ -396,8 +396,45 @@ describe('admin tenant (hosted edition spec §22.14)', () => {
     }
   });
 
+  it('parses settings get, set and clear, and refuses --file anywhere but set', () => {
+    expect(parseServerArgs(['admin', 'tenant', 'settings', 'acme', 'get'])).toEqual({
+      command: 'admin-tenant-settings',
+      slug: 'acme',
+      action: 'get',
+    });
+    expect(parseServerArgs(['admin', 'tenant', 'settings', 'acme', 'get', 'oidc'])).toEqual({
+      command: 'admin-tenant-settings',
+      slug: 'acme',
+      action: 'get',
+      section: 'oidc',
+    });
+    expect(parseServerArgs(['admin', 'tenant', 'settings', 'acme', 'set', 'budgets', '--file', 'b.json'])).toEqual({
+      command: 'admin-tenant-settings',
+      slug: 'acme',
+      action: 'set',
+      section: 'budgets',
+      file: 'b.json',
+    });
+    expect(parseServerArgs(['admin', 'tenant', 'settings', 'acme', 'clear', 'smtp'])).toEqual({
+      command: 'admin-tenant-settings',
+      slug: 'acme',
+      action: 'clear',
+      section: 'smtp',
+    });
+    for (const argv of [
+      ['admin', 'tenant', 'settings', 'acme', 'set', 'budgets'],
+      ['admin', 'tenant', 'settings', 'acme', 'clear'],
+      ['admin', 'tenant', 'settings', 'acme', 'clear', 'smtp', '--file', 'x.json'],
+      ['admin', 'tenant', 'settings', 'acme', 'get', '--file', 'x.json'],
+      ['admin', 'tenant', 'settings', 'acme', 'show'],
+      ['admin', 'tenant', 'suspend', 'acme', '--file', 'x.json'],
+    ]) {
+      expect(() => parseServerArgs(argv), argv.join(' ')).toThrow(UsageError);
+    }
+  });
+
   it('lists the commands in the help text', () => {
-    for (const verb of ['list', 'create', 'set-edition', 'suspend', 'resume', 'rename', 'delete']) {
+    for (const verb of ['list', 'create', 'set-edition', 'suspend', 'resume', 'rename', 'delete', 'settings']) {
       expect(HELP_TEXT).toContain(`admin tenant ${verb}`);
     }
   });

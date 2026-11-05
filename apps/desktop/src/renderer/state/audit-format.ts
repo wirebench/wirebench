@@ -38,6 +38,7 @@ export const ACTION_GROUPS = [
   'agent',
   'tenant',
   'custom_domain',
+  'settings',
 ] as const;
 export type ActionGroup = (typeof ACTION_GROUPS)[number];
 export const ACTION_GROUP_LABELS: Record<ActionGroup, string> = {
@@ -58,6 +59,7 @@ export const ACTION_GROUP_LABELS: Record<ActionGroup, string> = {
   agent: 'Paired agents',
   tenant: 'Hosted account',
   custom_domain: 'Custom domain',
+  settings: 'Server settings',
 };
 
 export function actionLabel(action: string): string {

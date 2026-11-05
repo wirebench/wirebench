@@ -38,7 +38,7 @@ import { signIn } from '../../identity/sessions.js';
 import { sendSignInPage } from '../../identity/sign-in-page.js';
 import { hashSecret, mintSecret, newId, pkceChallenge } from '../../identity/tokens.js';
 import { jsonSchema } from '../../schema.js';
-import type { SsoEnv } from '../env.js';
+import type { SamlState, SsoEnv } from '../env.js';
 import * as repo from '../repo.js';
 import { SamlRejected, claimsOf, type SamlAssertion } from '../saml.js';
 
@@ -97,7 +97,7 @@ type Answer =
  * validation and ours, the claims mapping and the linking rules. Only the flow and the reply differ.
  */
 async function answerResponse(
-  env: SsoEnv & { readonly saml: NonNullable<SsoEnv['saml']> },
+  env: SsoEnv & { readonly saml: SamlState },
   request: FastifyRequest,
   input: {
     readonly samlResponse: string;
@@ -156,6 +156,20 @@ const formField = (body: unknown, name: string): string => {
   return typeof value === 'string' ? value : '';
 };
 
+/** The request's tenant's SAML sign-in, or `identity-method-disabled` when it has none. */
+async function requireSaml(env: SsoEnv, request: FastifyRequest): Promise<SamlState> {
+  const saml = await env.samlFor(request.tenant);
+  if (saml === undefined) throw methodDisabled();
+  return saml;
+}
+
+/** A preHandler, ahead of the license check: a tenant without SAML answers as a server without it. */
+const samlOn =
+  (env: SsoEnv) =>
+  async (request: FastifyRequest): Promise<void> => {
+    await requireSaml(env, request);
+  };
+
 export const authSamlRoutes =
   (env: SsoEnv) =>
   (app: FastifyInstance): void => {
@@ -164,19 +178,14 @@ export const authSamlRoutes =
     app.post(
       '/auth/saml/start',
       {
-        preHandler: [
-          (_request, _reply, done) => {
-            done(env.saml === undefined ? methodDisabled() : undefined);
-          },
-          feature,
-        ],
+        preHandler: [samlOn(env), feature],
         schema: {
           body: jsonSchema(samlStartRequestSchema, { io: 'input' }),
           response: { 201: jsonSchema(samlStartResponseSchema) },
         },
       },
       async (request, reply) => {
-        const saml = env.saml!;
+        const saml = await requireSaml(env, request);
         const body = request.body as SamlStartRequest;
         const now = env.now();
         const id = newId();
@@ -220,8 +229,7 @@ export const authSamlRoutes =
           preHandler: [rateLimit(env, (request) => [ipKey(request)])],
         },
         async (request, reply) => {
-          const saml = env.saml;
-          if (saml === undefined) throw methodDisabled();
+          const saml = await requireSaml(env, request);
           const relayState = formField(request.body, 'RelayState');
           const samlResponse = formField(request.body, 'SAMLResponse');
           const flow =
@@ -262,8 +270,7 @@ export const authSamlRoutes =
             preHandler: [rateLimit(env, (request) => [ipKey(request)])],
           },
           async (request, reply) => {
-            const saml = env.saml;
-            if (saml === undefined) throw methodDisabled();
+            const saml = await requireSaml(env, request);
             const flow = await takeBrowserFlow(env, request, reply, 'saml', formField(request.body, 'RelayState'));
             if (flow === undefined || flow.nonce === null)
               return sendSignInPage(reply, env.ctx, { status: 400, message: FLOW_EXPIRED_MESSAGE });
@@ -297,7 +304,7 @@ export const authSamlRoutes =
         },
       },
       async (request, reply) => {
-        if (env.saml === undefined) throw methodDisabled();
+        await requireSaml(env, request);
         const body = request.body as SamlCompleteRequest;
         const flow = await repo.samlFlowById(env.ctx.tenancy.db(request.tenant), body.flowId);
         if (
@@ -323,12 +330,12 @@ export const authSamlRoutes =
       },
     );
 
-    app.get('/auth/saml/metadata', async (_request, reply) => {
-      if (env.saml === undefined) throw methodDisabled();
+    app.get('/auth/saml/metadata', async (request, reply) => {
+      const saml = await requireSaml(env, request);
       return reply
         .header('cache-control', 'no-store')
         .type('application/samlmetadata+xml; charset=utf-8')
-        .send(env.saml.provider.metadata());
+        .send(saml.provider.metadata());
     });
 
     app.get(
@@ -337,13 +344,16 @@ export const authSamlRoutes =
         preHandler: [requireServerAdmin, feature],
         schema: { response: { 200: jsonSchema(samlInfoResponseSchema) } },
       },
-      (request) => ({
-        configured: env.saml !== undefined,
-        ...(env.saml !== undefined ? { idpEntityId: env.saml.provider.idpEntityId } : {}),
-        entityId: env.urlsFor(request).entityId,
-        acsUrl: env.urlsFor(request).acsUrl,
-        scimBaseUrl: env.urlsFor(request).scimBaseUrl,
-      }),
+      async (request) => {
+        const saml = await env.samlFor(request.tenant);
+        return {
+          configured: saml !== undefined,
+          ...(saml !== undefined ? { idpEntityId: saml.provider.idpEntityId } : {}),
+          entityId: env.urlsFor(request).entityId,
+          acsUrl: env.urlsFor(request).acsUrl,
+          scimBaseUrl: env.urlsFor(request).scimBaseUrl,
+        };
+      },
     );
   };
 
@@ -359,18 +369,17 @@ export const browserSamlStartRoutes =
       '/sign-in/saml',
       {
         preHandler: [
-          (_request, _reply, done) => {
-            done(env.saml === undefined ? methodDisabled() : undefined);
-          },
+          samlOn(env),
           env.ctx.license.requireFeature('sso-provisioning'),
           // Per address, since each start writes a row.
           rateLimit(env, (request) => [ipKey(request)]),
         ],
       },
       async (request, reply) => {
+        const saml = await requireSaml(env, request);
+        // A tenant without the method answers 404 on either of its names; one with it starts on the primary.
         const moved = onPrimaryHost(env.ctx.config, request, reply);
         if (moved !== undefined) return moved;
-        const saml = env.saml!;
         const requestId = `_${randomBytes(20).toString('hex')}`;
         const relayState = await startBrowserFlow(env, request, reply, {
           provider: 'saml',

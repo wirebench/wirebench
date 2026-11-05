@@ -6,7 +6,7 @@ import { loadConfig, type ServerConfig } from '../../src/config.js';
 import type { ServerContext, ServerHooks, ServerModule } from '../../src/context.js';
 import { openControlDb } from '../../src/control-plane/control-db.js';
 import { withControlPool } from '../../src/control-plane/module.js';
-import { identityModule } from '../../src/identity/module.js';
+import { identityModule, type IdentityOptions } from '../../src/identity/module.js';
 import type { OidcProvider } from '../../src/identity/oidc.js';
 import { hashPassword } from '../../src/identity/passwords.js';
 import * as repo from '../../src/identity/repo.js';
@@ -76,6 +76,8 @@ export async function identityHarness(
   options: {
     readonly env?: Record<string, string>;
     readonly provider?: OidcProvider;
+    /** More of identity's options: a hosted suite's `oidcEgress` for its loopback issuers. */
+    readonly identity?: Pick<IdentityOptions, 'oidcEgress'>;
     readonly modules?: readonly ServerModule[] | ((clock: TestClock) => readonly ServerModule[]);
     /** Overrides the repository store's git client — a test forcing `RepoStore.create` to fail. */
     readonly git?: GitCli;
@@ -141,6 +143,7 @@ export async function identityHarness(
     now: () => clock.now,
     sweepIntervalMs: 0,
     ...(options.provider !== undefined ? { provider: options.provider } : {}),
+    ...options.identity,
   });
   const extra = typeof options.modules === 'function' ? options.modules(clock) : (options.modules ?? []);
   const modules = [identity, ...extra];

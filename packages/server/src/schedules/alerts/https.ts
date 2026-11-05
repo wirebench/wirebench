@@ -38,6 +38,21 @@ export interface HttpsDeliveryOptions {
   readonly egress: EgressPolicy | 'unchecked';
 }
 
+/**
+ * The alert never reached a mail or web server that answered in its protocol: the connection was refused, failed,
+ * timed out, or the egress rule refused it. Its message is for the logs; the test-alert route answers a fixed one,
+ * so it cannot be used to probe which ports answer behind a host.
+ */
+export class AlertConnectionError extends Error {
+  constructor(
+    message: string,
+    readonly host: string,
+  ) {
+    super(message);
+    this.name = 'AlertConnectionError';
+  }
+}
+
 /** The `X-Wirebench-Signature` value for `body` under `secret`. */
 export function alertSignature(secret: string, body: string): string {
   return `sha256=${createHmac('sha256', secret).update(body, 'utf8').digest('hex')}`;
@@ -58,7 +73,7 @@ export function postAlert(alert: HttpsAlert, options: HttpsDeliveryOptions): Pro
     try {
       checkEgress(host, literal, policy);
     } catch (error) {
-      return Promise.reject(new Error(`the alert to ${host} failed: ${reason(error)}`));
+      return Promise.reject(new AlertConnectionError(`the alert to ${host} failed: ${reason(error)}`, host));
     }
   }
   return new Promise((resolve, reject) => {
@@ -97,10 +112,10 @@ export function postAlert(alert: HttpsAlert, options: HttpsDeliveryOptions): Pro
       },
     );
     const timer = setTimeout(() => {
-      settle(new Error(`the alert to ${host} did not finish within ${timeoutMs} ms`));
+      settle(new AlertConnectionError(`the alert to ${host} did not finish within ${timeoutMs} ms`, host));
       req.destroy();
     }, timeoutMs);
-    req.on('error', (error) => settle(new Error(`the alert to ${host} failed: ${reason(error)}`)));
+    req.on('error', (error) => settle(new AlertConnectionError(`the alert to ${host} failed: ${reason(error)}`, host)));
     req.end(body);
   });
 }

@@ -5,7 +5,7 @@
  * Config has already validated the URL, the token and the CA file's combination with the scheme.
  */
 import { readFile } from 'node:fs/promises';
-import { splitPemBundle } from '@wirebench/engine';
+import { splitPemBundle, type EgressPolicy } from '@wirebench/engine';
 import { ConfigError, type ServerConfig } from '../../config.js';
 import { FORWARD_TIMEOUT_MS, type ForwardSink } from './forwarder.js';
 import { HttpsSink } from './https-sink.js';
@@ -49,4 +49,23 @@ async function readCa(path: string): Promise<string> {
   if (splitPemBundle(pem).length === 0)
     throw new ConfigError([{ variable: CA_VARIABLE, message: 'holds no PEM certificate' }]);
   return pem;
+}
+
+/**
+ * A hosted tenant's sink from its `auditForward` setting (spec §22.12): an HTTPS collector, its CA pasted rather than
+ * a file, its token sealed in the setting, under the egress rule. The URL was checked on save (`https:`, no
+ * credentials); one that is not `https:` here was written past the API and forwards nowhere.
+ */
+export function sinkFromSettings(
+  setting: { readonly url: string; readonly caPem?: string; readonly token?: string },
+  egress: EgressPolicy,
+): ForwardSink | undefined {
+  if (new URL(setting.url).protocol !== 'https:') return undefined;
+  return new HttpsSink({
+    url: setting.url,
+    timeoutMs: FORWARD_TIMEOUT_MS,
+    egress,
+    ...(setting.token !== undefined ? { token: setting.token } : {}),
+    ...(setting.caPem !== undefined ? { ca: setting.caPem } : {}),
+  });
 }

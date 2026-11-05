@@ -18,6 +18,7 @@ import type { RepoStore } from '../../src/repos/repo-store.js';
 import type { TenantScope } from '../../src/tenancy/scope.js';
 import { environmentKeyRoot } from '../../src/tenancy/keys.js';
 import { createTenancy, directoryOf } from '../../src/tenancy/tenancy.js';
+import { createTenantSettings } from '../../src/settings/service.js';
 
 /** A database whose every query succeeds with no rows; `failing` flips `select 1` to a rejection. */
 export function fakeDatabase(options: { failing?: boolean } = {}): Database {
@@ -106,7 +107,7 @@ export async function testContext(
       },
       '0.0.0-test',
     );
-  const context: ServerContext = {
+  const base: Omit<ServerContext, 'settings'> & { settings?: ServerContext['settings'] } = {
     config,
     // `RepoStore` is a class with private fields now (Task 6); this fake only ever needs `path` and the
     // start-up sweep's `tmpDirs` from tests that don't exercise the real store, so it is cast through
@@ -131,6 +132,12 @@ export async function testContext(
         raw ?? fakeTenantsDatabase(),
         config.secretsKey !== undefined ? { keyRoot: environmentKeyRoot(config.secretsKey) } : {},
       ),
+  };
+  const context: ServerContext = {
+    ...base,
+    settings:
+      base.settings ??
+      createTenantSettings({ config: base.config, tenancy: base.tenancy, hooks: base.hooks, bus: base.bus }),
   };
   // With no real database, the directory is loaded here, so `request.tenant` names the fake default tenant;
   // over a real one, the caller loads it once the schema is migrated.
