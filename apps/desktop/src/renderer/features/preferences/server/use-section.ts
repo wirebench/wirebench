@@ -18,8 +18,17 @@ export interface SectionCard<D> {
   readonly error: string | undefined;
   readonly draft: D;
   readonly setDraft: (patch: Partial<D>) => void;
-  /** Sends `input`; a toast says it was saved. `problem`, when given, is shown instead and nothing is sent. */
-  readonly save: (input: Readonly<Record<string, unknown>>, problem?: string) => Promise<boolean>;
+  /**
+   * Sends `input`; a toast says it was saved. `problem`, when given, is shown instead and nothing is sent.
+   * `secretAgain` is the draft patch that opens the secret field: applied when the server refuses the save as
+   * `settings-invalid` (the card passes it only when the destination changed and the stored secret was kept, which the
+   * server refuses until the secret is typed again).
+   */
+  readonly save: (
+    input: Readonly<Record<string, unknown>>,
+    problem?: string,
+    secretAgain?: Partial<D>,
+  ) => Promise<boolean>;
   readonly remove: () => Promise<boolean>;
 }
 
@@ -54,7 +63,7 @@ export function useSection<D>(
       setDraftState((current) => ({ ...current, ...patch }));
       if (local.error !== undefined) setLocal({ error: undefined });
     },
-    save: async (input, problem) => {
+    save: async (input, problem, secretAgain) => {
       if (problem !== undefined) {
         setLocal({ error: problem });
         return false;
@@ -62,6 +71,9 @@ export function useSection<D>(
       setLocal({ error: undefined });
       const saved = await useServerSettingsStore.getState().save(section, input);
       if (saved) showToast(`${label} saved.`);
+      else if (secretAgain !== undefined && useServerSettingsStore.getState().codes[section] === 'settings-invalid') {
+        setDraftState((current) => ({ ...current, ...secretAgain }));
+      }
       return saved;
     },
     remove: async () => {

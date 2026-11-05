@@ -58,7 +58,12 @@ export function AuditForwardingSection() {
     const url = draft.url.trim();
     const problem = !url.startsWith('https://') ? 'The forwarding URL must start with https://.' : undefined;
     const token = draft.token?.trim();
-    void card.save(compact({ url, caPem: optional(draft.caPem), token: token === '' ? undefined : token }), problem);
+    const redirected = stored && draft.token === undefined && url !== (fieldText(value, 'url') ?? '');
+    void card.save(
+      compact({ url, caPem: optional(draft.caPem), token: token === '' ? undefined : token }),
+      problem,
+      redirected ? { token: '' } : undefined,
+    );
   };
   return (
     <div data-testid="server-audit-forwarding">

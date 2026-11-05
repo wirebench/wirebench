@@ -55,6 +55,8 @@ interface ServerSettingsSnapshot {
   readonly exportsLoaded: boolean;
   readonly busy: Readonly<Partial<Record<ServerCardId, boolean>>>;
   readonly errors: Readonly<Partial<Record<ServerCardId, string | undefined>>>;
+  /** The code of each card's last refusal, beside its words: a card reacts to some (`settings-invalid`). */
+  readonly codes: Readonly<Partial<Record<ServerCardId, string | undefined>>>;
 }
 
 interface ServerSettingsStore extends ServerSettingsSnapshot {
@@ -90,6 +92,7 @@ const EMPTY: ServerSettingsSnapshot = {
   exportsLoaded: false,
   busy: {},
   errors: {},
+  codes: {},
 };
 
 /** Whether `settings` is a hosted team's: its sections are its own, not the environment's. */
@@ -122,13 +125,18 @@ export const useServerSettingsStore = create<ServerSettingsStore>((set, get) => 
     const url = get().url;
     if (url === undefined) return undefined;
     const started = epoch;
-    set((s) => ({ busy: { ...s.busy, [card]: true }, errors: { ...s.errors, [card]: undefined } }));
+    set((s) => ({
+      busy: { ...s.busy, [card]: true },
+      errors: { ...s.errors, [card]: undefined },
+      codes: { ...s.codes, [card]: undefined },
+    }));
     const result = await call(url);
     if (started !== epoch || get().url !== url) return undefined;
     if (!result.ok) {
       set((s) => ({
         busy: { ...s.busy, [card]: false },
         errors: { ...s.errors, [card]: serverErrorText(result.error) },
+        codes: { ...s.codes, [card]: result.error.code },
       }));
       return undefined;
     }
@@ -214,7 +222,7 @@ export const useServerSettingsStore = create<ServerSettingsStore>((set, get) => 
       return true;
     },
     clearError: (card) => {
-      set((s) => ({ errors: { ...s.errors, [card]: undefined } }));
+      set((s) => ({ errors: { ...s.errors, [card]: undefined }, codes: { ...s.codes, [card]: undefined } }));
     },
     reset: () => {
       loads += 1;
@@ -223,6 +231,27 @@ export const useServerSettingsStore = create<ServerSettingsStore>((set, get) => 
     },
   };
 });
+
+/**
+ * The server the *Server* group is about, among the signed-in ones: the open workspace's, when it is shared on one of
+ * them; otherwise the first signed in. The page manages one server at a time, so with two signed in and no linked
+ * workspace the first is shown, as the Accounts list orders them.
+ */
+export function settingsServerUrl(
+  signedIn: readonly { readonly url: string }[],
+  linked: string | undefined,
+): string | undefined {
+  const origin = (url: string): string | undefined => {
+    try {
+      return new URL(url).origin;
+    } catch {
+      return undefined;
+    }
+  };
+  const wanted = linked === undefined ? undefined : origin(linked);
+  const match = wanted === undefined ? undefined : signedIn.find((server) => origin(server.url) === wanted);
+  return (match ?? signedIn[0])?.url;
+}
 
 /** The pages the nav lists for `settings`: every page on a hosted team, all but Billing and Delete team self-hosted. */
 export function serverPages(settings: ServerSettingsWire | undefined): readonly ServerPageId[] {

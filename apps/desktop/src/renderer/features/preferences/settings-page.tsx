@@ -1,7 +1,8 @@
 import { Suspense, lazy, useEffect } from 'react';
 import { signedInServers, useAccountStore } from '../../state/account.js';
+import { useSyncStore } from '../../state/sync.js';
 import { useUiStore } from '../../state/ui.js';
-import { useServerSettingsStore } from './server/server-settings-store.js';
+import { settingsServerUrl, useServerSettingsStore } from './server/server-settings-store.js';
 
 /**
  * Loaded on demand: the editor pulls in every section's form (and the shortcuts keymap with
@@ -24,8 +25,10 @@ export function SettingsPage() {
   const open = useUiStore((state) => state.preferences.open);
   const section = useUiStore((state) => state.preferences.section);
   // The Server group (hosted edition spec §22.13): the connected server's own settings, read each time Settings
-  // opens; the server answers its server admins only, and the group shows only then.
-  const serverUrl = useAccountStore((state) => signedInServers(state.servers)[0]?.url);
+  // opens; the server answers its server admins only, and the group shows only then. With several signed in, the open
+  // workspace's server when it is shared on one, else the first (see `settingsServerUrl`).
+  const linked = useSyncStore((state) => (state.status.kind === 'server' ? state.status.remote : undefined));
+  const serverUrl = useAccountStore((state) => settingsServerUrl(signedInServers(state.servers), linked));
   useEffect(() => {
     if (open && serverUrl !== undefined) void useServerSettingsStore.getState().load(serverUrl);
     if (!open || serverUrl === undefined) useServerSettingsStore.getState().reset();

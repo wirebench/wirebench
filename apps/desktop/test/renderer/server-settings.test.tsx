@@ -11,7 +11,10 @@ import type {
   TenantExportWire,
 } from '@wirebench/wire/wire-base';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
-import { useServerSettingsStore } from '../../src/renderer/features/preferences/server/server-settings-store.js';
+import {
+  settingsServerUrl,
+  useServerSettingsStore,
+} from '../../src/renderer/features/preferences/server/server-settings-store.js';
 import { SignInSection } from '../../src/renderer/features/preferences/server/sign-in-section.js';
 import { ProvisioningSection } from '../../src/renderer/features/preferences/server/provisioning-section.js';
 import { AuditForwardingSection } from '../../src/renderer/features/preferences/server/audit-forwarding-section.js';
@@ -154,6 +157,21 @@ describe('the store', () => {
   });
 });
 
+describe('settingsServerUrl', () => {
+  const servers = [{ url: 'https://first.example' }, { url: 'https://team.example' }];
+
+  it('follows the open workspace’s server when it is one of the signed-in ones', () => {
+    expect(settingsServerUrl(servers, 'https://team.example')).toBe('https://team.example');
+    expect(settingsServerUrl(servers, 'https://team.example/')).toBe('https://team.example');
+  });
+
+  it('keeps the first otherwise', () => {
+    expect(settingsServerUrl(servers, undefined)).toBe('https://first.example');
+    expect(settingsServerUrl(servers, 'https://elsewhere.example')).toBe('https://first.example');
+    expect(settingsServerUrl([], 'https://team.example')).toBeUndefined();
+  });
+});
+
 describe('Sign-in', () => {
   const OIDC = {
     issuer: 'https://login.acme.example',
@@ -213,6 +231,38 @@ describe('Sign-in', () => {
     expect(screen.queryByTestId('server-oidc-remove')).toBeNull();
   });
 
+  it('opens the secret field when the server refuses a new issuer with the stored secret kept', async () => {
+    const save = vi
+      .fn()
+      .mockResolvedValue(
+        refused(
+          'settings-invalid',
+          'The OIDC client secret must be given again when the issuer or the client id changes.',
+        ),
+      );
+    installWirebenchApi({ serverSettings: { save } });
+    loaded(view({ oidc: set(OIDC) }));
+    render(<SignInSection />);
+    expect(screen.queryByTestId('server-oidc-secret-input')).toBeNull();
+    fireEvent.change(screen.getByTestId('server-oidc-issuer'), { target: { value: 'https://login.other.example' } });
+    fireEvent.click(screen.getByTestId('server-oidc-save'));
+    await vi.waitFor(() => expect(screen.getByTestId('server-oidc-secret-input')).toBeTruthy());
+    expect(screen.getByTestId('server-oidc-error').textContent).toContain('must be given again');
+  });
+
+  it('leaves the secret field closed on another refusal of the same issuer', async () => {
+    const save = vi
+      .fn()
+      .mockResolvedValue(refused('settings-invalid', 'The issuer’s discovery document did not answer.'));
+    installWirebenchApi({ serverSettings: { save } });
+    loaded(view({ oidc: set(OIDC) }));
+    render(<SignInSection />);
+    fireEvent.change(screen.getByTestId('server-oidc-display-name'), { target: { value: 'Acme' } });
+    fireEvent.click(screen.getByTestId('server-oidc-save'));
+    await vi.waitFor(() => expect(screen.getByTestId('server-oidc-error').textContent).toContain('did not answer'));
+    expect(screen.queryByTestId('server-oidc-secret-input')).toBeNull();
+  });
+
   it('removes a provider, and saves SAML metadata with its options', async () => {
     const clear = vi.fn().mockResolvedValue(ok(view()));
     const save = vi.fn().mockResolvedValue(ok(view()));
@@ -231,6 +281,9 @@ describe('Sign-in', () => {
         value: { idpMetadataXml: '<EntityDescriptor/>' },
       }),
     );
+    expect(screen.getByTestId('server-saml-email')).toBeTruthy();
+    expect(screen.getByTestId('server-saml-name')).toBeTruthy();
+    expect(screen.getByTestId('server-saml-skew')).toBeTruthy();
     expect(screen.getByTestId('server-saml-acs').textContent).toBe(`${URL_}/api/v1/auth/saml/acs`);
   });
 

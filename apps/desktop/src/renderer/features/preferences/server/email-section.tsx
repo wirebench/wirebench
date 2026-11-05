@@ -48,6 +48,17 @@ export function smtpUrl(url: string, credentials: SmtpDraft['credentials']): str
   return parsed.href;
 }
 
+/** Where an SMTP URL connects, as the server compares it: scheme, host and port (each scheme's default filled in). */
+export function smtpEndpoint(url: string): string | undefined {
+  try {
+    const parsed = new URL(url.trim());
+    const port = parsed.port === '' ? (parsed.protocol === 'smtps:' ? '465' : '587') : parsed.port;
+    return `${parsed.protocol}//${parsed.hostname.toLowerCase()}:${port}`;
+  } catch {
+    return undefined;
+  }
+}
+
 export function EmailSection() {
   const card = useSection('smtp', 'Email', smtpDraft);
   const { draft, value } = card;
@@ -79,7 +90,15 @@ export function EmailSection() {
         : draft.from.trim() === ''
           ? 'Enter the address mail is sent from.'
           : undefined;
-    void card.save({ url: url ?? draft.url.trim(), from: draft.from.trim() }, problem);
+    const redirected =
+      stored &&
+      draft.credentials === undefined &&
+      smtpEndpoint(draft.url) !== smtpEndpoint(fieldText(value, 'url') ?? '');
+    void card.save(
+      { url: url ?? draft.url.trim(), from: draft.from.trim() },
+      problem,
+      redirected ? { credentials: { username: '', password: '' } } : undefined,
+    );
   };
   return (
     <div data-testid="server-email">

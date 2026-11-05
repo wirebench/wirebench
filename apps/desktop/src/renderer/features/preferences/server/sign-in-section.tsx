@@ -85,6 +85,12 @@ export function OidcCard() {
         displayName: optional(draft.displayName),
       }),
       problem,
+      stored &&
+        draft.clientSecret === undefined &&
+        (draft.issuer.trim() !== (fieldText(value, 'issuer') ?? '') ||
+          draft.clientId.trim() !== (fieldText(value, 'clientId') ?? ''))
+        ? { clientSecret: '' }
+        : undefined,
     );
   };
   return (
@@ -270,6 +276,7 @@ export function SamlCard() {
         <FieldLabel htmlFor="server-saml-email">Email attribute</FieldLabel>
         <input
           id="server-saml-email"
+          data-testid="server-saml-email"
           value={draft.emailAttribute}
           placeholder="The subject’s NameID"
           onChange={(event) => card.setDraft({ emailAttribute: event.target.value })}
@@ -278,6 +285,7 @@ export function SamlCard() {
         <FieldLabel htmlFor="server-saml-name">Name attribute</FieldLabel>
         <input
           id="server-saml-name"
+          data-testid="server-saml-name"
           value={draft.nameAttribute}
           onChange={(event) => card.setDraft({ nameAttribute: event.target.value })}
           className={MONO_INPUT}
@@ -285,6 +293,7 @@ export function SamlCard() {
         <FieldLabel htmlFor="server-saml-skew">Clock skew (seconds)</FieldLabel>
         <input
           id="server-saml-skew"
+          data-testid="server-saml-skew"
           inputMode="numeric"
           value={draft.clockSkewSeconds}
           placeholder="120"
