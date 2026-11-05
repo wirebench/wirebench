@@ -24,6 +24,7 @@ import type { LicenseService } from '../../context.js';
 import type { SetTimer } from '../../hooks/env.js';
 import { STOP_PASS } from '../../tenancy/jobs.js';
 import type { TenantScope } from '../../tenancy/scope.js';
+import type { TenantQuerier } from '../../tenancy/tenant-db.js';
 import type { Tenancy } from '../../tenancy/tenancy.js';
 import { newId } from '../../identity/tokens.js';
 import { claimForwardBatch, deleteForwarded, releaseForwardLease } from '../repo.js';
@@ -54,8 +55,8 @@ export interface ForwardSink {
 
 export interface ForwarderDeps {
   readonly tenancy: Pick<Tenancy, 'db' | 'forEachTenant'>;
-  /** The tenant's sink, or `undefined` when it forwards nowhere: asked in each tenant's unit, every pass. */
-  readonly sinkFor: (scope: TenantScope) => Promise<ForwardSink | undefined>;
+  /** The tenant's sink, or `undefined` when it forwards nowhere: asked in each tenant's unit, `tx`, every pass. */
+  readonly sinkFor: (scope: TenantScope, tx: TenantQuerier) => Promise<ForwardSink | undefined>;
   /** Read before each pass, never at construction: licensing replaces the service after registration. */
   readonly license: () => LicenseService;
   readonly now: () => Date;
@@ -175,7 +176,7 @@ export class AuditForwarder {
         if (this.paused.delete(scope.tenantId)) {
           this.deps.log.info({ tenantId: scope.tenantId }, 'audit forwarding resumed');
         }
-        const sink = await this.deps.sinkFor(scope);
+        const sink = await this.deps.sinkFor(scope, tx);
         if (sink === undefined) return;
         forwarding++;
         // This tenant's backoff, and no other's: its rows wait, the next tenant is claimed as usual.

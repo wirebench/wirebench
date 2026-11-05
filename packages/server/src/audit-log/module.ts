@@ -51,7 +51,7 @@ export function auditLogModule(options: AuditLogOptions = {}): ServerModule {
       const tenantSinks = hosted ? new TenantSinks(ctx.settings, ctx.egress) : undefined;
       ctx.hooks.audit.push(
         auditHook(now, {
-          forward: tenantSinks !== undefined ? (tx) => tenantSinks.forwards(tx.scope) : sink !== undefined,
+          forward: tenantSinks !== undefined ? (tx) => tenantSinks.forwards(tx.scope, tx) : sink !== undefined,
         }),
       );
       // Written after the license route answers: kept, so shutdown waits for them and a test can.
@@ -111,7 +111,7 @@ export function auditLogModule(options: AuditLogOptions = {}): ServerModule {
               tenancy: ctx.tenancy,
               sinkFor:
                 tenantSinks !== undefined
-                  ? (scope) => tenantSinks.sinkFor(scope)
+                  ? (scope, tx) => tenantSinks.sinkFor(scope, tx)
                   : (scope) => Promise.resolve(isDefaultTenant(ctx.tenancy, scope) ? sink : undefined),
               license: () => ctx.license,
               now,

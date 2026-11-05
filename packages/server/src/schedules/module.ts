@@ -13,6 +13,7 @@ import { CaptureSweeper } from '../hooks/sweep.js';
 import { CommitStore } from '../sync/commit-store.js';
 import { tenantPaths } from '../tenancy/paths.js';
 import type { TenantScope } from '../tenancy/scope.js';
+import type { TenantQuerier } from '../tenancy/tenant-db.js';
 import { AlertOutbox, alertDelivery, tenantMail, type DeliverAlert } from './alerts/outbox.js';
 import { deleteOutboxBefore, deleteRunsBefore } from './repo.js';
 import { scheduleRunRoutes } from './run-routes.js';
@@ -83,7 +84,10 @@ export function schedulesModule(options: SchedulesOptions = {}): ServerModule {
         egress: ctx.egress,
         license,
         ...(ctx.config.mode === 'hosted'
-          ? { runSlotsFor: async (scope: TenantScope) => (await ctx.settings.budgets(scope)).runSlots }
+          ? {
+              runSlotsFor: async (scope: TenantScope, tx: TenantQuerier) =>
+                (await ctx.settings.budgets(scope, tx)).runSlots,
+            }
           : {}),
         ...(options.execute !== undefined ? { execute: options.execute } : {}),
       });

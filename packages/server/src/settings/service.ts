@@ -90,13 +90,22 @@ export interface WriteOptions {
   readonly within?: (tx: TenantQuerier) => Promise<void>;
 }
 
+/**
+ * The reads below take `within`, the tenant's unit a caller already has open (the audit hook's, a sweep's, the
+ * scheduler's claim): on a cache miss the rows are read through it rather than through a second pooled connection,
+ * which a pool full of such units would wait on for ever.
+ */
 export interface TenantSettings {
   readonly source: SettingsSource;
   /**
    * `section` of `scope`'s tenant with its secrets opened, or `undefined` when it is not set. For a module only:
    * never answer it on the API or log it.
    */
-  of<S extends SettingsSection>(scope: TenantScope, section: S): Promise<SectionValues[S] | undefined>;
+  of<S extends SettingsSection>(
+    scope: TenantScope,
+    section: S,
+    within?: TenantQuerier,
+  ): Promise<SectionValues[S] | undefined>;
   /** Every section as the API shows it: plain fields, secrets as `{ set }`. */
   view(scope: TenantScope, options?: { readonly operator?: boolean }): Promise<SettingsView>;
   /**
@@ -109,8 +118,8 @@ export interface TenantSettings {
   set(scope: TenantScope, section: SettingsSection, input: unknown, options: WriteOptions): Promise<void>;
   /** Removes `section`; whether there was one. Refused as {@link set} is. */
   clear(scope: TenantScope, section: SettingsSection, options: WriteOptions): Promise<boolean>;
-  retention(scope: TenantScope): Promise<EffectiveRetention>;
-  budgets(scope: TenantScope): Promise<EffectiveBudgets>;
+  retention(scope: TenantScope, within?: TenantQuerier): Promise<EffectiveRetention>;
+  budgets(scope: TenantScope, within?: TenantQuerier): Promise<EffectiveBudgets>;
   /** The tenant's own SMTP when it set one, else the operator's, else `undefined`. */
   smtp(scope: TenantScope): Promise<SmtpSettings | undefined>;
   /** Runs `listener` after each change this process learns of: its own writes, another instance's, a missed bus. */
@@ -348,8 +357,12 @@ class HostedSettings extends Base implements TenantSettings {
     });
   }
 
-  async of<S extends SettingsSection>(scope: TenantScope, section: S): Promise<SectionValues[S] | undefined> {
-    const entry = (await this.#load(scope)).get(section);
+  async of<S extends SettingsSection>(
+    scope: TenantScope,
+    section: S,
+    within?: TenantQuerier,
+  ): Promise<SectionValues[S] | undefined> {
+    const entry = (await this.#load(scope, within)).get(section);
     return entry === undefined ? undefined : resolveSection(section, entry.value, entry.secret);
   }
 
@@ -402,9 +415,9 @@ class HostedSettings extends Base implements TenantSettings {
     return removed;
   }
 
-  async retention(scope: TenantScope): Promise<EffectiveRetention> {
+  async retention(scope: TenantScope, within?: TenantQuerier): Promise<EffectiveRetention> {
     const maxima = environmentRetention(this.deps.config);
-    const own = (await this.of(scope, 'retention')) ?? {};
+    const own = (await this.of(scope, 'retention', within)) ?? {};
     const clamp = (key: keyof EffectiveRetention): number => Math.min(own[key] ?? maxima[key], maxima[key]);
     return {
       auditMaxAgeDays: clamp('auditMaxAgeDays'),
@@ -415,9 +428,9 @@ class HostedSettings extends Base implements TenantSettings {
     };
   }
 
-  async budgets(scope: TenantScope): Promise<EffectiveBudgets> {
+  async budgets(scope: TenantScope, within?: TenantQuerier): Promise<EffectiveBudgets> {
     const defaults = environmentBudgets(this.deps.config);
-    const own = (await this.of(scope, 'budgets')) ?? {};
+    const own = (await this.of(scope, 'budgets', within)) ?? {};
     const sendsPerMinute = own.sendsPerMinute ?? defaults.sendsPerMinute;
     return {
       sendsPerMinute,
@@ -441,10 +454,10 @@ class HostedSettings extends Base implements TenantSettings {
     );
   }
 
-  #load(scope: TenantScope): Promise<Loaded> {
+  #load(scope: TenantScope, within?: TenantQuerier): Promise<Loaded> {
     let loading = this.#cache.get(scope.tenantId);
     if (loading === undefined) {
-      const started = this.#read(scope);
+      const started = this.#read(scope, within);
       loading = started;
       this.#cache.set(scope.tenantId, started);
       // A failed read is not kept: the next one tries again.
@@ -455,8 +468,12 @@ class HostedSettings extends Base implements TenantSettings {
     return loading;
   }
 
-  async #read(scope: TenantScope): Promise<Loaded> {
-    const rows = await this.deps.tenancy.db(scope).transaction((tx) => readSections(tx));
+  async #read(scope: TenantScope, within: TenantQuerier | undefined): Promise<Loaded> {
+    // Through the caller's open unit when it has one (it is this tenant's: its scope is the same), else a unit of its own.
+    const rows =
+      within !== undefined && within.scope.tenantId === scope.tenantId
+        ? await readSections(within)
+        : await this.deps.tenancy.db(scope).transaction((tx) => readSections(tx));
     const loaded = new Map<SettingsSection, Entry>();
     let dataKey: Buffer | undefined;
     for (const row of rows) {

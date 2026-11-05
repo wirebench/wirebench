@@ -78,7 +78,9 @@ async function receive(env: HooksEnv, request: FastifyRequest, reply: FastifyRep
       await repo.insertCapture(tx, capture);
       // Hosted, the tenant's own count, within the operator's (spec §22.12).
       const keep =
-        env.ctx.config.mode === 'hosted' ? (await env.ctx.settings.retention(tx.scope)).hooksKeep : env.settings.keep;
+        env.ctx.config.mode === 'hosted'
+          ? (await env.ctx.settings.retention(tx.scope, tx)).hooksKeep
+          : env.settings.keep;
       await repo.pruneCaptures(tx, hook.id, keep);
     });
   } catch (error) {

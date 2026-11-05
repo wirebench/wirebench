@@ -6,6 +6,7 @@
 import type { EgressPolicy } from '@wirebench/engine';
 import type { TenantSettings } from '../../settings/service.js';
 import type { TenantScope } from '../../tenancy/scope.js';
+import type { TenantQuerier } from '../../tenancy/tenant-db.js';
 import type { ForwardSink } from './forwarder.js';
 import { sinkFromSettings } from './sink.js';
 
@@ -23,11 +24,12 @@ export class TenantSinks {
     });
   }
 
-  sinkFor(scope: TenantScope): Promise<ForwardSink | undefined> {
+  /** `within`: the tenant's unit the caller has open, which a settings read on a cache miss goes through. */
+  sinkFor(scope: TenantScope, within?: TenantQuerier): Promise<ForwardSink | undefined> {
     let held = this.#cache.get(scope.tenantId);
     if (held === undefined) {
       const made = this.settings
-        .of(scope, 'auditForward')
+        .of(scope, 'auditForward', within)
         .then((setting) => (setting === undefined ? undefined : this.build(setting, this.egress)));
       held = made;
       this.#cache.set(scope.tenantId, made);
@@ -39,8 +41,8 @@ export class TenantSinks {
   }
 
   /** Whether `scope`'s tenant forwards anywhere: the audit hook queues its events only then. */
-  async forwards(scope: TenantScope): Promise<boolean> {
-    return (await this.settings.of(scope, 'auditForward')) !== undefined;
+  async forwards(scope: TenantScope, within?: TenantQuerier): Promise<boolean> {
+    return (await this.settings.of(scope, 'auditForward', within)) !== undefined;
   }
 
   async close(): Promise<void> {

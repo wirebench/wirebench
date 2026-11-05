@@ -58,7 +58,7 @@ export interface SchedulerEnv extends ExecutorEnv {
    * The run slots of `scope`'s tenant: hosted, the operator's override, else the defaults (spec §20.7, §22.12).
    * Unset, `settings.runSlots` for every tenant.
    */
-  readonly runSlotsFor?: (scope: TenantScope) => Promise<number>;
+  readonly runSlotsFor?: (scope: TenantScope, tx: TenantQuerier) => Promise<number>;
   /** Claims up to `limit` of one tenant's queued runs, marking them running; a test seam. */
   readonly claimQueued?: (tx: TenantQuerier, limit: number, at: Date) => Promise<string[]>;
 }
@@ -307,7 +307,7 @@ export class Scheduler {
           // Suspended since the pass that listed it (spec §22.7, review M1): a freed slot or a kick starts nothing.
           if (await tenantStopped(tx)) return undefined;
           const slots =
-            this.env.runSlotsFor === undefined ? this.env.settings.runSlots : await this.env.runSlotsFor(tx.scope);
+            this.env.runSlotsFor === undefined ? this.env.settings.runSlots : await this.env.runSlotsFor(tx.scope, tx);
           if ((await repo.countRunningRuns(tx)) >= slots) return FULL;
           return (await claim(tx, 1, this.env.now()))[0];
         });

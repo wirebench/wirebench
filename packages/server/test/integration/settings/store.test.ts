@@ -181,6 +181,26 @@ describeDb('the settings store (spec §22.12)', () => {
       expect((await h.ctx.settings.of(acme, 'smtp'))?.url).toBe('smtp://203.0.113.10:587');
     });
 
+    it('reads through a unit the caller has open, never a second connection of its own', async () => {
+      await h.ctx.settings.set(acme, 'retention', { hooksKeep: 5 }, { by: 'u1' });
+      await h.ctx.settings.set(acme, 'budgets', { runSlots: 3 }, { by: 'operator', operator: true });
+      // Dropped, as another instance's write would: the next read is a miss.
+      h.ctx.hooks.tenantSettingsChanged.all().forEach((listener) => listener.fn({ tenantId: acme.tenantId }));
+      const opened = vi.spyOn(h.ctx.tenancy, 'db');
+      try {
+        const [retention, budgets] = await h.db.transaction(async (raw) => {
+          await raw.query("select set_config('wirebench.tenant_id', $1, true)", [acme.tenantId]);
+          const tx = Object.assign(raw, { scope: acme }) as unknown as Parameters<typeof h.ctx.settings.retention>[1];
+          return [await h.ctx.settings.retention(acme, tx), await h.ctx.settings.budgets(acme, tx)] as const;
+        });
+        expect(retention.hooksKeep).toBe(5);
+        expect(budgets.runSlots).toBe(3);
+        expect(opened).not.toHaveBeenCalled();
+      } finally {
+        opened.mockRestore();
+      }
+    });
+
     it('keeps two tenants apart: one tenant’s row neither reads nor opens in the other', async () => {
       await h.ctx.settings.set(acme, 'oidc', OIDC, { by: 'u1' });
       expect((await h.ctx.settings.view(beta)).oidc.value).toBeNull();
