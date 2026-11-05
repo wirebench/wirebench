@@ -79,7 +79,7 @@ export function ExportSection() {
 
   useEffect(() => {
     if (!pending) return undefined;
-    const timer = setInterval(() => void useServerSettingsStore.getState().loadExports(), EXPORT_POLL_MS);
+    const timer = setInterval(() => void useServerSettingsStore.getState().pollExports(), EXPORT_POLL_MS);
     return () => clearInterval(timer);
   }, [pending]);
 

@@ -440,6 +440,26 @@ describe('Export', () => {
     expect(screen.getByTestId('server-export-request')).toHaveProperty('disabled', true);
   });
 
+  it('polls quietly: a download refusal stays, and nothing turns busy', async () => {
+    const list = vi.fn().mockResolvedValue(ok({ exports: [READY, QUEUED] }));
+    installWirebenchApi({ tenantExports: { list } });
+    loaded(view());
+    useServerSettingsStore.setState({ errors: { exports: 'Could not reach the server' } });
+    const busy: boolean[] = [];
+    const unsubscribe = useServerSettingsStore.subscribe((s) => busy.push(s.busy.exports === true));
+    await useServerSettingsStore.getState().pollExports();
+    unsubscribe();
+    expect(list).toHaveBeenCalledWith({ url: URL_ });
+    expect(useServerSettingsStore.getState().exports.map((row) => row.id)).toEqual(['e1', 'e2']);
+    expect(useServerSettingsStore.getState().errors.exports).toBe('Could not reach the server');
+    expect(busy.every((flag) => !flag)).toBe(true);
+    // A failed poll changes nothing; the next one retries.
+    list.mockResolvedValue({ ok: false, error: { code: 'server-unreachable', message: 'down' } });
+    await useServerSettingsStore.getState().pollExports();
+    expect(useServerSettingsStore.getState().exports).toHaveLength(2);
+    expect(useServerSettingsStore.getState().errors.exports).toBe('Could not reach the server');
+  });
+
   it('says why an export failed in plain words, never its code', async () => {
     const failed = (id: string, error: string | null): TenantExportWire => ({
       ...READY,

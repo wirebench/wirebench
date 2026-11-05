@@ -66,6 +66,11 @@ interface ServerSettingsStore extends ServerSettingsSnapshot {
   ) => Promise<boolean>;
   readonly clear: (section: ServerSettingsWritableSectionWire) => Promise<boolean>;
   readonly loadExports: () => Promise<void>;
+  /**
+   * The poll's read while an export is queued or running: it sets no busy flag and clears no error, so a download's
+   * refusal stays on the card and the buttons do not flicker every poll. A failed poll is dropped; the next one retries.
+   */
+  readonly pollExports: () => Promise<void>;
   readonly requestExport: () => Promise<boolean>;
   /** Saves a ready export through main's Save dialog; the path it was saved to, or `undefined`. */
   readonly downloadExport: (id: string) => Promise<string | undefined>;
@@ -175,6 +180,14 @@ export const useServerSettingsStore = create<ServerSettingsStore>((set, get) => 
     loadExports: async () => {
       const answer = await write('exports', (url) => ipc().tenantExports.list({ url }));
       if (answer !== undefined) set({ exports: answer.exports, exportsLoaded: true });
+    },
+    pollExports: async () => {
+      const url = get().url;
+      if (url === undefined) return;
+      const started = epoch;
+      const result = await ipc().tenantExports.list({ url });
+      if (started !== epoch || get().url !== url || !result.ok) return;
+      set({ exports: result.value.exports, exportsLoaded: true });
     },
     requestExport: async () => {
       const answer = await write('exports', (url) => ipc().tenantExports.request({ url }));
