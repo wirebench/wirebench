@@ -86,8 +86,9 @@ In Paddle's dashboard (sandbox first):
    a `test_…` token or `production` for a `live_…` one; the server refuses a token that does not match.
 3. Approve `https://app.<app-domain>` as a checkout domain (the signup page's origin).
 4. Create a **notification destination** for `https://app.<app-domain>/billing/paddle` with the `subscription.*`
-   events, and put its secret key (`pdl_ntfset_…`) alone in `secrets/paddle_webhook_secret`, mode 600. It is a secret:
-   the server reads it from the file, never prints it, and keeps it off every log line.
+   events, and put its secret key (`pdl_ntfset_…`) alone in `secrets/paddle_webhook_secret`, readable by the server's container only: `chown 1000:1000` and
+   `chmod 400` it (the image runs as its `node` user, uid 1000, and compose mounts the file with the host's owner and
+   mode, so a root-owned mode-600 file stops the server at start). It is a secret: the server reads it from the file, never prints it, and keeps it off every log line.
 
 A subscription that goes `past_due` gets Paddle's own retries and 14 days' grace, then the team is suspended `unpaid`;
 a canceled one suspends the team at the end of its period and keeps its data until a server admin or the operator asks

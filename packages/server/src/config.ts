@@ -1264,7 +1264,9 @@ export function loadConfig(env: NodeJS.ProcessEnv, version: string): ServerConfi
     problems.push({
       variable: 'WIREBENCH_SERVER_LOCAL_AUTH',
       message:
-        'identity-no-method: at least one sign-in method must be on; set it to true, or set WIREBENCH_SERVER_OIDC_ISSUER or WIREBENCH_SERVER_SAML_IDP_METADATA',
+        config.mode === 'hosted'
+          ? 'identity-no-method: a hosted server keeps local sign-in on, as each team sets its own OIDC or SAML provider in the app; unset it or set it to true'
+          : 'identity-no-method: at least one sign-in method must be on; set it to true, or set WIREBENCH_SERVER_OIDC_ISSUER or WIREBENCH_SERVER_SAML_IDP_METADATA',
     });
   }
   if (problems.length > 0) throw new ConfigError(problems);

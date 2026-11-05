@@ -107,6 +107,14 @@ describe('hosted mode (spec §22.1)', () => {
     for (const problem of problems) expect(problem.message).toMatch(/^entry-smtp-missing: /);
   });
 
+  it('refuses local sign-in off with advice that fits hosted mode', () => {
+    const problem = problemsOf({ ...HOSTED, WIREBENCH_SERVER_LOCAL_AUTH: 'false' }).find(
+      (p) => p.variable === 'WIREBENCH_SERVER_LOCAL_AUTH',
+    );
+    expect(problem?.message).toMatch(/^identity-no-method: a hosted server keeps local sign-in on/);
+    expect(problem?.message).not.toContain('WIREBENCH_SERVER_OIDC_ISSUER');
+  });
+
   it('refuses a migration URL that is the app role’s', () => {
     for (const migration of [
       HOSTED.WIREBENCH_SERVER_DATABASE_URL!,

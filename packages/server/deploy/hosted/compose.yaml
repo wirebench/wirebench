@@ -12,7 +12,8 @@
 #
 # Settings go in `.env` beside this file (`env.example` lists them; copy it to `.env`), the Hetzner DNS API token in
 # `secrets/hetzner_api_token` and the Paddle notification destination's secret in `secrets/paddle_webhook_secret`,
-# each mode 600. Then `docker compose up -d`.
+# each mode 600; the Paddle one owned by uid 1000 (the server image's `node` user), as compose mounts a file secret
+# with the host's owner and mode. Then `docker compose up -d`.
 #
 # `PROXY_TOKEN` in `.env` is the proxy listener's bearer token. Traefik's HTTP provider takes a header value, not a file,
 # so compose puts it into the header and also hands it to the server as the `proxy_token` secret: one value, two readers.
