@@ -67,7 +67,7 @@ export function licensingHarness(
     readonly extra?: (clock: TestClock) => readonly ServerModule[];
     /** Restarts over an earlier harness's schema; see {@link identityHarness}. */
     readonly db?: IdentityHarness['db'];
-    /** A hosted configuration, which `loadConfig` refuses; see {@link identityHarness}. */
+    /** A hosted configuration, built in part; see {@link identityHarness}. */
     readonly configure?: Parameters<typeof identityHarness>[0] extends infer O
       ? O extends { readonly configure?: infer C }
         ? C

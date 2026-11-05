@@ -4,11 +4,16 @@
 # own by HTTP-01: Traefik polls the server's internal proxy listener for the names to route. README.md beside this file
 # is the runbook.
 #
-# Hosted mode starts once the control plane (slice 7) lifts its refusal; until then the server refuses
-# WIREBENCH_SERVER_MODE=hosted at start-up, and this file documents the deployment it will run.
+# Three database roles (spec §19.4, §22.2): the owner `wirebench` (the image's superuser, which migrates), the app
+# role `wirebench_app` (every query, under row-level security) and the control role `wirebench_control` (the control
+# plane alone, past it). Create the last two once with `docker compose run --rm server admin tenancy role`; the
+# README's "Starting" has the steps. Teams sign up and pay through Paddle (spec §22.5): the server only renders
+# Paddle.js's checkout and receives its signed webhooks, and holds no Paddle API key.
 #
-# Settings go in `.env` beside this file (`env.example` lists them; copy it to `.env`), and the Hetzner DNS API token in
-# `secrets/hetzner_api_token`, mode 600. Then `docker compose up -d`.
+# Settings go in `.env` beside this file (`env.example` lists them; copy it to `.env`), the Hetzner DNS API token in
+# `secrets/hetzner_api_token` and the Paddle notification destination's secret in `secrets/paddle_webhook_secret`,
+# each mode 600; the Paddle one owned by uid 1000 (the server image's `node` user), as compose mounts a file secret
+# with the host's owner and mode. Then `docker compose up -d`.
 #
 # `PROXY_TOKEN` in `.env` is the proxy listener's bearer token. Traefik's HTTP provider takes a header value, not a file,
 # so compose puts it into the header and also hands it to the server as the `proxy_token` secret: one value, two readers.
@@ -71,13 +76,25 @@ services:
       WIREBENCH_SERVER_PUBLIC_URL: https://app.${APP_DOMAIN}
       WIREBENCH_SERVER_MIGRATION_DATABASE_URL: postgres://wirebench:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db:5432/wirebench
       WIREBENCH_SERVER_DATABASE_URL: postgres://wirebench_app:${WIREBENCH_APP_DB_PASSWORD:?set WIREBENCH_APP_DB_PASSWORD in .env}@db:5432/wirebench
+      # The control plane's own role (spec §22.2), the one past row-level security; a password apart from the app's.
+      WIREBENCH_SERVER_CONTROL_DATABASE_URL: postgres://wirebench_control:${WIREBENCH_CONTROL_DB_PASSWORD:?set WIREBENCH_CONTROL_DB_PASSWORD in .env}@db:5432/wirebench
+      # Hosted mode is always several instances' kind (spec §20.1): this one's address on the compose network.
+      WIREBENCH_SERVER_INSTANCE_URL: http://server:8091
       # Traefik is the only way in, so its X-Forwarded-Host and X-Forwarded-For are the request's.
       WIREBENCH_SERVER_TRUST_PROXY: 'true'
       WIREBENCH_SERVER_BROWSER_CLIENT: 'true'
       WIREBENCH_SERVER_SECRETS_KEY: ${WIREBENCH_SECRETS_KEY:?set WIREBENCH_SECRETS_KEY in .env}
+      # Each team's audit chain is sealed under a key derived from this one (spec §19.7), so its export verifies offline.
+      WIREBENCH_SERVER_AUDIT_CHAIN_KEY: ${WIREBENCH_AUDIT_CHAIN_KEY:?set WIREBENCH_AUDIT_CHAIN_KEY in .env}
       # app.<app-domain> mails people the links of their teams (spec §21.4).
       WIREBENCH_SERVER_SMTP_URL: ${SMTP_URL:?set SMTP_URL in .env}
       WIREBENCH_SERVER_SMTP_FROM: ${SMTP_FROM:?set SMTP_FROM in .env}
+      # Paddle (spec §22.5): `sandbox` with a `test_…` client token, or `production` with a `live_…` one.
+      WIREBENCH_SERVER_PADDLE_ENVIRONMENT: ${PADDLE_ENVIRONMENT:?set PADDLE_ENVIRONMENT in .env}
+      WIREBENCH_SERVER_PADDLE_CLIENT_TOKEN: ${PADDLE_CLIENT_TOKEN:?set PADDLE_CLIENT_TOKEN in .env}
+      WIREBENCH_SERVER_PADDLE_TEAM_PRICE_ID: ${PADDLE_TEAM_PRICE_ID:?set PADDLE_TEAM_PRICE_ID in .env}
+      # The notification destination's secret key, from a file: never in the environment or a log.
+      WIREBENCH_SERVER_PADDLE_WEBHOOK_SECRET_FILE: /run/secrets/paddle_webhook_secret
       # Custom domains (spec §23.4): the listener Traefik polls, on the compose network only, and where the certificate
       # probe finds Traefik's TLS.
       WIREBENCH_SERVER_PROXY_LISTEN: 0.0.0.0:8081
@@ -85,6 +102,7 @@ services:
       WIREBENCH_SERVER_PROXY_TLS_ADDRESS: traefik:443
     secrets:
       - proxy_token
+      - paddle_webhook_secret
     volumes:
       - wirebench-data:/data
 
@@ -109,6 +127,8 @@ secrets:
   # The same `PROXY_TOKEN` as Traefik's header, as a file for the server.
   proxy_token:
     environment: PROXY_TOKEN
+  paddle_webhook_secret:
+    file: ./secrets/paddle_webhook_secret
 
 volumes:
   letsencrypt:

@@ -24,6 +24,7 @@ describe('changedJobs', () => {
   it('runs the server jobs, and the two that build its image, for a server change, but not e2e', () => {
     expect(called('packages/server/src/routes.ts')).toEqual([
       'browser_e2e',
+      'hosted_e2e',
       'server_integration',
       'server_upgrade',
       'tenancy_postgres',

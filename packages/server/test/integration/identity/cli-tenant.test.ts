@@ -1,7 +1,7 @@
 /**
  * `--tenant <slug>` on the admin command line (hosted edition spec §19.11): hosted mode requires it and works in
  * the tenant it names; self-hosted mode refuses it as a usage error. Hosted mode comes through `runAdmin`'s test
- * seam, since `loadConfig` refuses it (§19.1).
+ * seam, which builds the hosted configuration in part.
  */
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';

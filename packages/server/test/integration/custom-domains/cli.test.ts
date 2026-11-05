@@ -1,7 +1,7 @@
 /**
  * `wirebench-server admin domains …` (hosted edition spec §23.6): `list` across tenants with slug, name, state and
  * checked at and never a token; `check --tenant` checks now; `remove --tenant` releases the name, audited. Hosted
- * only, through `runAdmin`'s test seam since `loadConfig` refuses hosted mode (§19.1). DNS is a fake: no real DNS.
+ * only, through `runAdmin`'s test seam, which builds the hosted configuration in part. DNS is a fake: no real DNS.
  */
 import { randomUUID } from 'node:crypto';
 import Fastify from 'fastify';

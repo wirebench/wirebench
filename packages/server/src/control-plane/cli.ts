@@ -71,7 +71,7 @@ const smtpMail: InvitationMail = (smtp, to, mail) => sendAlertMail(smtp, [to], m
 export interface AdminTenantOptions {
   readonly now?: () => Date;
   readonly publicKeys?: readonly KeyObject[];
-  /** A hosted configuration, which `loadConfig` refuses until Part H (spec §22.1); the bin passes nothing. */
+  /** Changes the loaded configuration, for a test that builds a hosted one in part; the bin passes nothing. */
   readonly configure?: (config: ServerConfig) => ServerConfig;
   readonly mail?: InvitationMail;
   /** How the deletion request's mail goes to every server admin; the operator's SMTP by default. */

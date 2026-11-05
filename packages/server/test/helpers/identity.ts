@@ -90,7 +90,7 @@ export async function identityHarness(
     readonly db?: Awaited<ReturnType<typeof testDatabase>>;
     /** A data directory of the test's own (a migrated fixture's, say), left in place on `close`. */
     readonly dataDir?: string;
-    /** Changes the loaded configuration: a hosted one, which `loadConfig` refuses (spec §19.1). */
+    /** Changes the loaded configuration: a hosted one, built in part rather than from a whole environment. */
     readonly configure?: (config: ServerConfig) => ServerConfig;
     /** Runs after the directory loaded and before the server is built: tenants the hosted map starts with. */
     /** The hosted tenant map, for a test that changes a tenant behind the directory's back. */

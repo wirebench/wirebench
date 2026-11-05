@@ -36,6 +36,8 @@ export const JOBS: Readonly<Record<string, JobInputs>> = {
   // The server's integration suites against PostgreSQL.
   server_integration: { roots: ['@wirebench/server'], paths: [SERVER_TEST_ROLES] },
   tenancy_postgres: { roots: ['@wirebench/server'], paths: [SERVER_TEST_ROLES] },
+  // A hosted server started from its environment, signup to deletion against a fake Paddle.
+  hosted_e2e: { roots: ['@wirebench/server'], paths: [SERVER_TEST_ROLES] },
   // Both build the server image, which carries the browser build of the desktop's renderer.
   server_upgrade: {
     roots: ['@wirebench/server', '@wirebench/desktop'],
