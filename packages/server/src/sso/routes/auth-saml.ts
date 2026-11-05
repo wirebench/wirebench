@@ -376,9 +376,10 @@ export const browserSamlStartRoutes =
         ],
       },
       async (request, reply) => {
+        const saml = await requireSaml(env, request);
+        // A tenant without the method answers 404 on either of its names; one with it starts on the primary.
         const moved = onPrimaryHost(env.ctx.config, request, reply);
         if (moved !== undefined) return moved;
-        const saml = await requireSaml(env, request);
         const requestId = `_${randomBytes(20).toString('hex')}`;
         const relayState = await startBrowserFlow(env, request, reply, {
           provider: 'saml',

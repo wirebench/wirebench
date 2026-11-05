@@ -103,9 +103,10 @@ export const browserSignInRoutes =
       '/sign-in/oidc',
       { preHandler: [rateLimit(env, (request) => [ipKey(request)])] },
       async (request, reply) => {
+        const provider = await requireProvider(env, request);
+        // A tenant without the method answers 404 on either of its names; one with it starts on the primary.
         const moved = onPrimaryHost(env.ctx.config, request, reply);
         if (moved !== undefined) return moved;
-        const provider = await requireProvider(env, request);
         const nonce = mintSecret().secret;
         // 43 base64url characters: a valid RFC 7636 verifier.
         const codeVerifier = mintSecret().secret;
