@@ -462,13 +462,23 @@ jobs:
       # The desktop app needs a display (xvfb) and, to seal its agent key, the Secret Service: an unlocked
       # gnome-keyring in a D-Bus session. The spec sets XDG_CURRENT_DESKTOP=GNOME, without which Chromium uses
       # its plain-text store and the app refuses to pair.
-      - name: Install xvfb and gnome-keyring
-        run: sudo apt-get update && sudo apt-get install -y xvfb gnome-keyring dbus-x11
+      # libsecret is the library Chromium reaches the Secret Service through; without it the app falls back
+      # to its plain-text store whatever keyring runs.
+      - name: Install xvfb, gnome-keyring and libsecret
+        run: sudo apt-get update && sudo apt-get install -y xvfb gnome-keyring dbus-x11 libsecret-1-0 libsecret-tools
       - name: Run the browser suite
         env:
           WIREBENCH_E2E_REQUIRE_DESKTOP: '1'
+        # The keyring must answer before the suite starts: storing and reading back one value proves the
+        # Secret Service is up and its default collection unlocked, so a later refusal to pair is the app's.
         run: |
-          dbus-run-session -- sh -c 'echo -n e2e | gnome-keyring-daemon --unlock --components=secrets > /dev/null && xvfb-run -a pnpm test:e2e:browser'
+          dbus-run-session -- sh -c '
+            set -e
+            echo -n e2e | gnome-keyring-daemon --unlock --components=secrets > /dev/null
+            echo -n probe | secret-tool store --label=wirebench-e2e-probe service wirebench-e2e
+            test "$(secret-tool lookup service wirebench-e2e)" = probe
+            xvfb-run -a pnpm test:e2e:browser
+          '
       - name: Stack logs
         if: failure()
         run: docker compose -f e2e/browser/compose.yaml logs --no-color --tail=200
