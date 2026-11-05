@@ -1909,12 +1909,23 @@ export async function startFakeServer(options: FakeServerOptions = {}): Promise<
         if (email === undefined) return problem(response, 401, 'identity-unauthenticated');
         if (users.get(email.toLowerCase())?.serverAdmin !== true) return problem(response, 403, 'identity-forbidden');
         if (path.pathname === '/api/v1/tenant/billing') {
+          // The real route's shape (`tenant-routes.ts`): the slug and name come from the server, never the address.
           return send(response, 200, {
+            slug: 'acme',
+            name: 'Acme Ltd',
+            activeMembers: users.size,
             edition: 'team',
             editionSource: 'subscription',
             status: 'active',
             suspendedReason: null,
-            subscription: { plan: 'team', seats: 5, status: 'active', currentPeriodEnd: at(), pastDueDaysLeft: null },
+            subscription: {
+              plan: 'team',
+              seats: 5,
+              status: 'active',
+              currentPeriodEnd: at(),
+              pastDueSince: null,
+              pastDueDaysLeft: null,
+            },
             deletion: null,
           });
         }

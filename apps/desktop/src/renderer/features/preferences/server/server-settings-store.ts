@@ -217,15 +217,14 @@ export function serverPages(settings: ServerSettingsWire | undefined): readonly 
 }
 
 /**
- * The name the group shows: a hosted team's slug, the first label of its address, else the server's host. A team on a
- * custom name shows that name's first label; the server still checks a typed slug against its own.
+ * The name the group and the pages show: a hosted team's own name, from its billing answer (its address may be a
+ * custom domain that says nothing of it); else, self-hosted or before that answer, the server's host.
  */
-export function serverLabel(url: string, hosted: boolean): string {
-  let host: string;
+export function serverLabel(url: string, billing: TenantBillingWire | undefined): string {
+  if (billing !== undefined && billing.name.trim() !== '') return billing.name;
   try {
-    host = new URL(url).hostname;
+    return new URL(url).hostname;
   } catch {
     return url;
   }
-  return hosted ? (host.split('.')[0] ?? host) : host;
 }

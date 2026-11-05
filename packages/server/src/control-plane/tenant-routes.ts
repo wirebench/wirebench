@@ -2,7 +2,7 @@
  * The tenant's own control-plane routes (hosted edition spec §22.9, §22.11, §22.13), on its host, for its server
  * admins only, each in the request's tenant:
  *
- * - `GET /tenant/billing` (hosted): the plan, seats, status, period end and, while past due, the days left before the
+ * - `GET /tenant/billing` (hosted): the team's slug and name, its enabled accounts (the seat count), the plan, seats, status, period end and, while past due, the days left before the
  *   grace sweep suspends the team; and any deletion asked for, for the settings screen's banner;
  * - `GET /tenant/exports`, `POST /tenant/exports` and `GET /tenant/exports/:id/file` (every server): the exports,
  *   asking for one, and its file, served to a signed-in server admin only, behind the session or the device token,
@@ -18,8 +18,9 @@ import type { FastifyInstance } from 'fastify';
 import { auditSource, recordAudit, type ServerHooks } from '../context.js';
 import { requireServerAdmin } from '../identity/guard.js';
 import { RateLimiter } from '../identity/rate-limit.js';
+import { countEnabledUsers } from '../licensing/seats.js';
 import { problem } from '../problem.js';
-import type { TenantDbFactory } from '../tenancy/tenant-db.js';
+import type { TenantDbFactory, TenantQuerier } from '../tenancy/tenant-db.js';
 import { DAY_MS, GRACE_DAYS } from './billing/sweep.js';
 import type { ExportRow, ExportRunner } from './export/runner.js';
 import { mailDeletionRequested, type DeletionMailDeps } from './deletion-mail.js';
@@ -37,10 +38,27 @@ export interface TenantRoutesDeps {
   readonly deletionMail: Omit<DeletionMailDeps, 'db' | 'log'>;
 }
 
-function exportView(row: ExportRow) {
+/**
+ * Who asked for each export, for the list's *By* column: the user's display name, else their email, or `operator`;
+ * `null` for an account no longer on the server.
+ */
+async function requesters(db: TenantQuerier, rows: readonly ExportRow[]): Promise<Map<string, string>> {
+  const ids = [...new Set(rows.map((row) => row.requestedBy).filter((id) => id !== 'operator'))];
+  const names = new Map<string, string>([['operator', 'operator']]);
+  if (ids.length === 0) return names;
+  const found = await db.query<{ id: string; name: string }>(
+    `select id, coalesce(nullif(btrim(display_name), ''), email) as name from users where id = any($1::text[])`,
+    [ids],
+  );
+  for (const row of found.rows) names.set(row.id, row.name);
+  return names;
+}
+
+function exportView(row: ExportRow, names: ReadonlyMap<string, string>) {
   return {
     id: row.id,
     status: row.status,
+    requestedBy: names.get(row.requestedBy) ?? null,
     sizeBytes: row.sizeBytes,
     sha256: row.sha256,
     error: row.error,
@@ -69,14 +87,17 @@ export function tenantRoutes(deps: TenantRoutesDeps) {
     const lifecycle = deps.lifecycle;
     const downloads = new RateLimiter({ ...EXPORT_DOWNLOADS, now: () => deps.now().getTime() });
 
-    app.get('/tenant/exports', { preHandler: requireServerAdmin }, async (request) => ({
-      exports: (await deps.runner.list(request.tenant)).map(exportView),
-    }));
+    app.get('/tenant/exports', { preHandler: requireServerAdmin }, async (request) => {
+      const rows = await deps.runner.list(request.tenant);
+      const names = await requesters(deps.db(request.tenant), rows);
+      return { exports: rows.map((row) => exportView(row, names)) };
+    });
 
     app.post('/tenant/exports', { preHandler: requireServerAdmin }, async (request, reply) => {
       // The control loop (or a self-hosted server's export timer) runs it within a minute.
       const row = await deps.runner.request(request.tenant, request.caller!.id);
-      return reply.code(202).send({ export: exportView(row) });
+      const names = await requesters(deps.db(request.tenant), [row]);
+      return reply.code(202).send({ export: exportView(row, names) });
     });
 
     app.get('/tenant/exports/:id/file', { preHandler: requireServerAdmin }, async (request, reply) => {
@@ -139,6 +160,8 @@ export function tenantRoutes(deps: TenantRoutesDeps) {
       const db = deps.db(request.tenant);
       const tenant = (
         await db.query<{
+          slug: string;
+          name: string;
           edition: string;
           seats: number | null;
           editionSource: string;
@@ -147,7 +170,7 @@ export function tenantRoutes(deps: TenantRoutesDeps) {
           deletionRequestedAt: Date | null;
           deletingAt: Date | null;
         }>(
-          `select edition, seats, edition_source as "editionSource", status, suspended_reason as "suspendedReason",
+          `select slug, name, edition, seats, edition_source as "editionSource", status, suspended_reason as "suspendedReason",
                   deletion_requested_at as "deletionRequestedAt", deleting_at as "deletingAt"
              from tenants where id = $1::uuid`,
           [request.tenant.tenantId],
@@ -165,12 +188,19 @@ export function tenantRoutes(deps: TenantRoutesDeps) {
              from subscriptions`,
         )
       ).rows[0];
+      // The count the seat cap compares (licensing §3.4): every enabled account of the tenant, server admins included.
+      const activeMembers = await countEnabledUsers(db);
       const pastDueSince = subscription?.status === 'past_due' ? subscription.pastDueSince : null;
       const daysLeft =
         pastDueSince === null || pastDueSince === undefined
           ? null
           : Math.max(0, Math.ceil((pastDueSince.getTime() + GRACE_DAYS * DAY_MS - deps.now().getTime()) / DAY_MS));
       return {
+        // The slug the deletion's confirmation is compared with, and the name the screen shows: a custom domain
+        // (§23) says neither.
+        slug: request.tenant.slug,
+        name: tenant?.name ?? request.tenant.slug,
+        activeMembers,
         edition: tenant?.edition ?? null,
         editionSource: tenant?.editionSource ?? null,
         status: tenant?.status ?? null,
@@ -183,6 +213,7 @@ export function tenantRoutes(deps: TenantRoutesDeps) {
                 seats: subscription.seats,
                 status: subscription.status,
                 currentPeriodEnd: iso(subscription.currentPeriodEnd),
+                pastDueSince: iso(pastDueSince),
                 pastDueDaysLeft: daysLeft,
               },
         deletion:

@@ -139,11 +139,12 @@ function ServerNavGroup({
 }) {
   const available = useServerSettingsStore((s) => s.available);
   const settings = useServerSettingsStore((s) => s.settings);
+  const billing = useServerSettingsStore((s) => s.billing);
   const url = useServerSettingsStore((s) => s.url);
   if (!available || url === undefined) return null;
   return (
     <div data-testid="settings-nav-server" className="mt-3">
-      <h2 className="mb-1 px-2 text-xs font-medium text-fg-subtle">Server · {serverLabel(url, isHosted(settings))}</h2>
+      <h2 className="mb-1 px-2 text-xs font-medium text-fg-subtle">Server · {serverLabel(url, billing)}</h2>
       <ul>
         {serverPages(settings).map((page) => {
           const Icon = SERVER_ICONS[page];

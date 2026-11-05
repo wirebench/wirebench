@@ -39,12 +39,17 @@ export function DeletionBanner() {
 
 export function DeleteTeamSection() {
   const url = useServerSettingsStore((s) => s.url) ?? '';
+  const billing = useServerSettingsStore((s) => s.billing);
   const deletingAt = useServerSettingsStore((s) => s.billing?.deletion?.deletingAt ?? null);
   const busy = useServerSettingsStore((s) => s.busy.deletion === true);
   const error = useServerSettingsStore((s) => s.errors.deletion);
   const [typed, setTyped] = useState('');
   const [confirming, setConfirming] = useState(false);
-  const slug = serverLabel(url, true);
+  // The slug is the server's own (its billing answer), never guessed from the address: a custom domain says nothing
+  // of it. Until it is known, nothing can be confirmed.
+  const slug = billing?.slug;
+  const name = serverLabel(url, billing);
+  const confirmed = slug !== undefined && typed.trim() === slug;
 
   if (deletingAt !== null) {
     const days = daysUntil(deletingAt);
@@ -66,7 +71,7 @@ export function DeleteTeamSection() {
           }
         >
           <p data-testid="server-delete-pending" className="text-sm text-fg-muted">
-            {slug} is deleted on {formatDate(deletingAt)}. Until then it keeps working, and any server admin can cancel
+            {name} is deleted on {formatDate(deletingAt)}. Until then it keeps working, and any server admin can cancel
             the deletion. It waits while the subscription is still active: cancel it in Paddle’s portal first.
           </p>
           <CardError error={error} testId="server-delete-error" />
@@ -85,7 +90,7 @@ export function DeleteTeamSection() {
           <Button
             variant="danger"
             data-testid="server-delete-request"
-            disabled={busy || typed.trim() === ''}
+            disabled={busy || !confirmed}
             onClick={() => setConfirming(true)}
           >
             Delete in 14 days
@@ -93,15 +98,15 @@ export function DeleteTeamSection() {
         }
       >
         <p className="mb-4 text-sm text-fg-muted">
-          Held for 14 days, then every workspace, row, file and secret of {slug} is removed and the name is retired.
+          Held for 14 days, then every workspace, row, file and secret of {name} is removed and the name is retired.
           Cancel the subscription in Paddle first: the deletion waits while it is active. Export first if you need the
           data.
         </p>
         <label className="flex items-center gap-2 text-sm text-fg-subtle">
-          Type <code className="font-mono text-xs text-fg-default">{slug}</code> to confirm
+          Type <code className="font-mono text-xs text-fg-default">{slug ?? '…'}</code> to confirm
           <input
             data-testid="server-delete-slug"
-            aria-label="Team slug"
+            disabled={slug === undefined}
             autoComplete="off"
             spellCheck={false}
             value={typed}
@@ -115,7 +120,7 @@ export function DeleteTeamSection() {
         open={confirming}
         onOpenChange={setConfirming}
         title="Delete this team?"
-        description={`Every server admin is mailed, and ${slug} is deleted in 14 days unless someone cancels it.`}
+        description={`Every server admin is mailed, and ${name} is deleted in 14 days unless someone cancels it.`}
         confirmLabel="Delete in 14 days"
         destructive
         confirmTestId="server-delete-confirm"

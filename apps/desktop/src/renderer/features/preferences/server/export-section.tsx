@@ -94,6 +94,7 @@ export function ExportSection() {
             <thead>
               <tr className="text-xs text-fg-subtle">
                 <th className="py-1.5 font-medium">Requested</th>
+                <th className="py-1.5 font-medium">By</th>
                 <th className="py-1.5 font-medium">Status</th>
                 <th className="py-1.5 font-medium">Size</th>
                 <th className="py-1.5 text-right font-medium">Action</th>
@@ -103,6 +104,9 @@ export function ExportSection() {
               {exports.map((row) => (
                 <tr key={row.id} data-testid="server-export-row" data-status={row.status}>
                   <td className="py-2">{formatDate(row.requestedAt)}</td>
+                  <td data-testid="server-export-by" className="py-2 text-fg-muted">
+                    {row.requestedBy === 'operator' ? 'Wirebench operator' : (row.requestedBy ?? 'A removed account')}
+                  </td>
                   <td className={`py-2 ${row.status === 'failed' ? 'text-status-danger' : 'text-fg-muted'}`}>
                     {statusText(row, now)}
                   </td>

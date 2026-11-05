@@ -3701,8 +3701,14 @@ export const serverSettingsClearRequestWireSchema = serverSettingsRequestWireSch
   section: serverSettingsWritableWireSchema,
 });
 
-/** `GET /api/v1/tenant/billing` (hosted only): the plan, seats and status, and any deletion asked for. */
+/**
+ * `GET /api/v1/tenant/billing` (hosted only): the team's slug (the deletion's confirmation) and name, its enabled
+ * accounts as the seat cap counts them, the plan, seats and status, and any deletion asked for.
+ */
 export const tenantBillingWireSchema = z.object({
+  slug: z.string(),
+  name: z.string(),
+  activeMembers: z.number().int().nonnegative(),
   edition: z.string().nullable(),
   editionSource: z.string().nullable(),
   status: z.string().nullable(),
@@ -3713,6 +3719,8 @@ export const tenantBillingWireSchema = z.object({
       seats: z.number().int(),
       status: z.string(),
       currentPeriodEnd: z.string().nullable(),
+      /** While `past_due`: since when; `null` otherwise. */
+      pastDueSince: z.string().nullable(),
       /** While `past_due`: the days before the grace sweep suspends the team. */
       pastDueDaysLeft: z.number().int().nullable(),
     })
@@ -3726,6 +3734,8 @@ export type TenantExportStatusWire = z.infer<typeof tenantExportStatusWireSchema
 export const tenantExportWireSchema = z.object({
   id: z.string(),
   status: tenantExportStatusWireSchema,
+  /** Who asked: a display name, else an email, or `operator`; `null` for an account no longer on the server. */
+  requestedBy: z.string().nullable(),
   sizeBytes: z.number().nullable(),
   sha256: z.string().nullable(),
   /** A failure's code; never its message. */

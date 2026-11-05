@@ -56,6 +56,9 @@ const VIEW = {
   },
 };
 const BILLING = {
+  slug: 'acme',
+  name: 'Acme Ltd',
+  activeMembers: 12,
   edition: 'team',
   editionSource: 'subscription',
   status: 'active',
@@ -65,6 +68,7 @@ const BILLING = {
     seats: 15,
     status: 'past_due',
     currentPeriodEnd: '2026-11-30T00:00:00.000Z',
+    pastDueSince: '2026-11-04T10:00:00.000Z',
     pastDueDaysLeft: 11,
   },
   deletion: null,
@@ -72,6 +76,7 @@ const BILLING = {
 const EXPORT = {
   id: 'f0a1b2c3-0000-4000-8000-000000000001',
   status: 'ready',
+  requestedBy: 'Dana Ruiz',
   sizeBytes: 5,
   sha256: 'ab'.repeat(32),
   error: null,

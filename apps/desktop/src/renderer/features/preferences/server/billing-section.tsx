@@ -72,11 +72,19 @@ export function BillingSection() {
           </span>
           <FieldLabel>Seats</FieldLabel>
           <span data-testid="server-billing-seats" className="text-fg-default">
-            {subscription === null ? '—' : String(subscription.seats)}
+            {billing === undefined
+              ? '—'
+              : subscription === null
+                ? `${String(billing.activeMembers)} in use`
+                : `${String(billing.activeMembers)} of ${String(subscription.seats)} in use`}
           </span>
           <FieldLabel>Status</FieldLabel>
           <span data-testid="server-billing-status" className="text-fg-default">
-            {status === undefined ? 'No subscription' : (STATUS[status] ?? status)}
+            {status === undefined
+              ? 'No subscription'
+              : status === 'past_due' && typeof subscription?.pastDueSince === 'string'
+                ? `Past due since ${formatDate(subscription.pastDueSince)}`
+                : (STATUS[status] ?? status)}
             {billing?.status === 'suspended' && ' · the team is suspended'}
           </span>
           <FieldLabel>Current period ends</FieldLabel>

@@ -939,14 +939,26 @@ describe('PreferencesEditor — the Server group (hosted edition spec §22.13)',
 
   it('lists every page for a hosted team, and opens one in place of the section', () => {
     useServerSettingsStore.setState({
-      url: 'https://acme.app.test',
+      // A custom domain (§23): its first label is not the team's slug, nor its name.
+      url: 'https://api.example.org',
       available: true,
       loaded: true,
       settings: settings('tenant'),
+      billing: {
+        slug: 'acme',
+        name: 'Acme Ltd',
+        activeMembers: 3,
+        edition: 'team',
+        editionSource: 'subscription',
+        status: 'active',
+        suspendedReason: null,
+        subscription: null,
+        deletion: null,
+      },
     });
     render(<PreferencesEditor />);
     const group = screen.getByTestId('settings-nav-server');
-    expect(group.querySelector('h2')?.textContent).toBe('Server · acme');
+    expect(group.querySelector('h2')?.textContent).toBe('Server · Acme Ltd');
     expect([...group.querySelectorAll('li')].map((li) => li.textContent)).toEqual([
       'Sign-in',
       'Provisioning',

@@ -17,7 +17,7 @@ import { ProvisioningSection } from '../../src/renderer/features/preferences/ser
 import { AuditForwardingSection } from '../../src/renderer/features/preferences/server/audit-forwarding-section.js';
 import { EmailSection, smtpUrl } from '../../src/renderer/features/preferences/server/email-section.js';
 import { RetentionSection } from '../../src/renderer/features/preferences/server/retention-section.js';
-import { BillingSection } from '../../src/renderer/features/preferences/server/billing-section.js';
+import { BillingSection, formatDate } from '../../src/renderer/features/preferences/server/billing-section.js';
 import { ExportSection } from '../../src/renderer/features/preferences/server/export-section.js';
 import { DeleteTeamSection } from '../../src/renderer/features/preferences/server/delete-team-section.js';
 import { useProvisioningStore } from '../../src/renderer/state/provisioning.js';
@@ -92,6 +92,10 @@ function environment(sections: Partial<ServerSettingsWire['sections']> = {}): Se
 }
 
 const BILLING: TenantBillingWire = {
+  // Not the address's first label: the slug and name are the server's.
+  slug: 'acme-team',
+  name: 'Acme Ltd',
+  activeMembers: 12,
   edition: 'team',
   editionSource: 'subscription',
   status: 'active',
@@ -101,6 +105,7 @@ const BILLING: TenantBillingWire = {
     seats: 15,
     status: 'past_due',
     currentPeriodEnd: '2026-11-30T00:00:00.000Z',
+    pastDueSince: '2026-11-04T10:00:00.000Z',
     pastDueDaysLeft: 11,
   },
   deletion: null,
@@ -381,13 +386,18 @@ describe('Billing', () => {
     loaded(view(), BILLING);
     render(<BillingSection />);
     expect(screen.getByTestId('server-billing-plan').textContent).toBe('Team');
-    expect(screen.getByTestId('server-billing-seats').textContent).toBe('15');
-    expect(screen.getByTestId('server-billing-status').textContent).toBe('Past due');
+    expect(screen.getByTestId('server-billing-seats').textContent).toBe('12 of 15 in use');
+    expect(screen.getByTestId('server-billing-status').textContent).toBe(
+      `Past due since ${formatDate('2026-11-04T10:00:00.000Z')}`,
+    );
     expect(screen.getByTestId('server-billing-past-due').textContent).toContain('suspended in 11 days');
   });
 
   it('has no banner while the subscription is paid', () => {
-    loaded(view(), { ...BILLING, subscription: { ...BILLING.subscription!, status: 'active', pastDueDaysLeft: null } });
+    loaded(view(), {
+      ...BILLING,
+      subscription: { ...BILLING.subscription!, status: 'active', pastDueSince: null, pastDueDaysLeft: null },
+    });
     render(<BillingSection />);
     expect(screen.queryByTestId('server-billing-past-due')).toBeNull();
     expect(screen.getByTestId('server-billing-status').textContent).toBe('Active');
@@ -398,6 +408,7 @@ describe('Export', () => {
   const READY: TenantExportWire = {
     id: 'e1',
     status: 'ready',
+    requestedBy: 'Dana Ruiz',
     sizeBytes: 48 * 1024 * 1024,
     sha256: null,
     error: null,
@@ -418,6 +429,7 @@ describe('Export', () => {
     const row = screen.getByTestId('server-export-row');
     expect(row.textContent).toContain('Ready · expires in 7 days');
     expect(row.textContent).toContain('48 MB');
+    expect(within(row).getByTestId('server-export-by').textContent).toBe('Dana Ruiz');
     fireEvent.click(within(row).getByTestId('server-export-download'));
     await vi.waitFor(() => expect(download).toHaveBeenCalledWith({ url: URL_, id: 'e1' }));
 
@@ -455,14 +467,19 @@ describe('Delete team', () => {
     });
     loaded(view(), BILLING);
     render(<DeleteTeamSection />);
-    expect(screen.getByTestId('server-delete').textContent).toContain('Type acme to confirm');
+    expect(screen.getByTestId('server-delete').textContent).toContain('Type acme-team to confirm');
+    expect(screen.getByTestId('server-delete').textContent).toContain('secret of Acme Ltd is removed');
     expect(screen.getByTestId('server-delete-request')).toHaveProperty('disabled', true);
+    // The address's first label is not the slug: it confirms nothing.
     fireEvent.change(screen.getByTestId('server-delete-slug'), { target: { value: 'acme' } });
+    expect(screen.getByTestId('server-delete-request')).toHaveProperty('disabled', true);
+    fireEvent.change(screen.getByTestId('server-delete-slug'), { target: { value: 'acme-team' } });
+    expect(screen.getByTestId('server-delete-request')).toHaveProperty('disabled', false);
     fireEvent.click(screen.getByTestId('server-delete-request'));
     fireEvent.click(await screen.findByTestId('server-delete-confirm'));
-    await vi.waitFor(() => expect(request).toHaveBeenCalledWith({ url: URL_, slug: 'acme' }));
+    await vi.waitFor(() => expect(request).toHaveBeenCalledWith({ url: URL_, slug: 'acme-team' }));
     await vi.waitFor(() =>
-      expect(screen.getByTestId('server-delete-pending').textContent).toContain('acme is deleted on'),
+      expect(screen.getByTestId('server-delete-pending').textContent).toContain('Acme Ltd is deleted on'),
     );
   });
 

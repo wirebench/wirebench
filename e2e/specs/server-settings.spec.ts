@@ -78,6 +78,8 @@ test.describe('Settings › Server (hosted edition spec §22.13)', () => {
     const editor = page.getByTestId('preferences-editor');
     await expect(editor).toBeVisible({ timeout: 20_000 });
     await expect(editor.getByTestId('settings-nav-server')).toBeVisible({ timeout: 20_000 });
+    // The team's own name, from its billing answer, not the first label of its address.
+    await expect(editor.getByTestId('settings-nav-server')).toContainText('Server · Acme Ltd');
     await expect(editor.getByTestId('settings-nav-server-billing')).toBeVisible();
     await editor.getByTestId('settings-nav-server-sign-in').click();
 

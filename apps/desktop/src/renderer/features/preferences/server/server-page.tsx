@@ -76,7 +76,8 @@ function body(page: ServerPageId): ReactNode {
 export function ServerPage({ page }: { readonly page: ServerPageId }) {
   const url = useServerSettingsStore((s) => s.url) ?? '';
   const hosted = useServerSettingsStore((s) => isHosted(s.settings));
-  const team = serverLabel(url, hosted);
+  const billing = useServerSettingsStore((s) => s.billing);
+  const team = serverLabel(url, billing);
   return (
     <div data-testid={`server-page-${page}`}>
       <h1 className="mb-1.5 text-[22px] leading-tight font-semibold text-fg-default">{SERVER_PAGE_LABELS[page]}</h1>
