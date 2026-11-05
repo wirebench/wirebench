@@ -434,6 +434,65 @@ budgeted, every instance together. The defaults are set high enough that a team'
 Sends through a paired local agent and scheduled runs' requests do not count against the send budgets. On a
 self-hosted server the one team gets the same defaults; [Configuration](#configuration) lists the ranges.
 
+## Custom domain
+
+A team on the hosted service is reached at `https://<slug>.<app-domain>`. On the Enterprise edition, the team's server
+admin can serve it at a name of the team's own as well, such as `wirebench.example.com`. Both names then serve the
+whole app, and the custom name becomes the team's primary: links in invitations and mail use it. A team has one custom
+name at a time. A self-hosted server has no use for this: it sets its own public URL with
+`WIREBENCH_SERVER_PUBLIC_URL`, and the routes answer `404` there.
+
+In the desktop app or the browser client, open **Account: Manage teams** and the **Domain** tab. The tab shows only to
+server admins of a hosted team whose edition includes custom domains. Enter the name and choose **Claim**. The tab then
+shows two DNS records to create at your DNS provider, each with a **Copy** button:
+
+| Type | Name | Value |
+| --- | --- | --- |
+| `CNAME` | the name | `custom.<app-domain>` |
+| `TXT` | `_wirebench.<name>` | `wirebench-domain-verification=<token>` |
+
+The token is made for this claim and shown only to the team's server admins. Keep both records for as long as you use
+the name. A name at the top of a domain, such as `example.com`, cannot hold a CNAME record, so it passes only if your
+DNS provider flattens the record there (its addresses then match `custom.<app-domain>`'s). A subdomain always works.
+
+The server checks the records every hour while the claim is pending, and every 6 hours once the name is held.
+**Check now** checks at once, at most once a minute. The tab shows when the name was last checked, what that check
+found, and the state:
+
+| State | What it means | Served? |
+| --- | --- | --- |
+| Waiting for the DNS records (`pending`) | Claimed; the records have not been seen yet. After 7 days without them the claim expires. | no |
+| Records found (`verified`) | Both records are in place and the name is the team's. A certificate for it is on its way. | no |
+| Active (`active`) | The certificate is live. The team is served at the name, and it is the primary. | yes |
+| Records missing (`failing`) | A re-check did not find the records. The name is still served for now. | yes |
+| Lapsed (`lapsed`) | The records were missing for 72 hours. The name is released and no longer served. | no |
+| Paused (`paused`) | The team's edition stopped including custom domains. The name is released. | no |
+| Expired (`expired`) | The records were not seen within 7 days. Remove the name and claim it again. | no |
+
+A check that cannot reach DNS counts as a failed check: a resolver outage that lasts 72 hours lapses the name as
+missing records would. A lapsed or paused name is proved again by a passing check, which moves it back through
+**Records found**, so nobody can take over a name that was let go without proving it first. A name in **Records
+missing** whose records come back returns straight to **Active**: it was never released. Any number of teams may
+claim a name while it is unproved, and the first to pass holds it. A team whose records are right but whose name
+another team already holds is told so, never which team.
+
+The server admins get one email, when email is set up, as the name becomes active, starts failing or lapses.
+
+### Identity providers
+
+When the name becomes active, and again if it lapses or is removed, the addresses your identity provider sends people
+back to move to the primary name: the OIDC redirect URI, and the SAML entity ID and ACS URL. Update them at the
+identity provider, or sign-in through it fails until you do. A sign-in started on the other name completes on the
+primary. Password and email sign-in are not affected. A machine paired with the local agent on one name serves pages
+on that name only; pair it on the other name too if people use both.
+
+### Removing the name
+
+**Remove…** on the Domain tab drops the claim at once after a confirmation. The name stops being served, the primary
+goes back to `<slug>.<app-domain>`, and the proxy drops its route at its next poll. To use the name again, claim it:
+the new claim gets a new token, so update the TXT record. An operator can do the same for a support case or abuse with
+`wirebench-server admin domains remove --tenant <slug>`; `admin domains list` lists every team's name and state.
+
 ## Upgrading
 
 The server applies pending migrations when it starts. To apply them ahead of a restart, run its

@@ -9,6 +9,7 @@
 import type { ScheduleRunStatus, ScheduleRunSummary } from '@wirebench/engine';
 import type { FastifyBaseLogger } from 'fastify';
 import type { LicenseService } from '../../context.js';
+import { tenantStopped } from '../../tenancy/directory.js';
 import type { TenantScope } from '../../tenancy/scope.js';
 import type { TenantQuerier } from '../../tenancy/tenant-db.js';
 import type { Tenancy } from '../../tenancy/tenancy.js';
@@ -321,6 +322,8 @@ export class AlertOutbox {
     await this.env.tenancy.forEachTenant(
       OUTBOX_JOB,
       async (tx, scope) => {
+        // A suspended tenant's alerts wait, neither sent nor dropped, until it resumes (hosted edition spec §22.7).
+        if (await tenantStopped(tx)) return;
         if (!(await this.env.license().state(scope, tx)).features.includes('scheduled-runs')) return;
         for (const row of await this.claim(tx)) claimed.push({ scope, row });
       },

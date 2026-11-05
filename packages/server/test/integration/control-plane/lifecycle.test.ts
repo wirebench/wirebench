@@ -241,8 +241,12 @@ describeDb('the lifecycle service (hosted spec §22.2)', () => {
     });
     const suspended = await r.lifecycle.suspend('acme');
     expect(suspended).toMatchObject({ status: 'suspended', suspendedReason: 'operator', suspendedAt: NOW });
-    // The directory no longer resolves it.
-    expect((await directoryOf(r.tenancy).resolvable()).map((scope) => scope.slug)).not.toContain('acme');
+    // The hosted map keeps it, with its reason (spec §22.7); the entry no longer lists it.
+    expect((await directoryOf(r.tenancy).hosted()).find((tenant) => tenant.scope.slug === 'acme')).toMatchObject({
+      status: 'suspended',
+      reason: 'operator',
+    });
+    expect((await directoryOf(r.tenancy).resolvableNamed()).map(({ scope }) => scope.slug)).not.toContain('acme');
     expect(await r.lifecycle.resume('acme')).toMatchObject({
       status: 'active',
       suspendedReason: null,

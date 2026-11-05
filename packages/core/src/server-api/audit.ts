@@ -110,9 +110,11 @@ export const AUDIT_ACTIONS = [
   'tenant.export_downloaded',
   'tenant.imported',
   /**
-   * A custom name's check moved it (hosted edition spec §23.2): by name only, never its token. The routes' `claimed`
-   * and `removed` arrive with them.
+   * A custom name was claimed or removed through the routes or the admin command (hosted edition spec §23.6), or its
+   * check moved it (§23.2): by name only, never its token.
    */
+  'custom_domain.claimed',
+  'custom_domain.removed',
   'custom_domain.verified',
   'custom_domain.activated',
   'custom_domain.failing',

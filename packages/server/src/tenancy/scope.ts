@@ -8,12 +8,26 @@ declare const scopeBrand: unique symbol;
 export interface TenantScope {
   readonly tenantId: string;
   readonly slug: string;
+  /**
+   * The tenant's custom name while it is live (hosted edition spec §23.5): the tenant's primary name, which
+   * `primaryUrl` reads. Absent without one, or when the scope was not read with it.
+   */
+  readonly customHost?: string;
   readonly [scopeBrand]: true;
 }
 
 /** For `src/tenancy/` only: the one way to brand a tenant row as a scope. */
-export function scopeOf(row: { readonly id: string; readonly slug: string }): TenantScope {
-  return Object.freeze({ tenantId: row.id, slug: row.slug }) as TenantScope;
+export function scopeOf(row: {
+  readonly id: string;
+  readonly slug: string;
+  readonly customHost?: string | null;
+}): TenantScope {
+  const custom = row.customHost ?? undefined;
+  return Object.freeze({
+    tenantId: row.id,
+    slug: row.slug,
+    ...(custom !== undefined && custom !== '' ? { customHost: custom } : {}),
+  }) as TenantScope;
 }
 
 /**

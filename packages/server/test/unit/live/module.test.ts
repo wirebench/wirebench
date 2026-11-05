@@ -26,6 +26,7 @@ describe('live-updates module wiring (§5.1)', () => {
       'agent',
       'entry',
       'control-plane',
+      'custom-domains',
     ]);
   });
 

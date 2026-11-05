@@ -16,6 +16,7 @@ export const RUN_REASONS = [
   'interrupted',
   'cancelled',
   'overlap',
+  'suspended',
   'run-failed',
 ] as const;
 export type RunReason = (typeof RUN_REASONS)[number];

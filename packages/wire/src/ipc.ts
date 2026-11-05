@@ -232,6 +232,10 @@ import {
   licenseRemoveResponseWireSchema,
   licenseRequestWireSchema,
   licenseStateWireSchema,
+  domainClaimRequestWireSchema,
+  domainRemoveResponseWireSchema,
+  domainRequestWireSchema,
+  domainResponseWireSchema,
   provisioningRequestWireSchema,
   samlInfoWireSchema,
   scimGroupLinkRequestWireSchema,
@@ -775,6 +779,13 @@ export const channels = {
     get: defineChannel('license.get', licenseRequestWireSchema, licenseStateWireSchema),
     install: defineChannel('license.install', licenseInstallRequestWireSchema, licenseStateWireSchema),
     remove: defineChannel('license.remove', licenseRequestWireSchema, licenseRemoveResponseWireSchema),
+  },
+  /** A hosted tenant's custom name (hosted edition spec §23.6): server admins with the feature; main adds the token. */
+  domain: {
+    get: defineChannel('domain.get', domainRequestWireSchema, domainResponseWireSchema),
+    claim: defineChannel('domain.claim', domainClaimRequestWireSchema, domainResponseWireSchema),
+    check: defineChannel('domain.check', domainRequestWireSchema, domainResponseWireSchema),
+    remove: defineChannel('domain.remove', domainRequestWireSchema, domainRemoveResponseWireSchema),
   },
   /** SAML and SCIM settings of a server (saml-scim spec §3.7): server admins on Enterprise; main adds the token. */
   provisioning: {

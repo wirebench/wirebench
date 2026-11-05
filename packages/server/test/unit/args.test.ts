@@ -274,6 +274,33 @@ describe('admin instances (hosted spec §20.10)', () => {
   });
 });
 
+describe('admin domains (hosted spec §23.6)', () => {
+  it('parses list without a tenant, and check and remove with one', () => {
+    expect(parseServerArgs(['admin', 'domains', 'list'])).toEqual({ command: 'admin-domains-list' });
+    expect(parseServerArgs(['admin', 'domains', 'check', '--tenant', 'acme'])).toEqual({
+      command: 'admin-domains-check',
+      tenant: 'acme',
+    });
+    expect(parseServerArgs(['admin', 'domains', 'remove', '--tenant', 'acme'])).toEqual({
+      command: 'admin-domains-remove',
+      tenant: 'acme',
+    });
+  });
+  it('refuses --tenant on list, an unknown verb and anything after it', () => {
+    expect(() => parseServerArgs(['admin', 'domains', 'list', '--tenant', 'acme'])).toThrow(/--tenant/);
+    expect(() => parseServerArgs(['admin', 'domains'])).toThrow(/usage: wirebench-server admin domains/);
+    expect(() => parseServerArgs(['admin', 'domains', 'add'])).toThrow(/usage: wirebench-server admin domains/);
+    expect(() => parseServerArgs(['admin', 'domains', 'check', 'extra', '--tenant', 'acme'])).toThrow(
+      /usage: wirebench-server admin domains/,
+    );
+  });
+  it('lists them in the help', () => {
+    expect(HELP_TEXT).toContain('wirebench-server admin domains list');
+    expect(HELP_TEXT).toContain('wirebench-server admin domains check --tenant <slug>');
+    expect(HELP_TEXT).toContain('wirebench-server admin domains remove --tenant <slug>');
+  });
+});
+
 describe('admin tenant (hosted edition spec §22.14)', () => {
   it('parses each command, the slug positional', () => {
     expect(parseServerArgs(['admin', 'tenant', 'list'])).toEqual({ command: 'admin-tenant-list' });

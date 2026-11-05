@@ -660,7 +660,7 @@ self-hosted teams on their own, which is why they would come first whenever the 
 | 5 | `operations` | **Built** (#828, #833 and #836, 2026-11-04, for #821; ADR-0037 accepted; §20 records what changed from this row). `LISTEN`/`NOTIFY` hub fan-out, advisory locks, sticky host sockets, per-tenant budgets, metrics by tenant id | 4 | partly (multi-instance self-hosted) |
 | 6 | `domains` | **Built** (#825, #826 and #827, 2026-11-03, for #822; ADR-0038; §21 records what changed from this row). The two names as settings, the wildcard certificate in a Traefik recipe by DNS-01, the `app.` entry with emailed links, reserved slugs; the public suffix submission is an operator step for when a domain is registered | 4 | no |
 | 7 | `control-plane` | Signup, subscriptions, edition from subscription, suspension, export, deletion, operator commands; per-tenant settings (OIDC, SAML, SCIM, audit forwarding, SMTP sender, retention), today's environment variables becoming the default tenant's (§19.1, §19.12) | 4, 5, 6 | no |
-| 8 | `custom-domains` | CNAME plus TXT verification for Enterprise tenants; §23 records the design (#830, ADR-0040): a second full name that becomes the primary, a CNAME to `custom.<app-domain>`, one per tenant, an HTTP-01 certificate per name through Traefik's HTTP provider | 6, 7 | no |
+| 8 | `custom-domains` | **Built** (#835, #837, #839 and #842, 2026-11-04, for #830; ADR-0040; §23 records what changed from this row). CNAME plus TXT verification for Enterprise tenants: a second full name that becomes the primary, a CNAME to `custom.<app-domain>`, one per tenant, an HTTP-01 certificate per name through Traefik's HTTP provider, the Domain tab | 6, 7 | no |
 
 The 2026-10-15 trigger (ten self-hosted paying customers) gates slices 5 to 8. Slices 1 to 4 may be
 scheduled earlier on their own merits, each with its own spec amendment and issue when that happens.
@@ -2868,13 +2868,21 @@ Routes on the entry host, server-rendered in the entry page's style, no cookie a
     subscription is unpaid. Its billing contact can pay from the email Paddle sent."), canceled, operator ("… by the
     operator. Contact support."), importing ("… being imported. Try again shortly.");
   - `/hooks/…` (catch URLs) answers `503` with an empty body (§3.6);
+  - a browser's page load elsewhere (`GET` or `HEAD` accepting `text/html`, outside `/api/`) answers `303` to
+    `/sign-in`, so a bookmarked page shows why;
   - every other route, the API and both WebSocket upgrades answer `403` with `{ code: "tenant-suspended", reason }`,
     so the desktop, the CLI and the MCP server say why;
   - no one signs in, server admins included (my call): paying, and asking for an export or a deletion, go through
     Paddle and the operator while suspended.
 - **At the moment of suspension** the status write announces `tenantsChanged` over the bus (§20.3). Every instance
   then closes that tenant's live sockets (`4403 tenant-suspended`), disposes its host instances and releases their
-  leases, and ends its terminal shares.
+  leases, and ends its terminal shares. It does so after each successful reload of its tenant map (the write, the bus,
+  a bus that listens again, the poll), so a failed reload or a missed event is made good by the next one; and a live
+  socket's `auth`, a host socket's open and a terminal share's `auth` read the tenant's status afresh, so a client that
+  reconnects onto a map not yet reloaded is refused the same way. The desktop's live client and the browser tab stop
+  reconnecting on `4403 tenant-suspended`; the tab goes to the sign-in page, which says why.
+- **Queued runs** of a suspended tenant end `skipped` with reason `suspended` at the scheduler's next pass, and each
+  claim reads the status again, so none starts during the suspension or as a catch-up on the resume.
 - **Jobs** (§19.8, guard 6): `forEachTenant` still visits suspended tenants, so retention ages their data out as
   before. The scheduler does not fire their schedules, and when a tenant resumes each schedule's next run is computed
   from then, never caught up. The alert outbox holds their alerts. The audit sealer and forwarder keep running.
@@ -3171,10 +3179,15 @@ Owner rulings (2026-11-04, popup):
   | `paused` | The feature is gone (the edition left Enterprise): released | no |
   | `expired` | Pending for 7 days without a pass | no |
 
-  A pass from `failing`, `lapsed` or `paused` goes back through `verified`, so an attacker who takes over a lapsed
-  name has to prove it again. `paused` is set by the check job, which reads the feature through the tenant's scope.
-  A suspended tenant keeps its name. The resolver drops every host of a tenant that is not `active` in
-  `tenants.status` (§19.5), so a suspension takes effect at the next map reload, and resuming needs no new check.
+  A pass from `lapsed` or `paused` goes back through `verified`, since both released the name, so an attacker who
+  takes over a lapsed name has to prove it again. A pass from `failing` returns the name to `active` while it is
+  still live: it never released the name, so it needs no fresh proof and is never taken offline. A name that failed
+  before it went live goes to `verified` and waits for its certificate. `paused` is set by the check job, which reads
+  the feature through the tenant's scope.
+  A suspended tenant keeps its name. The check job leaves a stopped tenant (suspended or deleting) alone: no DNS
+  check, no move and no mail, so a failing name does not age toward `lapsed` while its tenant is suspended. Its
+  custom host stays on the map on the slug's entry, so it answers as the slug does (§22.7, §23.5), and resuming needs
+  no new check.
 - **Mail.** The tenant's server admins get one plain-text mail, through the tenant's SMTP sender (slice 7), when a
   name becomes `active`, `failing` or `lapsed`. Nothing is mailed without SMTP. Each change is an audit event in the
   tenant's chain: `custom-domain.claimed|verified|activated|failing|lapsed|paused|removed`. The token never appears in
@@ -3232,9 +3245,13 @@ Owner rulings (2026-11-04, popup):
 ### 23.5 Two names, one tenant (amends §19.5)
 
 - **Resolution.** `TenantResolver` keys its map by full host name (§19.12), so each live custom name is one more key
-  next to `<slug>.<app-domain>`. `directory.resolvable()` gains a join on `tenant_hosts where live`, still limited to
-  active tenants other than the default one. A custom name that is not live answers `404`, empty and `no-store`, like
-  any unknown host. The apex and entry branches (§21.3) run first and are unchanged.
+  next to `<slug>.<app-domain>`, on the same `TenantEntry` as the slug's. The directory's read that feeds the map
+  carries each tenant's live custom host (`tenant_hosts where live`) as `TenantScope.customHost`, for exactly the
+  tenants the slug keys cover. The custom host has no status of its own: whatever the entry says of the tenant applies
+  to both names, so a suspended tenant's custom host answers as its slug does (§22), and resuming needs no new check.
+  A custom name that is not live answers `404`, empty and `no-store`, like any unknown host. When the check job makes
+  a name live, or a name is released, the directory's change reloads this instance's map and `tenantsChanged` reloads
+  every other's (§20.3). The apex and entry branches (§21.3) run first and are unchanged.
 - **`tenantUrl` splits in two** (`tenancy/urls.ts`):
   - `tenantUrl(config, request)` is the URL of the host the request came on, slug or custom. Every check that
     compares with what the browser is showing reads this: `Origin`, the cookie's `Secure` choice, the browser

@@ -17,6 +17,7 @@ import type { AuditSource } from '../context.js';
 import type { TokenCaller } from '../identity/guard.js';
 import type { AttachOutcome, ShareIdentity, ShareRegistry, SharePeer } from './registry.js';
 import type { RelayJoin } from './relay.js';
+import { TENANT_SUSPENDED } from '../tenancy/resolve.js';
 import type { TenantScope } from '../tenancy/scope.js';
 
 export interface ShareSocketDeps {
@@ -179,6 +180,9 @@ export function runShareSocket(ws: WebSocket, deps: ShareSocketDeps): void {
       authTimer.cancel();
       if (error instanceof WirebenchError && REFUSED_SESSION.has(error.code)) {
         end(TERMINAL_SHARE_CLOSE.unauthenticated, 'unauthenticated');
+      } else if (error instanceof WirebenchError && error.code === TENANT_SUSPENDED) {
+        // The tenant stopped since the upgrade resolved it (hosted edition spec §22.7, review I1).
+        end(TERMINAL_SHARE_CLOSE.forbidden, TENANT_SUSPENDED);
       } else {
         deps.log.warn({ err: error }, 'terminal share authentication failed');
         end(TERMINAL_SHARE_CLOSE.serverError, 'server error');

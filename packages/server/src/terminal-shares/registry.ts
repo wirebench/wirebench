@@ -394,6 +394,16 @@ export class ShareRegistry {
     return share.tenant.tenantId === tenant.tenantId && share.workspaceId === workspaceId;
   }
 
+  /**
+   * The tenants in `tenantIds` stopped (suspended or deleting, hosted edition spec §22.7): each of their shares ends
+   * (`ended {server}`, audited as any end), its sockets closing with `code` and `reason`. Other tenants' stay.
+   */
+  endTenants(tenantIds: ReadonlySet<string>, code: number, reason: string): void {
+    for (const share of [...this.shares.values()]) {
+      if (tenantIds.has(share.tenant.tenantId)) this.end(share, 'server', share.ownerSource, { code, reason });
+    }
+  }
+
   /** Server shutdown: every share ends. */
   closeAll(): void {
     for (const share of [...this.shares.values()]) this.end(share, 'server', share.ownerSource);
@@ -506,7 +516,13 @@ export class ShareRegistry {
     this.sendPresence(share);
   }
 
-  private end(share: Share, reason: TerminalShareEndReason, source: AuditSource): void {
+  /** `close` replaces the usual `4000`-range `ended` close, with its own code and reason (a stopped tenant's). */
+  private end(
+    share: Share,
+    reason: TerminalShareEndReason,
+    source: AuditSource,
+    close?: { readonly code: number; readonly reason: string },
+  ): void {
     if (!this.shares.delete(shareKey(share.tenant.tenantId, share.id))) return;
     share.attachTimer?.cancel();
     const message = json({ type: 'ended', reason });
@@ -516,7 +532,7 @@ export class ShareRegistry {
       this.byPeer.delete(member.peer);
       if (!member.peer.isOpen) continue;
       member.peer.sendText(message);
-      member.peer.close(TERMINAL_SHARE_CLOSE.ended, reason);
+      member.peer.close(close?.code ?? TERMINAL_SHARE_CLOSE.ended, close?.reason ?? reason);
     }
     this.record(share, 'terminal_share.ended', source, { reason, viewers: share.joined.size });
     try {

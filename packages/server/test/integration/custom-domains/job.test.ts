@@ -82,6 +82,10 @@ describeDb('the custom-name check job (hosted spec §23.2)', () => {
   let probe: ((name: string) => Promise<ProbeResult>) | undefined;
   let sent: { to: readonly string[]; email: DomainEmail }[];
   let mailOn: boolean;
+  /** How many times the job said the resolver's map may have changed (spec §23.5). */
+  let routed: number;
+  /** The tenants that serve nothing now (suspended or deleting): the job leaves their claims alone. */
+  let stopped: Set<string>;
   const warnings: unknown[] = [];
   let hooks = serverHooks();
 
@@ -108,6 +112,10 @@ describeDb('the custom-name check job (hosted spec §23.2)', () => {
         }
       : {}),
     log: { error: () => undefined, warn: (...args: unknown[]) => void warnings.push(args) },
+    hostsChanged: () => {
+      routed++;
+    },
+    stopped: (tx) => Promise.resolve(stopped.has(tx.scope.tenantId)),
   });
   const pass = () => checkPass(deps());
   const claimOf = (t: TenantDb) => t.transaction((tx) => getClaim(tx));
@@ -159,6 +167,8 @@ describeDb('the custom-name check job (hosted spec §23.2)', () => {
     probe = undefined;
     sent = [];
     mailOn = true;
+    routed = 0;
+    stopped = new Set();
     warnings.length = 0;
     hooks = serverHooks();
     hooks.audit.push(auditHook(() => clock));
@@ -233,6 +243,8 @@ describeDb('the custom-name check job (hosted spec §23.2)', () => {
       lastResult: { cname: 'ok', txt: 'ok', certificate: 'ok' },
     });
     expect(await hosts()).toEqual([{ host: NAME, tenant_id: scopeA.tenantId, live: true }]);
+    // Held (not live yet), then live: the map is told after each unit.
+    expect(routed).toBe(2);
     expect(sent).toHaveLength(1);
     expect(sent[0]!.to).toEqual(['admin@a.customer.test']);
     expect(sent[0]!.email.subject).toContain(NAME);
@@ -314,6 +326,7 @@ describeDb('the custom-name check job (hosted spec §23.2)', () => {
     const failedAt = clock;
     await pass();
     expect(await claimOf(a)).toMatchObject({ state: 'failing', failingSince: failedAt });
+    const before = routed;
     // Still held and live while failing: still served.
     expect(await hosts()).toEqual([{ host: NAME, tenant_id: scopeA.tenantId, live: true }]);
     // Every 6 hours, until 72 hours have passed since failing_since.
@@ -326,6 +339,8 @@ describeDb('the custom-name check job (hosted spec §23.2)', () => {
     await pass();
     expect(await claimOf(a)).toMatchObject({ state: 'lapsed', failingSince: null });
     expect(await hosts()).toEqual([]);
+    // Only the release changed the map since failing began.
+    expect(routed).toBe(before + 1);
     expect(sent.map((mail) => mail.email.subject)).toEqual([
       `${NAME} now serves your team`,
       `The DNS records of ${NAME} no longer check out`,
@@ -337,6 +352,66 @@ describeDb('the custom-name check job (hosted spec §23.2)', () => {
       'custom_domain.failing',
       'custom_domain.lapsed',
     ]);
+  });
+
+  it('returns a failing name that passes again straight to active, still served, with no change to the map', async () => {
+    const made = await claimA();
+    dns.prove(NAME, made.token);
+    probe = () => Promise.resolve({ verdict: 'ok', message: 'The certificate covers the name.' });
+    await pass();
+    const activeAt = (await claimOf(a))!.activeAt;
+    dns.clear(NAME);
+    advance(HELD_EVERY_MS);
+    await pass();
+    expect((await claimOf(a))?.state).toBe('failing');
+    const before = routed;
+    const mailed = sent.length;
+    dns.prove(NAME, made.token);
+    advance(HELD_EVERY_MS);
+    await pass();
+    expect(await claimOf(a)).toMatchObject({ state: 'active', failingSince: null, activeAt });
+    expect(await hosts()).toEqual([{ host: NAME, tenant_id: scopeA.tenantId, live: true }]);
+    // Never taken off the map, so nothing tells it; and nothing new to tell the admins.
+    expect(routed).toBe(before);
+    expect(sent).toHaveLength(mailed);
+    expect((await events(a)).map((event) => event.action)).toEqual([
+      'custom_domain.verified',
+      'custom_domain.activated',
+      'custom_domain.failing',
+      'custom_domain.activated',
+    ]);
+  });
+
+  it("leaves a suspended tenant's failing claim alone: no check, no ageing toward lapsed, no mail", async () => {
+    const made = await claimA();
+    dns.prove(NAME, made.token);
+    probe = () => Promise.resolve({ verdict: 'ok', message: 'The certificate covers the name.' });
+    await pass();
+    dns.clear(NAME);
+    advance(HELD_EVERY_MS);
+    const failedAt = clock;
+    await pass();
+    const failing = await claimOf(a);
+    expect(failing).toMatchObject({ state: 'failing', failingSince: failedAt });
+    const mailed = sent.length;
+    const asked = dns.asked;
+    const before = routed;
+    stopped.add(scopeA.tenantId);
+    // Well past 72 hours of failing: a running tenant would have lapsed and lost the name.
+    for (let i = 0; i < 20; i++) {
+      advance(HELD_EVERY_MS);
+      await pass();
+    }
+    expect(await checkTenant(deps(), scopeA)).toEqual(failing);
+    expect(await claimOf(a)).toEqual(failing);
+    expect(await hosts()).toEqual([{ host: NAME, tenant_id: scopeA.tenantId, live: true }]);
+    expect(dns.asked).toBe(asked);
+    expect(sent).toHaveLength(mailed);
+    expect(routed).toBe(before);
+    // Resumed, the claim picks up where it was: failing since then, and checked again.
+    stopped.delete(scopeA.tenantId);
+    await pass();
+    expect(dns.asked).toBeGreaterThan(asked);
   });
 
   it('sends a pass from lapsed back through verified, holding the name again', async () => {

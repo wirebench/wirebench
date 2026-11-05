@@ -3,7 +3,8 @@
  * workspace subscribes and the server offers `live`, sends the account's token in the first
  * message and nowhere else, subscribes every workspace on `ready`, and turns what the server says
  * into {@link LiveEvent}s. Every failure backs off and tries again, a refused upgrade of any status
- * included, except `4401`, which runs the normal token check and waits for a new sign-in. Only
+ * included, except `4401`, which runs the normal token check and waits for a new sign-in, and `4403`
+ * (the team is suspended), which stays down and lets HTTP say why. Only
  * `meta` decides that a server has no live endpoint. HTTP stays the source of truth, so nothing here
  * decides a role or a head; an event only says "look again".
  *
@@ -26,8 +27,8 @@ import {
 /**
  * `connected`: authenticated and subscribed. `connecting`: opening, authenticating or backing
  * off. `off`: the server has no `live`, the account has no token, the client was closed, or
- * nothing is subscribed. `ended`: the server ended the session (`4401`) and the token check ran;
- * nothing reconnects until {@link LiveClient.reconnect}.
+ * nothing is subscribed. `ended`: the server ended the session (`4401`) and the token check ran, or
+ * the team is suspended (`4403 tenant-suspended`); nothing reconnects until {@link LiveClient.reconnect}.
  */
 export type LiveState = 'connected' | 'connecting' | 'off' | 'ended';
 /** The server messages about one workspace: `head`, `access`, `presence` and `refused`. */
@@ -331,6 +332,14 @@ export class LiveClient {
     else this.log(code === LIVE_CLOSE.tooBig ? 'closed 1009: a message was too big' : `closed ${String(code)}`);
     if (code === LIVE_CLOSE.unauthenticated) {
       void this.endSession();
+      return;
+    }
+    // The team is suspended (hosted edition spec §22.7): reconnecting would only be refused again. `ended` makes the
+    // backend fetch, and that fetch's `403 tenant-suspended` says why; the token is fine, so no token check runs.
+    if (code === LIVE_CLOSE.tenantSuspended) {
+      this.phase = 'halted';
+      this.log('the team is suspended; staying off');
+      this.setState('ended');
       return;
     }
     this.backOff(code === LIVE_CLOSE.tooManySockets ? MAX_BACKOFF_MS : backoffMs(this.attempt++, this.deps.random));
