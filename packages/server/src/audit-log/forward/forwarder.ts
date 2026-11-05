@@ -103,6 +103,15 @@ export class AuditForwarder {
     return this.running;
   }
 
+  /**
+   * Forgets `tenantId`'s backoff, or every tenant's: its forwarding setting changed, so the next pass tries the new
+   * destination at once rather than after the old one's failures.
+   */
+  forget(tenantId?: string): void {
+    if (tenantId === undefined) this.failing.clear();
+    else this.failing.delete(tenantId);
+  }
+
   /** Cancels the timer and waits for a pass under way, which finishes its batch. The sink stays open. */
   async stop(): Promise<void> {
     this.stopped = true;
@@ -184,7 +193,11 @@ export class AuditForwarder {
           this.deps.log.info({ tenantId: scope.tenantId }, 'audit forwarding resumed');
         }
         const sink = await this.deps.sinkFor(scope, tx);
-        if (sink === undefined) return;
+        if (sink === undefined) {
+          // Forwarding nowhere now: a backoff from where it used to forward would only delay the next one.
+          this.failing.delete(scope.tenantId);
+          return;
+        }
         forwarding++;
         // This tenant's backoff, and no other's: its rows wait, the next tenant is claimed as usual.
         const waiting = this.failing.get(scope.tenantId);

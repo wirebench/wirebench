@@ -948,6 +948,22 @@ export function controlPlaneProblems(config: Pick<ServerConfig, 'mode' | 'contro
     : [{ variable, message: 'control-plane-hosted-only: is for hosted mode only; unset it on a self-hosted server' }];
 }
 
+/**
+ * Hosted mode refuses `WIREBENCH_SERVER_ALLOW_INSECURE_PUBLIC_URL` (spec §22.12): it lets `http://` through for the
+ * public URL and for every tenant's OIDC issuer, which a service open to many tenants must never allow. `loadConfig`
+ * runs it; tests that build a hosted config directly call it too.
+ */
+export function insecureUrlProblems(config: Pick<ServerConfig, 'mode' | 'allowInsecurePublicUrl'>): ConfigProblem[] {
+  return config.mode === 'hosted' && config.allowInsecurePublicUrl
+    ? [
+        {
+          variable: 'WIREBENCH_SERVER_ALLOW_INSECURE_PUBLIC_URL',
+          message: 'control-plane-insecure-url: is for a development server only; hosted mode is https:// throughout',
+        },
+      ]
+    : [];
+}
+
 /** The variables a hosted tenant sets for itself (spec §22.1, §22.12), by prefix. */
 export const PER_TENANT_PREFIXES: readonly string[] = [
   'WIREBENCH_SERVER_OIDC_',
@@ -1005,6 +1021,7 @@ export function loadConfig(env: NodeJS.ProcessEnv, version: string): ServerConfi
   const problems: ConfigProblem[] = [
     ...domainProblems(config),
     ...controlPlaneProblems(config),
+    ...insecureUrlProblems(config),
     ...perTenantSettingProblems(config, env),
   ];
   if (config.oidcIssuer !== undefined) {

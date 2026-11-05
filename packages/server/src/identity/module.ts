@@ -130,6 +130,7 @@ export function identityModule(options: IdentityOptions = {}): ServerModule {
       settingsRoutes(ctx, {
         allowInsecure: ctx.config.allowInsecurePublicUrl,
         egress: options.oidcEgress ?? ctx.egress,
+        ...(options.now !== undefined ? { now: () => options.now!().getTime() } : {}),
       })(app);
 
       const interval = options.sweepIntervalMs ?? DAY_MS;

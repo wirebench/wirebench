@@ -67,6 +67,13 @@ export interface InvitationEnv {
  * The OIDC client for `request`'s tenant, or `identity-method-disabled` when it has none. A discovery that fails (the
  * tenant's IdP down, or refused by the egress rule) is `identity-oidc-failed`, logged with the tenant only.
  */
+/** `error`'s code when it has a string one, else its class's name. */
+function errorClass(error: unknown): string {
+  const code = (error as { code?: unknown } | undefined)?.code;
+  if (typeof code === 'string') return code;
+  return error instanceof Error ? error.name : 'error';
+}
+
 export async function requireProvider(
   env: Pick<IdentityEnv, 'providerFor'>,
   request: { readonly tenant: TenantScope; readonly log: { warn(details: object, message: string): void } },
@@ -76,7 +83,8 @@ export async function requireProvider(
     provider = await env.providerFor(request.tenant);
   } catch (error) {
     request.log.warn(
-      { tenantId: request.tenant.tenantId, reason: error instanceof Error ? error.message : 'error' },
+      // The error's class or code only: an IdP's answer, or a resolver's message, can carry what it was sent.
+      { tenantId: request.tenant.tenantId, reason: errorClass(error) },
       'oidc discovery failed',
     );
     throw oidcFailed();

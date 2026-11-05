@@ -118,6 +118,8 @@ export function auditLogModule(options: AuditLogOptions = {}): ServerModule {
               setTimer,
               log: ctx.log,
             });
+      // A tenant's new destination is tried at once, not after the old one's backoff (spec §22.12).
+      if (forwarder !== undefined && hosted) ctx.settings.onChanged(({ tenantId }) => forwarder.forget(tenantId));
       forwarder?.start();
       // Only with a chain key (audit-chain spec §3.2); without one nothing is built and no timer armed.
       const sealer =

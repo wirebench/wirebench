@@ -128,6 +128,17 @@ describeDb('the tenant settings API (spec §22.12)', () => {
     for (const value of [TOKEN, 'siem.acme.test', 'mail.acme.test', 'u:p']) expect(logged).not.toContain(value);
   });
 
+  it('limits a tenant’s saves, its own bucket only', async () => {
+    const answers: number[] = [];
+    for (let i = 0; i < 21; i++) answers.push((await put(t.b, 'retention', { hooksKeep: 0 })).status);
+    expect(answers.slice(0, 20).every((status) => status === 400)).toBe(true);
+    expect(answers[20]).toBe(429);
+    expect((await put(t.b, 'retention', { hooksKeep: 0 })).body).toMatchObject({ code: 'settings-rate-limited' });
+    // A read is not a save, and the other tenant's bucket is its own.
+    expect((await t.b.call(admins.beta, 'GET', '/tenant/settings')).status).toBe(200);
+    expect((await put(t.a, 'retention', { hooksKeep: 0 })).status).toBe(400);
+  });
+
   it('refuses a tenant’s budgets with settings-operator-only', async () => {
     expect(await put(t.a, 'budgets', { sendsPerMinute: 100_000 })).toMatchObject({
       status: 403,

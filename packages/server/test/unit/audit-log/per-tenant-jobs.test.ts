@@ -242,6 +242,25 @@ describe('the forwarder over two tenants', () => {
     expect(made.queues.get(ONE.tenantId)).toEqual([]);
   });
 
+  it('forgets a tenant’s backoff when its setting changes, or when it forwards nowhere any more', async () => {
+    const noSink: string[] = [];
+    const { forwarder, claimsIn, clock } = cast({ sinkOne: () => Promise.reject(new Error('down')), noSink });
+    await forwarder.runOnce();
+    clock.advance(1_000);
+    await forwarder.runOnce();
+    expect(claimsIn('one')).toBe(1);
+    // A new destination is tried at once.
+    forwarder.forget(ONE.tenantId);
+    await forwarder.runOnce();
+    expect(claimsIn('one')).toBe(2);
+    // Failing again, then forwarding nowhere: the backoff goes with the sink, so a later one starts afresh.
+    noSink.push(ONE.tenantId);
+    await forwarder.runOnce();
+    noSink.length = 0;
+    await forwarder.runOnce();
+    expect(claimsIn('one')).toBe(3);
+  });
+
   it('answers failed, backing off, when every tenant’s sink is down; a tenant with no sink is never claimed', async () => {
     const { forwarder, claimsIn } = cast({ sink: () => Promise.reject(new Error('down')), noSink: [TWO.tenantId] });
     expect(await forwarder.runOnce()).toMatchObject({ outcome: 'failed', sent: 0, nextDelayMs: 5_000 });
