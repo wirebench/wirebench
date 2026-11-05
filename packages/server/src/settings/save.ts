@@ -8,9 +8,11 @@
  * - **saml**: the pasted metadata parses and carries a signing certificate.
  * - **auditForward**: the URL is `https://`, with no credentials in it (the token has its own field); a CA, when
  *   given, holds at least one PEM certificate.
- * - **smtp**: the URL is `smtp://` or `smtps://`.
+ * - **smtp**: the URL is `smtp://` or `smtps://`, and its host passes the egress rule: a literal address as it is, a
+ *   name by what it resolves to now (the send checks again, since a name can change what it resolves to).
  */
-import { splitPemBundle, type EgressPolicy } from '@wirebench/engine';
+import { isIP } from 'node:net';
+import { checkEgress, checkedLookup, splitPemBundle, type EgressPolicy } from '@wirebench/engine';
 import { recordAudit, type AuditSource, type ServerHooks } from '../context.js';
 import { discoverOidc, type OidcSettings } from '../identity/oidc.js';
 import { problem } from '../problem.js';
@@ -24,7 +26,7 @@ export interface SaveDeps {
   readonly hooks: ServerHooks;
   /** `WIREBENCH_SERVER_ALLOW_INSECURE_PUBLIC_URL`: an `http://` issuer, for a development one only. */
   readonly allowInsecure: boolean;
-  /** The egress rule the issuer's discovery runs under: `ctx.egress`, or `'unchecked'` for a test's loopback issuer. */
+  /** The egress rule the issuer's discovery and the SMTP host's check run under: `ctx.egress`, or `'unchecked'` for a test's loopback servers. */
   readonly egress: EgressPolicy | 'unchecked';
   /** Discovery; `discoverOidc` unless a test passes its own. */
   readonly discover?: (settings: OidcSettings) => Promise<unknown>;
@@ -39,6 +41,27 @@ export interface SaveOptions {
 }
 
 const refused = (code: string, message: string) => problem(code, message, 400);
+
+/**
+ * Whether `host` passes `policy`: the egress refusal's own message (it names the host and the class of address,
+ * never the address), or `undefined`. A name that does not resolve passes; the send's own check refuses it later.
+ */
+async function egressRefusal(host: string, policy: EgressPolicy | 'unchecked'): Promise<string | undefined> {
+  if (policy === 'unchecked') return undefined;
+  const literal = host.startsWith('[') ? host.slice(1, -1) : host;
+  try {
+    if (isIP(literal) !== 0) checkEgress(host, literal, policy);
+    else
+      await new Promise<void>((resolve, reject) => {
+        checkedLookup(policy)(literal, { all: true }, (error) => (error === null ? resolve() : reject(error)));
+      });
+    return undefined;
+  } catch (error) {
+    return (error as { code?: unknown }).code === 'egress-refused' && error instanceof Error
+      ? error.message
+      : undefined;
+  }
+}
 
 const parsedUrl = (url: string): URL | undefined => {
   try {
@@ -110,6 +133,8 @@ async function check<S extends SettingsSection>(
       const url = parsedUrl((input as SectionInputs['smtp']).url);
       if (url === undefined || (url.protocol !== 'smtp:' && url.protocol !== 'smtps:') || url.hostname === '')
         throw refused('settings-smtp-url', 'The SMTP URL must be an smtp:// or smtps:// URL.');
+      const refusal = await egressRefusal(url.hostname, deps.egress);
+      if (refusal !== undefined) throw refused('settings-smtp-host', refusal);
       return;
     }
     default:

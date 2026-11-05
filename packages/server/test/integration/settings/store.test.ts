@@ -8,9 +8,11 @@ import { randomUUID } from 'node:crypto';
 import Fastify from 'fastify';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ServerConfig } from '../../../src/config.js';
+import { SYSTEM_SOURCE } from '../../../src/context.js';
 import { openSession } from '../../../src/db/pool.js';
 import { BusSignals, NotificationBus } from '../../../src/operations/bus.js';
 import { InstanceRegistry } from '../../../src/operations/instances.js';
+import { saveSection } from '../../../src/settings/save.js';
 import { openSecret } from '../../../src/settings/store.js';
 import { TenantAdmin } from '../../../src/tenancy/directory.js';
 import type { TenantScope } from '../../../src/tenancy/scope.js';
@@ -106,6 +108,33 @@ describeDb('the settings store (spec §22.12)', () => {
       expect(await h.ctx.settings.of(acme, 'oidc')).toMatchObject({ clientSecret: CLIENT_SECRET, displayName: 'Acme' });
       // The module's read has the opened values, credentials back in the URL.
       expect((await h.ctx.settings.smtp(acme))?.url).toBe(`smtps://acme-mailer:${SMTP_PASSWORD}@mail.acme.test:465`);
+    });
+
+    it('refuses an SMTP host the egress rule refuses, on save', async () => {
+      const deps = {
+        settings: h.ctx.settings,
+        hooks: h.ctx.hooks,
+        allowInsecure: false,
+        egress: { denyPrivate: true },
+      };
+      const save = (url: string) =>
+        saveSection(deps, acme, 'smtp', { url, from: 'ops@acme.test' }, { by: 'u1', source: SYSTEM_SOURCE });
+      for (const [url, why] of [
+        ['smtp://10.1.2.3:25', /private network/],
+        ['smtps://169.254.169.254', /metadata/],
+        ['smtp://169.254.3.4', /link-local/],
+        ['smtp://u:p@localhost:25', /loopback/],
+      ] as const) {
+        const error = await save(url).then(
+          () => undefined,
+          (refused: unknown) => refused as Error,
+        );
+        expect(error, url).toMatchObject({ code: 'settings-smtp-host' });
+        expect(error?.message, url).toMatch(why);
+      }
+      expect(await h.ctx.settings.of(acme, 'smtp')).toBeUndefined();
+      await save('smtp://203.0.113.10:587');
+      expect((await h.ctx.settings.of(acme, 'smtp'))?.url).toBe('smtp://203.0.113.10:587');
     });
 
     it('keeps two tenants apart: one tenant’s row neither reads nor opens in the other', async () => {

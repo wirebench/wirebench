@@ -10,7 +10,7 @@ import { deleteAuditEventsBefore } from '../../../src/audit-log/repo.js';
 import { TenantSinks } from '../../../src/audit-log/forward/tenant-sinks.js';
 import type { ServerConfig } from '../../../src/config.js';
 import { CaptureSweeper } from '../../../src/hooks/sweep.js';
-import { alertDelivery } from '../../../src/schedules/alerts/outbox.js';
+import { alertDelivery, tenantMail } from '../../../src/schedules/alerts/outbox.js';
 import type { AlertPayload } from '../../../src/schedules/alerts/render.js';
 import { TenantAdmin } from '../../../src/tenancy/directory.js';
 import type { TenantScope } from '../../../src/tenancy/scope.js';
@@ -97,7 +97,7 @@ describeDb('per-tenant retention, mail and forwarding (spec §22.12)', () => {
     );
     const deliver = alertDelivery(
       { smtp: { url: h.ctx.config.smtpUrl!, from: h.ctx.config.smtpFrom! } },
-      { egress: 'unchecked', smtpFor: (scope) => h.ctx.settings.smtp(scope) },
+      { egress: 'unchecked', smtpFor: tenantMail(h.ctx.settings) },
     );
     const payload: AlertPayload = {
       kind: 'test',

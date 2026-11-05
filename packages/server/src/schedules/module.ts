@@ -13,7 +13,7 @@ import { CaptureSweeper } from '../hooks/sweep.js';
 import { CommitStore } from '../sync/commit-store.js';
 import { tenantPaths } from '../tenancy/paths.js';
 import type { TenantScope } from '../tenancy/scope.js';
-import { AlertOutbox, alertDelivery, type DeliverAlert } from './alerts/outbox.js';
+import { AlertOutbox, alertDelivery, tenantMail, type DeliverAlert } from './alerts/outbox.js';
 import { deleteOutboxBefore, deleteRunsBefore } from './repo.js';
 import { scheduleRunRoutes } from './run-routes.js';
 import { scheduleRoutes } from './routes.js';
@@ -93,7 +93,7 @@ export function schedulesModule(options: SchedulesOptions = {}): ServerModule {
         options.deliver ??
         alertDelivery(settings, {
           egress: ctx.egress,
-          ...(ctx.config.mode === 'hosted' ? { smtpFor: (scope: TenantScope) => ctx.settings.smtp(scope) } : {}),
+          ...(ctx.config.mode === 'hosted' ? { smtpFor: tenantMail(ctx.settings) } : {}),
         });
       const outbox = new AlertOutbox({ tenancy: ctx.tenancy, now, setTimer, log: ctx.log, license, deliver });
       options.onOutbox?.(outbox);

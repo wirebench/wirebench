@@ -178,7 +178,13 @@ describeDb('the schedules module hands the server context egress rule on (produc
         {},
       );
       expect(sent.body.results).toEqual([
-        { index: 0, kind: 'slack', ok: false, error: expect.stringContaining('refused') as unknown },
+        // The same words for a refused, failed or timed-out connection: no probe of what answers behind a host.
+        {
+          index: 0,
+          kind: 'slack',
+          ok: false,
+          error: 'the alert could not reach 10.0.0.1: the connection was refused or failed',
+        },
       ]);
     } finally {
       await wired.close();
