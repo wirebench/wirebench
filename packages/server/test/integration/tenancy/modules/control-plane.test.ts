@@ -10,6 +10,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { auditHook } from '../../../../src/audit-log/hook.js';
 import type { ControlMail } from '../../../../src/control-plane/mail.js';
 import { controlPlaneModule } from '../../../../src/control-plane/module.js';
+import { EXPORT_DOWNLOADS } from '../../../../src/control-plane/tenant-routes.js';
 import { tenantRoot } from '../../../../src/tenancy/paths.js';
 import { ensureControlRole } from '../../../../src/tenancy/roles.js';
 import { describeDb } from '../../../helpers/database.js';
@@ -127,6 +128,23 @@ describeDb('the tenant routes, two tenants (spec §22.9, §22.11)', () => {
     });
     expect(missing.statusCode).toBe(404);
     await t.a.tdb.query('delete from tenant_exports where id = any($1::text[])', [[expired, gone]]);
+  });
+
+  it('answers 429 once a server admin downloads too often, per admin', async () => {
+    const busy = await t.a.user({ email: 'busy@acme.example', serverAdmin: true });
+    const download = () =>
+      t.a.inject({ method: 'GET', url: `/api/v1/tenant/exports/${EXPORT_A}/file`, headers: busy.headers });
+    for (let i = 0; i < EXPORT_DOWNLOADS.capacity; i++) expect((await download()).statusCode).toBe(200);
+    const refused = await download();
+    expect(refused.statusCode).toBe(429);
+    expect(refused.headers['retry-after']).toBeDefined();
+    // Another admin's bucket is untouched.
+    const other = await t.a.inject({
+      method: 'GET',
+      url: `/api/v1/tenant/exports/${EXPORT_A}/file`,
+      headers: adminA.headers,
+    });
+    expect(other.statusCode).toBe(200);
   });
 
   it('serves server admins only, behind a session', async () => {

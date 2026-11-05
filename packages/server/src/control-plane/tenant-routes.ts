@@ -17,6 +17,7 @@ import { open } from 'node:fs/promises';
 import type { FastifyInstance } from 'fastify';
 import { auditSource, recordAudit, type ServerHooks } from '../context.js';
 import { requireServerAdmin } from '../identity/guard.js';
+import { RateLimiter } from '../identity/rate-limit.js';
 import { problem } from '../problem.js';
 import type { TenantDbFactory } from '../tenancy/tenant-db.js';
 import { DAY_MS, GRACE_DAYS } from './billing/sweep.js';
@@ -60,9 +61,13 @@ function fileName(slug: string, at: Date | null): string {
   return `wirebench-export-${slug}-${stamp}.tar.gz`;
 }
 
+/** Export downloads per server admin: each streams the whole tenant, so a script cannot pull it in a loop. */
+export const EXPORT_DOWNLOADS = { capacity: 10, refillPerMs: 10 / 60_000 } as const;
+
 export function tenantRoutes(deps: TenantRoutesDeps) {
   return (app: FastifyInstance): void => {
     const lifecycle = deps.lifecycle;
+    const downloads = new RateLimiter({ ...EXPORT_DOWNLOADS, now: () => deps.now().getTime() });
 
     app.get('/tenant/exports', { preHandler: requireServerAdmin }, async (request) => ({
       exports: (await deps.runner.list(request.tenant)).map(exportView),
@@ -75,6 +80,14 @@ export function tenantRoutes(deps: TenantRoutesDeps) {
     });
 
     app.get('/tenant/exports/:id/file', { preHandler: requireServerAdmin }, async (request, reply) => {
+      const allowed = downloads.take(`${request.tenant.tenantId}:${request.caller!.id}`);
+      if (!allowed.allowed) {
+        return reply
+          .code(429)
+          .header('cache-control', 'no-store')
+          .header('retry-after', String(allowed.retryAfterSeconds))
+          .send();
+      }
       const { id } = request.params as { id: string };
       const { row, path } = await deps.runner.ready(request.tenant, id);
       // Opened before anything is sent: a file the sweep removed under a row not yet marked is a 404, and once open it

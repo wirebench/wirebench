@@ -19,7 +19,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { rm } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, resolve, sep } from 'node:path';
 import type { GitCli } from '@wirebench/engine';
 import type { FastifyBaseLogger } from 'fastify';
 import { recordAudit, SYSTEM_SOURCE, type ServerHooks } from '../../context.js';
@@ -150,7 +150,7 @@ export class ExportRunner {
    * @throws WirebenchError `control-plane-export-unknown` (404) for an id this tenant has no ready export of
    */
   async ready(scope: TenantScope, id: string): Promise<{ readonly row: ExportRow; readonly path: string }> {
-    const path = this.path(scope, id);
+    if (!EXPORT_ID.test(id)) throw problem('control-plane-export-unknown', 'no export has that id', 404);
     const row = (
       await this.#deps
         .db(scope)
@@ -160,6 +160,10 @@ export class ExportRunner {
         )
     ).rows[0];
     if (row === undefined) throw problem('control-plane-export-unknown', 'no export has that id', 404);
+    // The file is named by the stored row's id, and must resolve inside the tenant's exports directory.
+    const dir = resolve(exportsDir(this.#deps.dataDir, scope));
+    const path = resolve(dir, `${row.id}.tar.gz`);
+    if (!path.startsWith(dir + sep)) throw problem('control-plane-export-unknown', 'no export has that id', 404);
     return { row, path };
   }
 
