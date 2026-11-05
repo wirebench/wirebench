@@ -34,11 +34,12 @@ export async function launchDesktop(): Promise<LaunchedPackagedApp> {
   // Not `_electron.launch`: its loader sets `--password-store=basic`, and an app on Chromium's plain-text
   // store refuses to pair, since its agent key would sit unsealed. Launched on the plain binary instead, with
   // the Secret Service named outright on Linux: xvfb is no desktop Chromium knows, so left to guess it would
-  // fall back to that same plain-text store.
+  // fall back to that same plain-text store. `--no-sandbox` as `_electron.launch` passes it: the setuid
+  // sandbox helper in node_modules is not root-owned on a CI runner, and Chromium aborts rather than use it.
   const launched = await launchBuiltAppOverDebugPort({
     ...(process.platform === 'linux'
       ? {
-          extraArgs: ['--password-store=gnome-libsecret'],
+          extraArgs: ['--no-sandbox', '--password-store=gnome-libsecret'],
           extraEnv: { XDG_CURRENT_DESKTOP: process.env['XDG_CURRENT_DESKTOP'] ?? 'GNOME' },
         }
       : {}),
