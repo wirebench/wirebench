@@ -51,7 +51,9 @@ function recorder(): Recorder {
       accept(status, headers) {
         accepted.push({ status, headers });
         return {
-          onChunk: (bytes) => chunks.push({ text: decoder.decode(bytes, { stream: true }), afterResolve: resolved }),
+          onChunk: (bytes) => {
+            chunks.push({ text: decoder.decode(bytes, { stream: true }), afterResolve: resolved });
+          },
         };
       },
     },
