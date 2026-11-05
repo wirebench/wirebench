@@ -32,10 +32,14 @@ export async function launchDesktop(): Promise<LaunchedApp> {
     throw new Error(`The desktop app is not built (${MAIN_PATH} is missing): run pnpm build first`);
   }
   const launched = await launchApp(
-    // Linux picks the Secret Service only on a desktop it knows; xvfb is none, so without this the keyring
-    // CI unlocks goes unused and the agent refuses to pair for want of a place to keep its key.
+    // Linux picks the Secret Service only on a desktop it knows, and xvfb is none: left to guess, Chromium
+    // keeps to its plain-text store, the keyring CI unlocks goes unused and the agent refuses to pair for
+    // want of a place to keep its key. Name the store outright.
     process.platform === 'linux'
-      ? { extraEnv: { XDG_CURRENT_DESKTOP: process.env['XDG_CURRENT_DESKTOP'] ?? 'GNOME' } }
+      ? {
+          extraArgs: ['--password-store=gnome-libsecret'],
+          extraEnv: { XDG_CURRENT_DESKTOP: process.env['XDG_CURRENT_DESKTOP'] ?? 'GNOME' },
+        }
       : {},
   );
   const child = launched.app.process();

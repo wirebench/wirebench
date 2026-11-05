@@ -120,6 +120,8 @@ export interface LaunchOptions {
   readonly keepUserDataDir?: boolean;
   /** Extra env vars for the launched process — e.g. `WIREBENCH_E2E_SAVE_PATH`/`WIREBENCH_E2E_OPEN_PATH`. */
   readonly extraEnv?: Readonly<Record<string, string>>;
+  /** Chromium switches placed before the app's entry, e.g. `--password-store=gnome-libsecret`. */
+  readonly extraArgs?: readonly string[];
   /**
    * Console errors this one spec expects, on top of {@link BENIGN_CONSOLE_PATTERNS} — e.g. the
    * browser's own refusals when a spec deliberately loads a hostile page into a sandbox.
@@ -189,7 +191,7 @@ export async function launchApp(options: LaunchOptions = {}): Promise<LaunchedAp
 
   try {
     app = await electron.launch({
-      args: [MAIN_PATH],
+      args: [...(options.extraArgs ?? []), MAIN_PATH],
       env: {
         ...process.env,
         NODE_ENV: 'production',
