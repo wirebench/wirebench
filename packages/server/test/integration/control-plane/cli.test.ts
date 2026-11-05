@@ -216,8 +216,10 @@ describeDb('admin tenant (hosted spec §22.14)', () => {
     expect(await row('beta')).toBeUndefined();
     expectRefused(await run({ command: 'admin-tenant-rename', slug: 'acme', to: 'beta' }), 'control-plane-slug-taken');
 
+    // No SMTP here: the request stands, and its mail is skipped quietly.
     const deleted = await run({ command: 'admin-tenant-delete', slug: 'acme', cancel: false });
     expect(deleted.code).toBe(0);
+    expect(deleted.stderr).toBe('');
     expect(deleted.stdout).toContain('--cancel');
     expect(await row('acme')).toMatchObject({ status: 'active', deletion_requested_by: 'operator' });
     expect((await row('acme'))?.['deleting_at']).toBeInstanceOf(Date);

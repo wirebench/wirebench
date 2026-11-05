@@ -26,6 +26,10 @@ const base = () =>
     '0.0.0-test',
   );
 
+/** The tenant routes every server serves (spec §22.9), and the ones hosted mode adds (§22.11, §22.13). */
+const EXPORT_ROUTES = ['GET /tenant/exports', 'POST /tenant/exports', 'GET /tenant/exports/:id/file'];
+const HOSTED_ROUTES = ['GET /tenant/billing', 'POST /tenant/deletion', 'DELETE /tenant/deletion'];
+
 describe('the control-plane module (spec §22.3)', () => {
   const apps: FastifyInstance[] = [];
   const closers: (() => Promise<void>)[] = [];
@@ -56,11 +60,13 @@ describe('the control-plane module (spec §22.3)', () => {
     expect(module.migrationsDir).toBe(CONTROL_PLANE_MIGRATIONS_DIR);
   });
 
-  it('serves nothing on a self-hosted server, and needs no control pool there', async () => {
+  it('serves a self-hosted server the export routes alone, and needs no control pool there', async () => {
     const ctx = await testContext({ config: base() });
     expect(ctx.config.mode).toBe('self-hosted');
     expect(Object.keys(ctx)).not.toContain('control');
-    expect(await register(ctx)).toEqual([]);
+    expect(
+      (await register(ctx, controlPlaneModule({ startLoop: false }))).filter((r) => !r.startsWith('HEAD ')),
+    ).toEqual(EXPORT_ROUTES);
   });
 
   it('refuses to register in hosted mode without the control pool', async () => {
@@ -78,7 +84,7 @@ describe('the control-plane module (spec §22.3)', () => {
     });
   });
 
-  it('registers in hosted mode with the control pool and the secret: the billing webhook alone', async () => {
+  it('registers in hosted mode with the control pool and the secret: the webhook and the tenant routes', async () => {
     const pool = openControlDb('postgres://control:pw@127.0.0.1:1/none');
     closers.push(() => pool.close());
     const ctx = await testContext({
@@ -103,7 +109,7 @@ describe('the control-plane module (spec §22.3)', () => {
     app.addHook('onRoute', (route) => {
       routes.push(`${String(route.method)} ${route.url}`);
     });
-    const module = withControlPool([controlPlaneModule()], pool, {
+    const module = withControlPool([controlPlaneModule({ startLoop: false })], pool, {
       paddleWebhookSecret: 'pdl_ntfset_test_placeholder_webhook_secret',
     })[0]!;
     await app.register(async (scope) => {
@@ -111,7 +117,9 @@ describe('the control-plane module (spec §22.3)', () => {
       await module.registerPublic?.(scope, ctx);
     });
     await app.ready();
-    expect(routes).toEqual(['POST /billing/paddle']);
+    expect(routes.filter((r) => !r.startsWith('HEAD ')).sort()).toEqual(
+      [...EXPORT_ROUTES, ...HOSTED_ROUTES, 'POST /billing/paddle'].sort(),
+    );
     // Nothing of the pool or the secret reaches the shared context, which every module sees.
     expect(Object.keys(ctx)).not.toContain('control');
     expect(Object.values(ctx)).not.toContain(pool);

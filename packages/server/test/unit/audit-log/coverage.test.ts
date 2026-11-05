@@ -12,6 +12,8 @@ const DIRS = [
   '../../integration/agent/',
   '../../integration/control-plane/',
   '../../integration/custom-domains/',
+  // The control plane's tenant routes, with two tenants (`tenant.export_downloaded`).
+  '../../integration/tenancy/modules/',
   './',
 ].map((dir) => fileURLToPath(new URL(dir, import.meta.url)));
 const text = DIRS.flatMap((dir) =>

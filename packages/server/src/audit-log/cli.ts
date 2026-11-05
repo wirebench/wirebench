@@ -7,6 +7,7 @@ import { auditExportQuerySchema } from '@wirebench/engine';
 import type { ServerCommand } from '../args.js';
 import { recordAudit, SYSTEM_SOURCE, type ServerHooks } from '../context.js';
 import { ExitCode, type ServerIo } from '../io.js';
+import { verifyExportChain } from '../control-plane/export/verify-export.js';
 import type { TenantDb } from '../tenancy/tenant-db.js';
 import { verifyChain, type BrokenLink, type VerifySummary } from './chain/verify.js';
 import { exportedEvent, exportLines, filterOf } from './routes.js';
@@ -130,4 +131,79 @@ export async function runVerifyCommand(
     details,
   });
   return outcome.result === 'intact' ? ExitCode.Ok : ExitCode.Broken;
+}
+
+type VerifyExportCommand = Extract<ServerCommand, { command: 'admin-audit-verify-export' }>;
+
+/** The `--json` line of a walk, as `admin audit verify` prints it. */
+function summaryJson(summary: VerifySummary, head: VerifyCommand['head'], extra: Record<string, unknown> = {}): string {
+  const seq = (value: bigint | null) => (value === null ? null : value.toString());
+  return `${JSON.stringify({
+    checked: summary.checked,
+    firstSeq: seq(summary.firstSeq),
+    lastSeq: seq(summary.lastSeq),
+    unsealed: summary.unsealed,
+    result: summary.result,
+    ...(summary.broken !== undefined
+      ? {
+          broken: {
+            seq: summary.broken.seq.toString(),
+            ...(summary.broken.id !== undefined ? { id: summary.broken.id } : {}),
+            reason: summary.broken.reason,
+            message: brokenText(summary.broken),
+          },
+        }
+      : {}),
+    ...(head !== undefined && summary.broken === undefined
+      ? { head: { seq: head.seq.toString(), olderThanKeptChain: summary.headBeforeAnchor === true } }
+      : {}),
+    ...extra,
+  })}\n`;
+}
+
+/**
+ * `wirebench-server admin audit verify --export <file> [--head <seq>:<hex>] [--json]` (hosted edition spec §22.9,
+ * §13 criterion 6): an export's chain from its own `audit_events.ndjson`, anchor and key, with no database and no
+ * configuration. Exit 0 intact, 1 broken (or the audit file not matching the manifest's checksum), 2 when the export
+ * carries no key or the anchor names another. The key never reaches the output.
+ */
+export async function runVerifyExportCommand(command: VerifyExportCommand, io: ServerIo): Promise<number> {
+  let outcome: Awaited<ReturnType<typeof verifyExportChain>>;
+  try {
+    outcome = await verifyExportChain(command.file, command.head !== undefined ? { head: command.head } : {});
+  } catch (error) {
+    const code = (error as { code?: unknown } | null)?.code;
+    if (typeof code === 'string') {
+      io.stderr.write(`${code}: ${(error as Error).message}\n`);
+      return ExitCode.Config;
+    }
+    throw error;
+  }
+  if (outcome.kind === 'no-key') {
+    io.stderr.write('the export carries no chain key: its server had none, and nothing in it was sealed\n');
+    return ExitCode.Config;
+  }
+  if (outcome.kind === 'wrong-key') {
+    io.stderr.write(`wrong key (chain key id ${outcome.chainKeyId})\n`);
+    return ExitCode.Config;
+  }
+  const mismatch = "tables/audit_events.ndjson does not match the manifest's checksum";
+  // The key travels in the export, so a consistent chain proves no edit after sealing only to someone who trusts the
+  // file's source: a head from the server's own log, or the deletion record, is the independent check.
+  const scope =
+    'This proves the export is consistent with the chain key it carries, not that a Wirebench server wrote it. ' +
+    'For an independent check, pass --head <seq>:<hex> from the server\'s "audit chain sealed to" log line or its deletion record.';
+  if (command.json) {
+    io.stdout.write(
+      summaryJson(outcome, command.head, {
+        checksum: outcome.checksum,
+        proves: command.head === undefined ? 'consistency' : 'consistency and the given head',
+      }),
+    );
+  } else {
+    io.stdout.write(summaryText(outcome, command.head));
+    if (!outcome.checksum) io.stdout.write(`${mismatch}\n`);
+    if (command.head === undefined) io.stdout.write(`${scope}\n`);
+  }
+  return outcome.result === 'intact' && outcome.checksum ? ExitCode.Ok : ExitCode.Broken;
 }

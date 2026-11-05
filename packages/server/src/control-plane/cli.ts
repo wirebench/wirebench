@@ -1,23 +1,28 @@
 /**
  * `wirebench-server admin tenant …` (hosted edition spec §22.14): the operator's lifecycle commands, on the control
  * role through {@link TenantLifecycle}. `list`, `create`, `set-edition`, `suspend`, `resume`, `rename` and
- * `delete [--cancel]`; `export`, `import` and `settings` come with their parts. Each runs in hosted mode only and
- * refuses elsewhere with `admin-tenant-hosted-only`. The slug is positional, never `--tenant`.
+ * `delete [--cancel]` run in hosted mode only and refuse elsewhere with `admin-tenant-hosted-only`; `export` and
+ * `import` (spec §22.9, §22.10) run on every server, and a self-hosted one exports, or fills, its one tenant;
+ * `settings` comes with its part. The slug is positional, never `--tenant`.
  *
  * It opens the control pool from the control role's URL, and the app pool for the tenants' units (the audit rows,
  * the first admin's invitation), as `admin` does. A write is announced on the notification bus (spec §20.3), so
  * every running instance reloads its tenant map: the bus starts before the command and is drained before exit.
  */
 import { randomUUID } from 'node:crypto';
+import { join } from 'node:path';
 import type { KeyObject } from 'node:crypto';
-import { WirebenchError } from '@wirebench/engine';
+import { findGit, GitCli, WirebenchError } from '@wirebench/engine';
 import type { FastifyBaseLogger } from 'fastify';
 import type { ServerCommand } from '../args.js';
+import { chainKeys } from '../audit-log/chain/keys.js';
 import { auditHook } from '../audit-log/hook.js';
 import { ConfigError, forgetDatabaseUrls, loadConfig, migrationUrlOf, type ServerConfig } from '../config.js';
-import { SYSTEM_SOURCE, serverHooks } from '../context.js';
+import { recordAudit, SYSTEM_SOURCE, serverHooks, type ServerHooks } from '../context.js';
 import { pendingMigrations } from '../db/migrate.js';
-import { ADMIN_APPLICATION_NAME, createDatabase, openSession } from '../db/pool.js';
+import { ADMIN_APPLICATION_NAME, createDatabase, createLockPool, openSession } from '../db/pool.js';
+import type { Database } from '../db/querier.js';
+import { cliScope } from '../identity/cli.js';
 import { identitySettings } from '../identity/env.js';
 import { createInvitation } from '../identity/invitations.js';
 import { ExitCode, packageVersion, type ServerIo } from '../io.js';
@@ -25,13 +30,20 @@ import { PRODUCTION_PUBLIC_KEYS } from '../licensing/keys.js';
 import { cachedServerId, createLicenseService } from '../licensing/service.js';
 import { BUILTIN_MODULES } from '../modules.js';
 import { NotificationBus } from '../operations/bus.js';
+import { DatabaseRepoLock, guardGit, REPO_LOCK_POOL_MAX, REPO_LOCK_WAIT_MS } from '../operations/repo-lock.js';
+import { NO_HOOKS_DIR, RepoStore } from '../repos/repo-store.js';
 import { sendAlertMail } from '../schedules/alerts/smtp.js';
 import { allMigrations, StartupError } from '../serve.js';
 import type { TenantRow } from '../tenancy/directory.js';
 import { environmentKeyRoot } from '../tenancy/keys.js';
-import { createTenancy, shareTenancyCaches } from '../tenancy/tenancy.js';
+import type { TenantScope } from '../tenancy/scope.js';
+import { createTenancy, isDefaultTenant, shareTenancyCaches, type Tenancy } from '../tenancy/tenancy.js';
 import { tenantUrl } from '../tenancy/urls.js';
-import { openControlDb } from './control-db.js';
+import { openControlDb, type ControlDb } from './control-db.js';
+import { mailDeletionRequested } from './deletion-mail.js';
+import type { ControlSend } from './mail.js';
+import { writeExport } from './export/export.js';
+import { importHosted, importSelfHosted, type ImportDeps, type ImportReport } from './export/import.js';
 import { REDIRECT_DAYS, TenantLifecycle, type TenantListing } from './tenants.js';
 
 export type AdminTenantCommand = Extract<ServerCommand, { command: `admin-tenant-${string}` }>;
@@ -51,6 +63,8 @@ export interface AdminTenantOptions {
   /** A hosted configuration, which `loadConfig` refuses until Part H (spec §22.1); the bin passes nothing. */
   readonly configure?: (config: ServerConfig) => ServerConfig;
   readonly mail?: InvitationMail;
+  /** How the deletion request's mail goes to every server admin; the operator's SMTP by default. */
+  readonly send?: ControlSend;
 }
 
 const HOSTED_ONLY =
@@ -119,6 +133,9 @@ export async function runAdminTenant(
       return ExitCode.Config;
     }
     throw error;
+  }
+  if (command.command === 'admin-tenant-export' || command.command === 'admin-tenant-import') {
+    return runPortable(command, config, io, options);
   }
   if (config.mode !== 'hosted') {
     io.stderr.write(`admin-tenant-hosted-only: ${HOSTED_ONLY}\n`);
@@ -264,6 +281,28 @@ export async function runAdminTenant(
           return ExitCode.Ok;
         }
         const row = await lifecycle.requestDeletion(command.slug);
+        if (row?.deletingAt !== undefined && row.deletingAt !== null) {
+          const smtp =
+            config.smtpUrl !== undefined && config.smtpFrom !== undefined
+              ? { url: config.smtpUrl, from: config.smtpFrom }
+              : undefined;
+          await mailDeletionRequested(
+            {
+              db: tenancy.db,
+              config,
+              log,
+              mail:
+                smtp === undefined
+                  ? undefined
+                  : {
+                      send: options.send ?? ((to, mail) => sendAlertMail(smtp, to, mail)),
+                      mailHost: smtpHost(smtp.url),
+                    },
+            },
+            await lifecycle.tenantScope(row.id),
+            { teamName: row.name, deletingAt: row.deletingAt, by: 'the operator' },
+          );
+        }
         io.stdout.write(
           row === undefined
             ? `The deletion of ${command.slug} was already asked for\n`
@@ -298,4 +337,192 @@ function smtpHost(url: string): string {
   } catch {
     return 'unknown';
   }
+}
+
+type PortableCommand = Extract<AdminTenantCommand, { command: 'admin-tenant-export' | 'admin-tenant-import' }>;
+
+/** The report of an import: what came in, and each item that did not, by id (spec §22.10). */
+function reportText(slug: string, report: ImportReport): string {
+  const rows = Object.values(report.tables).reduce((sum, n) => sum + n, 0);
+  const lines = [
+    `Imported into ${slug}: ${String(rows)} rows in ${String(Object.keys(report.tables).length)} tables, ${String(report.workspaces)} workspaces${report.resumed ? ' (resumed)' : ''}`,
+    'Everyone signs in again: sessions, device tokens and pairings are not exported.',
+  ];
+  if (report.notRestored.length > 0) {
+    lines.push('Not restored:');
+    for (const item of report.notRestored) lines.push(`  ${item.table} ${item.id}: ${item.what}`);
+  }
+  return `${lines.join('\n')}\n`;
+}
+
+/** Git as the server runs it, every step guarded by the repository lock (spec §20.4), with plumbing. */
+async function locateGit(config: ServerConfig): Promise<GitCli> {
+  const location = await findGit(config.gitPath !== undefined ? { configuredPath: config.gitPath } : {});
+  if (location === undefined) {
+    throw new WirebenchError('git-not-found', 'git was not found; install git or set WIREBENCH_SERVER_GIT_PATH');
+  }
+  return guardGit(new GitCli(location, { hooksDir: join(config.dataDir, NO_HOOKS_DIR) })).withPlumbing();
+}
+
+/**
+ * `admin tenant export [<slug>] --out <file>` and `admin tenant import <file> […]` (spec §22.9, §22.10), on any server.
+ * The repositories are taken under the same lock a running server takes, so either runs beside one.
+ */
+async function runPortable(
+  command: PortableCommand,
+  config: ServerConfig,
+  io: ServerIo,
+  options: AdminTenantOptions,
+): Promise<number> {
+  const hosted = config.mode === 'hosted';
+  if (!hosted && command.slug !== undefined) {
+    io.stderr.write(`admin-tenant-hosted-only: a self-hosted server has one tenant: drop the slug\n`);
+    return ExitCode.Config;
+  }
+  if (
+    !hosted &&
+    command.command === 'admin-tenant-import' &&
+    (command.name !== undefined || command.edition !== undefined || command.seats !== undefined)
+  ) {
+    io.stderr.write(
+      'admin-tenant-hosted-only: a self-hosted import fills the one tenant: drop --name, --edition and --seats\n',
+    );
+    return ExitCode.Config;
+  }
+  if (hosted && command.command === 'admin-tenant-export' && command.slug === undefined) {
+    io.stderr.write('admin tenant export needs the slug of the tenant in hosted mode\n');
+    return ExitCode.Config;
+  }
+  const controlUrl = config.controlDatabaseUrl;
+  if (hosted && controlUrl === undefined) {
+    io.stderr.write('WIREBENCH_SERVER_CONTROL_DATABASE_URL: required in hosted mode\n');
+    return ExitCode.Config;
+  }
+  const now = options.now ?? (() => new Date());
+  const log = stderrLog(io);
+  const db = createDatabase(config.databaseUrl, { applicationName: ADMIN_APPLICATION_NAME });
+  const control = controlUrl !== undefined && hosted ? openControlDb(controlUrl) : undefined;
+  const lockPool = createLockPool(migrationUrlOf(config), {
+    max: REPO_LOCK_POOL_MAX,
+    applicationName: `${ADMIN_APPLICATION_NAME}-repo-lock`,
+    waitMs: REPO_LOCK_WAIT_MS,
+  });
+  let bus: NotificationBus | undefined;
+  try {
+    const pending = await pendingMigrations(db, await allMigrations(BUILTIN_MODULES));
+    if (pending.length > 0) {
+      io.stderr.write(`${pending.length} migrations are pending; run wirebench-server migrate first\n`);
+      return ExitCode.Migration;
+    }
+    const tenancy = createTenancy(
+      db,
+      config.secretsKey !== undefined ? { keyRoot: environmentKeyRoot(config.secretsKey) } : {},
+    );
+    const hooks = serverHooks();
+    hooks.audit.push(auditHook(now, { forward: Boolean(config.auditForwardUrl) }));
+    const git = await locateGit(config);
+    await RepoStore.prepare(config.dataDir);
+    const repos = new RepoStore({ git, dataDir: config.dataDir, lock: new DatabaseRepoLock({ pool: lockPool }) });
+    const keys =
+      config.auditChainKey === undefined
+        ? undefined
+        : chainKeys(config.auditChainKey, config.mode, (scope) => isDefaultTenant(tenancy, scope));
+    if (command.command === 'admin-tenant-export') {
+      const scope = await cliScope(tenancy, command.slug, config.mode);
+      const result = await writeExport(
+        {
+          db: tenancy.db,
+          repos,
+          git,
+          dataDir: config.dataDir,
+          version: config.version,
+          chainKey: keys?.(scope),
+          now,
+        },
+        scope,
+        command.out,
+      );
+      await exported(hooks, tenancy, scope, result.sha256, result.size);
+      io.stdout.write(
+        `Exported ${scope.slug} to ${command.out}: ${String(Object.keys(result.manifest.tables).length)} tables, ${String(Object.keys(result.manifest.workspaces).length)} workspaces, sha256 ${result.sha256}\n` +
+          'It holds password hashes and captures: keep it as safe as the database.\n',
+      );
+      return ExitCode.Ok;
+    }
+    const deps: ImportDeps = {
+      db: tenancy.db,
+      repos,
+      git,
+      dataDir: config.dataDir,
+      hooks,
+      chainKeyOf: (scope) => keys?.(scope),
+    };
+    if (!hosted) {
+      const scope = await cliScope(tenancy, undefined, config.mode);
+      io.stdout.write(reportText(scope.slug, await importSelfHosted(deps, scope, command.file)));
+      return ExitCode.Ok;
+    }
+    // The new tenant is a write every running instance hears on the bus (spec §20.3).
+    bus = await startBus(config, db, hooks, tenancy, log);
+    const lifecycle = new TenantLifecycle({ control: control as ControlDb, tenancy, hooks, now });
+    const done = await importHosted(deps, lifecycle, command.file, {
+      ...(command.slug !== undefined ? { slug: command.slug } : {}),
+      ...(command.name !== undefined ? { name: command.name } : {}),
+      ...(command.edition !== undefined ? { edition: command.edition } : {}),
+      ...(command.seats !== undefined ? { seats: command.seats } : {}),
+    });
+    io.stdout.write(
+      `${reportText(done.tenant.slug, done.report)}${tenantUrl(config, done.scope)}\nIts custom name, if it had one, is claimed and verified again.\n`,
+    );
+    return ExitCode.Ok;
+  } catch (error) {
+    if (error instanceof WirebenchError) {
+      io.stderr.write(`${error.code}: ${error.message}\n`);
+      return 1;
+    }
+    if (error instanceof StartupError) {
+      io.stderr.write(`${error.message}\n`);
+      return error.exitCode;
+    }
+    throw error;
+  } finally {
+    await bus?.stop();
+    await lockPool.close();
+    await control?.close();
+    await db.close();
+  }
+}
+
+/** `tenant.exported`, by the operator, in the tenant's chain. */
+async function exported(hooks: ServerHooks, tenancy: Tenancy, scope: TenantScope, sha256: string, size: number) {
+  await tenancy.db(scope).transaction((tx) =>
+    recordAudit(hooks, tx, {
+      ...SYSTEM_SOURCE,
+      action: 'tenant.exported',
+      target: { kind: 'tenant', id: scope.tenantId },
+      details: { sha256, sizeBytes: size, by: 'operator' },
+    }),
+  );
+}
+
+/** The bus a write announces on, started before it, as the lifecycle commands start it. */
+async function startBus(
+  config: ServerConfig,
+  db: Database,
+  hooks: ServerHooks,
+  tenancy: Tenancy,
+  log: FastifyBaseLogger,
+): Promise<NotificationBus> {
+  const migrationUrl = migrationUrlOf(config);
+  const bus = new NotificationBus({
+    db,
+    holder: randomUUID(),
+    hooks,
+    open: () => openSession(migrationUrl, { applicationName: ADMIN_APPLICATION_NAME }),
+    scopeFor: () => Promise.resolve(undefined),
+    log,
+  });
+  shareTenancyCaches(tenancy, hooks, bus, log);
+  await bus.start();
+  return bus;
 }

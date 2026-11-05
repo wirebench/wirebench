@@ -44,7 +44,7 @@ import * as repo from './repo.js';
 // (control-plane/cli.ts).
 type AdminCommand = Exclude<
   Extract<ServerCommand, { command: `admin-${string}` }>,
-  { command: `admin-tenancy-${string}` | `admin-tenant-${string}` | 'admin-instances' }
+  { command: `admin-tenancy-${string}` | `admin-tenant-${string}` | 'admin-instances' | 'admin-audit-verify-export' }
 >;
 
 /**
@@ -55,7 +55,7 @@ type AdminCommand = Exclude<
  * In hosted mode the default tenant is no tenant of anyone's: the resolver never serves it, so `--tenant default`
  * is unknown there, as on a host (Task 16 review M2). A suspended tenant is still found, so it can be administered.
  */
-async function cliScope(tenancy: Tenancy, slug: string | undefined, mode: ServerMode): Promise<TenantScope> {
+export async function cliScope(tenancy: Tenancy, slug: string | undefined, mode: ServerMode): Promise<TenantScope> {
   const directory = directoryOf(tenancy);
   if (!(await directory.load())) {
     throw new StartupError(ExitCode.Migration, 'migration 0020 is not applied: the server has no tenants');

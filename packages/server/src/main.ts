@@ -1,5 +1,6 @@
 import { HELP_TEXT, parseServerArgs, UsageError } from './args.js';
 import { ConfigError, describeConfig, instanceModeOf, loadConfig, MULTI_NEEDS_ENTERPRISE } from './config.js';
+import { runVerifyExportCommand } from './audit-log/cli.js';
 import { runAdminTenant } from './control-plane/cli.js';
 import { runAdmin } from './identity/cli.js';
 import { ExitCode, packageVersion, type ServerIo } from './io.js';
@@ -99,6 +100,8 @@ export async function main(
     case 'admin-domains-check':
     case 'admin-domains-remove':
       return runAdmin(command, io);
+    case 'admin-audit-verify-export':
+      return runVerifyExportCommand(command, io);
     case 'admin-tenant-list':
     case 'admin-tenant-create':
     case 'admin-tenant-set-edition':
@@ -106,6 +109,8 @@ export async function main(
     case 'admin-tenant-resume':
     case 'admin-tenant-rename':
     case 'admin-tenant-delete':
+    case 'admin-tenant-export':
+    case 'admin-tenant-import':
       return runAdminTenant(command, io);
     case 'admin-instances':
       return runInstances(io);
