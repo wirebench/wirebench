@@ -122,15 +122,16 @@ describe('allMigrations', () => {
     ).toEqual([1, 2]);
   });
 
-  it('puts 0020_tenancy, 0021_tenant-isolation and 0022_operations after every built-in module, then 0023 and 0024', async () => {
+  it('puts 0020_tenancy, 0021_tenant-isolation and 0022_operations after every built-in module, then 0023 to 0025', async () => {
     const versions = (await allMigrations(BUILTIN_MODULES)).map((m) => `${m.version}_${m.name}`);
-    expect(versions.slice(-6)).toEqual([
+    expect(versions.slice(-7)).toEqual([
       '19_agent-pairings',
       '20_tenancy',
       '21_tenant-isolation',
       '22_operations',
       '23_control-plane',
       '24_custom-domains',
+      '25_signup-ref',
     ]);
   });
 });

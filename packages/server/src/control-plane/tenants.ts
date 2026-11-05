@@ -25,7 +25,7 @@ import type { TenantScope } from '../tenancy/scope.js';
 import { RESERVED_SLUGS } from '../tenancy/slugs.js';
 import { tenantWritesOf, type Tenancy } from '../tenancy/tenancy.js';
 import type { ControlDb } from './control-db.js';
-import { claimSlug, SLUG_LOCK, type ControlTx } from './slugs.js';
+import { claimSlug, SLUG_LOCK, slugState, type ControlTx, type SlugState } from './slugs.js';
 
 /** How long an old slug still redirects to the new one after a rename (spec §22.8). */
 export const REDIRECT_DAYS = 30;
@@ -186,6 +186,36 @@ export class TenantLifecycle {
       editionSource: created.editionSource,
     });
     return created;
+  }
+
+  /**
+   * A signup's tenant (spec §22.6), in the webhook's control transaction `tx`, which has locked the signup's row: the
+   * slug checked again under the slug lock, past the signup's own row, then `TenantAdmin.create`. Its audit row and
+   * the directory's change are the caller's, once `tx` committed ({@link changed}). The slug's state when it is no
+   * longer free: a race took it since the form.
+   */
+  async createForSignupWithin(
+    tx: ControlTx,
+    signupId: string,
+    input: NewHostedTenant,
+  ): Promise<(TenantRow & { scope: TenantScope }) | Exclude<SlugState, 'ok'>> {
+    checkEdition(input.edition);
+    checkSeats(input.seats);
+    const state = await slugState(tx, input.slug, { exceptSignup: signupId });
+    if (state !== 'ok') return state;
+    return this.#writes.create(tx, {
+      slug: input.slug,
+      name: input.name,
+      edition: input.edition,
+      editionSource: input.editionSource,
+      region: 'eu',
+      ...(input.seats !== undefined ? { seats: input.seats } : {}),
+    });
+  }
+
+  /** Tells the directory the tenants changed: this process's map and keys, and the bus. After a commit only. */
+  changed(): void {
+    this.#writes.changed();
   }
 
   /**

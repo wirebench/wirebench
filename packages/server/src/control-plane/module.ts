@@ -4,7 +4,8 @@
  * mode it takes the control role's pool and the Paddle webhook's secret as its factory's arguments, which `serve.ts`
  * passes through {@link withControlPool}, and refuses to register without them: neither is ever on the shared
  * `ServerContext`. It serves the billing webhook on the entry host (spec §22.5), and runs the control loop
- * (§22.15): the grace sweep, its mails, the tenants' exports and deletions, and the events' retention.
+ * (§22.15): the grace sweep, its mails, the tenants' exports and deletions, the events' retention and the signups'
+ * finishing and expiry.
  *
  * A tenant's export (§22.9) is the one thing it does in every mode: a self-hosted server, which has no control loop,
  * runs the queued exports from a timer of the module's own, over its one tenant.
@@ -30,6 +31,11 @@ import { tenantRoutes } from './tenant-routes.js';
 import { TenantLifecycle } from './tenants.js';
 import type { SetTimer } from '../hooks/env.js';
 import { sendAlertMail } from '../schedules/alerts/smtp.js';
+import { EntryQueue } from '../entry/queue.js';
+import { entryHostOf } from '../tenancy/resolve.js';
+import { signupCompleter, signupFinishStep, type SignupCompleterDeps } from './signup/complete.js';
+import { signupExpiryStep } from './signup/expiry.js';
+import { registerSignupRoutes, renderSignupMail, type SignupMailItem } from './signup/routes.js';
 
 /** Migration `0023`: the tenants' new columns, the control tables and the three scoped ones. */
 export const CONTROL_PLANE_MIGRATIONS_DIR = fileURLToPath(new URL('../../migrations/control-plane/', import.meta.url));
@@ -48,8 +54,10 @@ export interface ControlPlaneOptions {
   readonly setTimer?: SetTimer;
   /** `false` keeps the loop from arming, for a test that runs no pass. */
   readonly startLoop?: boolean;
-  /** How the loop's mails go; through the operator's SMTP settings by default. */
+  /** How the loop's and the signup's mails go; through the operator's SMTP settings by default. */
   readonly send?: ControlSend;
+  /** The signup's mail queue (spec §22.6), for a test that waits for it. */
+  readonly onSignupQueue?: (queue: EntryQueue<SignupMailItem>) => void;
 }
 
 /** Each module's options, so {@link withControlPool} can rebuild it with the pool and keep what a test gave it. */
@@ -209,7 +217,22 @@ export function controlPlaneModule(options: ControlPlaneOptions = {}): ServerMod
         );
       }
       const lifecycle = lifecycleOf(ctx, control);
-      const deps: ApplyDeps = { control, tenancy: ctx.tenancy, lifecycle, log: ctx.log };
+      const completer: SignupCompleterDeps = {
+        control,
+        tenancy: ctx.tenancy,
+        lifecycle,
+        hooks: ctx.hooks,
+        license: ctx.license,
+        log: ctx.log,
+        ...(options.now !== undefined ? { now: options.now } : {}),
+      };
+      const deps: ApplyDeps = {
+        control,
+        tenancy: ctx.tenancy,
+        lifecycle,
+        log: ctx.log,
+        completeSignup: signupCompleter(completer),
+      };
       const apply =
         options.apply ??
         ((mapped: MappedEvent) =>
@@ -227,6 +250,39 @@ export function controlPlaneModule(options: ControlPlaneOptions = {}): ServerMod
       const steps: LoopStep[] = [graceSweepStep(lifecycle)];
       const mail = mailOf(ctx, options);
       if (mail !== undefined) {
+        const { send, mailHost } = mail;
+        // Signup (spec §22.6): it mails, so it needs the operator's SMTP settings, which the entry already requires
+        // in hosted mode. The mail goes out after the answer, as the entry's does.
+        const entryHost = entryHostOf(ctx.config);
+        const { paddleEnvironment, paddleClientToken } = ctx.config;
+        if (paddleEnvironment === undefined || paddleClientToken === undefined) {
+          throw new WirebenchError(
+            'control-plane-paddle-missing',
+            "hosted mode needs WIREBENCH_SERVER_PADDLE_ENVIRONMENT and WIREBENCH_SERVER_PADDLE_CLIENT_TOKEN: the signup's checkout opens Paddle.js",
+          );
+        }
+        const log = ctx.log;
+        const signupMails = new EntryQueue<SignupMailItem>({
+          run: async (item) => {
+            try {
+              await send([item.to], renderSignupMail({ link: item.link, entryHost }));
+            } catch {
+              // A refusal quotes the recipient, so only the mail host is logged.
+              log.warn({ mailHost }, 'a signup message could not be sent');
+            }
+          },
+          log,
+        });
+        options.onSignupQueue?.(signupMails);
+        app.addHook('onClose', () => signupMails.close());
+        registerSignupRoutes(app, {
+          control,
+          entryHost,
+          appDomain: entryHost.slice('app.'.length),
+          queue: signupMails,
+          paddle: { environment: paddleEnvironment, clientToken: paddleClientToken, priceId: teamPriceId },
+          ...(now !== undefined ? { now } : {}),
+        });
         steps.push(
           mailStep({
             tenancy: ctx.tenancy,
@@ -249,7 +305,7 @@ export function controlPlaneModule(options: ControlPlaneOptions = {}): ServerMod
           log: ctx.log,
         }).step(),
       );
-      steps.push(billingEventsRetentionStep());
+      steps.push(billingEventsRetentionStep(), signupFinishStep(completer), signupExpiryStep());
       const loop = new ControlLoop({
         control,
         steps,

@@ -76,14 +76,15 @@ describeDb('migration 0024: custom domains and tenant hosts (hosted spec §23.3)
     await db?.close();
   });
 
-  it("is the last migration, from its own folder, after the control plane's 0023", async () => {
+  it("is migration 24, from its own folder, between the control plane's 0023 and 0025", async () => {
     const migrations = await allMigrations(BUILTIN_MODULES);
-    expect(migrations.slice(-2).map((m) => `${m.version}_${m.name}`)).toEqual([
+    expect(migrations.slice(-3).map((m) => `${m.version}_${m.name}`)).toEqual([
       '23_control-plane',
       '24_custom-domains',
+      '25_signup-ref',
     ]);
     const ledger = await db.owner.query<{ v: number }>('select max(version)::int as v from schema_migrations');
-    expect(ledger.rows[0]!.v).toBe(24);
+    expect(ledger.rows[0]!.v).toBe(25);
   });
 
   describe('custom_domains, a tenant table (guard 3, spec §19.8)', () => {

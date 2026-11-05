@@ -26,15 +26,23 @@ export type SlugState = 'ok' | 'slug-invalid' | 'slug-reserved' | 'slug-taken';
  * `slug` checked as every writer checks it: `checkSlug` (syntax and the reserved list, §21.2), then free in all three
  * tables. Takes the slug lock first, so the answer holds until `tx` ends.
  */
-export async function slugState(tx: ControlTx, slug: string): Promise<SlugState> {
+export async function slugState(
+  tx: ControlTx,
+  slug: string,
+  options: {
+    /** A signup whose own open row holds `slug`: its completion (spec §22.6) checks the slug again past it. */
+    readonly exceptSignup?: string;
+  } = {},
+): Promise<SlugState> {
   const syntax = checkSlug(slug);
   if (syntax !== 'ok') return syntax;
   await tx.query(SLUG_LOCK);
   const rows = await tx.query<{ taken: boolean }>(
     `select exists (select 1 from tenants where slug = $1)
-         or exists (select 1 from signups where slug = $1 and status <> 'completed')
+         or exists (select 1 from signups where slug = $1 and status <> 'completed'
+                      and ($2::uuid is null or id <> $2::uuid))
          or exists (select 1 from tenant_slugs_retired where slug = $1) as taken`,
-    [slug],
+    [slug, options.exceptSignup ?? null],
   );
   return rows.rows[0]?.taken === true ? 'slug-taken' : 'ok';
 }
