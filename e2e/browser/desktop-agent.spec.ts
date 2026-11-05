@@ -130,6 +130,13 @@ test('signs in at a browser tab and opens the seeded server workspace', async ()
 
   const dialog = await openTeamDialog(page);
   await dialog.getByTestId('team-workspace-row').filter({ hasText: seed.workspaceName }).click();
+  // browser-client.spec.ts joined this workspace as the same user, so the server's host already holds
+  // its checkout: the dialog then offers to open that one instead of joining again.
+  const alreadyPresent = dialog.getByTestId('open-team-workspace-already-present');
+  await expect(alreadyPresent.or(page.getByTestId('activity-bar'))).toBeVisible({ timeout: 60_000 });
+  if (await alreadyPresent.isVisible()) {
+    await dialog.getByTestId('open-team-workspace-open-existing').click();
+  }
   await expect(dialog).toBeHidden({ timeout: 60_000 });
   await expect(projectRow()).toBeVisible();
   earlier = new Set((await serverHistory()).map((entry) => entry.id));
