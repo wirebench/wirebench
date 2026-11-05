@@ -323,6 +323,19 @@ export function stubWirebenchApi(overrides: ApiOverrides = {}): WirebenchApi {
       check: fail('domain.check'),
       remove: fail('domain.remove'),
     },
+    // Not a server admin of any server: no Server group in Settings, so other settings tests are unaffected.
+    serverSettings: {
+      get: fail('serverSettings.get'),
+      save: fail('serverSettings.save'),
+      clear: fail('serverSettings.clear'),
+    },
+    tenantBilling: { get: fail('tenantBilling.get') },
+    tenantExports: {
+      list: fail('tenantExports.list'),
+      request: fail('tenantExports.request'),
+      download: fail('tenantExports.download'),
+    },
+    tenantDeletion: { request: fail('tenantDeletion.request'), cancel: fail('tenantDeletion.cancel') },
     provisioning: {
       info: fail('provisioning.info'),
       listTokens: fail('provisioning.listTokens'),
