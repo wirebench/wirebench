@@ -1048,15 +1048,11 @@ export const PER_TENANT_PREFIXES: readonly string[] = [
  */
 export function perTenantSettingProblems(config: Pick<ServerConfig, 'mode'>, env: NodeJS.ProcessEnv): ConfigProblem[] {
   if (config.mode !== 'hosted') return [];
-  return CONFIG_VARIABLES.filter(
-    (variable) =>
-      PER_TENANT_PREFIXES.some((prefix) => variable.env.startsWith(prefix)) &&
-      env[variable.env] !== undefined &&
-      env[variable.env] !== '',
-  ).map((variable) => ({
-    variable: variable.env,
+  const set = (name: string): boolean => (env[name] ?? '') !== '' || (env[`${name}_FILE`] ?? '') !== '';
+  return PER_TENANT_VARIABLES.filter(set).map((variable) => ({
+    variable,
     message:
-      'control-plane-setting-per-tenant: is a tenant’s own setting in hosted mode; unset it and set it per tenant',
+      'control-plane-setting-per-tenant: is each team’s own setting in hosted mode; unset it, and set it per team in Settings or with admin tenant settings',
   }));
 }
 
@@ -1092,9 +1088,6 @@ export function paddleProblems(config: Pick<ServerConfig, 'mode' | (typeof PADDL
   return problems;
 }
 
-/** The prefixes of the variables that are a tenant's own setting in hosted mode (spec §22.1, §22.12). */
-const PER_TENANT_PREFIXES = ['WIREBENCH_SERVER_OIDC_', 'WIREBENCH_SERVER_SAML_', 'WIREBENCH_SERVER_AUDIT_FORWARD_'];
-
 /**
  * The variables hosted mode refuses (spec §22.1): OIDC, SAML and audit forwarding are each a tenant's setting there
  * (§22.12), and an identity provider configured for the whole server would sign people in across tenants (§19.1).
@@ -1107,13 +1100,11 @@ export const PER_TENANT_VARIABLES: readonly string[] = CONFIG_VARIABLES.filter((
  * Hosted mode's required and refused lists (spec §22.1), beyond the domains', the control URL's and Paddle's, which
  * their own checks name: the SMTP sender (`entry-smtp-missing`, moved here from the entry's registration), the
  * secrets key every tenant's data key is wrapped under (§19.7), and a migration URL naming a role apart from the app
- * role (§19.4); and every per-tenant variable, refused by name with `control-plane-setting-per-tenant`. `set` says
- * which variables the environment gave, since a defaulted one (`OIDC_SCOPES`) has a value either way. Nothing outside
- * hosted mode; never a value, only the variable. `loadConfig` runs it; tests that build a hosted config call it too.
+ * role (§19.4). The per-tenant variables are {@link perTenantSettingProblems}'s. Nothing outside hosted mode; never a
+ * value, only the variable. `loadConfig` runs it; tests that build a hosted config call it too.
  */
 export function hostedProblems(
   config: Pick<ServerConfig, 'mode' | 'smtpUrl' | 'smtpFrom' | 'secretsKey' | 'databaseUrl' | 'migrationDatabaseUrl'>,
-  set: (env: string) => boolean,
 ): ConfigProblem[] {
   if (config.mode !== 'hosted') return [];
   const problems: ConfigProblem[] = [];
@@ -1145,14 +1136,6 @@ export function hostedProblems(
       message:
         'control-plane-migration-url-shared: must name the owner, a role apart from WIREBENCH_SERVER_DATABASE_URL’s app role',
     });
-  for (const variable of PER_TENANT_VARIABLES) {
-    if (set(variable))
-      problems.push({
-        variable,
-        message:
-          'control-plane-setting-per-tenant: is each team’s own setting in hosted mode; unset it, and set it per team in Settings or with admin tenant settings',
-      });
-  }
   return problems;
 }
 
@@ -1200,10 +1183,7 @@ export function loadConfig(env: NodeJS.ProcessEnv, version: string): ServerConfi
     ...insecureUrlProblems(config),
     ...perTenantSettingProblems(config, env),
     ...paddleProblems(config),
-    ...hostedProblems(config, (env) => {
-      const variable = CONFIG_VARIABLES.find((candidate) => candidate.env === env);
-      return variable !== undefined && input[variable.key] !== undefined;
-    }),
+    ...hostedProblems(config),
   ];
   const instances = instanceModeOf(config);
   if (config.oidcIssuer !== undefined) {

@@ -165,7 +165,7 @@ describe('hosted mode (spec §22.1)', () => {
   });
 
   it('asks nothing of a self-hosted server', () => {
-    expect(hostedProblems({ mode: 'self-hosted', databaseUrl: 'postgres://u:p@db/w' }, () => true)).toEqual([]);
+    expect(hostedProblems({ mode: 'self-hosted', databaseUrl: 'postgres://u:p@db/w' })).toEqual([]);
     const config = loadConfig(
       {
         WIREBENCH_SERVER_DATABASE_URL: 'postgres://u:p@db/wirebench',
