@@ -5,10 +5,12 @@
  * delete rows between two pages, and a walk across separate snapshots would then see a gap that is not
  * there. It takes no lock, so it never holds up sealing or retention.
  *
- * It walks one tenant's chain, in a read-only snapshot unit of that tenant, with that tenant's key (`keys.ts`).
+ * It walks one tenant's chain, in a read-only snapshot unit of that tenant, with that tenant's key (`keys.ts`). The
+ * walk itself ({@link walkChain}) reads through a {@link ChainReader}, so an export's rows verify the same way with
+ * no database at all (hosted edition spec §22.9, §13 criterion 6).
  */
 import type { TenantDb, TenantQuerier } from '../../tenancy/tenant-db.js';
-import { readAnchor, sealedPage, type ChainLink, type SealedRow } from '../repo.js';
+import { readAnchor, sealedPage, type ChainAnchor, type ChainLink, type SealedRow } from '../repo.js';
 import { anchorMacValid, keyId, link } from './canonical.js';
 
 /** Rows per page of the walk. */
@@ -68,81 +70,112 @@ function expectedLink(key: string, prev: ChainLink, sealed: SealedRow): Buffer |
 
 const rowId = (sealed: SealedRow): { id?: string } => (sealed.row.id === null ? {} : { id: sealed.row.id });
 
+/**
+ * What the walk reads: the anchor, the unsealed count and the sealed rows a page at a time, in chain order. A
+ * database's are one snapshot ({@link verifyChain}); an export's are its file's, streamed
+ * (`control-plane/export/verify-export.ts`). The count is asked for last, when the walk reports.
+ */
+export interface ChainReader {
+  anchor(): Promise<ChainAnchor | undefined>;
+  unsealed(): Promise<number>;
+  /** Sealed rows with a seq above `afterSeq`, in seq order, at most `limit`. */
+  page(afterSeq: bigint, limit: number): Promise<SealedRow[]>;
+}
+
+/** The walk itself, over whatever `read` reads. */
+export async function walkChain(
+  read: ChainReader,
+  key: string,
+  options: VerifyOptions = {},
+): Promise<VerifySummary | WrongKey> {
+  const pageSize = options.pageSize ?? VERIFY_PAGE;
+  const anchor = await read.anchor();
+  // Before any row is read: a wrong key would report every link as edited.
+  if (anchor !== undefined && anchor.keyId !== keyId(key)) return { kind: 'wrong-key', chainKeyId: anchor.keyId };
+
+  let checked = 0;
+  let firstSeq: bigint | null = null;
+  let lastSeq: bigint | null = null;
+  // The unsealed count is asked for as the walk reports, so a reader that streams its rows has read them all by then.
+  const summary = async (broken?: BrokenLink, headBeforeAnchor = false): Promise<VerifySummary> => {
+    const unsealed = await read.unsealed();
+    return {
+      kind: 'checked',
+      result: broken === undefined ? 'intact' : 'broken',
+      checked,
+      firstSeq,
+      lastSeq,
+      unsealed,
+      ...(broken !== undefined ? { broken } : {}),
+      ...(headBeforeAnchor ? { headBeforeAnchor } : {}),
+    };
+  };
+
+  // The head's stored hash, once the walk has verified the row at its seq.
+  // An anchor moved forward (the oldest rows cut off), with its head_seq lowered, or edited at all.
+  if (anchor !== undefined && !anchorMacValid(key, anchor)) {
+    return summary({ seq: anchor.seq, reason: 'edited', anchor: true });
+  }
+
+  let headHash: Buffer | undefined;
+  if (anchor === undefined) {
+    // No anchor: nothing sealed is an empty chain, but a sealed row without one means the anchor was removed.
+    const [first] = await read.page(BEFORE_ALL, 1);
+    if (first !== undefined) return summary({ seq: first.seq, ...rowId(first), reason: 'edited' });
+  } else {
+    let prev: ChainLink = { seq: anchor.seq, hash: anchor.hash };
+    if (options.head?.seq === anchor.seq) headHash = anchor.hash;
+    for (let after = BEFORE_ALL; ;) {
+      const page = await read.page(after, pageSize);
+      for (const sealed of page) {
+        const next = prev.seq + 1n;
+        if (sealed.seq > next) return summary({ seq: next, reason: 'missing' });
+        if (sealed.seq < next) return summary({ seq: sealed.seq, ...rowId(sealed), reason: 'out of order' });
+        const expected = expectedLink(key, prev, sealed);
+        if (expected === undefined || !Buffer.isBuffer(sealed.hash) || !expected.equals(sealed.hash)) {
+          return summary({ seq: sealed.seq, ...rowId(sealed), reason: 'edited' });
+        }
+        if (sealed.seq === options.head?.seq) headHash = sealed.hash;
+        checked += 1;
+        firstSeq ??= sealed.seq;
+        lastSeq = sealed.seq;
+        prev = { seq: sealed.seq, hash: sealed.hash };
+      }
+      const last = page.at(-1);
+      if (last === undefined || page.length < pageSize) break;
+      after = last.seq;
+    }
+  }
+
+  // `--head` before `anchor.head_seq`: the operator asked about it, and its message names the cause.
+  const head = options.head;
+  const headBeforeAnchor = head !== undefined && anchor !== undefined && head.seq < anchor.seq;
+  if (head !== undefined && !headBeforeAnchor) {
+    if (headHash === undefined) return summary({ seq: head.seq, reason: 'head not found' });
+    if (headHash.toString('hex') !== head.hash) return summary({ seq: head.seq, reason: 'head does not match' });
+  }
+  // The newest sealed rows, or all of them, were removed: the anchor remembers the highest seq sealed.
+  const top = lastSeq ?? anchor?.seq ?? 0n;
+  if (anchor !== undefined && top < anchor.headSeq) return summary({ seq: top + 1n, reason: 'missing' });
+  return summary(undefined, headBeforeAnchor);
+}
+
 export async function verifyChain(
   db: TenantDb,
   key: string,
   options: VerifyOptions = {},
 ): Promise<VerifySummary | WrongKey> {
-  const pageSize = options.pageSize ?? VERIFY_PAGE;
   return db.transaction(
-    async (tx) => {
-      const anchor = await readAnchor(tx);
-      // Before any row is read: a wrong key would report every link as edited.
-      if (anchor !== undefined && anchor.keyId !== keyId(key)) return { kind: 'wrong-key', chainKeyId: anchor.keyId };
-      const unsealed = await countUnsealed(tx);
-
-      let checked = 0;
-      let firstSeq: bigint | null = null;
-      let lastSeq: bigint | null = null;
-      const summary = (broken?: BrokenLink, headBeforeAnchor = false): VerifySummary => ({
-        kind: 'checked',
-        result: broken === undefined ? 'intact' : 'broken',
-        checked,
-        firstSeq,
-        lastSeq,
-        unsealed,
-        ...(broken !== undefined ? { broken } : {}),
-        ...(headBeforeAnchor ? { headBeforeAnchor } : {}),
-      });
-
-      // The head's stored hash, once the walk has verified the row at its seq.
-      // An anchor moved forward (the oldest rows cut off), with its head_seq lowered, or edited at all.
-      if (anchor !== undefined && !anchorMacValid(key, anchor)) {
-        return summary({ seq: anchor.seq, reason: 'edited', anchor: true });
-      }
-
-      let headHash: Buffer | undefined;
-      if (anchor === undefined) {
-        // No anchor: nothing sealed is an empty chain, but a sealed row without one means the anchor was removed.
-        const [first] = await sealedPage(tx, BEFORE_ALL, 1);
-        if (first !== undefined) return summary({ seq: first.seq, ...rowId(first), reason: 'edited' });
-      } else {
-        let prev: ChainLink = { seq: anchor.seq, hash: anchor.hash };
-        if (options.head?.seq === anchor.seq) headHash = anchor.hash;
-        for (let after = BEFORE_ALL; ;) {
-          const page = await sealedPage(tx, after, pageSize);
-          for (const sealed of page) {
-            const next = prev.seq + 1n;
-            if (sealed.seq > next) return summary({ seq: next, reason: 'missing' });
-            if (sealed.seq < next) return summary({ seq: sealed.seq, ...rowId(sealed), reason: 'out of order' });
-            const expected = expectedLink(key, prev, sealed);
-            if (expected === undefined || !Buffer.isBuffer(sealed.hash) || !expected.equals(sealed.hash)) {
-              return summary({ seq: sealed.seq, ...rowId(sealed), reason: 'edited' });
-            }
-            if (sealed.seq === options.head?.seq) headHash = sealed.hash;
-            checked += 1;
-            firstSeq ??= sealed.seq;
-            lastSeq = sealed.seq;
-            prev = { seq: sealed.seq, hash: sealed.hash };
-          }
-          const last = page.at(-1);
-          if (last === undefined || page.length < pageSize) break;
-          after = last.seq;
-        }
-      }
-
-      // `--head` before `anchor.head_seq`: the operator asked about it, and its message names the cause.
-      const head = options.head;
-      const headBeforeAnchor = head !== undefined && anchor !== undefined && head.seq < anchor.seq;
-      if (head !== undefined && !headBeforeAnchor) {
-        if (headHash === undefined) return summary({ seq: head.seq, reason: 'head not found' });
-        if (headHash.toString('hex') !== head.hash) return summary({ seq: head.seq, reason: 'head does not match' });
-      }
-      // The newest sealed rows, or all of them, were removed: the anchor remembers the highest seq sealed.
-      const top = lastSeq ?? anchor?.seq ?? 0n;
-      if (anchor !== undefined && top < anchor.headSeq) return summary({ seq: top + 1n, reason: 'missing' });
-      return summary(undefined, headBeforeAnchor);
-    },
+    (tx) =>
+      walkChain(
+        {
+          anchor: () => readAnchor(tx),
+          unsealed: () => countUnsealed(tx),
+          page: (after, n) => sealedPage(tx, after, n),
+        },
+        key,
+        options,
+      ),
     { readOnlySnapshot: true },
   );
 }

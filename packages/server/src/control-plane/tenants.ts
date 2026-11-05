@@ -25,7 +25,7 @@ import type { TenantScope } from '../tenancy/scope.js';
 import { RESERVED_SLUGS } from '../tenancy/slugs.js';
 import { tenantWritesOf, type Tenancy } from '../tenancy/tenancy.js';
 import type { ControlDb } from './control-db.js';
-import { claimSlug, type ControlTx } from './slugs.js';
+import { claimSlug, SLUG_LOCK, slugState, type ControlTx, type SlugState } from './slugs.js';
 
 /** How long an old slug still redirects to the new one after a rename (spec §22.8). */
 export const REDIRECT_DAYS = 30;
@@ -189,6 +189,36 @@ export class TenantLifecycle {
   }
 
   /**
+   * A signup's tenant (spec §22.6), in the webhook's control transaction `tx`, which has locked the signup's row: the
+   * slug checked again under the slug lock, past the signup's own row, then `TenantAdmin.create`. Its audit row and
+   * the directory's change are the caller's, once `tx` committed ({@link changed}). The slug's state when it is no
+   * longer free: a race took it since the form.
+   */
+  async createForSignupWithin(
+    tx: ControlTx,
+    signupId: string,
+    input: NewHostedTenant,
+  ): Promise<(TenantRow & { scope: TenantScope }) | Exclude<SlugState, 'ok'>> {
+    checkEdition(input.edition);
+    checkSeats(input.seats);
+    const state = await slugState(tx, input.slug, { exceptSignup: signupId });
+    if (state !== 'ok') return state;
+    return this.#writes.create(tx, {
+      slug: input.slug,
+      name: input.name,
+      edition: input.edition,
+      editionSource: input.editionSource,
+      region: 'eu',
+      ...(input.seats !== undefined ? { seats: input.seats } : {}),
+    });
+  }
+
+  /** Tells the directory the tenants changed: this process's map and keys, and the bus. After a commit only. */
+  changed(): void {
+    this.#writes.changed();
+  }
+
+  /**
    * The operator's edition and seats (source `operator`), or with `{ subscription: true }` back to what the tenant's
    * subscription says (source `subscription`, edition `team`, its seats).
    *
@@ -336,6 +366,30 @@ export class TenantLifecycle {
     return this.#scope(row);
   }
 
+  /**
+   * The tenant `slug` names while an import made it and has not finished (suspended, `importing`, spec §22.10): the
+   * one a crashed `admin tenant import` resumes. `undefined` otherwise.
+   */
+  async importing(slug: string): Promise<(TenantRow & { scope: TenantScope }) | undefined> {
+    if (RESERVED_SLUGS.has(slug)) return undefined;
+    const rows = await this.#deps.control.query<TenantRow & Record<string, unknown>>(
+      `select ${TENANT_COLUMNS} from tenants
+        where slug = $1 and status = 'suspended' and suspended_reason = 'importing'`,
+      [slug],
+    );
+    const row = rows.rows[0];
+    return row === undefined ? undefined : { ...row, scope: await this.#scope(row) };
+  }
+
+  /** The tenant `id`'s row as it is now, or `undefined` once it is gone. */
+  async current(id: string): Promise<TenantRow | undefined> {
+    const rows = await this.#deps.control.query<TenantRow & Record<string, unknown>>(
+      `select ${TENANT_COLUMNS} from tenants where id = $1::uuid`,
+      [id],
+    );
+    return rows.rows[0];
+  }
+
   /** The tenant with this id, whatever its status, for its own unit (the billing path's subscription row). */
   async tenantScope(id: string): Promise<TenantScope> {
     const scope = await this.#writes.scope(id);
@@ -399,6 +453,62 @@ export class TenantLifecycle {
           editionSource: row.editionSource,
         }),
     };
+  }
+
+  /**
+   * The deletion's first step (spec §22.11) in the control loop's transaction `tx`: status `deleting`. Commit, then
+   * run `after()`, which tells the directory and the bus, so every resolver drops the tenant and its jobs pass it
+   * over. `undefined` when it already was.
+   */
+  async markDeletingWithin(tx: ControlTx, id: string): Promise<{ after(): Promise<void> } | undefined> {
+    const rows = await tx.query(
+      "update tenants set status = 'deleting' where id = $1::uuid and status <> 'deleting' returning id",
+      [id],
+    );
+    if (rows.rows.length === 0) return undefined;
+    return {
+      after: () => {
+        this.#writes.changed();
+        return Promise.resolve();
+      },
+    };
+  }
+
+  /** The `deleting` tenant `id`'s scope, for its units; `undefined` once its row is gone. */
+  async deletingScope(id: string): Promise<TenantScope | undefined> {
+    return this.#writes.scope(id);
+  }
+
+  /**
+   * The deletion's last step (spec §22.11), one control transaction: `tenant_deletions.deleted_at` set, the slug
+   * retired with no redirect and every redirect to it ended, the `tenants` row removed, which removes the data key
+   * and the custom names of `tenant_hosts` with it; then the directory's change, which drops every key cache. A row
+   * already gone is a deletion already finished.
+   */
+  async removeDeleted(id: string, at: Date): Promise<void> {
+    const removed = await this.#deps.control.transaction(async (tx) => {
+      await tx.query(SLUG_LOCK);
+      const row = (
+        await tx.query<{ slug: string }>(
+          "select slug from tenants where id = $1::uuid and status = 'deleting' for update",
+          [id],
+        )
+      ).rows[0];
+      if (row === undefined) return false;
+      await tx.query('update tenant_deletions set deleted_at = $2::timestamptz where tenant_id = $1::uuid', [id, at]);
+      await tx.query(
+        'update tenant_slugs_retired set redirect_to = null, redirect_until = null where tenant_id = $1::uuid',
+        [id],
+      );
+      await tx.query(
+        `insert into tenant_slugs_retired (slug, tenant_id, retired_at) values ($1, $2::uuid, $3::timestamptz)
+         on conflict (slug) do nothing`,
+        [row.slug, id, at],
+      );
+      await tx.query('delete from tenants where id = $1::uuid', [id]);
+      return true;
+    });
+    if (removed) this.#writes.changed();
   }
 
   async #update(tx: ControlTx, id: string, set: string, params: readonly unknown[]): Promise<TenantRow> {

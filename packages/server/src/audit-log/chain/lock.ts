@@ -24,3 +24,14 @@ export async function tryLockChain(tx: TenantQuerier): Promise<boolean> {
   );
   return result.rows[0]?.locked === true;
 }
+
+/**
+ * Takes the unit's tenant's chain lock, waiting for a sealer pass or a retention batch that holds it: an import's
+ * re-key (hosted edition spec §22.10), which must not interleave with either.
+ */
+export async function lockChain(tx: TenantQuerier): Promise<void> {
+  await tx.query(`select pg_advisory_xact_lock($1::int, hashtext(coalesce(${SERVER_SCHEMA}, '') || ':' || $2::text))`, [
+    AUDIT_CHAIN_LOCK_CLASS,
+    tx.scope.tenantId,
+  ]);
+}

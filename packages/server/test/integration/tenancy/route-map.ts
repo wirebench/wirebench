@@ -192,7 +192,60 @@ export const ROUTE_MAP: Readonly<Record<string, RouteCase>> = {
       payload: '{}',
     }),
   },
+  // Signup (spec §22.6), on the entry host only; on a tenant host `GET /signup` is the browser client's, as `GET /`.
+  'GET /signup': { cls: 'own', request: (ctx) => ({ method: 'GET', url: '/signup', headers: asTab(ctx) }) },
+  'POST /signup': {
+    cls: 'entry',
+    request: () => ({
+      method: 'POST',
+      url: '/signup',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      payload: 'email=a%40acme.test&name=A&slug=probe&seats=1',
+    }),
+  },
+  // The signup link's pages: on a tenant host these paths are the browser client's too.
+  'GET /signup/:token': {
+    cls: 'own',
+    request: (ctx) => ({ method: 'GET', url: `/signup/${'A'.repeat(43)}`, headers: asTab(ctx) }),
+  },
+  'GET /signup/:token/status': {
+    cls: 'own',
+    request: (ctx) => ({ method: 'GET', url: `/signup/${'A'.repeat(43)}/status`, headers: asTab(ctx) }),
+  },
+  'POST /signup/:token': {
+    cls: 'entry',
+    request: () => ({
+      method: 'POST',
+      url: `/signup/${'A'.repeat(43)}`,
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      payload: 'password=probe-password-long',
+    }),
+  },
   'GET /*': { cls: 'own', request: (ctx) => ({ method: 'GET', url: '/workspaces', headers: asTab(ctx) }) },
+
+  // ---- the control plane's tenant routes (spec §22.9, §22.11): a tenant's own, its server admins only
+  'GET /api/v1/tenant/billing': { cls: 'own', request: (ctx) => json(ctx, 'GET', api('/tenant/billing')) },
+  'GET /api/v1/tenant/exports': { cls: 'own', request: (ctx) => json(ctx, 'GET', api('/tenant/exports')) },
+  'POST /api/v1/tenant/exports': {
+    cls: 'own',
+    request: (ctx) => json(ctx, 'POST', api('/tenant/exports')),
+    // One queued at a time: the next send asks again.
+    after: async (ctx) => {
+      await ctx.from.tenant.tdb.query("delete from tenant_exports where status = 'queued'");
+    },
+  },
+  'GET /api/v1/tenant/exports/:id/file': {
+    cls: 'refused',
+    request: (ctx) => json(ctx, 'GET', api(`/tenant/exports/${ctx.a.exportId}/file`)),
+  },
+  'POST /api/v1/tenant/deletion': {
+    cls: 'own',
+    request: (ctx) => json(ctx, 'POST', api('/tenant/deletion'), { slug: ctx.from.tenant.slug }),
+    after: async (ctx) => {
+      await ctx.from.tenant.inject(json(ctx, 'DELETE', api('/tenant/deletion')));
+    },
+  },
+  'DELETE /api/v1/tenant/deletion': { cls: 'own', request: (ctx) => json(ctx, 'DELETE', api('/tenant/deletion')) },
   // The browser build's files, one route each (`routeKey` folds them into one key).
   'GET /assets/*': { cls: 'own', request: (ctx) => ({ method: 'GET', url: ctx.url }) },
 

@@ -21,7 +21,7 @@ export const PER_ADDRESS = { capacity: 3, refillPerMs: 3 / 3_600_000 } as const;
  * An address, near enough to what `<input type=email>` accepts: one `@`, a dot in the domain, at most 254 characters,
  * and none of the characters a mail library reads as a list or a display name (`,;<>"()[]\`) or any space.
  */
-const ADDRESS = /^[^\s@,;<>"()[\]\\]{1,64}@[^\s@,;<>"()[\]\\]+\.[^\s@,;<>"()[\]\\]+$/;
+export const ENTRY_ADDRESS = /^[^\s@,;<>"()[\]\\]{1,64}@[^\s@,;<>"()[\]\\]+\.[^\s@,;<>"()[\]\\]+$/;
 
 /** The per-address bucket's key: a keyed hash, so the limiter's map never holds an address. */
 export function addressBucketKey(key: Buffer, address: string): string {
@@ -71,7 +71,7 @@ export function registerEntryRoutes(app: FastifyInstance, options: EntryRoutesOp
       // The client's bucket is charged for every post; the address's only for a valid address the client may send.
       // Either way the answer below is the same page, so neither bucket tells a prober anything.
       const client = clients.take(`ip:${request.ip}`);
-      if (client.allowed && address.length <= 254 && ADDRESS.test(address)) {
+      if (client.allowed && address.length <= 254 && ENTRY_ADDRESS.test(address)) {
         if (addresses.take(keyOf(address)).allowed) options.queue.push(address);
       }
       return page(reply, true);
