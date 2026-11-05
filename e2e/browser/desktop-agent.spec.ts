@@ -1,7 +1,7 @@
 /**
  * Success criterion 2 of the hosted edition (spec §13.2, with §18 on the local agent), with the desktop app
  * as the agent: a signed-in tab opens the server workspace and sends to the echo service from the server,
- * pairs the built desktop app (launched through `_electron`, see `desktop-app.ts`) through its *Pair this
+ * pairs the built desktop app (launched on the Electron binary, see `desktop-app.ts`) through its *Pair this
  * machine…* with the code the tab's *This machine* shows, and sends to this machine's `127.0.0.1` through
  * the desktop's agent. The server's own History, read over the tab's host socket (`history.list`), then says
  * the one went out from the server and the other from the agent.
@@ -11,7 +11,7 @@
  * share one page, one session and one app, in order.
  */
 import { expect, test, type BrowserContext, type Locator, type Page } from '@playwright/test';
-import type { LaunchedApp } from '../helpers/launch-app.js';
+import type { LaunchedPackagedApp } from '../helpers/launch-app.js';
 import { openTeamDialog } from '../helpers/server.js';
 import { apiRow, responseStatus, restRequestRow, sendRest, unfoldRow } from '../helpers/rest.js';
 import { ensureUnpaired } from './agent.js';
@@ -33,7 +33,7 @@ test.skip(!DESKTOP_REQUIRED && !desktopBuilt(), 'the desktop app is not built: r
 let seed: Seed;
 let context: BrowserContext;
 let page: Page;
-let desktop: LaunchedApp | undefined;
+let desktop: LaunchedPackagedApp | undefined;
 /** The history entries already there before this spec sent anything (another spec's, or a retry's). */
 let earlier: ReadonlySet<string> = new Set();
 

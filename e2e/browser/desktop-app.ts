@@ -1,6 +1,6 @@
 /**
  * The desktop app as this machine's agent in the browser suite (hosted edition spec §13.2 criterion 2,
- * §18.2): the built app from `apps/desktop/out`, launched through Playwright's `_electron` with a
+ * §18.2): the built app from `apps/desktop/out`, launched on the Electron binary over its debugging port with a
  * throwaway profile, so its *Pair this machine…* and its agent (`main/machine-agent.ts`) are the shipped
  * code, not the CLI's. Its agent listens beside the headless `wirebench agent` global setup starts, on the
  * next free port of the agent's range.
@@ -12,7 +12,7 @@
 import { existsSync } from 'node:fs';
 import { expect, type Page } from '@playwright/test';
 import { MAIN_PATH } from '../global-setup.js';
-import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
+import { launchBuiltAppOverDebugPort, type LaunchedPackagedApp } from '../helpers/launch-app.js';
 import { createWorkspace } from '../helpers/project.js';
 
 /** Set in CI, where a missing desktop build fails the spec instead of skipping it. */
@@ -27,38 +27,23 @@ export function desktopBuilt(): boolean {
  * Launches the desktop app with a fresh profile, opens a local workspace (the rail's Settings belongs to an
  * open one), and echoes its main process's output with a prefix, so CI's log shows what its agent said.
  */
-export async function launchDesktop(): Promise<LaunchedApp> {
+export async function launchDesktop(): Promise<LaunchedPackagedApp> {
   if (!desktopBuilt()) {
     throw new Error(`The desktop app is not built (${MAIN_PATH} is missing): run pnpm build first`);
   }
-  const launched = await launchApp(
-    // Linux picks the Secret Service only on a desktop it knows, and xvfb is none: left to guess, Chromium
-    // keeps to its plain-text store, the keyring CI unlocks goes unused and the agent refuses to pair for
-    // want of a place to keep its key. Name the store outright.
-    process.platform === 'linux'
+  // Not `_electron.launch`: its loader sets `--password-store=basic`, and an app on Chromium's plain-text
+  // store refuses to pair, since its agent key would sit unsealed. Launched on the plain binary instead, with
+  // the Secret Service named outright on Linux: xvfb is no desktop Chromium knows, so left to guess it would
+  // fall back to that same plain-text store.
+  const launched = await launchBuiltAppOverDebugPort({
+    ...(process.platform === 'linux'
       ? {
           extraArgs: ['--password-store=gnome-libsecret'],
           extraEnv: { XDG_CURRENT_DESKTOP: process.env['XDG_CURRENT_DESKTOP'] ?? 'GNOME' },
         }
-      : {},
-  );
-  const child = launched.app.process();
-  for (const stream of [child.stdout, child.stderr]) {
-    stream?.setEncoding('utf8');
-    stream?.on('data', (chunk: string) => {
-      process.stdout.write(chunk.replace(/^(?=.)/gm, '[desktop] '));
-    });
-  }
-  // The agent pairs only when it can seal its key: say in CI's log which store Chromium chose, so a refusal
-  // to pair points at the runner's keyring rather than at the app.
-  const storage = await launched.app.evaluate(({ app, safeStorage }) => ({
-    available: safeStorage.isEncryptionAvailable(),
-    backend: process.platform === 'linux' ? safeStorage.getSelectedStorageBackend() : 'os',
-    passwordStore: app.commandLine.getSwitchValue('password-store'),
-    desktop: process.env['XDG_CURRENT_DESKTOP'] ?? null,
-    dbus: process.env['DBUS_SESSION_BUS_ADDRESS'] !== undefined,
-  }));
-  process.stdout.write(`[desktop] secret storage: ${JSON.stringify(storage)}\n`);
+      : {}),
+    onOutput: (chunk) => process.stdout.write(chunk.replace(/^(?=.)/gm, '[desktop] ')),
+  });
   await createWorkspace(launched.window, 'Desktop agent');
   return launched;
 }

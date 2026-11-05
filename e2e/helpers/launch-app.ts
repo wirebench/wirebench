@@ -1,8 +1,9 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
-import { basename, delimiter, join } from 'node:path';
+import { basename, delimiter, dirname, join } from 'node:path';
 import {
   chromium,
   _electron as electron,
@@ -120,7 +121,10 @@ export interface LaunchOptions {
   readonly keepUserDataDir?: boolean;
   /** Extra env vars for the launched process — e.g. `WIREBENCH_E2E_SAVE_PATH`/`WIREBENCH_E2E_OPEN_PATH`. */
   readonly extraEnv?: Readonly<Record<string, string>>;
-  /** Chromium switches placed before the app's entry, e.g. `--password-store=gnome-libsecret`. */
+  /**
+   * Chromium switches placed before the app's entry, e.g. `--password-store=gnome-libsecret`. Only
+   * {@link launchBuiltAppOverDebugPort} passes them: `_electron.launch`'s loader appends its own after.
+   */
   readonly extraArgs?: readonly string[];
   /**
    * Console errors this one spec expects, on top of {@link BENIGN_CONSOLE_PATTERNS} — e.g. the
@@ -191,7 +195,7 @@ export async function launchApp(options: LaunchOptions = {}): Promise<LaunchedAp
 
   try {
     app = await electron.launch({
-      args: [...(options.extraArgs ?? []), MAIN_PATH],
+      args: [MAIN_PATH],
       env: {
         ...process.env,
         NODE_ENV: 'production',
@@ -280,9 +284,33 @@ export async function launchPackagedApp(options: LaunchOptions = {}): Promise<La
   if (PACKAGED_APP === undefined) {
     throw new Error('WIREBENCH_PACKAGED_APP is not set');
   }
+  return launchOverDebugPort(packagedExecutable(PACKAGED_APP), [], options);
+}
+
+/**
+ * Launches the *built* app (`out/main/index.js`) on the plain Electron binary and attaches over the
+ * debugging port, as {@link launchPackagedApp} does. For the spec that needs Chromium's own switches:
+ * `_electron.launch` preloads a loader that appends Playwright's switches, `--password-store=basic` among
+ * them, so an app launched through it never reaches the OS keyring. `onOutput` receives the main
+ * process's stdout and stderr.
+ */
+export async function launchBuiltAppOverDebugPort(
+  options: LaunchOptions & { readonly onOutput?: (chunk: string) => void } = {},
+): Promise<LaunchedPackagedApp> {
+  // The `electron` package's main export is the path of its binary; resolve it from the desktop app.
+  const electronBinary = createRequire(join(dirname(MAIN_PATH), '..', '..', 'package.json'))('electron') as string;
+  return launchOverDebugPort(electronBinary, [...(options.extraArgs ?? []), MAIN_PATH], options, options.onOutput);
+}
+
+async function launchOverDebugPort(
+  executable: string,
+  args: readonly string[],
+  options: LaunchOptions,
+  onOutput?: (chunk: string) => void,
+): Promise<LaunchedPackagedApp> {
   const userDataDir = options.userDataDir ?? mkdtempSync(join(tmpdir(), 'wirebench-e2e-'));
   const port = await freePort();
-  const child = spawn(packagedExecutable(PACKAGED_APP), [`--remote-debugging-port=${port}`], {
+  const child = spawn(executable, [`--remote-debugging-port=${port}`, ...args], {
     env: {
       ...process.env,
       NODE_ENV: 'production',
@@ -290,8 +318,12 @@ export async function launchPackagedApp(options: LaunchOptions = {}): Promise<La
       WIREBENCH_USER_DATA_DIR: userDataDir,
       ...e2eEnv(options),
     },
-    stdio: 'ignore',
+    stdio: onOutput === undefined ? 'ignore' : ['ignore', 'pipe', 'pipe'],
   });
+  for (const stream of [child.stdout, child.stderr]) {
+    stream?.setEncoding('utf8');
+    stream?.on('data', (chunk: string) => onOutput?.(chunk));
+  }
 
   const consoleErrors: string[] = [];
   let browser: Browser | undefined;
@@ -304,12 +336,12 @@ export async function launchPackagedApp(options: LaunchOptions = {}): Promise<La
       connected = await chromium.connectOverCDP(`http://127.0.0.1:${port}`).catch(() => undefined);
     }
     if (connected === undefined) {
-      throw new Error(`packaged app never opened its debugging port (${packagedExecutable(PACKAGED_APP)})`);
+      throw new Error(`the app never opened its debugging port (${executable})`);
     }
     browser = connected;
     const context = browser.contexts()[0];
     if (context === undefined) {
-      throw new Error('packaged app exposed no browser context');
+      throw new Error('the app exposed no browser context');
     }
     const window = context.pages()[0] ?? (await context.waitForEvent('page'));
     window.on('console', (message) => {
