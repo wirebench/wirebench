@@ -7,6 +7,17 @@ All notable changes to this project are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **The hosted edition, switched on (server, #829).** `WIREBENCH_SERVER_MODE=hosted` runs the server as a service for
+  many teams. A team signs up at `app.<app-domain>/signup`, pays per seat through Paddle (the merchant of record; there
+  is no free tier), and signs in at `<slug>.<app-domain>` as its first server admin. A subscription past due for 14
+  days, or canceled, suspends the team: its sign-in page says why, and its API, sockets and catch URLs refuse it, with
+  its data kept. The operator lists, creates, suspends, resumes, renames and deletes teams with `admin tenant`, and a
+  deletion removes every row, file and key 14 days on, once the subscription has ended. `config check` names every
+  variable hosted mode requires and refuses the server-wide OIDC, SAML and audit-forwarding variables, which are each
+  team's own there. The recipe in `packages/server/deploy/hosted/` gains the control role and the Paddle settings.
+  Every server, self-hosted too, gains `admin tenant export --out <file>` and `admin tenant import <file>`: a team's
+  tables, repositories and audit chain in one file, never a secret, which `admin audit verify --export` checks with no
+  database. A self-hosted server is otherwise unchanged.
 - **Server: several instances, per-team budgets and metrics (#821).** On an Enterprise license, set
   `WIREBENCH_SERVER_INSTANCES=multi` to run several server instances against one database and one data volume behind
   a balancer with a sticky cookie: live updates, presence and pushes work across them, a terminal share can be watched

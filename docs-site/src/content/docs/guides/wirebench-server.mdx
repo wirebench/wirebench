@@ -493,6 +493,30 @@ goes back to `<slug>.<app-domain>`, and the proxy drops its route at its next po
 the new claim gets a new token, so update the TXT record. An operator can do the same for a support case or abuse with
 `wirebench-server admin domains remove --tenant <slug>`; `admin domains list` lists every team's name and state.
 
+## Moving or leaving a server
+
+`wirebench-server admin tenant export --out <file>` writes the server's team to one file: its tables, every
+workspace's repository and the audit log with its chain. Secrets are never in it, sealed or not, nor checkouts or
+sessions; password hashes are, so people sign in after an import, which makes the file as sensitive as the database.
+When the server seals its audit log (`WIREBENCH_SERVER_AUDIT_CHAIN_KEY`),
+`wirebench-server admin audit verify --export <file>` checks the chain in the file with no database, for an auditor
+who has no server to ask. `wirebench-server admin tenant import <file>` restores it into an empty server: one
+with no user and no workspace. Secrets, catch URL addresses, sessions and pairings do not come back, and the command
+lists each by id.
+
+## The hosted service
+
+Wirebench also runs as a hosted service, for teams that would rather not run a server: a team signs up at
+`app.<app-domain>/signup`, pays per seat through Paddle, which is the merchant of record, and is served at
+`https://<slug>.<app-domain>`, in the EU only. There is no free tier. A team's server admins set its sign-in
+providers, audit forwarding, mail sender and retention in the app rather than in environment variables, and can
+export the team or ask for its deletion at any time. An export of a self-hosted server imports into the hosted service
+and back.
+
+Running the hosted service is the operator's job, with `WIREBENCH_SERVER_MODE=hosted` and the recipe in
+`packages/server/deploy/hosted/`; its README is the runbook. A team running its own server leaves the mode at
+`self-hosted`, and nothing on this page changes for it.
+
 ## Upgrading
 
 The server applies pending migrations when it starts. To apply them ahead of a restart, run its

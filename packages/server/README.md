@@ -617,12 +617,48 @@ server-side send path until an operator asks for them.
   `pnpm --filter @wirebench/desktop build:browser`, `pnpm --filter @wirebench/server copy-browser`. With the
   switch on and no build copied, the server refuses to start.
 
+## Hosted mode
+
+`WIREBENCH_SERVER_MODE=hosted` runs the server as a service for many teams (hosted edition spec §19, §22; ADR-0039):
+each team signs up at `https://app.<app-domain>/signup`, pays through Paddle, and is served at
+`https://<slug>.<app-domain>`, with its own users, data, data key, audit chain and settings, kept apart by
+row-level security. It is the operator's mode, not a team's: a team that runs its own server stays `self-hosted`,
+which is unchanged. The deployment recipe, with the roles step, the Paddle steps and the certificate, is in
+[`deploy/hosted/`](deploy/hosted/README.md).
+
+- **What it requires,** each named by `config check` and refused at start-up when missing: both domains, the SMTP URL
+  and sender (`entry-smtp-missing`), the secrets key, a migration URL naming the owner apart from the app role, the
+  control role's URL, the instance URL (hosted mode is always `multi`) and the four `WIREBENCH_SERVER_PADDLE_*`
+  settings. Every `WIREBENCH_SERVER_OIDC_*`, `_SAML_*` and `_AUDIT_FORWARD_*` variable is refused there with
+  `control-plane-setting-per-tenant`: each is a team's own setting, and one identity provider for the whole server
+  would sign people in across teams. The Paddle variables and the control URL are refused on a self-hosted server
+  with `control-plane-hosted-only`, so a copied `.env` is caught at once.
+- **The roles.** The app role must not be a superuser, have `BYPASSRLS` or own a table (`tenancy-role-bypasses`). The
+  control role, `wirebench_control`, is the one role past the policy, and only the control plane connects as it; it
+  must have `BYPASSRLS` and must be no superuser, create no roles or databases and own nothing. `admin tenancy role`
+  creates it when the owner may, or prints the statements with `--print-sql`.
+- **Billing.** Paddle is the merchant of record, and there is no free tier: a team exists once its first payment
+  arrives. The server never calls Paddle's API: it renders Paddle.js's checkout and receives Paddle's signed webhooks
+  at `POST /billing/paddle` on the entry host, checking the `Paddle-Signature` HMAC before reading the body. A
+  subscription past due for 14 days suspends the team `unpaid`; a canceled one suspends it `canceled` and keeps its
+  data until someone asks for its deletion. Enterprise is invoiced by Verathic and set with `admin tenant set-edition`.
+- **Suspension.** A suspended team's sign-in page says why and has no form, its API and sockets answer `403
+tenant-suspended`, its catch URLs `503`, and its schedules do not fire. Its data is kept and its retention runs.
+- **Export, import and deletion.** `admin tenant export <slug> --out <file>` writes a team's tables, repositories and
+  audit chain (never a secret), which `admin audit verify --export <file>` verifies with no database (the hosted recipe sets the audit chain key
+  every team's chain is derived from), and
+  `admin tenant import <file>` restores into a new team. `admin tenant delete <slug>` deletes the team 14 days on,
+  once its subscription has ended: every row, file and key, checked on the control role. A self-hosted server exports
+  its one team the same way (`admin tenant export --out <file>`), which is how an installation moves to the hosted
+  service.
+- **Hosting is in the EU only.** Each team's row records its region, `eu`.
+
 ## Hosted names
 
 The hosted edition puts each team at `https://<slug>.<app-domain>` and the entry, where a person gets their teams'
 links by email, at `app.<app-domain>` (hosted edition spec §21). `WIREBENCH_SERVER_APP_DOMAIN` and
-`WIREBENCH_SERVER_SITE_DOMAIN` name the product's domain and the site's; both are read in hosted mode only, which the
-control plane will switch on, and a self-hosted server ignores them (`config check` says so). Slugs such as `app`,
+`WIREBENCH_SERVER_SITE_DOMAIN` name the product's domain and the site's; both are read in hosted mode only, and a
+self-hosted server ignores them (`config check` says so). Slugs such as `app`,
 `api`, `www`, the area and protocol names and the brand names are reserved. The deployment recipe, with Traefik issuing
 one wildcard certificate by DNS-01 and the public suffix list step, is in [`deploy/hosted/`](deploy/hosted/README.md).
 
