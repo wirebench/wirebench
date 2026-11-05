@@ -17,7 +17,7 @@ import {
   startBrowserFlow,
 } from '../browser-flows.js';
 import { clearSessionCookie } from '../cookies.js';
-import type { IdentityEnv } from '../env.js';
+import { requireProvider, type IdentityEnv } from '../env.js';
 import { methodDisabled, originRefused } from '../errors.js';
 import { chargeKeys, emailKey, ipKey, rateLimit } from '../rate-limit.js';
 import { sendSignInPage } from '../sign-in-page.js';
@@ -103,8 +103,8 @@ export const browserSignInRoutes =
       '/sign-in/oidc',
       { preHandler: [rateLimit(env, (request) => [ipKey(request)])] },
       async (request, reply) => {
-        const provider = env.provider;
-        if (provider === undefined) throw methodDisabled();
+        const provider = await requireProvider(env, request);
+        // A tenant without the method answers 404 on either of its names; one with it starts on the primary.
         const moved = onPrimaryHost(env.ctx.config, request, reply);
         if (moved !== undefined) return moved;
         const nonce = mintSecret().secret;

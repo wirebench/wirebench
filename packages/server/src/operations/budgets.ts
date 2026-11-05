@@ -54,15 +54,17 @@ export const RUN_SLOTS_LOCK_CLASS = 0x57425253; // "WBRS"
 export interface SendBudgetSettings {
   readonly sendsPerMinute: number;
   readonly concurrentSends: number;
+  /** The sends bucket's capacity; a sixth of the per-minute rate when unset. */
+  readonly burst?: number;
 }
 
 export function sendBudgetSettings(config: ModuleConfig): SendBudgetSettings {
   return { sendsPerMinute: config.tenantSendsPerMinute, concurrentSends: config.tenantConcurrentSends };
 }
 
-/** The sends bucket: refilled at the per-minute rate, a sixth of a minute's sends at once (100 of 600). */
-export function sendsBucket(perMinute: number): BucketSize {
-  return { capacity: Math.max(1, Math.ceil(perMinute / 6)), refillPerMs: perMinute / 60_000 };
+/** The sends bucket: refilled at the per-minute rate, `burst` at once, by default a sixth of a minute's (100 of 600). */
+export function sendsBucket(perMinute: number, burst?: number): BucketSize {
+  return { capacity: burst ?? Math.max(1, Math.ceil(perMinute / 6)), refillPerMs: perMinute / 60_000 };
 }
 
 export type SendRefusalCode = 'tenant-send-budget' | 'tenant-send-concurrency';
@@ -112,6 +114,11 @@ export async function lockRunSlots(tx: TenantQuerier): Promise<void> {
 export interface SendBudgetsOptions {
   readonly db: TenantDbFactory;
   readonly settings: SendBudgetSettings;
+  /**
+   * The budgets of `scope`'s tenant, read at each charge: the operator's override of that tenant's, else `settings`
+   * (slice 7, spec §20.7, §22.12). Unset, `settings` for every tenant.
+   */
+  readonly settingsFor?: (scope: TenantScope) => Promise<SendBudgetSettings>;
   /** How long a slot lasts unrenewed; {@link SLOT_HOLD_MS} by default. Tests shorten it. */
   readonly holdMs?: number;
   /** The renewal timer; a test's that never fires stands for an instance that died. */
@@ -174,7 +181,7 @@ export class SendBudgets {
    * (a run, whose requests spend their tokens one by one).
    */
   async take(scope: TenantScope, options: { readonly token?: boolean } = {}): Promise<SendTake> {
-    const { settings } = this.options;
+    const settings = await this.settingsOf(scope);
     const db = this.options.db(scope);
     const holder = randomUUID();
     let release: (() => Promise<void>) | undefined;
@@ -201,7 +208,7 @@ export class SendBudgets {
     if (options.token === false) return { ok: true, release };
     let spent;
     try {
-      spent = await this.spend(scope);
+      spent = await this.spend(scope, settings);
     } catch (error) {
       await release();
       throw error;
@@ -287,7 +294,7 @@ export class SendBudgets {
       if (call.signal?.aborted === true) throw stopped();
       let spent;
       try {
-        spent = await this.spend(call.scope);
+        spent = await this.spend(call.scope, await this.settingsOf(call.scope));
       } catch (error) {
         this.options.log?.('a run’s request could not be charged to its tenant’s budget', error);
         throw new WirebenchError('internal-error', 'The send could not be started. Try again in a moment.');
@@ -297,13 +304,19 @@ export class SendBudgets {
     }
   }
 
+  /** `scope`'s tenant's budgets: its own when the options can tell them, the server's otherwise. */
+  private settingsOf(scope: TenantScope): Promise<SendBudgetSettings> {
+    return this.options.settingsFor === undefined
+      ? Promise.resolve(this.options.settings)
+      : outsideTenantUnit(() => this.options.settingsFor!(scope));
+  }
+
   /** One token of the tenant's sends bucket. */
-  private spend(scope: TenantScope) {
-    const { settings } = this.options;
+  private spend(scope: TenantScope, settings: SendBudgetSettings) {
     const db = this.options.db(scope);
     return outsideTenantUnit(() =>
       charge(db, SENDS_BUCKET, {
-        ...sendsBucket(settings.sendsPerMinute),
+        ...sendsBucket(settings.sendsPerMinute, settings.burst),
         cost: 1,
         ...(this.options.now !== undefined ? { at: new Date(this.options.now()) } : {}),
       }),

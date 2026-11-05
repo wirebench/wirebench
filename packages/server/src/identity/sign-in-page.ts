@@ -115,7 +115,7 @@ export async function sendSignInPage(
   ctx: Pick<ServerContext, 'config' | 'meta' | 'license'>,
   options: { readonly status?: number; readonly message?: string; readonly redirectTo?: string } = {},
 ): Promise<FastifyReply> {
-  const methods = ctx.meta.signInMethods();
+  const methods = await ctx.meta.signInMethodsFor(reply.request);
   const samlLicensed =
     methods.saml === true && (await ctx.license.state(reply.request.tenant)).features.includes('sso-provisioning');
   const html = renderSignInPage({

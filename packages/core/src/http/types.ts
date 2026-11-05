@@ -86,9 +86,13 @@ export interface OriginCredentials {
   readonly query?: readonly { readonly name: string; readonly value: string }[];
 }
 
-/** Where an accepted stream's body goes, chunk by chunk, already decompressed when `decompress` is on. */
+/**
+ * Where an accepted stream's body goes, chunk by chunk, already decompressed when `decompress` is on. A sink that
+ * returns a promise holds the next chunk until it settles (a file write waiting for `drain`); one that rejects ends
+ * the stream as an error.
+ */
 export interface HttpStreamSink {
-  onChunk(bytes: Uint8Array): void;
+  onChunk(bytes: Uint8Array): void | Promise<void>;
 }
 
 /** Decides, from the final response's status and headers, whether its body is streamed. */

@@ -1,11 +1,12 @@
 /**
  * The audit sealer and forwarder over a fake job loop of two tenants (Task 14 review M1, M3, M5): each tenant is
- * sealed with its own key and forwarded under its own license; a failed send or a stop ends the pass rather than
- * waiting on every tenant; and a batch whose unit failed to commit is not counted as sent.
+ * sealed with its own key and forwarded under its own license to its own sink; a dead sink stops only its own
+ * tenant's batch, with its own backoff (spec §19.12 M1, §22.12); a stop ends the pass; and a batch whose unit failed
+ * to commit is not counted as sent.
  */
 import type { AuditEvent } from '@wirebench/engine';
 import type { FastifyBaseLogger } from 'fastify';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { keyId } from '../../../src/audit-log/chain/canonical.js';
 import { AuditSealer } from '../../../src/audit-log/chain/sealer.js';
 import { AuditForwarder, type ForwardSink } from '../../../src/audit-log/forward/forwarder.js';
@@ -121,6 +122,10 @@ describe('the forwarder over two tenants', () => {
   function cast(options: {
     readonly licensed?: readonly string[];
     readonly sink?: (events: AuditEvent[]) => Promise<void>;
+    /** Tenant one's sink instead, beside the default one for tenant two. */
+    readonly sinkOne?: (events: AuditEvent[]) => Promise<void>;
+    /** Tenants that forward nowhere. */
+    readonly noSink?: readonly string[];
     readonly failCommit?: string;
     /** The lease release fails, as a database gone away would. */
     readonly failRelease?: boolean;
@@ -169,18 +174,29 @@ describe('the forwarder over two tenants', () => {
         }),
       close: () => Promise.resolve(),
     };
+    const one: ForwardSink | undefined =
+      options.sinkOne === undefined ? undefined : { send: options.sinkOne, close: () => Promise.resolve() };
     const { lines, log } = recordingLog();
+    let at = Date.parse('2026-10-31T00:00:00Z');
+    const clock = { advance: (ms: number) => (at += ms) };
     const forwarder = new AuditForwarder({
       tenancy,
-      sink,
+      sinkFor: (scope) =>
+        Promise.resolve(
+          options.noSink?.includes(scope.tenantId) === true
+            ? undefined
+            : scope.tenantId === ONE.tenantId && one !== undefined
+              ? one
+              : sink,
+        ),
       license: () => license,
-      now: () => new Date('2026-10-31T00:00:00Z'),
+      now: () => new Date(at),
       ...noTimer,
       log,
     });
     const claimsIn = (slug: string) =>
       statements.filter((entry) => entry.tenant === slug && entry.text.includes('from audit_forward_queue q')).length;
-    return { forwarder, sent, lines, claimsIn, queues };
+    return { forwarder, sent, lines, claimsIn, queues, clock };
   }
 
   it('reads each tenant’s own license: an unlicensed tenant is never claimed from', async () => {
@@ -190,9 +206,64 @@ describe('the forwarder over two tenants', () => {
     expect(claimsIn('one')).toBe(0);
   });
 
-  it('ends the pass after a failed send: the next tenant does not wait on the same sink', async () => {
-    const { forwarder, claimsIn } = cast({ sink: () => Promise.reject(new Error('down')) });
-    expect(await forwarder.runOnce()).toMatchObject({ outcome: 'failed', sent: 0 });
+  it('a dead sink stops only its own tenant’s batch: the other tenant’s goes out (§19.12 M1)', async () => {
+    const { forwarder, sent, claimsIn, queues, lines, clock } = cast({
+      sinkOne: () => Promise.reject(new Error('down')),
+    });
+    expect(await forwarder.runOnce()).toMatchObject({ outcome: 'sent', sent: 1 });
+    expect(sent).toEqual(['E2']);
+    expect(queues.get(ONE.tenantId)).toEqual(['E1']);
+    expect(lines.filter((line) => line.level === 'warn').map((line) => line.args[0])).toEqual([
+      { tenantId: ONE.tenantId, reason: 'Error: down' },
+    ]);
+    // Tenant one waits out its own backoff; tenant two is claimed on every pass meanwhile.
+    clock.advance(1_000);
+    await forwarder.runOnce();
+    expect(claimsIn('one')).toBe(1);
+    expect(claimsIn('two')).toBe(2);
+    clock.advance(5_000);
+    await forwarder.runOnce();
+    expect(claimsIn('one')).toBe(2);
+  });
+
+  it('a slow collector holds back only its own tenant: the next tenant is claimed and sent while it is out', async () => {
+    let release: () => void = () => undefined;
+    const slow = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const made = cast({ sinkOne: () => slow });
+    const pass = made.forwarder.runOnce();
+    // Tenant one's send is still out; tenant two's has gone through all the same.
+    await vi.waitFor(() => expect(made.sent).toEqual(['E2']));
+    expect(made.queues.get(ONE.tenantId)).toEqual(['E1']);
+    release();
+    // The pass waits for the send it started, and counts it.
+    expect(await pass).toMatchObject({ outcome: 'sent', sent: 2 });
+    expect(made.queues.get(ONE.tenantId)).toEqual([]);
+  });
+
+  it('forgets a tenant’s backoff when its setting changes, or when it forwards nowhere any more', async () => {
+    const noSink: string[] = [];
+    const { forwarder, claimsIn, clock } = cast({ sinkOne: () => Promise.reject(new Error('down')), noSink });
+    await forwarder.runOnce();
+    clock.advance(1_000);
+    await forwarder.runOnce();
+    expect(claimsIn('one')).toBe(1);
+    // A new destination is tried at once.
+    forwarder.forget(ONE.tenantId);
+    await forwarder.runOnce();
+    expect(claimsIn('one')).toBe(2);
+    // Failing again, then forwarding nowhere: the backoff goes with the sink, so a later one starts afresh.
+    noSink.push(ONE.tenantId);
+    await forwarder.runOnce();
+    noSink.length = 0;
+    await forwarder.runOnce();
+    expect(claimsIn('one')).toBe(3);
+  });
+
+  it('answers failed, backing off, when every tenant’s sink is down; a tenant with no sink is never claimed', async () => {
+    const { forwarder, claimsIn } = cast({ sink: () => Promise.reject(new Error('down')), noSink: [TWO.tenantId] });
+    expect(await forwarder.runOnce()).toMatchObject({ outcome: 'failed', sent: 0, nextDelayMs: 5_000 });
     expect(claimsIn('one')).toBe(1);
     expect(claimsIn('two')).toBe(0);
   });
@@ -217,8 +288,8 @@ describe('the forwarder over two tenants', () => {
   });
 
   it('warns, naming the tenant and no event, when a failed send cannot free its lease (Task 17 review M4)', async () => {
-    const { forwarder, lines } = cast({ sink: () => Promise.reject(new Error('down')), failRelease: true });
-    expect(await forwarder.runOnce()).toMatchObject({ outcome: 'failed', sent: 0 });
+    const { forwarder, lines } = cast({ sinkOne: () => Promise.reject(new Error('down')), failRelease: true });
+    expect(await forwarder.runOnce()).toMatchObject({ outcome: 'sent', sent: 1 });
     const freed = lines.filter(
       (line) => line.level === 'warn' && String(line.args[1]).includes('could not free a lease'),
     );

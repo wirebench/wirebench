@@ -19,12 +19,12 @@ import {
   type PresenceChangedEvent,
   type ServerHooks,
 } from '../../../src/context.js';
-import { openSession, type Session } from '../../../src/db/pool.js';
+import { createDatabase, openSession, type Session } from '../../../src/db/pool.js';
 import { NotificationBus, QUEUE_LIMIT, type BusQuerier, type Listened } from '../../../src/operations/bus.js';
 import { scopeOf, type TenantScope } from '../../../src/tenancy/scope.js';
 import { startServer } from '../../../src/serve.js';
 import { BUILTIN_MODULES } from '../../../src/modules.js';
-import { describeDb, testDatabase, type TestDatabase } from '../../helpers/database.js';
+import { TEST_DATABASE_URL, describeDb, testDatabase, type TestDatabase } from '../../helpers/database.js';
 import { mkTempDir, removeTempDir } from '../../helpers/git.js';
 import { freePort } from '../../helpers/net.js';
 
@@ -335,9 +335,15 @@ describeDb('the notification bus (hosted spec §20.3)', () => {
         logStream: new Writable({ write: (_chunk, _encoding, done) => done() }),
       },
     );
+    // Only this server's: other test files' servers listen on the same instance, each on its own schema's channel. The
+    // admin reads the sessions, as only a superuser sees another role's query text.
+    const channel = listener.bus.channel!;
+    const admin = createDatabase(TEST_DATABASE_URL!, { max: 1 });
     const busSessions = () =>
-      db.query<{ user: string }>(
-        `select usename::text as user from pg_stat_activity where application_name = 'wirebench-server-bus'`,
+      admin.query<{ user: string }>(
+        `select usename::text as user from pg_stat_activity
+          where application_name = 'wirebench-server-bus' and query = $1`,
+        [`LISTEN "${channel}"`],
       );
     try {
       expect(server.bus.channel).toBe(listener.bus.channel);
@@ -351,6 +357,10 @@ describeDb('the notification bus (hosted spec §20.3)', () => {
       await server.close();
       await removeTempDir(dataDir);
     }
-    expect((await busSessions()).rows).toEqual([]);
+    try {
+      expect((await busSessions()).rows).toEqual([]);
+    } finally {
+      await admin.close();
+    }
   });
 });

@@ -16,7 +16,7 @@ export const metaRoutes =
         version: ctx.config.version,
         apiVersion: SERVER_API_VERSION,
         publicUrl: tenantUrl(ctx.config, request),
-        auth: ctx.meta.signInMethods(),
+        auth: await ctx.meta.signInMethodsFor(request),
         capabilities: ctx.meta.capabilities(),
         ...(hooks !== undefined ? { hooks } : {}),
         edition,

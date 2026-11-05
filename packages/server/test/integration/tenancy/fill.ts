@@ -11,7 +11,7 @@ import { markStepsDone } from '../../helpers/tenancy.js';
 import { createHash, generateKeyPairSync, randomBytes, randomUUID, sign } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { RouteOptions } from 'fastify';
+import type { LightMyRequestResponse, RouteOptions } from 'fastify';
 import { expect } from 'vitest';
 import { controlPlaneModule } from '../../../src/control-plane/module.js';
 import type { DnsLookup } from '../../../src/custom-domains/dns.js';
@@ -36,6 +36,7 @@ import type { Scheduler } from '../../../src/schedules/scheduler.js';
 import { sessionLogsModule } from '../../../src/session-logs/module.js';
 import { ssoModule } from '../../../src/sso/module.js';
 import * as ssoRepo from '../../../src/sso/repo.js';
+import { mintScimToken } from '../../../src/sso/scim-tokens.js';
 import { syncModule } from '../../../src/sync/module.js';
 import { teamsModule } from '../../../src/teams/module.js';
 import type { PendingWrites } from '../../../src/pending-writes.js';
@@ -88,6 +89,8 @@ export interface Filled {
   readonly hookSecret: string;
   readonly captureId: string;
   readonly ciToken: string;
+  /** A SCIM bearer token of the tenant's: the SCIM base's caller. */
+  readonly scimToken: string;
   readonly scheduleId: string;
   readonly runId: string;
   readonly shareId: string;
@@ -460,7 +463,7 @@ export async function fill(t: TwoTenants, tenant: Tenant): Promise<Filled> {
     'chunk',
   );
 
-  // ---- SSO, at the repository level (not served hosted until slice 7)
+  // ---- SSO: the rows at the repository level; the SCIM base, served hosted since slice 7, through its token
   await ssoRepo.insertSamlIdentity(tenant.tdb, {
     entityId: 'https://idp.example.test/saml',
     nameId: `${slug}-name-id`,
@@ -477,10 +480,11 @@ export async function fill(t: TwoTenants, tenant: Tenant): Promise<Filled> {
     createdAt: at,
     expiresAt: new Date(at.getTime() + 600_000),
   });
+  const scim = mintScimToken();
   await ssoRepo.insertScimToken(tenant.tdb, {
     id: note(newId()),
     name: `${slug} provisioning`,
-    tokenHash: mintToken().hash,
+    tokenHash: scim.hash,
     createdBy: admin.user.id,
     at,
   });
@@ -598,6 +602,7 @@ export async function fill(t: TwoTenants, tenant: Tenant): Promise<Filled> {
     hookSecret,
     captureId,
     ciToken: ci.token,
+    scimToken: scim.token,
     scheduleId,
     runId,
     shareId: share.shareId,
@@ -652,7 +657,45 @@ const noted = (f: Filled, id: string): string => {
   return id;
 };
 
+/** One SCIM call as `f`'s token, on `f`'s host. */
+export const scimCall = (f: Filled, method: 'POST', path: string, payload: object): Promise<LightMyRequestResponse> =>
+  f.tenant.inject({
+    method,
+    url: `/scim/v2${path}`,
+    headers: { authorization: `Bearer ${f.scimToken}`, 'content-type': 'application/scim+json' },
+    payload,
+  });
+
 export const fresh = {
+  /** A user provisioned through `f`'s SCIM base. */
+  async scimUser(f: Filled): Promise<string> {
+    const email = `s-${newId().toLowerCase()}@${f.tenant.slug}.example`;
+    const res = await scimCall(f, 'POST', '/Users', {
+      schemas: ['urn:ietf:params:scim:schemas:core:2.0:User'],
+      userName: email,
+      emails: [{ value: email, primary: true }],
+      active: true,
+    });
+    if (res.statusCode !== 201) throw new Error(`fresh SCIM user: ${res.statusCode} ${res.body}`);
+    return noted(f, res.json<{ id: string }>().id);
+  },
+  /** A group made through `f`'s SCIM base. */
+  async scimGroup(f: Filled): Promise<string> {
+    const res = await scimCall(f, 'POST', '/Groups', {
+      schemas: ['urn:ietf:params:scim:schemas:core:2.0:Group'],
+      displayName: `${f.tenant.slug} g-${newId()}`,
+    });
+    if (res.statusCode !== 201) throw new Error(`fresh SCIM group: ${res.statusCode} ${res.body}`);
+    return noted(f, res.json<{ id: string }>().id);
+  },
+  /** A SCIM token made through `f`'s admin route. */
+  async scimTokenId(f: Filled): Promise<string> {
+    const made = await ok(
+      f.tenant.call<{ id: string }>(f.admin, 'POST', '/scim-tokens', { name: `${f.tenant.slug} spare ${newId()}` }),
+      'fresh SCIM token',
+    );
+    return noted(f, made.id);
+  },
   /** A user of `tenant`'s with a password, and a token of their own; its ids go into `ids` when given (A's). */
   async user(tenant: Tenant, kind?: 'browser', ids?: Set<string>): Promise<SignedInUser> {
     const user = await tenant.user({

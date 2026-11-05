@@ -117,6 +117,26 @@ describe('the server host allowlist (§3.10)', () => {
     for (const channel of scan) expect(isServedChannel(channel), channel).toBe(true);
   });
 
+  it('serves the Server page of Settings, but saves no export to a file picked on the machine (§22.13)', async () => {
+    const page = (await registry()).filter((channel) =>
+      ['serverSettings', 'tenantBilling', 'tenantExports', 'tenantDeletion'].includes(channelGroup(channel)),
+    );
+    expect(page.sort()).toEqual([
+      'serverSettings.clear',
+      'serverSettings.get',
+      'serverSettings.save',
+      'tenantBilling.get',
+      'tenantDeletion.cancel',
+      'tenantDeletion.request',
+      'tenantExports.download',
+      'tenantExports.list',
+      'tenantExports.request',
+    ]);
+    for (const channel of page) {
+      expect(isServedChannel(channel), channel).toBe(channel !== 'tenantExports.download');
+    }
+  });
+
   it('classifies every channel a real server host registers', async () => {
     const createServerHost = await loadHostRuntime({ browserClient: true });
     const dataDir = await mkdtemp(join(tmpdir(), 'wb-host-allowlist-'));

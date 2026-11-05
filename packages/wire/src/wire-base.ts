@@ -3655,6 +3655,118 @@ export const domainResponseWireSchema = z.object({ domain: customDomainWireSchem
 export type DomainResponseWire = z.infer<typeof domainResponseWireSchema>;
 export const domainRemoveResponseWireSchema = z.object({ removed: z.literal(true) });
 
+// --- Per-tenant settings, billing, export and deletion (hosted edition spec §22.9–§22.13) ----------
+
+/**
+ * The *Server* page of Settings (spec §22.13), restated for the bridge; the renderer imports only the types. A
+ * section's `value` is the server's view of it: plain fields, and each secret as `{ set }`, never its value. A
+ * self-hosted server answers every section with `source: "environment"` and `writable: false`, in the environment's
+ * own shape (`idpMetadataSource` for the SAML document, `caFile` for the forwarding CA), so the fields stay open.
+ */
+export const SERVER_SETTINGS_SECTIONS = ['oidc', 'saml', 'auditForward', 'smtp', 'retention', 'budgets'] as const;
+export type ServerSettingsSectionWire = (typeof SERVER_SETTINGS_SECTIONS)[number];
+/** The sections a tenant's server admin writes; `budgets` is the operator's (spec §22.12). */
+export const SERVER_SETTINGS_WRITABLE = ['oidc', 'saml', 'auditForward', 'smtp', 'retention'] as const;
+export type ServerSettingsWritableSectionWire = (typeof SERVER_SETTINGS_WRITABLE)[number];
+export const serverSettingsSourceWireSchema = z.enum(['environment', 'tenant']);
+export type ServerSettingsSourceWire = z.infer<typeof serverSettingsSourceWireSchema>;
+export const serverSettingsSectionStateWireSchema = z.object({
+  source: serverSettingsSourceWireSchema,
+  writable: z.boolean(),
+  value: z.record(z.string(), z.unknown()).nullable(),
+  updatedAt: z.string().optional(),
+});
+export type ServerSettingsSectionStateWire = z.infer<typeof serverSettingsSectionStateWireSchema>;
+export const serverSettingsWireSchema = z.object({
+  source: serverSettingsSourceWireSchema,
+  sections: z.object({
+    oidc: serverSettingsSectionStateWireSchema,
+    saml: serverSettingsSectionStateWireSchema,
+    auditForward: serverSettingsSectionStateWireSchema,
+    smtp: serverSettingsSectionStateWireSchema,
+    retention: serverSettingsSectionStateWireSchema,
+    budgets: serverSettingsSectionStateWireSchema,
+  }),
+});
+export type ServerSettingsWire = z.infer<typeof serverSettingsWireSchema>;
+export const serverSettingsRequestWireSchema = z.object({ url: z.string() });
+const serverSettingsWritableWireSchema = z.enum(SERVER_SETTINGS_WRITABLE);
+/** A section's input, secrets as typed text; a secret left out keeps the stored one. The server checks the shape. */
+export const serverSettingsSaveRequestWireSchema = serverSettingsRequestWireSchema.extend({
+  section: serverSettingsWritableWireSchema,
+  value: z.record(z.string(), z.unknown()),
+});
+export type ServerSettingsSaveRequestWire = z.infer<typeof serverSettingsSaveRequestWireSchema>;
+export const serverSettingsClearRequestWireSchema = serverSettingsRequestWireSchema.extend({
+  section: serverSettingsWritableWireSchema,
+});
+
+/**
+ * `GET /api/v1/tenant/billing` (hosted only): the team's slug (the deletion's confirmation) and name, its enabled
+ * accounts as the seat cap counts them, the plan, seats and status, and any deletion asked for.
+ */
+export const tenantBillingWireSchema = z.object({
+  slug: z.string(),
+  name: z.string(),
+  activeMembers: z.number().int().nonnegative(),
+  edition: z.string().nullable(),
+  editionSource: z.string().nullable(),
+  status: z.string().nullable(),
+  suspendedReason: z.string().nullable(),
+  subscription: z
+    .object({
+      plan: z.string(),
+      seats: z.number().int(),
+      status: z.string(),
+      currentPeriodEnd: z.string().nullable(),
+      /** While `past_due`: since when; `null` otherwise. */
+      pastDueSince: z.string().nullable(),
+      /** While `past_due`: the days before the grace sweep suspends the team. */
+      pastDueDaysLeft: z.number().int().nullable(),
+    })
+    .nullable(),
+  deletion: z.object({ requestedAt: z.string().nullable(), deletingAt: z.string().nullable() }).nullable(),
+});
+export type TenantBillingWire = z.infer<typeof tenantBillingWireSchema>;
+
+export const tenantExportStatusWireSchema = z.enum(['queued', 'running', 'ready', 'failed', 'expired']);
+export type TenantExportStatusWire = z.infer<typeof tenantExportStatusWireSchema>;
+export const tenantExportWireSchema = z.object({
+  id: z.string(),
+  status: tenantExportStatusWireSchema,
+  /** Who asked: a display name, else an email, or `operator`; `null` for an account no longer on the server. */
+  requestedBy: z.string().nullable(),
+  sizeBytes: z.number().nullable(),
+  sha256: z.string().nullable(),
+  /** A failure's code; never its message. */
+  error: z.string().nullable(),
+  requestedAt: z.string(),
+  readyAt: z.string().nullable(),
+  expiresAt: z.string().nullable(),
+});
+export type TenantExportWire = z.infer<typeof tenantExportWireSchema>;
+export const tenantExportsListResponseWireSchema = z.object({ exports: z.array(tenantExportWireSchema) });
+export const tenantExportRequestedWireSchema = z.object({ export: tenantExportWireSchema });
+export const tenantExportDownloadRequestWireSchema = serverSettingsRequestWireSchema.extend({
+  id: z.string().min(1).max(64),
+});
+/** Main picks the file and streams the export into it; the renderer never sees the token, nor a URL holding one. */
+export const tenantExportDownloadResponseWireSchema = z.union([
+  z.object({ saved: z.literal(false) }),
+  z.object({ saved: z.literal(true), path: z.string(), sizeBytes: z.number().int().nonnegative() }),
+]);
+export type TenantExportDownloadResponseWire = z.infer<typeof tenantExportDownloadResponseWireSchema>;
+
+/** The team's slug typed as the confirmation (spec §22.11); the server compares it. */
+export const tenantDeletionRequestWireSchema = serverSettingsRequestWireSchema.extend({
+  slug: z.string().min(1).max(63),
+});
+export const tenantDeletionWireSchema = z.object({
+  deletion: z.object({ requestedAt: z.string().nullable(), deletingAt: z.string().nullable() }),
+});
+export type TenantDeletionWire = z.infer<typeof tenantDeletionWireSchema>;
+export const tenantDeletionCancelledWireSchema = z.object({ cancelled: z.boolean() });
+
 // --- Server audit log (audit-log spec §3.4, §5.3) ------------------------------------------------
 
 /** What `GET /api/v1/audit` answers, restated for the bridge; the renderer imports only the types. */

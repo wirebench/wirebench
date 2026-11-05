@@ -57,6 +57,12 @@ export const SERVED_GROUPS: ReadonlySet<string> = new Set([
   'provisioning',
   // A hosted tenant's custom name (spec §23.6), on the user's own session like `provisioning`.
   'domain',
+  // The tenant's own settings, billing, export and deletion (spec §22.13), on the user's own session like
+  // `provisioning`; the server checks the server-admin role on every call. Saving an export is refused below.
+  'serverSettings',
+  'tenantBilling',
+  'tenantExports',
+  'tenantDeletion',
   // Sealed secrets.
   'secrets',
   // The save-time secret scan (controller ruling, Task 10 review): every channel takes an open project's
@@ -132,6 +138,8 @@ export const REFUSED_CHANNELS: Readonly<Record<string, string>> = {
   'api.exportDefinition': 'writes to a folder picked on the machine',
   'api.exportDocs': 'writes to a file picked on the machine',
   'audit.export': 'writes to a file picked on the machine',
+  // The browser downloads a ready export itself, from the same origin on its session cookie.
+  'tenantExports.download': 'writes to a file picked on the machine',
   'definition.export': 'writes to a folder picked on the machine',
   'definition.generateDocs': 'writes to a file picked on the machine',
   'exchanges.saveRestBody': 'writes to a file picked on the machine',

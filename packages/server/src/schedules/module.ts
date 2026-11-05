@@ -13,7 +13,8 @@ import { CaptureSweeper } from '../hooks/sweep.js';
 import { CommitStore } from '../sync/commit-store.js';
 import { tenantPaths } from '../tenancy/paths.js';
 import type { TenantScope } from '../tenancy/scope.js';
-import { AlertOutbox, alertDelivery, type DeliverAlert } from './alerts/outbox.js';
+import type { TenantQuerier } from '../tenancy/tenant-db.js';
+import { AlertOutbox, alertDelivery, tenantMail, type DeliverAlert } from './alerts/outbox.js';
 import { deleteOutboxBefore, deleteRunsBefore } from './repo.js';
 import { scheduleRunRoutes } from './run-routes.js';
 import { scheduleRoutes } from './routes.js';
@@ -82,10 +83,22 @@ export function schedulesModule(options: SchedulesOptions = {}): ServerModule {
         log: ctx.log,
         egress: ctx.egress,
         license,
+        ...(ctx.config.mode === 'hosted'
+          ? {
+              runSlotsFor: async (scope: TenantScope, tx: TenantQuerier) =>
+                (await ctx.settings.budgets(scope, tx)).runSlots,
+            }
+          : {}),
         ...(options.execute !== undefined ? { execute: options.execute } : {}),
       });
       options.onScheduler?.(scheduler);
-      const deliver = options.deliver ?? alertDelivery(settings, { egress: ctx.egress });
+      // The tenant's own SMTP when it set one, else the operator's (spec §22.12).
+      const deliver =
+        options.deliver ??
+        alertDelivery(settings, {
+          egress: ctx.egress,
+          ...(ctx.config.mode === 'hosted' ? { smtpFor: tenantMail(ctx.settings) } : {}),
+        });
       const outbox = new AlertOutbox({ tenancy: ctx.tenancy, now, setTimer, log: ctx.log, license, deliver });
       options.onOutbox?.(outbox);
       scheduleRoutes({ tenancy: ctx.tenancy, hooks: ctx.hooks, license, settings, now, deliver })(app);
@@ -106,6 +119,10 @@ export function schedulesModule(options: SchedulesOptions = {}): ServerModule {
       const sweepers = [
         new CaptureSweeper({
           maxAgeDays: settings.maxAgeDays,
+          // Hosted, each tenant's own age, within the operator's (spec §22.12).
+          ...(ctx.config.mode === 'hosted'
+            ? { maxAgeDaysFor: async (scope: TenantScope) => (await ctx.settings.retention(scope)).schedulesMaxAgeDays }
+            : {}),
           now,
           setTimer,
           log: ctx.log,

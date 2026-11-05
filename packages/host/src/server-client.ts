@@ -134,6 +134,17 @@ import {
 import type { z } from 'zod';
 import {
   auditPageWireSchema,
+  serverSettingsWireSchema,
+  tenantBillingWireSchema,
+  tenantDeletionCancelledWireSchema,
+  tenantDeletionWireSchema,
+  tenantExportRequestedWireSchema,
+  tenantExportsListResponseWireSchema,
+  type ServerSettingsWire,
+  type ServerSettingsWritableSectionWire,
+  type TenantBillingWire,
+  type TenantDeletionWire,
+  type TenantExportWire,
   type AuditExportQueryWire,
   type AuditPageWire,
   type AuditQueryWire,
@@ -866,6 +877,133 @@ export class ServerClient {
     await this.call<unknown>(url, { method: 'DELETE', path: CUSTOM_DOMAIN_PATH, token });
   }
 
+  // ---- the tenant's settings, billing, export and deletion (hosted edition spec §22.9–§22.13) ----------------
+
+  /** Every section, secrets as `{ set }`; `source: "environment"` on a self-hosted server. */
+  async getServerSettings(url: string, token: string): Promise<ServerSettingsWire> {
+    return this.call(url, { method: 'GET', path: SETTINGS_PATH, token, schema: serverSettingsWireSchema });
+  }
+
+  /**
+   * Checks and stores one section (the issuer's discovery, the metadata, the URL rules run on the server); the answer
+   * is the whole view again. A refusal arrives as its code: `settings-invalid`, `settings-environment`, ...
+   */
+  async saveServerSettings(
+    url: string,
+    token: string,
+    section: ServerSettingsWritableSectionWire,
+    value: Readonly<Record<string, unknown>>,
+  ): Promise<ServerSettingsWire> {
+    return this.call(url, {
+      method: 'PUT',
+      path: `${SETTINGS_PATH}/${encodeURIComponent(section)}`,
+      token,
+      body: value,
+      schema: serverSettingsWireSchema,
+    });
+  }
+
+  async clearServerSettings(
+    url: string,
+    token: string,
+    section: ServerSettingsWritableSectionWire,
+  ): Promise<ServerSettingsWire> {
+    return this.call(url, {
+      method: 'DELETE',
+      path: `${SETTINGS_PATH}/${encodeURIComponent(section)}`,
+      token,
+      schema: serverSettingsWireSchema,
+    });
+  }
+
+  /** Hosted only: a self-hosted server has no such route, and answers `404`. */
+  async getTenantBilling(url: string, token: string): Promise<TenantBillingWire> {
+    return this.call(url, { method: 'GET', path: '/api/v1/tenant/billing', token, schema: tenantBillingWireSchema });
+  }
+
+  async listTenantExports(url: string, token: string): Promise<TenantExportWire[]> {
+    const answer = await this.call(url, {
+      method: 'GET',
+      path: EXPORTS_PATH,
+      token,
+      schema: tenantExportsListResponseWireSchema,
+    });
+    return answer.exports;
+  }
+
+  /** One export runs per tenant at a time: a second answers `409` with its code. */
+  async requestTenantExport(url: string, token: string): Promise<TenantExportWire> {
+    const answer = await this.call(url, {
+      method: 'POST',
+      path: EXPORTS_PATH,
+      token,
+      schema: tenantExportRequestedWireSchema,
+    });
+    return answer.export;
+  }
+
+  /**
+   * Streams a ready export's file. `open` is called once the server has answered 2xx, so a refusal leaves no file
+   * behind; a chunk handler that returns a promise holds the stream until it settles (backpressure); the token goes in the `Authorization` header, never in the URL (spec §6).
+   */
+  async streamTenantExport(
+    url: string,
+    token: string,
+    id: string,
+    open: () => (chunk: Uint8Array) => void | Promise<void>,
+  ): Promise<void> {
+    const origin = normalizeServerUrl(url);
+    const options = (await this.deps.options?.(origin)) ?? {};
+    let streamed = false;
+    let response: HttpExchange;
+    try {
+      response = await this.send({
+        url: `${origin}${EXPORTS_PATH}/${encodeURIComponent(id)}/file`,
+        method: 'GET',
+        headers: { accept: 'application/gzip', authorization: `Bearer ${token}` },
+        timeoutMs: EXPORT_DOWNLOAD_TIMEOUT_MS,
+        followRedirects: false,
+        ...transportOptions(options),
+        stream: {
+          accept: (status) => {
+            if (status < 200 || status >= 300) return undefined;
+            streamed = true;
+            return { onChunk: open() };
+          },
+        },
+      });
+    } catch (cause) {
+      throw new WirebenchError('server-unreachable', `Could not reach ${origin}`, { cause });
+    }
+    if (!streamed) this.throwProblem(origin, response);
+    if (response.streamEnd?.by === 'error') {
+      throw new WirebenchError('server-unreachable', `The export from ${origin} stopped early`, {
+        cause: response.streamEnd.error,
+      });
+    }
+  }
+
+  /** `slug` is what the person typed; the server refuses any other with `control-plane-deletion-unconfirmed`. */
+  async requestTenantDeletion(url: string, token: string, slug: string): Promise<TenantDeletionWire> {
+    return this.call(url, {
+      method: 'POST',
+      path: DELETION_PATH,
+      token,
+      body: { slug },
+      schema: tenantDeletionWireSchema,
+    });
+  }
+
+  async cancelTenantDeletion(url: string, token: string): Promise<boolean> {
+    const answer = await this.call(url, {
+      method: 'DELETE',
+      path: DELETION_PATH,
+      token,
+      schema: tenantDeletionCancelledWireSchema,
+    });
+    return answer.cancelled;
+  }
+
   // ---- audit log (audit-log spec §3.4): server admins on Enterprise ------------------------------
 
   /**
@@ -1081,6 +1219,11 @@ export class ServerClient {
 }
 
 const CUSTOM_DOMAIN_PATH = '/api/v1/tenant/domain';
+const SETTINGS_PATH = '/api/v1/tenant/settings';
+const EXPORTS_PATH = '/api/v1/tenant/exports';
+const DELETION_PATH = '/api/v1/tenant/deletion';
+/** A whole tenant's export can run to hundreds of megabytes. */
+const EXPORT_DOWNLOAD_TIMEOUT_MS = 30 * 60_000;
 
 /** `{}` is no claim. */
 const claimOf = (answer: z.infer<typeof customDomainResponseSchema>): CustomDomain | undefined =>

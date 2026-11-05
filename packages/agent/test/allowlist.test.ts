@@ -25,6 +25,16 @@ describe('the agent allowlist (§18.1)', () => {
     expect(refused.filter((name) => name.startsWith('agent.'))).toEqual([]);
   });
 
+  it('never serves a browser the Server page of Settings (§22.13): a team server is not reached through an agent', () => {
+    const page = registryChannelNames().filter((name) =>
+      ['serverSettings.', 'tenantBilling.', 'tenantExports.', 'tenantDeletion.'].some((group) =>
+        name.startsWith(group),
+      ),
+    );
+    expect(page).toHaveLength(9);
+    for (const name of page) expect(isAgentChannel(name), name).toBe(false);
+  });
+
   it('reads the group exactly: no prefix trick reaches it', () => {
     expect(isAgentChannel('agent.hello')).toBe(true);
     expect(isAgentChannel('agent.send')).toBe(true);

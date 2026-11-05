@@ -107,6 +107,16 @@ const WIRE = {
     kind: z.literal('tenantKeysChanged'),
     tenantId: tenantId.optional(),
   }),
+  tenantSettingsChanged: z.strictObject({
+    ...envelope,
+    kind: z.literal('tenantSettingsChanged'),
+    tenantId,
+    // A section's name (`settings/sections.ts`): letters only, never a value.
+    section: z
+      .string()
+      .regex(/^[A-Za-z]{1,32}$/)
+      .optional(),
+  }),
   presenceChanged: z
     .strictObject({
       ...envelope,
@@ -141,6 +151,7 @@ const FIELDS: { readonly [K in AnnouncementKind]: readonly string[] } = {
   agentUnpaired: ['tenantId', 'pairingId', 'userId'],
   tenantsChanged: ['tenantId'],
   tenantKeysChanged: ['tenantId'],
+  tenantSettingsChanged: ['tenantId', 'section'],
   presenceChanged: ['tenantId', 'workspaceId', 'holder', 'users'],
   presenceReset: ['holder'],
   resync: ['tenantId'],

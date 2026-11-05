@@ -35,6 +35,7 @@ const EVENTS: { readonly [K in AnnouncementKind]: AnnouncementEvents[K] } = {
   agentUnpaired: { tenantId, pairingId: WS, userId: USER },
   tenantsChanged: { tenantId },
   tenantKeysChanged: {},
+  tenantSettingsChanged: { tenantId, section: 'oidc' },
   presenceChanged: { tenantId, workspaceId: WS, holder: FROM, users: [USER, WS] },
   presenceReset: { holder: FROM },
   resync: { tenantId },

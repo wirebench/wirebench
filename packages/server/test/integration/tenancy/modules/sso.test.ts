@@ -1,8 +1,7 @@
 /**
  * SSO, session logs and the local agent with two tenants under the forced policy (tenancy Task 18; Task 15's
- * listed cases). Hosted mode serves no SAML or SCIM route until slice 7 gives each tenant its own identity provider
- * (`sso/hosted.test.ts`), so those cases run at the repository level, in each tenant's unit; slice 7 must run them
- * again through the routes. Session logs and the agent are served, and run through their routes on each host.
+ * listed cases). The SAML and SCIM cases here run at the repository level, in each tenant's unit; slice 7 runs them
+ * again through the routes, each tenant with its own provider (`settings/sign-in.test.ts`). Session logs and the agent are served, and run through their routes on each host.
  */
 import { generateKeyPairSync, sign } from 'node:crypto';
 import { agentRedeemMessage } from '@wirebench/engine';
@@ -10,11 +9,12 @@ import { afterAll, beforeAll, expect, it } from 'vitest';
 import { agentModule, sweepAgent } from '../../../../src/agent/module.js';
 import * as agentRepo from '../../../../src/agent/repo.js';
 import { CaptureSweeper } from '../../../../src/hooks/sweep.js';
-import { hashSecret, mintToken, newId } from '../../../../src/identity/tokens.js';
+import { hashSecret, newId } from '../../../../src/identity/tokens.js';
 import { licensingModule } from '../../../../src/licensing/module.js';
 import { sessionLogsModule, SESSION_LOG_SWEEP_JOB } from '../../../../src/session-logs/module.js';
 import * as logsRepo from '../../../../src/session-logs/repo.js';
 import { SSO_SWEEP_JOB, ssoModule, sweepSso } from '../../../../src/sso/module.js';
+import { mintScimToken } from '../../../../src/sso/scim-tokens.js';
 import * as ssoRepo from '../../../../src/sso/repo.js';
 import { teamsModule } from '../../../../src/teams/module.js';
 import * as teamsRepo from '../../../../src/teams/repo.js';
@@ -130,7 +130,7 @@ describeDb('SSO, session logs and the agent in two tenants (tenancy Task 18)', (
 
   // The SCIM users and groups halves need the SCIM base, which hosted mode serves from slice 7 (Task 18 review M2).
   it("A's SCIM token hash is unknown on B, and B lists none of A's tokens", async () => {
-    const minted = mintToken();
+    const minted = mintScimToken();
     await ssoRepo.insertScimToken(t.a.tdb, {
       id: newId(),
       name: 'IdP',
@@ -141,15 +141,11 @@ describeDb('SSO, session logs and the agent in two tenants (tenancy Task 18)', (
     expect(await ssoRepo.scimTokenByHash(t.b.tdb, minted.hash)).toBeUndefined();
     expect(await ssoRepo.scimTokenByHash(t.a.tdb, minted.hash)).toBeDefined();
     expect(await ssoRepo.listScimTokens(t.b.tdb)).toEqual([]);
-    // The SCIM base is not served hosted (spec §19.1): A's token on B's host, and on A's, is a 404, not a list.
-    for (const tenant of [t.a, t.b]) {
-      const res = await tenant.inject({
-        method: 'GET',
-        url: '/scim/v2/Users',
-        headers: { authorization: `Bearer ${minted.token}` },
-      });
-      expect(res.statusCode).toBe(404);
-    }
+    // Hosted serves the SCIM base per tenant (spec §22.12): A's token lists on A's host and is unknown on B's.
+    const list = (tenant: Tenant) =>
+      tenant.inject({ method: 'GET', url: '/scim/v2/Users', headers: { authorization: `Bearer ${minted.token}` } });
+    expect((await list(t.a)).statusCode).toBe(200);
+    expect((await list(t.b)).statusCode).toBe(401);
   });
 
   it("the SSO sweep in A's unit deletes only A's expired SAML flows; the job loop then sweeps B's", async () => {

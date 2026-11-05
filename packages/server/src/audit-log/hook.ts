@@ -36,8 +36,12 @@ export function boundDetails(details: AuditDetails | undefined): AuditDetails {
 }
 
 export interface AuditHookOptions {
-  /** Forwarding is configured: queue each event for the forwarder in the same transaction (issue #209). */
-  readonly forward: boolean;
+  /**
+   * Forwarding is configured: queue each event for the forwarder in the same transaction (issue #209). A function
+   * answers per tenant (hosted, its `auditForward` setting, spec §22.12), so a tenant that forwards nowhere queues
+   * nothing.
+   */
+  readonly forward: boolean | ((tx: TenantQuerier) => Promise<boolean>);
 }
 
 /**
@@ -59,7 +63,7 @@ export function auditHook(now: () => Date, options: AuditHookOptions = { forward
         at: now(),
         details: boundDetails(event.details),
       },
-      { forward: options.forward },
+      { forward: typeof options.forward === 'boolean' ? options.forward : await options.forward(tx) },
     );
   };
 }

@@ -289,26 +289,28 @@ describeDb('the per-tenant send budgets (hosted spec §20.7)', () => {
     // A fixed clock: no refill between the opens, so the tokens left count them.
     const budgets = new SendBudgets({ db: a, settings: DEFAULTS, now: () => T0 });
     const ends: (() => void)[] = [];
-    const opened: Promise<void>[] = [];
-    const sessions = Array.from({ length: 17 }, (_, n) => {
+    const sessions: Promise<HostReplyFrame>[] = [];
+    // One after another, each once the last one's slot is back: `opened` frees the slot without waiting, so 17 opens
+    // at the same moment could find all 16 slots still held and refuse the last, which is the cap working.
+    for (let n = 0; n < 17; n++) {
       let open!: () => void;
-      opened.push(
-        new Promise<void>((resolve) => {
-          open = resolve;
+      const opened = new Promise<void>((resolve) => {
+        open = resolve;
+      });
+      sessions.push(
+        budgets.around(scope, { id: n, channel: 'request.openWs', request: {} }, async () => {
+          // The host's open: the gate answers what to tell once the handshake is done.
+          const gate = await budgets.gate({ kind: 'websocket', interactive: true, cancelled: () => false });
+          gate?.opened?.();
+          open();
+          // The call stays pending for the session's life.
+          await new Promise<void>((resolve) => ends.push(resolve));
+          return { id: n, ok: true, value: null };
         }),
       );
-      return budgets.around(scope, { id: n, channel: 'request.openWs', request: {} }, async () => {
-        // The host's open: the gate answers what to tell once the handshake is done.
-        const gate = await budgets.gate({ kind: 'websocket', interactive: true, cancelled: () => false });
-        gate?.opened?.();
-        open();
-        // The call stays pending for the session's life.
-        await new Promise<void>((resolve) => ends.push(resolve));
-        return { id: n, ok: true, value: null };
-      });
-    });
-    await Promise.all(opened);
-    await vi.waitFor(async () => expect(await slotsOf(scope)).toBe(0));
+      await opened;
+      await vi.waitFor(async () => expect(await slotsOf(scope)).toBe(0));
+    }
     // An HTTP send goes while all 17 sessions stay open.
     expect(await budgets.around(scope, { id: 99, channel: 'request.sendRest', request: {} }, () => ok(99))).toEqual({
       id: 99,

@@ -76,7 +76,12 @@ async function receive(env: HooksEnv, request: FastifyRequest, reply: FastifyRep
     // The body was read and verified above: the unit holds no wait on the sender or the network.
     await env.ctx.tenancy.db(request.tenant).transaction(async (tx) => {
       await repo.insertCapture(tx, capture);
-      await repo.pruneCaptures(tx, hook.id, env.settings.keep);
+      // Hosted, the tenant's own count, within the operator's (spec §22.12).
+      const keep =
+        env.ctx.config.mode === 'hosted'
+          ? (await env.ctx.settings.retention(tx.scope, tx)).hooksKeep
+          : env.settings.keep;
+      await repo.pruneCaptures(tx, hook.id, keep);
     });
   } catch (error) {
     return unavailable(request, reply, error);

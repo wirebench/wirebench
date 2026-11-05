@@ -1,6 +1,7 @@
 import type { ModuleConfig } from '../config.js';
 import type { ServerContext } from '../context.js';
 import type { TenantRateLimiter } from '../identity/rate-limit.js';
+import type { TenantScope } from '../tenancy/scope.js';
 import type { ScopeSource } from '../tenancy/urls.js';
 import type { SamlClaimSettings, SamlProvider } from './saml.js';
 
@@ -44,6 +45,12 @@ export function samlSettings(config: ModuleConfig): SamlSettings | undefined {
   };
 }
 
+/** A tenant's SAML sign-in: its provider and how its claims map. */
+export interface SamlState {
+  readonly provider: SamlProvider;
+  readonly claims: SamlClaimSettings;
+}
+
 /** What the `sso` routes share: the context, the clock, the limiter, the URLs, and SAML when configured. */
 export interface SsoEnv {
   readonly ctx: ServerContext;
@@ -51,5 +58,9 @@ export interface SsoEnv {
   readonly limiter: TenantRateLimiter;
   /** The request's tenant's URLs (spec §19.5), never a copy made at registration. */
   readonly urlsFor: (of: ScopeSource) => SsoUrls;
-  readonly saml: { readonly provider: SamlProvider; readonly claims: SamlClaimSettings } | undefined;
+  /**
+   * `of`'s tenant's SAML sign-in, or `undefined` when it has none: the environment's, self-hosted; the tenant's own
+   * from its settings in hosted mode (spec §22.12).
+   */
+  readonly samlFor: (of: TenantScope) => Promise<SamlState | undefined>;
 }

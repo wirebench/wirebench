@@ -7,6 +7,11 @@
 import { mkdir, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import {
+  tenantBillingWireSchema,
+  tenantExportRequestedWireSchema,
+  tenantExportsListResponseWireSchema,
+} from '@wirebench/wire/wire-base';
 import { auditHook } from '../../../../src/audit-log/hook.js';
 import type { ControlMail } from '../../../../src/control-plane/mail.js';
 import { controlPlaneModule } from '../../../../src/control-plane/module.js';
@@ -72,6 +77,9 @@ describeDb('the tenant routes, two tenants (spec §22.9, §22.11)', () => {
   it("lists and serves a tenant's own exports only", async () => {
     const listA = await t.a.call<{ exports: { id: string }[] }>(adminA, 'GET', '/tenant/exports');
     expect(listA.body.exports.map((row) => row.id)).toEqual([EXPORT_A]);
+    // The desktop's wire schema reads the answer whole: nothing it would drop, nothing it would refuse.
+    expect(tenantExportsListResponseWireSchema.parse(listA.body)).toEqual(listA.body);
+    expect(listA.body.exports[0]).toMatchObject({ requestedBy: 'operator' });
     const listB = await t.b.call<{ exports: { id: string }[] }>(adminB, 'GET', '/tenant/exports');
     expect(listB.body.exports.map((row) => row.id)).toEqual([EXPORT_B]);
     const own = await t.a.inject({
@@ -159,7 +167,26 @@ describeDb('the tenant routes, two tenants (spec §22.9, §22.11)', () => {
 
   it('queues one export at a time per tenant', async () => {
     const first = await t.a.call<{ export: { id: string; status: string } }>(adminA, 'POST', '/tenant/exports');
-    expect(first).toMatchObject({ status: 202, body: { export: { status: 'queued' } } });
+    expect(first).toMatchObject({ status: 202, body: { export: { status: 'queued', requestedBy: 'admin' } } });
+    expect(tenantExportRequestedWireSchema.parse(first.body)).toEqual(first.body);
+    // The list names the requester by display name, and the operator's as `operator`.
+    const listed = await t.a.call<{ exports: { id: string; requestedBy: string | null }[] }>(
+      adminA,
+      'GET',
+      '/tenant/exports',
+    );
+    expect(listed.body.exports.map((row) => [row.id, row.requestedBy])).toEqual([
+      [first.body.export.id, 'admin'],
+      [EXPORT_A, 'operator'],
+    ]);
+    // An account no longer on the server is nobody's name.
+    await t.a.tdb.query("update tenant_exports set requested_by = 'gone-user' where id = $1", [first.body.export.id]);
+    const orphaned = await t.a.call<{ exports: { id: string; requestedBy: string | null }[] }>(
+      adminA,
+      'GET',
+      '/tenant/exports',
+    );
+    expect(orphaned.body.exports[0]).toMatchObject({ id: first.body.export.id, requestedBy: null });
     expect((await t.a.call<{ code: string }>(adminA, 'POST', '/tenant/exports')).body.code).toBe(
       'control-plane-export-running',
     );
@@ -170,14 +197,33 @@ describeDb('the tenant routes, two tenants (spec §22.9, §22.11)', () => {
   });
 
   it("reads a tenant's own billing", async () => {
-    const a = await t.a.call<{ subscription: { status: string; pastDueDaysLeft: number } | null }>(
-      adminA,
-      'GET',
-      '/tenant/billing',
+    // A team's name is not its slug: the screen shows one and confirms the deletion with the other.
+    await t.h.db.query("update tenants set name = 'Acme Ltd' where slug = 'acme'");
+    const enabled = Number(
+      (await t.a.tdb.query<{ n: number }>('select count(*)::int as n from users where disabled_at is null')).rows[0]!.n,
     );
+    const a = await t.a.call<{
+      slug: string;
+      name: string;
+      activeMembers: number;
+      subscription: { status: string; pastDueDaysLeft: number; pastDueSince: string | null } | null;
+    }>(adminA, 'GET', '/tenant/billing');
+    expect(a.body).toMatchObject({ slug: 'acme', name: 'Acme Ltd', activeMembers: enabled });
+    expect(enabled).toBeGreaterThanOrEqual(2);
     expect(a.body.subscription).toMatchObject({ status: 'past_due', seats: 5, pastDueDaysLeft: 10 });
+    expect(Date.now() - Date.parse(a.body.subscription!.pastDueSince!)).toBeGreaterThan(3.9 * 24 * 60 * 60 * 1000);
+    expect(tenantBillingWireSchema.parse(a.body)).toEqual(a.body);
+    // A disabled account holds no seat.
+    await t.a.tdb.query('update users set disabled_at = now() where id = $1', [memberA.user.id]);
+    const fewer = await t.a.call<{ activeMembers: number }>(adminA, 'GET', '/tenant/billing');
+    expect(fewer.body.activeMembers).toBe(enabled - 1);
+    await t.a.tdb.query('update users set disabled_at = null where id = $1', [memberA.user.id]);
     const b = await t.b.call<{ subscription: unknown }>(adminB, 'GET', '/tenant/billing');
-    expect(b).toMatchObject({ status: 200, body: { subscription: null, deletion: null } });
+    expect(b).toMatchObject({
+      status: 200,
+      body: { slug: 'beta', name: 'beta', activeMembers: 1, subscription: null, deletion: null },
+    });
+    expect(tenantBillingWireSchema.parse(b.body)).toEqual(b.body);
   });
 
   it("asks for a tenant's own deletion only, confirmed by its slug, and cancels it", async () => {
@@ -230,7 +276,12 @@ describeDb('the tenant routes, self-hosted (spec §22.9)', () => {
   describe('export routes', () => {
     it('are served', async () => {
       expect((await send('GET', '/tenant/exports')).statusCode).toBe(200);
-      expect((await send('POST', '/tenant/exports')).statusCode).toBe(202);
+      const asked = await send('POST', '/tenant/exports');
+      expect(asked.statusCode).toBe(202);
+      expect(tenantExportRequestedWireSchema.parse(asked.json())).toEqual(asked.json());
+      const listed = await send('GET', '/tenant/exports');
+      expect(tenantExportsListResponseWireSchema.parse(listed.json())).toEqual(listed.json());
+      expect(listed.json()).toMatchObject({ exports: [{ requestedBy: 'admin' }] });
     });
   });
 

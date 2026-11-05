@@ -20,6 +20,7 @@ import { isUniqueViolation } from '../db/errors.js';
 import { newId } from '../identity/tokens.js';
 import { jsonSchema } from '../schema.js';
 import { requireWorkspaceRole } from '../teams/roles.js';
+import { AlertConnectionError } from './alerts/https.js';
 import type { DeliverAlert } from './alerts/outbox.js';
 import { nextFire, parseSchedule } from './cron.js';
 import { scheduleLimit, scheduleNameTaken, scheduleNotFound } from './errors.js';
@@ -65,6 +66,17 @@ export function scheduleView(row: repo.ScheduleRow, lastRun: ScheduleRun | undef
 }
 
 /** The canonical cron, or the problem it is. */
+/**
+ * A test alert's failure as the route answers it. A connection that was refused, failed, timed out or that the egress
+ * rule refused reads the same whichever it was, so a target URL cannot be used to probe which ports answer behind a
+ * host; a server that answered in its protocol (an HTTP status, an SMTP reply) is named with that answer.
+ */
+function testFailure(error: unknown): string {
+  if (error instanceof AlertConnectionError)
+    return `the alert could not reach ${error.host}: the connection was refused or failed`;
+  return error instanceof Error ? error.message : String(error);
+}
+
 function cronOf(text: string, zone: string): string {
   const parsed = parseSchedule(text, zone);
   if (isWirebenchError(parsed)) {
@@ -335,14 +347,14 @@ export const scheduleRoutes =
         const results = await Promise.all(
           row.alerts.targets.map(async (target, index) => {
             try {
-              await env.deliver(target, payload);
+              await env.deliver(target, payload, request.tenant);
               return { index, kind: target.kind, ok: true };
             } catch (error) {
               return {
                 index,
                 kind: target.kind,
                 ok: false,
-                error: error instanceof Error ? error.message : String(error),
+                error: testFailure(error),
               };
             }
           }),

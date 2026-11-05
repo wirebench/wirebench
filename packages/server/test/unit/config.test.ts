@@ -8,6 +8,7 @@ import {
   instanceModeOf,
   loadConfig,
   migrationUrlOf,
+  insecureUrlProblems,
 } from '../../src/config.js';
 
 const required = {
@@ -695,6 +696,18 @@ describe('WIREBENCH_SERVER_MODE (hosted edition spec §19.1)', () => {
       variable: 'WIREBENCH_SERVER_MODE',
       status: 'set',
     });
+  });
+
+  it('refuses the insecure-URL switch in hosted mode only', () => {
+    const config = loadConfig({ ...required, WIREBENCH_SERVER_ALLOW_INSECURE_PUBLIC_URL: 'true' }, '2.1.1');
+    expect(insecureUrlProblems(config)).toEqual([]);
+    expect(insecureUrlProblems({ ...config, mode: 'hosted' })).toEqual([
+      {
+        variable: 'WIREBENCH_SERVER_ALLOW_INSECURE_PUBLIC_URL',
+        message: expect.stringMatching(/^control-plane-insecure-url: /) as unknown,
+      },
+    ]);
+    expect(insecureUrlProblems({ ...config, mode: 'hosted', allowInsecurePublicUrl: false })).toEqual([]);
   });
 
   it('denies private ranges in hosted mode, whatever the egress variable says', () => {
