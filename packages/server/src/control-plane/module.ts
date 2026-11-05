@@ -4,22 +4,38 @@
  * mode it takes the control role's pool and the Paddle webhook's secret as its factory's arguments, which `serve.ts`
  * passes through {@link withControlPool}, and refuses to register without them: neither is ever on the shared
  * `ServerContext`. It serves the billing webhook on the entry host (spec §22.5), and runs the control loop
- * (§22.15): the grace sweep, its mails and the events' retention.
+ * (§22.15): the grace sweep, its mails, the tenants' exports and deletions, the events' retention and the signups'
+ * finishing and expiry.
+ *
+ * A tenant's export (§22.9) is the one thing it does in every mode: a self-hosted server, which has no control loop,
+ * runs the queued exports from a timer of the module's own, over its one tenant.
  */
 import { fileURLToPath } from 'node:url';
+import type { FastifyInstance } from 'fastify';
 import { WirebenchError } from '@wirebench/engine';
 import type { ServerConfig } from '../config.js';
 import type { ServerContext, ServerModule } from '../context.js';
+import { chainKeys } from '../audit-log/chain/keys.js';
+import { isDefaultTenant } from '../tenancy/tenancy.js';
+import { realTimer } from '../live/module.js';
 import { applySubscriptionEvent, recordUnapplied, type ApplyDeps } from './billing/apply.js';
 import type { BillingOutcome, MappedEvent } from './billing/events.js';
 import { billingEventsRetentionStep, graceSweepStep } from './billing/sweep.js';
 import { registerPaddleWebhook } from './billing/webhook.js';
 import type { ControlDb } from './control-db.js';
-import { ControlLoop, type LoopStep } from './loop.js';
+import { TenantDeletion } from './delete.js';
+import { ExportRunner, exportsStep } from './export/runner.js';
+import { CONTROL_LOOP_MS, ControlLoop, type LoopStep } from './loop.js';
 import { mailStep, type ControlSend } from './mail.js';
+import { tenantRoutes } from './tenant-routes.js';
 import { TenantLifecycle } from './tenants.js';
 import type { SetTimer } from '../hooks/env.js';
 import { sendAlertMail } from '../schedules/alerts/smtp.js';
+import { EntryQueue } from '../entry/queue.js';
+import { entryHostOf } from '../tenancy/resolve.js';
+import { signupCompleter, signupFinishStep, type SignupCompleterDeps } from './signup/complete.js';
+import { signupExpiryStep } from './signup/expiry.js';
+import { registerSignupRoutes, renderSignupMail, type SignupMailItem } from './signup/routes.js';
 
 /** Migration `0023`: the tenants' new columns, the control tables and the three scoped ones. */
 export const CONTROL_PLANE_MIGRATIONS_DIR = fileURLToPath(new URL('../../migrations/control-plane/', import.meta.url));
@@ -38,8 +54,10 @@ export interface ControlPlaneOptions {
   readonly setTimer?: SetTimer;
   /** `false` keeps the loop from arming, for a test that runs no pass. */
   readonly startLoop?: boolean;
-  /** How the loop's mails go; through the operator's SMTP settings by default. */
+  /** How the loop's and the signup's mails go; through the operator's SMTP settings by default. */
   readonly send?: ControlSend;
+  /** The signup's mail queue (spec §22.6), for a test that waits for it. */
+  readonly onSignupQueue?: (queue: EntryQueue<SignupMailItem>) => void;
 }
 
 /** Each module's options, so {@link withControlPool} can rebuild it with the pool and keep what a test gave it. */
@@ -61,13 +79,130 @@ function controlOf(ctx: ServerContext, control: ControlDb | undefined): ControlD
   return control;
 }
 
+/** The operator's SMTP settings as the control plane sends with them; `undefined` without them. */
+function mailOf(ctx: ServerContext, options: ControlPlaneOptions): { send: ControlSend; mailHost: string } | undefined {
+  const { smtpUrl, smtpFrom } = ctx.config;
+  if (smtpUrl === undefined || smtpFrom === undefined) return undefined;
+  const smtp = { url: smtpUrl, from: smtpFrom };
+  return {
+    send: options.send ?? ((to, mail) => sendAlertMail(smtp, to, mail)),
+    mailHost: new URL(smtpUrl).hostname,
+  };
+}
+
+/** The exports' runner (spec §22.9), on the context's repositories and git, with each tenant's chain key. */
+function exportRunnerOf(ctx: ServerContext, options: ControlPlaneOptions): ExportRunner {
+  const configured = ctx.config.auditChainKey;
+  const keys =
+    configured === undefined
+      ? undefined
+      : chainKeys(configured, ctx.config.mode, (scope) => isDefaultTenant(ctx.tenancy, scope));
+  const mail = mailOf(ctx, options);
+  return new ExportRunner({
+    db: ctx.tenancy.db,
+    repos: ctx.repos,
+    git: ctx.git.withPlumbing(),
+    dataDir: ctx.config.dataDir,
+    version: ctx.config.version,
+    chainKeyOf: (scope) => keys?.(scope),
+    hooks: ctx.hooks,
+    log: ctx.log,
+    ...(options.now !== undefined ? { now: options.now } : {}),
+    ...(mail !== undefined ? { mail: { ...mail, config: ctx.config } } : {}),
+  });
+}
+
+/**
+ * A self-hosted server's export job (spec §22.9): every {@link CONTROL_LOOP_MS}, through the job loop, each tenant
+ * with an export to run or expire gets one run after its unit. The control loop does this in hosted mode.
+ */
+function selfHostedExports(
+  app: FastifyInstance,
+  ctx: ServerContext,
+  runner: ExportRunner,
+  options: ControlPlaneOptions,
+): void {
+  const setTimer = options.setTimer ?? realTimer;
+  let armed: { cancel(): void } | undefined;
+  let running: Promise<unknown> | undefined;
+  let closed = false;
+  const pass = () =>
+    ctx.tenancy.forEachTenant(
+      'tenant-exports',
+      async (tx, scope) =>
+        (await runner.hasWork(tx))
+          ? {
+              afterUnit: async () => {
+                await runner.sweep(scope);
+                await runner.runNext(scope);
+              },
+            }
+          : undefined,
+      ctx.log,
+    );
+  const arm = (): void => {
+    if (closed) return;
+    armed = setTimer(() => {
+      armed = undefined;
+      running = pass()
+        .catch(() => {
+          ctx.log.error({ job: 'tenant-exports' }, 'an export pass failed');
+        })
+        .finally(() => {
+          running = undefined;
+          arm();
+        });
+    }, CONTROL_LOOP_MS);
+  };
+  if (options.startLoop !== false) arm();
+  app.addHook('onClose', async () => {
+    closed = true;
+    armed?.cancel();
+    await running;
+  });
+}
+
 export function controlPlaneModule(options: ControlPlaneOptions = {}): ServerModule {
+  // One per server: the routes (register) and the control loop (registerPublic) share it.
+  const runners = new WeakMap<ServerContext, ExportRunner>();
+  const runnerOf = (ctx: ServerContext): ExportRunner => {
+    let runner = runners.get(ctx);
+    if (runner === undefined) {
+      runner = exportRunnerOf(ctx, options);
+      runners.set(ctx, runner);
+    }
+    return runner;
+  };
+  const lifecycles = new WeakMap<ServerContext, TenantLifecycle>();
+  const lifecycleOf = (ctx: ServerContext, control: ControlDb): TenantLifecycle => {
+    let lifecycle = lifecycles.get(ctx);
+    if (lifecycle === undefined) {
+      lifecycle = new TenantLifecycle({
+        control,
+        tenancy: ctx.tenancy,
+        hooks: ctx.hooks,
+        ...(options.now !== undefined ? { now: options.now } : {}),
+      });
+      lifecycles.set(ctx, lifecycle);
+    }
+    return lifecycle;
+  };
   const module: ServerModule = {
     name: NAME,
     migrationsDir: CONTROL_PLANE_MIGRATIONS_DIR,
-    register: (_app, ctx) => {
-      // Nothing outside hosted mode; in hosted mode, the check that the pool was handed over.
-      void controlOf(ctx, options.control);
+    register: (app, ctx) => {
+      // In hosted mode, the check that the pool was handed over; its loop runs the exports there.
+      const control = controlOf(ctx, options.control);
+      if (control === undefined) selfHostedExports(app, ctx, runnerOf(ctx), options);
+      // The tenant's own routes (spec §22.9, §22.11): the exports on every server, billing and deletion hosted.
+      tenantRoutes({
+        db: ctx.tenancy.db,
+        runner: runnerOf(ctx),
+        hooks: ctx.hooks,
+        deletionMail: { config: ctx.config, mail: mailOf(ctx, options) },
+        ...(control !== undefined ? { lifecycle: lifecycleOf(ctx, control) } : {}),
+        now: options.now ?? (() => new Date()),
+      })(app);
       return Promise.resolve();
     },
     registerPublic: (app, ctx) => {
@@ -81,13 +216,23 @@ export function controlPlaneModule(options: ControlPlaneOptions = {}): ServerMod
           'hosted mode needs WIREBENCH_SERVER_PADDLE_WEBHOOK_SECRET and WIREBENCH_SERVER_PADDLE_TEAM_PRICE_ID',
         );
       }
-      const lifecycle = new TenantLifecycle({
+      const lifecycle = lifecycleOf(ctx, control);
+      const completer: SignupCompleterDeps = {
         control,
         tenancy: ctx.tenancy,
+        lifecycle,
         hooks: ctx.hooks,
+        license: ctx.license,
+        log: ctx.log,
         ...(options.now !== undefined ? { now: options.now } : {}),
-      });
-      const deps: ApplyDeps = { control, tenancy: ctx.tenancy, lifecycle, log: ctx.log };
+      };
+      const deps: ApplyDeps = {
+        control,
+        tenancy: ctx.tenancy,
+        lifecycle,
+        log: ctx.log,
+        completeSignup: signupCompleter(completer),
+      };
       const apply =
         options.apply ??
         ((mapped: MappedEvent) =>
@@ -103,21 +248,64 @@ export function controlPlaneModule(options: ControlPlaneOptions = {}): ServerMod
       });
       // The control loop (spec §22.15). Later parts add their steps to this list.
       const steps: LoopStep[] = [graceSweepStep(lifecycle)];
-      const { smtpUrl, smtpFrom } = ctx.config;
-      if (smtpUrl !== undefined && smtpFrom !== undefined) {
-        const smtp = { url: smtpUrl, from: smtpFrom };
+      const mail = mailOf(ctx, options);
+      if (mail !== undefined) {
+        const { send, mailHost } = mail;
+        // Signup (spec §22.6): it mails, so it needs the operator's SMTP settings, which the entry already requires
+        // in hosted mode. The mail goes out after the answer, as the entry's does.
+        const entryHost = entryHostOf(ctx.config);
+        const { paddleEnvironment, paddleClientToken } = ctx.config;
+        if (paddleEnvironment === undefined || paddleClientToken === undefined) {
+          throw new WirebenchError(
+            'control-plane-paddle-missing',
+            "hosted mode needs WIREBENCH_SERVER_PADDLE_ENVIRONMENT and WIREBENCH_SERVER_PADDLE_CLIENT_TOKEN: the signup's checkout opens Paddle.js",
+          );
+        }
+        const log = ctx.log;
+        const signupMails = new EntryQueue<SignupMailItem>({
+          run: async (item) => {
+            try {
+              await send([item.to], renderSignupMail({ link: item.link, entryHost }));
+            } catch {
+              // A refusal quotes the recipient, so only the mail host is logged.
+              log.warn({ mailHost }, 'a signup message could not be sent');
+            }
+          },
+          log,
+        });
+        options.onSignupQueue?.(signupMails);
+        app.addHook('onClose', () => signupMails.close());
+        registerSignupRoutes(app, {
+          control,
+          entryHost,
+          appDomain: entryHost.slice('app.'.length),
+          queue: signupMails,
+          paddle: { environment: paddleEnvironment, clientToken: paddleClientToken, priceId: teamPriceId },
+          ...(now !== undefined ? { now } : {}),
+        });
         steps.push(
           mailStep({
             tenancy: ctx.tenancy,
             lifecycle,
             config: ctx.config,
-            send: options.send ?? ((to, mail) => sendAlertMail(smtp, to, mail)),
+            send: mail.send,
             log: ctx.log,
-            mailHost: new URL(smtpUrl).hostname,
+            mailHost: mail.mailHost,
           }),
         );
       }
-      steps.push(billingEventsRetentionStep());
+      steps.push(exportsStep(runnerOf(ctx), (id) => lifecycle.tenantScope(id)));
+      // Due deletions (spec §22.11), after the grace sweep and the exports, so a pass never exports a tenant it deletes.
+      steps.push(
+        new TenantDeletion({
+          control,
+          db: ctx.tenancy.db,
+          lifecycle,
+          dataDir: ctx.config.dataDir,
+          log: ctx.log,
+        }).step(),
+      );
+      steps.push(billingEventsRetentionStep(), signupFinishStep(completer), signupExpiryStep());
       const loop = new ControlLoop({
         control,
         steps,

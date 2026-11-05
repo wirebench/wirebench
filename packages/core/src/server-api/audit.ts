@@ -96,7 +96,8 @@ export const AUDIT_ACTIONS = [
   'agent.request_refused',
   /**
    * A hosted tenant's lifecycle (hosted edition spec §22.14), in its own chain: created, its edition set, suspended,
-   * resumed, renamed, its deletion asked for or cancelled. `details.by` is `operator` or a user id.
+   * resumed, renamed, its deletion asked for or cancelled, exported, an export downloaded, and imported (§22.9, §22.10, any server). `details.by` is `operator` or
+   * a user id.
    */
   'tenant.created',
   'tenant.edition_set',
@@ -105,6 +106,9 @@ export const AUDIT_ACTIONS = [
   'tenant.renamed',
   'tenant.deletion_requested',
   'tenant.deletion_cancelled',
+  'tenant.exported',
+  'tenant.export_downloaded',
+  'tenant.imported',
   /**
    * A tenant's settings section was saved or cleared (hosted edition spec §22.12): `details.section` names it, and
    * nothing of its value is ever recorded.

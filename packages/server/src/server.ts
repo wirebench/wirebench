@@ -56,10 +56,14 @@ const REDACT_PATHS = [
 function pathOf(url: string): string {
   const query = url.indexOf('?');
   const path = query === -1 ? url : url.slice(0, query);
-  // Two routes carry a secret in the path itself, which the query strip above never touches:
-  // `/invite/<secret>` and a catch URL's `/hooks/<secret>[/<subpath>]` (webhook-capture §3.3). The
-  // subpath stays: it is the sender's, and it tells two webhooks apart in the log.
-  return path.replace(/^\/invite\/[^/]+$/, '/invite/[redacted]').replace(/^\/hooks\/[^/]+/, '/hooks/[redacted]');
+  // Three routes carry a secret in the path itself, which the query strip above never touches:
+  // `/invite/<secret>`, a catch URL's `/hooks/<secret>[/<subpath>]` (webhook-capture §3.3) and a signup's
+  // `/signup/<token>[/status]` (hosted spec §22.6). The subpath stays: it is the sender's, and it tells two
+  // webhooks apart in the log.
+  return path
+    .replace(/^\/invite\/[^/]+$/, '/invite/[redacted]')
+    .replace(/^\/hooks\/[^/]+/, '/hooks/[redacted]')
+    .replace(/^\/signup\/[^/]+/, '/signup/[redacted]');
 }
 
 /** The routes that take no tenant (spec §19.5, §20.9): self-hosted, `request.tenant` would answer the default one. */
