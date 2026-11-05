@@ -1,5 +1,7 @@
-import { Suspense, lazy } from 'react';
+import { Suspense, lazy, useEffect } from 'react';
+import { signedInServers, useAccountStore } from '../../state/account.js';
 import { useUiStore } from '../../state/ui.js';
+import { useServerSettingsStore } from './server/server-settings-store.js';
 
 /**
  * Loaded on demand: the editor pulls in every section's form (and the shortcuts keymap with
@@ -21,6 +23,13 @@ const PreferencesEditor = lazy(async () => {
 export function SettingsPage() {
   const open = useUiStore((state) => state.preferences.open);
   const section = useUiStore((state) => state.preferences.section);
+  // The Server group (hosted edition spec §22.13): the connected server's own settings, read each time Settings
+  // opens; the server answers its server admins only, and the group shows only then.
+  const serverUrl = useAccountStore((state) => signedInServers(state.servers)[0]?.url);
+  useEffect(() => {
+    if (open && serverUrl !== undefined) void useServerSettingsStore.getState().load(serverUrl);
+    if (!open || serverUrl === undefined) useServerSettingsStore.getState().reset();
+  }, [open, serverUrl]);
   if (!open) {
     return null;
   }

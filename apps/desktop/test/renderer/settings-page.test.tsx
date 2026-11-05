@@ -12,6 +12,8 @@ import { SettingsPage } from '../../src/renderer/features/preferences/settings-p
 import { usePreferencesStore } from '../../src/renderer/state/preferences.js';
 import { DEFAULT_PREFERENCES_WIRE } from '../../src/renderer/state/preferences-defaults.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
+import { useAccountStore } from '../../src/renderer/state/account.js';
+import { useServerSettingsStore } from '../../src/renderer/features/preferences/server/server-settings-store.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 
 /** The shell supplies the tooltip provider that `IconButton` needs; a bare render does not. */
@@ -155,5 +157,45 @@ describe('Settings as a page', () => {
     await screen.findByTestId('preferences-editor');
     fireEvent.keyDown(window, { key: 'f', metaKey: true });
     expect(document.activeElement).toBe(screen.getByLabelText('Search settings'));
+  });
+});
+
+describe('the Server group (hosted edition spec §22.13)', () => {
+  afterEach(() => {
+    useAccountStore.setState({ servers: [] });
+    useServerSettingsStore.getState().reset();
+  });
+
+  it('reads the signed-in server’s settings when Settings opens, and shows the group to its server admin', async () => {
+    const get = vi.fn().mockResolvedValue({
+      ok: true,
+      value: {
+        source: 'environment',
+        sections: Object.fromEntries(
+          ['oidc', 'saml', 'auditForward', 'smtp', 'retention', 'budgets'].map((name) => [
+            name,
+            { source: 'environment', writable: false, value: null },
+          ]),
+        ),
+      },
+    });
+    installWirebenchApi({ serverSettings: { get } });
+    useAccountStore.setState({
+      servers: [
+        {
+          url: 'https://wirebench.corp.example',
+          userId: 'u',
+          email: 'a@corp.example',
+          displayName: 'Ada',
+          deviceName: 'Mac',
+          signedOut: false,
+          addedAt: '2026-11-01T00:00:00.000Z',
+        },
+      ],
+    });
+    useUiStore.setState({ preferences: { open: true, section: undefined } });
+    render(<SettingsPage />);
+    await waitFor(() => expect(screen.getByTestId('settings-nav-server')).toBeTruthy());
+    expect(get).toHaveBeenCalledWith({ url: 'https://wirebench.corp.example' });
   });
 });

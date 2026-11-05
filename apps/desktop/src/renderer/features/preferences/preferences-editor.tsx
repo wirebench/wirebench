@@ -26,6 +26,14 @@ import {
   Waypoints,
   type LucideIcon,
   Puzzle,
+  LogIn,
+  Users,
+  Send,
+  Mail,
+  Archive,
+  CreditCard,
+  Download,
+  Trash2,
 } from 'lucide-react';
 import { Button } from '../../components/button.js';
 import {
@@ -61,6 +69,14 @@ import { TokensSection } from './sections/tokens-section.js';
 import { PairedBrowsersSection } from './sections/paired-browsers-section.js';
 import { ThisMachineSection } from './sections/this-machine-section.js';
 import type { SectionProps } from './sections/section-props.js';
+import { ServerPage, SERVER_PAGE_LABELS } from './server/server-page.js';
+import {
+  isHosted,
+  serverLabel,
+  serverPages,
+  useServerSettingsStore,
+  type ServerPageId,
+} from './server/server-settings-store.js';
 import {
   availableNav,
   sectionsForSearch,
@@ -98,6 +114,65 @@ const ICONS: Readonly<Record<SettingsSectionId, LucideIcon>> = {
   'paired-browsers': MonitorSmartphone,
   tokens: Smartphone,
 };
+
+const SERVER_ICONS: Readonly<Record<ServerPageId, LucideIcon>> = {
+  'sign-in': LogIn,
+  provisioning: Users,
+  'audit-forwarding': Send,
+  email: Mail,
+  retention: Archive,
+  billing: CreditCard,
+  export: Download,
+  delete: Trash2,
+};
+
+/**
+ * The *Server* group of the nav (hosted edition spec §22.13): shown only once the connected server answered its
+ * settings read, which it does for its server admins only.
+ */
+function ServerNavGroup({
+  current,
+  onOpen,
+}: {
+  readonly current: ServerPageId | undefined;
+  readonly onOpen: (page: ServerPageId) => void;
+}) {
+  const available = useServerSettingsStore((s) => s.available);
+  const settings = useServerSettingsStore((s) => s.settings);
+  const url = useServerSettingsStore((s) => s.url);
+  if (!available || url === undefined) return null;
+  return (
+    <div data-testid="settings-nav-server" className="mt-3">
+      <h2 className="mb-1 px-2 text-xs font-medium text-fg-subtle">Server · {serverLabel(url, isHosted(settings))}</h2>
+      <ul>
+        {serverPages(settings).map((page) => {
+          const Icon = SERVER_ICONS[page];
+          const isCurrent = page === current;
+          return (
+            <li key={page}>
+              <button
+                type="button"
+                data-testid={`settings-nav-server-${page}`}
+                aria-current={isCurrent ? 'page' : undefined}
+                onClick={() => {
+                  onOpen(page);
+                }}
+                className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none ${
+                  isCurrent
+                    ? 'bg-surface-active text-fg-default'
+                    : `${page === 'delete' ? 'text-status-danger' : 'text-fg-muted'} hover:bg-surface-hover hover:text-fg-default`
+                }`}
+              >
+                <Icon size={14} aria-hidden="true" className="shrink-0 opacity-80" />
+                <span className="min-w-0 flex-1 truncate">{SERVER_PAGE_LABELS[page]}</span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
 
 /** The form for one section; `context` is only the Shortcuts table's. */
 function SectionBody({
@@ -200,6 +275,14 @@ export interface PreferencesEditorProps {
  */
 export function PreferencesEditor({ initialSection }: PreferencesEditorProps) {
   const [active, setActive] = useState<SettingsSectionId>(() => resolveSection(initialSection));
+  // A page of the Server group, which stands in for `active` while one is open.
+  const [serverPage, setServerPage] = useState<ServerPageId | undefined>(undefined);
+  const serverAvailable = useServerSettingsStore((s) => s.available);
+  const serverHosted = useServerSettingsStore((s) => isHosted(s.settings));
+  const shownServerPage =
+    serverPage !== undefined && serverAvailable && (serverHosted || !['billing', 'delete'].includes(serverPage))
+      ? serverPage
+      : undefined;
   const [rawQuery, setRawQuery] = useState('');
   const query = rawQuery.trim().toLowerCase();
   const searchRef = useRef<HTMLInputElement>(null);
@@ -342,7 +425,7 @@ export function PreferencesEditor({ initialSection }: PreferencesEditorProps) {
                   <ul>
                     {group.sections.map((entry) => {
                       const Icon = ICONS[entry.id];
-                      const current = !searching && entry.id === active;
+                      const current = !searching && shownServerPage === undefined && entry.id === active;
                       const changed = sectionModified(preferences, entry);
                       return (
                         <li key={entry.id}>
@@ -353,6 +436,7 @@ export function PreferencesEditor({ initialSection }: PreferencesEditorProps) {
                             {...(changed ? { 'data-modified': 'true' } : {})}
                             onClick={() => {
                               setActive(entry.id);
+                              setServerPage(undefined);
                               setRawQuery('');
                               mainRef.current?.scrollTo?.({ top: 0 });
                             }}
@@ -379,12 +463,22 @@ export function PreferencesEditor({ initialSection }: PreferencesEditorProps) {
                   </ul>
                 </div>
               ))}
+              <ServerNavGroup
+                current={searching ? undefined : shownServerPage}
+                onOpen={(page) => {
+                  setServerPage(page);
+                  setRawQuery('');
+                  mainRef.current?.scrollTo?.({ top: 0 });
+                }}
+              />
             </nav>
           </aside>
 
           <main ref={mainRef} className="min-w-0 flex-1 overflow-auto">
             <div className="mx-auto max-w-[720px] px-8 pt-9 pb-20">
-              {searching ? (
+              {!searching && shownServerPage !== undefined ? (
+                <ServerPage page={shownServerPage} />
+              ) : searching ? (
                 <SearchResults
                   query={query}
                   rawQuery={rawQuery.trim()}

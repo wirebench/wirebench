@@ -101,6 +101,14 @@ export interface FakeServerOptions {
    * `404 custom-domains-hosted-only`, as a self-hosted server does.
    */
   readonly customDomains?: { readonly appDomain: string };
+  /**
+   * Answer as a hosted team's own settings (hosted edition spec §22.12): `GET`, `PUT` and `DELETE
+   * /api/v1/tenant/settings…` and `GET /api/v1/tenant/billing`, for server admins. Saving `oidc` asks the issuer for
+   * its discovery document as the real check does, over plain HTTP too, so a spec can stand up a fake issuer on
+   * loopback; the real server takes `https` only. A secret is answered as `{ set }`, never read back. Without it the
+   * routes answer `404`, as a server older than the settings routes does.
+   */
+  readonly tenantSettings?: boolean;
 }
 
 /** One team session log as the fake holds it. */
@@ -485,6 +493,36 @@ export async function startFakeServer(options: FakeServerOptions = {}): Promise<
       }
     | undefined;
   let lastDomainCheck = 0;
+  /** The hosted team's settings sections (spec §22.12): plain fields, and the secret fields apart. */
+  const tenantSettings = new Map<
+    string,
+    { value: Record<string, unknown>; secret: Record<string, string>; updatedAt: string }
+  >();
+  const SETTINGS_SECRETS: Readonly<Record<string, string>> = { oidc: 'clientSecret', auditForward: 'token' };
+  const settingsView = () => ({
+    source: 'tenant',
+    sections: Object.fromEntries(
+      ['oidc', 'saml', 'auditForward', 'smtp', 'retention', 'budgets'].map((name) => {
+        const stored = tenantSettings.get(name);
+        const secretField = SETTINGS_SECRETS[name];
+        return [
+          name,
+          {
+            source: 'tenant',
+            writable: name !== 'budgets',
+            value:
+              stored === undefined
+                ? null
+                : {
+                    ...stored.value,
+                    ...(secretField !== undefined ? { [secretField]: { set: secretField in stored.secret } } : {}),
+                  },
+            ...(stored !== undefined ? { updatedAt: stored.updatedAt } : {}),
+          },
+        ];
+      }),
+    ),
+  });
   /** Pending SAML flows by id: the loopback port, the PKCE challenge and, once the IdP answered, the grant. */
   const samlFlows = new Map<string, { port: number; challenge: string; grant?: string }>();
   const scimTokens: { id: string; name: string; createdAt: string; lastUsedAt: null }[] = [];
@@ -1865,6 +1903,66 @@ export async function startFakeServer(options: FakeServerOptions = {}): Promise<
           return send(response, 204);
         }
         return problem(response, 405, 'not-found');
+      }
+      if (path.pathname === '/api/v1/tenant/billing' || path.pathname.startsWith('/api/v1/tenant/settings')) {
+        if (options.tenantSettings !== true) return problem(response, 404, 'not-found');
+        if (email === undefined) return problem(response, 401, 'identity-unauthenticated');
+        if (users.get(email.toLowerCase())?.serverAdmin !== true) return problem(response, 403, 'identity-forbidden');
+        if (path.pathname === '/api/v1/tenant/billing') {
+          return send(response, 200, {
+            edition: 'team',
+            editionSource: 'subscription',
+            status: 'active',
+            suspendedReason: null,
+            subscription: { plan: 'team', seats: 5, status: 'active', currentPeriodEnd: at(), pastDueDaysLeft: null },
+            deletion: null,
+          });
+        }
+        if (path.pathname === '/api/v1/tenant/settings') {
+          return request.method === 'GET' ? send(response, 200, settingsView()) : problem(response, 405, 'not-found');
+        }
+        const section = decodeURIComponent(path.pathname.slice('/api/v1/tenant/settings/'.length));
+        if (!['oidc', 'saml', 'auditForward', 'smtp', 'retention', 'budgets'].includes(section)) {
+          return problem(response, 404, 'settings-unknown-section');
+        }
+        if (section === 'budgets') return problem(response, 403, 'settings-operator-only');
+        if (request.method === 'DELETE') {
+          tenantSettings.delete(section);
+          return send(response, 200, settingsView());
+        }
+        if (request.method !== 'PUT') return problem(response, 405, 'not-found');
+        const body = ((await readJson(request)) ?? {}) as Record<string, unknown>;
+        const stored = tenantSettings.get(section);
+        const secretField = SETTINGS_SECRETS[section];
+        const secret: Record<string, string> = { ...(stored?.secret ?? {}) };
+        const value = { ...body };
+        if (secretField !== undefined) {
+          delete value[secretField];
+          if (typeof body[secretField] === 'string') secret[secretField] = body[secretField];
+        }
+        if (section === 'oidc') {
+          const issuer = typeof body.issuer === 'string' ? body.issuer.replace(/\/+$/, '') : '';
+          let discovered: { issuer?: unknown } | undefined;
+          try {
+            const answer = await fetch(`${issuer}/.well-known/openid-configuration`);
+            discovered = answer.ok ? ((await answer.json()) as { issuer?: unknown }) : undefined;
+          } catch {
+            discovered = undefined;
+          }
+          if (discovered?.issuer !== issuer) {
+            return send(response, 400, {
+              code: 'settings-invalid',
+              message: `The issuer's discovery document at ${issuer} did not answer.`,
+            });
+          }
+          if (secret.clientSecret === undefined) {
+            return send(response, 400, { code: 'settings-invalid', message: 'The OIDC client secret is missing.' });
+          }
+          value.scopes ??= ['openid', 'email', 'profile'];
+          value.displayName ??= 'OIDC';
+        }
+        tenantSettings.set(section, { value, secret, updatedAt: at() });
+        return send(response, 200, settingsView());
       }
       if (path.pathname === '/api/v1/license') {
         if (email === undefined) return problem(response, 401, 'identity-unauthenticated');
