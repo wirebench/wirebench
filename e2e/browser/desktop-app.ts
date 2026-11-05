@@ -51,9 +51,12 @@ export async function launchDesktop(): Promise<LaunchedApp> {
   }
   // The agent pairs only when it can seal its key: say in CI's log which store Chromium chose, so a refusal
   // to pair points at the runner's keyring rather than at the app.
-  const storage = await launched.app.evaluate(({ safeStorage }) => ({
+  const storage = await launched.app.evaluate(({ app, safeStorage }) => ({
     available: safeStorage.isEncryptionAvailable(),
     backend: process.platform === 'linux' ? safeStorage.getSelectedStorageBackend() : 'os',
+    passwordStore: app.commandLine.getSwitchValue('password-store'),
+    desktop: process.env['XDG_CURRENT_DESKTOP'] ?? null,
+    dbus: process.env['DBUS_SESSION_BUS_ADDRESS'] !== undefined,
   }));
   process.stdout.write(`[desktop] secret storage: ${JSON.stringify(storage)}\n`);
   await createWorkspace(launched.window, 'Desktop agent');

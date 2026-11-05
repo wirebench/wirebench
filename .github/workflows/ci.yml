@@ -477,6 +477,7 @@ jobs:
             echo -n e2e | gnome-keyring-daemon --unlock --components=secrets > /dev/null
             echo -n probe | secret-tool store --label=wirebench-e2e-probe service wirebench-e2e
             test "$(secret-tool lookup service wirebench-e2e)" = probe
+            echo "keyrings: $(ls ~/.local/share/keyrings 2>&1 | tr "\n" " ") bus: ${DBUS_SESSION_BUS_ADDRESS:-none}"
             xvfb-run -a pnpm test:e2e:browser
           '
       - name: Stack logs
