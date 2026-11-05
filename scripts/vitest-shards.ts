@@ -5,7 +5,8 @@
  * which slow files it happens to draw: on Windows one shard took twice as long as another, mostly because
  * `scripts/pack-check.test.ts` alone runs five minutes there. Instead, the root config's sequencer
  * (`vitest.config.ts`) gives each file a weight, its recorded time on the OS running it, and places the files
- * heaviest first, each on the shard with the least time so far.
+ * heaviest first, each on the shard with the least time so far. The files that spawn git are spread out first
+ * ({@link spawnsGit}): balanced by time alone, five of them once shared one Windows shard and timed out.
  *
  * The weights live in `vitest-shard-timings.json`: per OS, the files slower than {@link LISTED_FROM_MS}, and
  * one default for every other file, the mean of the unlisted ones. A stale or missing entry only costs
@@ -64,21 +65,49 @@ export function platformTimings(times: ReadonlyMap<string, number>): PlatformTim
 }
 
 /**
- * Which shard (0-based) each key goes to: heaviest first, each to the shard with the least time so far, ties by
- * key and then by shard number. The same keys and weights always give the same answer, which is what lets
- * every shard work out its own share without talking to the others.
+ * Whether a test file spawns real git, known by its import of the sync tests' git fixture. Each such file runs
+ * hundreds of git processes; on a Windows runner, where a process starts several times slower, a shard drawing
+ * five of them at once ran them three times slower than alone, past their timeouts. Only an `import` statement
+ * counts, so a file that merely mentions the fixture in a string does not.
  */
-export function assignShards(keys: readonly string[], weights: PlatformTimings, count: number): Map<string, number> {
+export function spawnsGit(source: string): boolean {
+  return /^import\s[^;]*\sfrom\s+['"][^'"]*\/git-fixture\.js['"]/mu.test(source);
+}
+
+/**
+ * Which shard (0-based) each key goes to. The `spread` keys (the files that spawn git) go first, heaviest first,
+ * each to the shard holding the fewest of them, so no shard gets a second before every shard has one. Then the
+ * rest, heaviest first, each to the shard with the least time so far. Ties go by key and then by shard number:
+ * the same keys and weights always give the same answer, which is what lets every shard work out its own share
+ * without talking to the others.
+ */
+export function assignShards(
+  keys: readonly string[],
+  weights: PlatformTimings,
+  count: number,
+  spread: ReadonlySet<string> = new Set(),
+): Map<string, number> {
   const weight = (key: string) => weights.files[key] ?? weights.defaultMs;
   const order = [...new Set(keys)].sort((a, b) => weight(b) - weight(a) || (a < b ? -1 : a > b ? 1 : 0));
   const loads = Array.from({ length: count }, () => 0);
+  const spreadCounts = Array.from({ length: count }, () => 0);
   const shardOf = new Map<string, number>();
-  for (const key of order) {
-    let lightest = 0;
-    for (let i = 1; i < count; i++) if (loads[i]! < loads[lightest]!) lightest = i;
-    loads[lightest]! += weight(key);
-    shardOf.set(key, lightest);
+  const place = (key: string, before: (i: number, best: number) => boolean) => {
+    let best = 0;
+    for (let i = 1; i < count; i++) if (before(i, best)) best = i;
+    loads[best]! += weight(key);
+    shardOf.set(key, best);
+    return best;
+  };
+  for (const key of order.filter((k) => spread.has(k))) {
+    const shard = place(
+      key,
+      (i, best) =>
+        spreadCounts[i]! < spreadCounts[best]! || (spreadCounts[i] === spreadCounts[best] && loads[i]! < loads[best]!),
+    );
+    spreadCounts[shard]! += 1;
   }
+  for (const key of order.filter((k) => !spread.has(k))) place(key, (i, best) => loads[i]! < loads[best]!);
   return shardOf;
 }
 
