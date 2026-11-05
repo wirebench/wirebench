@@ -1,7 +1,8 @@
 /**
  * The `entry` module (hosted edition spec §21.4, ADR-0038): `app.<app-domain>`, where a person who does not know
  * their team's address asks for it by email. Registered in hosted mode only; a self-hosted server has no such name.
- * It needs the server's SMTP settings, since the page promises a message.
+ * It needs the server's SMTP settings, since the page promises a message: `loadConfig` refuses hosted mode without
+ * them (`hostedProblems`, spec §22.1), so the check below only guards a configuration a test built directly.
  */
 import { WirebenchError } from '@wirebench/engine';
 import type { ServerModule } from '../context.js';
@@ -38,6 +39,7 @@ export function entryModule(options: EntryModuleOptions = {}): ServerModule {
     register: () => Promise.resolve(),
     registerPublic: (app, ctx) => {
       if (ctx.config.mode !== 'hosted') return Promise.resolve();
+      // Moved into the configuration (spec §22.1), same code; kept for a configuration that did not come from it.
       if (ctx.config.smtpUrl === undefined || ctx.config.smtpFrom === undefined) {
         throw new WirebenchError(
           'entry-smtp-missing',

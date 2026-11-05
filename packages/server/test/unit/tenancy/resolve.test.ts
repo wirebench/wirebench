@@ -1,13 +1,7 @@
 import Fastify, { type FastifyRequest } from 'fastify';
 import { checkEgress, WirebenchError } from '@wirebench/engine';
 import { describe, expect, it, vi } from 'vitest';
-import {
-  egressPolicyOf,
-  HOSTED_REFUSED,
-  loadConfig,
-  type ModuleConfig,
-  type ServerConfig,
-} from '../../../src/config.js';
+import { egressPolicyOf, loadConfig, type ModuleConfig, type ServerConfig } from '../../../src/config.js';
 import { main } from '../../../src/main.js';
 import type { HostedTenant, TenantDirectory } from '../../../src/tenancy/directory.js';
 import { hostKey, registerTenantResolution, RELOAD_MS, TenantResolver } from '../../../src/tenancy/resolve.js';
@@ -245,17 +239,19 @@ describe('the root hook', () => {
   });
 });
 
-describe('hosted mode is test-only (spec §19.1)', () => {
+describe('hosted mode from the environment (spec §19.1, §22.1)', () => {
   const io = () => ({ stdout: { write: vi.fn() }, stderr: { write: vi.fn() } });
   const stderrOf = (stream: { write: ReturnType<typeof vi.fn> }) => stream.write.mock.calls.map(String).join('');
 
   it.each([[['serve']], [['migrate']], [['migrate', '--check']], [['config', 'check']]])(
-    '%j refuses WIREBENCH_SERVER_MODE=hosted',
+    '%j refuses WIREBENCH_SERVER_MODE=hosted without what it requires, naming each variable',
     async (argv) => {
       const streams = io();
       const code = await main(argv, { ...streams, env: { ...ENV, WIREBENCH_SERVER_MODE: 'hosted' } });
       expect(code).toBe(2);
-      expect(stderrOf(streams.stderr)).toContain(`WIREBENCH_SERVER_MODE: ${HOSTED_REFUSED}`);
+      const stderr = stderrOf(streams.stderr);
+      expect(stderr).not.toContain('WIREBENCH_SERVER_MODE:');
+      expect(stderr).toContain('WIREBENCH_SERVER_CONTROL_DATABASE_URL: control-plane-control-url-missing');
     },
   );
 

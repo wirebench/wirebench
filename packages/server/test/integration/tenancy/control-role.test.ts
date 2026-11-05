@@ -64,7 +64,7 @@ describeDb('the control role (hosted spec §22.2)', () => {
     pools.push(pool);
     return pool;
   };
-  /** A hosted configuration over this schema, built directly: `loadConfig` still refuses hosted mode (§22.1). */
+  /** A hosted configuration over this schema, built directly rather than from a whole environment (§22.1). */
   const hosted = (controlUrl: string): ServerConfig => ({
     ...loadConfig(
       {

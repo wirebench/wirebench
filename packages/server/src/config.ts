@@ -12,7 +12,7 @@ import { z } from 'zod';
 
 const LOG_LEVELS = ['fatal', 'error', 'warn', 'info', 'debug', 'trace'] as const;
 
-/** How the server serves its tenants (hosted edition spec §19.1); only `self-hosted` loads from the environment. */
+/** How the server serves its tenants (hosted edition spec §19.1, §22.1). */
 export const SERVER_MODES = ['self-hosted', 'hosted'] as const;
 export type ServerMode = (typeof SERVER_MODES)[number];
 
@@ -23,9 +23,6 @@ export type InstanceMode = (typeof INSTANCE_MODES)[number];
 /** Paddle's two environments (hosted edition spec §22.5): which Paddle.js talks to, and which token prefix fits. */
 export const PADDLE_ENVIRONMENTS = ['sandbox', 'production'] as const;
 export type PaddleEnvironment = (typeof PADDLE_ENVIRONMENTS)[number];
-
-/** Why `loadConfig` refuses `hosted` (spec §19.1). */
-export const HOSTED_REFUSED = 'hosted mode arrives with the control plane';
 
 // zod 4's `.default()` short-circuits the rest of the chain: a default applied after `.transform`
 // or `.pipe` is returned as-is, unparsed. Both helpers below take the default as a string and
@@ -210,11 +207,8 @@ export function parseHostPort(value: string): { readonly host: string; readonly 
 }
 
 const inputSchema = z.object({
-  // Both values parse, so the type has both, but `hosted` is refused here: tests build a hosted config directly.
-  mode: z
-    .enum(SERVER_MODES)
-    .default('self-hosted')
-    .refine((mode): boolean => mode !== 'hosted', HOSTED_REFUSED),
+  // `hosted` is accepted from slice 7's last part on (spec §22.1), with the required and refused lists of `hostedProblems`.
+  mode: z.enum(SERVER_MODES).default('self-hosted'),
   databaseUrl: z.string().min(1),
   migrationDatabaseUrl: z.string().min(1).optional(),
   controlDatabaseUrl: z.string().min(1).optional(),
@@ -360,7 +354,7 @@ export const CONFIG_VARIABLES: readonly ConfigVariable[] = [
     defaultText: 'self-hosted',
     secret: false,
     description:
-      'How the server runs. Only `self-hosted` is accepted: one organisation, reached by whatever names point at it.',
+      '`self-hosted`: one organisation, reached by whatever names point at it. `hosted`: many teams, each at `<slug>.<app-domain>`, which sign up and pay through Paddle (always `multi`, private ranges always denied). Hosted mode requires both domains, the SMTP URL and sender, the secrets key, a migration URL naming a role apart from the app role, the control role’s URL, the instance URL and the four Paddle settings, and refuses every `WIREBENCH_SERVER_OIDC_*`, `_SAML_*` and `_AUDIT_FORWARD_*` variable: each is a team’s own setting there.',
   },
   {
     env: 'WIREBENCH_SERVER_DATABASE_URL',
@@ -377,7 +371,7 @@ export const CONFIG_VARIABLES: readonly ConfigVariable[] = [
     defaultText: 'WIREBENCH_SERVER_DATABASE_URL',
     secret: true,
     description:
-      'PostgreSQL connection string for the role that owns the schema; a direct connection, never a pooler. Migrations, `admin tenancy role` and the server-running lock use it. When it names a role other than the database URL’s, the server creates that app role if it is missing and the owner may create roles, and grants it its privileges at every start.',
+      'PostgreSQL connection string for the role that owns the schema; a direct connection, never a pooler. Migrations, `admin tenancy role` and the server-running lock use it. When it names a role other than the database URL’s, the server creates that app role if it is missing and the owner may create roles, and grants it its privileges at every start. Required in hosted mode, naming a role apart from the app role.',
   },
   {
     env: 'WIREBENCH_SERVER_CONTROL_DATABASE_URL',
@@ -470,7 +464,8 @@ export const CONFIG_VARIABLES: readonly ConfigVariable[] = [
     key: 'oidcIssuer',
     required: false,
     secret: false,
-    description: 'OIDC issuer URL; setting it turns OIDC sign-in on. Discovery runs at start-up.',
+    description:
+      'OIDC issuer URL; setting it turns OIDC sign-in on. Discovery runs at start-up. Refused in hosted mode, like every `WIREBENCH_SERVER_OIDC_*` variable: each team sets its own provider.',
   },
   {
     env: 'WIREBENCH_SERVER_OIDC_CLIENT_ID',
@@ -508,7 +503,7 @@ export const CONFIG_VARIABLES: readonly ConfigVariable[] = [
     required: false,
     secret: false,
     description:
-      'The SAML identity provider’s metadata: an https:// URL or an absolute file path. Setting it turns SAML sign-in on (Enterprise). Read at start-up.',
+      'The SAML identity provider’s metadata: an https:// URL or an absolute file path. Setting it turns SAML sign-in on (Enterprise). Read at start-up. Refused in hosted mode, like every `WIREBENCH_SERVER_SAML_*` variable: each team sets its own provider.',
   },
   {
     env: 'WIREBENCH_SERVER_SAML_DISPLAY_NAME',
@@ -653,7 +648,7 @@ export const CONFIG_VARIABLES: readonly ConfigVariable[] = [
     required: false,
     secret: false,
     description:
-      'Forward every audit event (Enterprise): `syslog+tcp://host:port`, `syslog+tls://host:port` or `https://…` (`http://` only on a loopback host). Unset, nothing is forwarded.',
+      'Forward every audit event (Enterprise): `syslog+tcp://host:port`, `syslog+tls://host:port` or `https://…` (`http://` only on a loopback host). Unset, nothing is forwarded. Refused in hosted mode, like every `WIREBENCH_SERVER_AUDIT_FORWARD_*` variable: each team sets its own.',
   },
   {
     env: 'WIREBENCH_SERVER_AUDIT_FORWARD_TOKEN',
@@ -732,14 +727,14 @@ export const CONFIG_VARIABLES: readonly ConfigVariable[] = [
     required: false,
     secret: true,
     description:
-      'Where email alerts are sent: `smtp://user:pass@mail.example.com:587` (STARTTLS when offered) or `smtps://…:465`. Unset, email alerts are refused.',
+      'Where email alerts are sent: `smtp://user:pass@mail.example.com:587` (STARTTLS when offered) or `smtps://…:465`. Unset, email alerts are refused. Required in hosted mode, with the sender: the entry, the signup and the team mails go out through it.',
   },
   {
     env: 'WIREBENCH_SERVER_SMTP_FROM',
     key: 'smtpFrom',
     required: false,
     secret: false,
-    description: 'The sender address of email alerts; required with WIREBENCH_SERVER_SMTP_URL.',
+    description: 'The sender address of email alerts; required with WIREBENCH_SERVER_SMTP_URL, and in hosted mode.',
   },
   {
     env: 'WIREBENCH_SERVER_BROWSER_CLIENT',
@@ -756,7 +751,7 @@ export const CONFIG_VARIABLES: readonly ConfigVariable[] = [
     required: false,
     secret: true,
     description:
-      'Encrypts at rest the secrets each user stores through the browser client, under a key per user derived from this one: 32 random bytes, base64-encoded (`openssl rand -base64 32`). Required when WIREBENCH_SERVER_BROWSER_CLIENT is on, and with `WIREBENCH_SERVER_INSTANCES=multi`, where every instance needs the same key: the instances sign the terminal-share relay between them with a key derived from it.',
+      'Encrypts at rest the secrets each user stores through the browser client, under a key per user derived from this one: 32 random bytes, base64-encoded (`openssl rand -base64 32`). Required when WIREBENCH_SERVER_BROWSER_CLIENT is on, and with `WIREBENCH_SERVER_INSTANCES=multi`, where every instance needs the same key: the instances sign the terminal-share relay between them with a key derived from it. Required in hosted mode, where it wraps every team’s data key.',
   },
   {
     env: 'WIREBENCH_SERVER_EGRESS_DENY_PRIVATE',
@@ -791,7 +786,7 @@ export const CONFIG_VARIABLES: readonly ConfigVariable[] = [
     required: false,
     secret: false,
     description:
-      'This instance’s private address, which the other instances reach it at: `http://host:port`, such as `http://10.0.0.5:8091`; the port is its internal listener’s, which speaks plain HTTP, so `https://` is refused. Required with `WIREBENCH_SERVER_INSTANCES=multi`.',
+      'This instance’s private address, which the other instances reach it at: `http://host:port`, such as `http://10.0.0.5:8091`; the port is its internal listener’s, which speaks plain HTTP, so `https://` is refused. Required with `WIREBENCH_SERVER_INSTANCES=multi`, and in hosted mode, which is always `multi`.',
   },
   {
     env: 'WIREBENCH_SERVER_INTERNAL_HOST',
@@ -1054,6 +1049,80 @@ export function paddleProblems(config: Pick<ServerConfig, 'mode' | (typeof PADDL
   return problems;
 }
 
+/** The prefixes of the variables that are a tenant's own setting in hosted mode (spec §22.1, §22.12). */
+const PER_TENANT_PREFIXES = ['WIREBENCH_SERVER_OIDC_', 'WIREBENCH_SERVER_SAML_', 'WIREBENCH_SERVER_AUDIT_FORWARD_'];
+
+/**
+ * The variables hosted mode refuses (spec §22.1): OIDC, SAML and audit forwarding are each a tenant's setting there
+ * (§22.12), and an identity provider configured for the whole server would sign people in across tenants (§19.1).
+ */
+export const PER_TENANT_VARIABLES: readonly string[] = CONFIG_VARIABLES.filter((variable) =>
+  PER_TENANT_PREFIXES.some((prefix) => variable.env.startsWith(prefix)),
+).map((variable) => variable.env);
+
+/**
+ * Hosted mode's required and refused lists (spec §22.1), beyond the domains', the control URL's and Paddle's, which
+ * their own checks name: the SMTP sender (`entry-smtp-missing`, moved here from the entry's registration), the
+ * secrets key every tenant's data key is wrapped under (§19.7), and a migration URL naming a role apart from the app
+ * role (§19.4); and every per-tenant variable, refused by name with `control-plane-setting-per-tenant`. `set` says
+ * which variables the environment gave, since a defaulted one (`OIDC_SCOPES`) has a value either way. Nothing outside
+ * hosted mode; never a value, only the variable. `loadConfig` runs it; tests that build a hosted config call it too.
+ */
+export function hostedProblems(
+  config: Pick<ServerConfig, 'mode' | 'smtpUrl' | 'smtpFrom' | 'secretsKey' | 'databaseUrl' | 'migrationDatabaseUrl'>,
+  set: (env: string) => boolean,
+): ConfigProblem[] {
+  if (config.mode !== 'hosted') return [];
+  const problems: ConfigProblem[] = [];
+  for (const [variable, value] of [
+    ['WIREBENCH_SERVER_SMTP_URL', config.smtpUrl],
+    ['WIREBENCH_SERVER_SMTP_FROM', config.smtpFrom],
+  ] as const) {
+    if (value === undefined)
+      problems.push({
+        variable,
+        message: 'entry-smtp-missing: hosted mode needs it: app.<app-domain> and the signup mail people their links',
+      });
+  }
+  if (config.secretsKey === undefined)
+    problems.push({
+      variable: 'WIREBENCH_SERVER_SECRETS_KEY',
+      message: 'control-plane-secrets-key-missing: hosted mode needs it: every tenant’s data key is wrapped under it',
+    });
+  const migration = config.migrationDatabaseUrl;
+  const owner = migration === undefined ? undefined : userOf(migration);
+  if (migration === undefined)
+    problems.push({
+      variable: 'WIREBENCH_SERVER_MIGRATION_DATABASE_URL',
+      message: 'control-plane-migration-url-missing: hosted mode needs the owner’s URL, apart from the app role’s',
+    });
+  else if (migration === config.databaseUrl || (owner !== undefined && owner === userOf(config.databaseUrl)))
+    problems.push({
+      variable: 'WIREBENCH_SERVER_MIGRATION_DATABASE_URL',
+      message:
+        'control-plane-migration-url-shared: must name the owner, a role apart from WIREBENCH_SERVER_DATABASE_URL’s app role',
+    });
+  for (const variable of PER_TENANT_VARIABLES) {
+    if (set(variable))
+      problems.push({
+        variable,
+        message:
+          'control-plane-setting-per-tenant: is each team’s own setting in hosted mode; unset it, and set it per team in Settings or with admin tenant settings',
+      });
+  }
+  return problems;
+}
+
+/** The user a `postgres://` URL names, or `undefined` (a keyword string, or none named). */
+function userOf(url: string): string | undefined {
+  try {
+    const name = decodeURIComponent(new URL(url).username);
+    return name === '' ? undefined : name;
+  } catch {
+    return undefined;
+  }
+}
+
 /** Parses `env` into a config or throws a {@link ConfigError} naming every problem at once. */
 export function loadConfig(env: NodeJS.ProcessEnv, version: string): ServerConfig {
   const { input, problems: fileProblems } = inputFrom(env);
@@ -1086,7 +1155,12 @@ export function loadConfig(env: NodeJS.ProcessEnv, version: string): ServerConfi
     ...domainProblems(config),
     ...controlPlaneProblems(config),
     ...paddleProblems(config),
+    ...hostedProblems(config, (env) => {
+      const variable = CONFIG_VARIABLES.find((candidate) => candidate.env === env);
+      return variable !== undefined && input[variable.key] !== undefined;
+    }),
   ];
+  const instances = instanceModeOf(config);
   if (config.oidcIssuer !== undefined) {
     for (const [key, variable] of [
       ['oidcClientId', 'WIREBENCH_SERVER_OIDC_CLIENT_ID'],
@@ -1144,14 +1218,15 @@ export function loadConfig(env: NodeJS.ProcessEnv, version: string): ServerConfi
           'must be an https:// URL or an absolute file path; set WIREBENCH_SERVER_ALLOW_INSECURE_PUBLIC_URL=true for an http:// development URL',
       });
   }
-  if ((config.smtpUrl === undefined) !== (config.smtpFrom === undefined)) {
+  // Hosted mode requires both, and names each missing one in `hostedProblems`.
+  if (config.mode !== 'hosted' && (config.smtpUrl === undefined) !== (config.smtpFrom === undefined)) {
     problems.push(
       config.smtpUrl === undefined
         ? { variable: 'WIREBENCH_SERVER_SMTP_URL', message: 'is required when WIREBENCH_SERVER_SMTP_FROM is set' }
         : { variable: 'WIREBENCH_SERVER_SMTP_FROM', message: 'is required when WIREBENCH_SERVER_SMTP_URL is set' },
     );
   }
-  if (config.browserClient && config.secretsKey === undefined) {
+  if (config.browserClient && config.mode !== 'hosted' && config.secretsKey === undefined) {
     problems.push({
       variable: 'WIREBENCH_SERVER_SECRETS_KEY',
       message: 'is required when WIREBENCH_SERVER_BROWSER_CLIENT is on; set the key or turn the browser client off',
@@ -1169,14 +1244,16 @@ export function loadConfig(env: NodeJS.ProcessEnv, version: string): ServerConfi
       message: 'is set but WIREBENCH_SERVER_PROXY_TLS_ADDRESS is not; set the address or unset the CA file',
     });
   }
-  if (config.instances === 'multi' && config.instanceUrl === undefined) {
+  // Hosted mode is always `multi` (spec §20.1, §22.1), so it needs the instance URL too.
+  if (instances === 'multi' && config.instanceUrl === undefined) {
     problems.push({
       variable: 'WIREBENCH_SERVER_INSTANCE_URL',
       message:
-        'is required when WIREBENCH_SERVER_INSTANCES is multi: the address the other instances reach this one at',
+        'is required when WIREBENCH_SERVER_INSTANCES is multi, and in hosted mode, which is always multi: the address the other instances reach this one at',
     });
   }
-  if (config.instances === 'multi' && config.secretsKey === undefined) {
+  // Hosted mode names the missing key once, in `hostedProblems`.
+  if (config.instances === 'multi' && config.mode !== 'hosted' && config.secretsKey === undefined) {
     problems.push({
       variable: 'WIREBENCH_SERVER_SECRETS_KEY',
       message:

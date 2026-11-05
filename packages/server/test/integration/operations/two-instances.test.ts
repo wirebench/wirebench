@@ -6,8 +6,8 @@
  *
  * The lower-level suites prove each mechanism on its own (`hub-bus`, `tenancy-bus`, `repo-lock`, `share-relay`,
  * `budgets`, `host/lease`); these cases only show that the real start-up wires them together across two processes.
- * Hosted mode is refused by `loadConfig` until the control plane lands, so the tenant case reads the new tenant
- * through the other server's directory and bus, not through the hosted resolver, which `tenancy-bus` covers.
+ * The tenant case reads the new tenant through the other server's directory and bus, not through the hosted
+ * resolver, which `tenancy-bus` covers.
  */
 import { randomBytes } from 'node:crypto';
 import { EventEmitter } from 'node:events';

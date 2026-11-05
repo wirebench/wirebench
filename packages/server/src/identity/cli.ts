@@ -113,7 +113,7 @@ function tenantMisuse(mode: ServerConfig['mode'], tenant: string | undefined): s
 }
 
 /**
- * `now` exists for tests, as does `configure`: a hosted configuration, which `loadConfig` refuses (spec §19.1). The
+ * `now` exists for tests, as does `configure`: a configuration changed after loading, such as a hosted one a test builds in part. The
  * bin passes nothing.
  */
 export async function runAdmin(

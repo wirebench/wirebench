@@ -5,7 +5,6 @@ import {
   ConfigError,
   describeConfig,
   egressPolicyOf,
-  HOSTED_REFUSED,
   instanceModeOf,
   loadConfig,
   migrationUrlOf,
@@ -676,7 +675,7 @@ describe('WIREBENCH_SERVER_MODE (hosted edition spec §19.1)', () => {
     expect(loadConfig(required, '2.1.1').appDomain).toBeUndefined();
   });
 
-  it('refuses hosted, which arrives with the control plane, and anything else', () => {
+  it('accepts hosted, asking for what it requires (spec §22.1), and refuses anything else', () => {
     const problemsOf = (mode: string) => {
       try {
         loadConfig({ ...required, WIREBENCH_SERVER_MODE: mode }, '2.1.1');
@@ -685,11 +684,16 @@ describe('WIREBENCH_SERVER_MODE (hosted edition spec §19.1)', () => {
       }
       return [];
     };
-    expect(problemsOf('hosted')).toEqual([{ variable: 'WIREBENCH_SERVER_MODE', message: HOSTED_REFUSED }]);
+    // config-hosted.test.ts has the lists; here, only that the mode itself is not the problem.
+    expect(problemsOf('hosted').map((p) => p.variable)).not.toContain('WIREBENCH_SERVER_MODE');
+    expect(problemsOf('hosted')).toContainEqual({
+      variable: 'WIREBENCH_SERVER_CONTROL_DATABASE_URL',
+      message: expect.stringMatching(/^control-plane-control-url-missing: /) as unknown,
+    });
     expect(problemsOf('cloud')).toMatchObject([{ variable: 'WIREBENCH_SERVER_MODE' }]);
     expect(describeConfig({ ...required, WIREBENCH_SERVER_MODE: 'hosted' })).toContainEqual({
       variable: 'WIREBENCH_SERVER_MODE',
-      status: 'invalid',
+      status: 'set',
     });
   });
 
