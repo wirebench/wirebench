@@ -157,6 +157,7 @@ import { registerCiTokenChannels } from '../ipc/ci-tokens.js';
 import { registerLicenseChannels } from '../ipc/license.js';
 import { registerProvisioningChannels } from '../ipc/provisioning.js';
 import { registerDomainChannels } from '../ipc/domain.js';
+import { registerServerSettingsChannels } from '../ipc/server-settings.js';
 import { registerAuditChannels } from '../ipc/audit.js';
 import { registerHooksChannels } from '../ipc/hooks.js';
 import { registerSchedulesChannels } from '../ipc/schedules.js';
@@ -1590,6 +1591,12 @@ export async function createHost(platform: HostPlatform, embedder: HostOptions =
   registerLicenseChannels(handlerTable, { client: serverClient, accounts: accountService });
   registerProvisioningChannels(handlerTable, { client: serverClient, accounts: accountService });
   registerDomainChannels(handlerTable, { client: serverClient, accounts: accountService });
+  registerServerSettingsChannels(handlerTable, {
+    client: serverClient,
+    accounts: accountService,
+    picks: dialogPicks,
+    dialogs: nativeDialogs,
+  });
   registerAuditChannels(handlerTable, {
     client: serverClient,
     accounts: accountService,

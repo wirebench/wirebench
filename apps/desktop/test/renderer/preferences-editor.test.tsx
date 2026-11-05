@@ -8,6 +8,7 @@ import { cleanup, fireEvent, render, screen, within } from '@testing-library/rea
 import { PreferencesEditor } from '../../src/renderer/features/preferences/preferences-editor.js';
 import { registerShellCommands } from '../../src/renderer/commands/register-shell-commands.js';
 import { usePreferencesStore } from '../../src/renderer/state/preferences.js';
+import { useServerSettingsStore } from '../../src/renderer/features/preferences/server/server-settings-store.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import { DEFAULT_PREFERENCES_WIRE } from '../../src/renderer/state/preferences-defaults.js';
@@ -904,5 +905,90 @@ describe('PreferencesEditor — changed settings', () => {
     render(<PreferencesEditor initialSection="http" />);
     expect(screen.queryByTestId('setting-modified')).toBeNull();
     expect(screen.queryByTestId('setting-reset')).toBeNull();
+  });
+});
+
+describe('PreferencesEditor — the Server group (hosted edition spec §22.13)', () => {
+  const state = (source: 'tenant' | 'environment') => ({ source, writable: source === 'tenant', value: null });
+  const settings = (source: 'tenant' | 'environment') => ({
+    source,
+    sections: {
+      oidc: state(source),
+      saml: state(source),
+      auditForward: state(source),
+      smtp: state(source),
+      retention: state(source),
+      budgets: { source, writable: false, value: null },
+    },
+  });
+
+  beforeEach(() => {
+    installWirebenchApi();
+    usePreferencesStore.setState({ preferences: DEFAULTS, loaded: true });
+    useServerSettingsStore.getState().reset();
+  });
+  afterEach(() => {
+    cleanup();
+    useServerSettingsStore.getState().reset();
+  });
+
+  it('is absent for anyone the server does not answer', () => {
+    render(<PreferencesEditor />);
+    expect(screen.queryByTestId('settings-nav-server')).toBeNull();
+  });
+
+  it('lists every page for a hosted team, and opens one in place of the section', () => {
+    useServerSettingsStore.setState({
+      // A custom domain (§23): its first label is not the team's slug, nor its name.
+      url: 'https://api.example.org',
+      available: true,
+      loaded: true,
+      settings: settings('tenant'),
+      billing: {
+        slug: 'acme',
+        name: 'Acme Ltd',
+        activeMembers: 3,
+        edition: 'team',
+        editionSource: 'subscription',
+        status: 'active',
+        suspendedReason: null,
+        subscription: null,
+        deletion: null,
+      },
+    });
+    render(<PreferencesEditor />);
+    const group = screen.getByTestId('settings-nav-server');
+    expect(group.querySelector('h2')?.textContent).toBe('Server · Acme Ltd');
+    expect([...group.querySelectorAll('li')].map((li) => li.textContent)).toEqual([
+      'Sign-in',
+      'Provisioning',
+      'Audit forwarding',
+      'Email',
+      'Retention',
+      'Billing',
+      'Export',
+      'Delete team',
+    ]);
+    fireEvent.click(screen.getByTestId('settings-nav-server-sign-in'));
+    expect(screen.getByTestId('server-page-sign-in')).toBeTruthy();
+    expect(screen.getByTestId('settings-nav-server-sign-in').getAttribute('aria-current')).toBe('page');
+    expect(screen.getByTestId('settings-nav-appearance').getAttribute('aria-current')).toBeNull();
+    fireEvent.click(screen.getByTestId('settings-nav-appearance'));
+    expect(screen.queryByTestId('server-page-sign-in')).toBeNull();
+  });
+
+  it('has no Billing or Delete team on a self-hosted server, and names it by its host', () => {
+    useServerSettingsStore.setState({
+      url: 'https://wirebench.corp.example',
+      available: true,
+      loaded: true,
+      settings: settings('environment'),
+    });
+    render(<PreferencesEditor />);
+    const group = screen.getByTestId('settings-nav-server');
+    expect(group.querySelector('h2')?.textContent).toBe('Server · wirebench.corp.example');
+    expect(screen.queryByTestId('settings-nav-server-billing')).toBeNull();
+    expect(screen.queryByTestId('settings-nav-server-delete')).toBeNull();
+    expect(screen.getByTestId('settings-nav-server-export')).toBeTruthy();
   });
 });

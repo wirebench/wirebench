@@ -236,6 +236,18 @@ import {
   domainRemoveResponseWireSchema,
   domainRequestWireSchema,
   domainResponseWireSchema,
+  serverSettingsClearRequestWireSchema,
+  serverSettingsRequestWireSchema,
+  serverSettingsSaveRequestWireSchema,
+  serverSettingsWireSchema,
+  tenantBillingWireSchema,
+  tenantDeletionCancelledWireSchema,
+  tenantDeletionRequestWireSchema,
+  tenantDeletionWireSchema,
+  tenantExportDownloadRequestWireSchema,
+  tenantExportDownloadResponseWireSchema,
+  tenantExportRequestedWireSchema,
+  tenantExportsListResponseWireSchema,
   provisioningRequestWireSchema,
   samlInfoWireSchema,
   scimGroupLinkRequestWireSchema,
@@ -786,6 +798,34 @@ export const channels = {
     claim: defineChannel('domain.claim', domainClaimRequestWireSchema, domainResponseWireSchema),
     check: defineChannel('domain.check', domainRequestWireSchema, domainResponseWireSchema),
     remove: defineChannel('domain.remove', domainRequestWireSchema, domainRemoveResponseWireSchema),
+  },
+  /**
+   * The tenant's own settings (hosted edition spec §22.12, §22.13): server admins only; main adds the token. Every
+   * answer is the whole view again, secrets as `{ set }`.
+   */
+  serverSettings: {
+    get: defineChannel('serverSettings.get', serverSettingsRequestWireSchema, serverSettingsWireSchema),
+    save: defineChannel('serverSettings.save', serverSettingsSaveRequestWireSchema, serverSettingsWireSchema),
+    clear: defineChannel('serverSettings.clear', serverSettingsClearRequestWireSchema, serverSettingsWireSchema),
+  },
+  /** A hosted tenant's plan, seats and status (spec §22.13): server admins only. */
+  tenantBilling: {
+    get: defineChannel('tenantBilling.get', serverSettingsRequestWireSchema, tenantBillingWireSchema),
+  },
+  /** The tenant's exports (spec §22.9): list, ask for one, and save a ready one to a file main picks. */
+  tenantExports: {
+    list: defineChannel('tenantExports.list', serverSettingsRequestWireSchema, tenantExportsListResponseWireSchema),
+    request: defineChannel('tenantExports.request', serverSettingsRequestWireSchema, tenantExportRequestedWireSchema),
+    download: defineChannel(
+      'tenantExports.download',
+      tenantExportDownloadRequestWireSchema,
+      tenantExportDownloadResponseWireSchema,
+    ),
+  },
+  /** Deleting a hosted team (spec §22.11): asked with the slug typed, cancelled until it runs. */
+  tenantDeletion: {
+    request: defineChannel('tenantDeletion.request', tenantDeletionRequestWireSchema, tenantDeletionWireSchema),
+    cancel: defineChannel('tenantDeletion.cancel', serverSettingsRequestWireSchema, tenantDeletionCancelledWireSchema),
   },
   /** SAML and SCIM settings of a server (saml-scim spec §3.7): server admins on Enterprise; main adds the token. */
   provisioning: {
