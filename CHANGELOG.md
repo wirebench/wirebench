@@ -15,7 +15,10 @@ All notable changes to this project are documented here. The format follows
   deletion removes every row, file and key 14 days on, once the subscription has ended. `config check` names every
   variable hosted mode requires and refuses the server-wide OIDC, SAML and audit-forwarding variables, which are each
   team's own there. The recipe in `packages/server/deploy/hosted/` gains the control role and the Paddle settings.
-  Every server, self-hosted too, gains `admin tenant export --out <file>` and `admin tenant import <file>`: a team's
+  In the desktop app, **Settings → Server** lets a team's server admins set its own OIDC and SAML sign-in, SCIM
+  provisioning, audit forwarding, mail and retention, see its billing, request and download exports, and ask for its
+  deletion; a stored secret is never shown again. On a self-hosted server the same page is read-only and names the
+  environment variable behind each value. Every server, self-hosted too, gains `admin tenant export --out <file>` and `admin tenant import <file>`: a team's
   tables, repositories and audit chain in one file, never a secret, which `admin audit verify --export` checks with no
   database. A self-hosted server is otherwise unchanged.
 - **Server: several instances, per-team budgets and metrics (#821).** On an Enterprise license, set
