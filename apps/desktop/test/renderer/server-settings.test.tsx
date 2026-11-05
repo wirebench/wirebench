@@ -18,7 +18,7 @@ import { AuditForwardingSection } from '../../src/renderer/features/preferences/
 import { EmailSection, smtpUrl } from '../../src/renderer/features/preferences/server/email-section.js';
 import { RetentionSection } from '../../src/renderer/features/preferences/server/retention-section.js';
 import { BillingSection, formatDate } from '../../src/renderer/features/preferences/server/billing-section.js';
-import { ExportSection } from '../../src/renderer/features/preferences/server/export-section.js';
+import { ExportSection, exportFailureText } from '../../src/renderer/features/preferences/server/export-section.js';
 import { DeleteTeamSection } from '../../src/renderer/features/preferences/server/delete-team-section.js';
 import { useProvisioningStore } from '../../src/renderer/state/provisioning.js';
 
@@ -438,6 +438,36 @@ describe('Export', () => {
     expect(request).toHaveBeenCalledWith({ url: URL_ });
     // One export runs at a time: no second request while one is queued.
     expect(screen.getByTestId('server-export-request')).toHaveProperty('disabled', true);
+  });
+
+  it('says why an export failed in plain words, never its code', async () => {
+    const failed = (id: string, error: string | null): TenantExportWire => ({
+      ...READY,
+      id,
+      status: 'failed',
+      error,
+      sizeBytes: null,
+      readyAt: null,
+      expiresAt: null,
+    });
+    installWirebenchApi({
+      tenantExports: {
+        list: vi
+          .fn()
+          .mockResolvedValue(
+            ok({ exports: [failed('f1', 'ENOSPC'), failed('f2', 'some-new-code'), failed('f3', null)] }),
+          ),
+      },
+    });
+    loaded(view());
+    render(<ExportSection />);
+    await vi.waitFor(() => expect(screen.getAllByTestId('server-export-row')).toHaveLength(3));
+    const [disk, unknown, none] = screen.getAllByTestId('server-export-row');
+    expect(disk!.textContent).toContain('The server ran out of disk space.');
+    expect(unknown!.textContent).toContain('The export could not be written.');
+    expect(unknown!.textContent).not.toContain('some-new-code');
+    expect(none!.textContent).toContain('The export could not be written.');
+    expect(exportFailureText('export-interrupted')).toMatch(/^The server stopped/);
   });
 
   it('downloads from the tab’s own server in a browser, by id only', async () => {

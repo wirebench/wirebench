@@ -23,6 +23,30 @@ export function sizeText(bytes: number | null): string {
   return `${String(Math.round(bytes / (1024 * 1024)))} MB`;
 }
 
+/**
+ * A failed export's code (the server keeps the code, never the message) in plain words. The codes are the control
+ * plane's export runner's: its own, and the file system's when writing the archive failed.
+ */
+const EXPORT_FAILURES: Readonly<Record<string, string>> = {
+  'export-interrupted': 'The server stopped while it was writing the export. Request it again.',
+  'control-plane-export-interrupted': 'The export took too long and was stopped. Request it again.',
+  'control-plane-tenant-deleting': 'The team is being deleted, so it can no longer be exported.',
+  'control-plane-tenant-unknown': 'The server could not find this team’s records. Ask the server’s operator.',
+  'control-plane-export-path-refused':
+    'The server could not write the export where it keeps them. Ask the server’s operator.',
+  ENOSPC: 'The server ran out of disk space. Try again later, or ask the server’s operator.',
+  EACCES: 'The server could not write the export file. Ask the server’s operator.',
+  EPERM: 'The server could not write the export file. Ask the server’s operator.',
+};
+
+/** Any other code, `export-failed` included. */
+const EXPORT_FAILED =
+  'The export could not be written. Request it again, or ask the server’s operator if it keeps failing.';
+
+export function exportFailureText(code: string | null): string {
+  return (code === null ? undefined : EXPORT_FAILURES[code]) ?? EXPORT_FAILED;
+}
+
 function statusText(row: TenantExportWire, now: number): string {
   switch (row.status) {
     case 'queued':
@@ -30,7 +54,7 @@ function statusText(row: TenantExportWire, now: number): string {
     case 'running':
       return 'Running';
     case 'failed':
-      return `Failed${row.error === null ? '' : ` (${row.error})`}`;
+      return `Failed · ${exportFailureText(row.error)}`;
     case 'expired':
       return 'Expired';
     case 'ready': {
@@ -105,7 +129,7 @@ export function ExportSection() {
                 <tr key={row.id} data-testid="server-export-row" data-status={row.status}>
                   <td className="py-2">{formatDate(row.requestedAt)}</td>
                   <td data-testid="server-export-by" className="py-2 text-fg-muted">
-                    {row.requestedBy === 'operator' ? 'Wirebench operator' : (row.requestedBy ?? 'A removed account')}
+                    {row.requestedBy === 'operator' ? 'Server operator' : (row.requestedBy ?? 'A removed account')}
                   </td>
                   <td className={`py-2 ${row.status === 'failed' ? 'text-status-danger' : 'text-fg-muted'}`}>
                     {statusText(row, now)}
