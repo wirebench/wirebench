@@ -4,8 +4,11 @@
  * goes through the job loop (spec §19.8 guard 6), and in each tenant with a sink:
  * - one short unit reads the tenant's license and, with `audit-log`, leases up to a batch of its oldest queued
  *   events (`claimForwardBatch`): a lease id and an expiry {@link FORWARD_LEASE_MS} away, on the database's clock;
- * - the send runs after that unit committed, outside any unit (the job loop's `afterUnit`), so no pooled
- *   connection waits on a slow sink;
+ * - the send starts after that unit committed, outside any unit (the job loop's `afterUnit`), so no pooled
+ *   connection waits on a slow sink. Up to {@link FORWARD_SENDS_AT_ONCE} tenants' sends run at once: the next
+ *   tenant's unit opens while earlier sends are still out, so one slow collector holds back only its own tenant
+ *   (each tenant has at most one batch out per pass, so its events still go in order), and the pass ends once
+ *   every send it started has;
  * - a second unit deletes the batch's queue rows under its lease once the sink accepted.
  *
  * A live lease is what keeps two servers (or two passes) from sending one event twice: a claim takes only free rows,
@@ -44,6 +47,8 @@ export const FORWARD_BACKOFF_MAX_MS = 300_000;
 export const FORWARD_UNLICENSED_MS = 60_000;
 /** A sink's bound on a connect, a syslog batch's write, or a whole HTTPS request. */
 export const FORWARD_TIMEOUT_MS = 10_000;
+/** How many tenants' sends one pass has out at once. */
+export const FORWARD_SENDS_AT_ONCE = 4;
 /** How long a claimed batch stays leased: well past the send's bound, so only a stalled server's batch is retaken. */
 export const FORWARD_LEASE_MS = 6 * FORWARD_TIMEOUT_MS;
 
@@ -138,6 +143,8 @@ export class AuditForwarder {
     let failed = 0;
     /** By tenant: what the sink accepted in that tenant's unit; it counts only once the unit committed. */
     const sentIn = new Map<string, number>();
+    /** The sends this pass has out; each settles itself (its failure is its tenant's), and never rejects. */
+    const out = new Set<Promise<void>>();
     /** The tenants whose failure this pass already counted: a send's, then its unit's, is one failure. */
     const counted = new Set<string>();
     const fail = (tenantId: string, error: unknown): void => {
@@ -186,51 +193,63 @@ export class AuditForwarder {
         const events = await claimForwardBatch(tx, this.deps.batchSize ?? FORWARD_BATCH, lease);
         if (events.length === 0) return this.stopped ? STOP_PASS : undefined;
         const db = this.deps.tenancy.db(scope);
-        return {
-          // Once the lease committed, outside any unit.
-          afterUnit: async () => {
-            try {
-              await sink.send(events);
-            } catch (error) {
-              failed += 1;
-              // Free the rows for the tenant's next try; should that fail too, the lease runs out on its own. Logged
-              // with the tenant and the database's reason only: never an event (ADR-0004).
-              await db
-                .transaction((free) => releaseForwardLease(free, lease.id))
-                .catch((released: unknown) => {
-                  this.deps.log.warn(
-                    { tenantId: scope.tenantId, reason: reasonOf(released) },
-                    'audit forwarding could not free a lease after a failed send; it runs out on its own',
-                  );
-                });
-              fail(scope.tenantId, error);
-              // Only this tenant's batch stops (§19.12 M1): its sink is its own, so the next tenant's is not waiting
-              // on it. A stop still ends the pass here.
-              return this.stopped ? STOP_PASS : undefined;
-            }
-            await db.transaction((done) =>
-              deleteForwarded(
-                done,
-                events.map((event) => event.id),
-                lease.id,
-              ),
+        const send = async (): Promise<void> => {
+          try {
+            await sink.send(events);
+          } catch (error) {
+            failed += 1;
+            // Free the rows for the tenant's next try; should that fail too, the lease runs out on its own. Logged
+            // with the tenant and the database's reason only: never an event (ADR-0004).
+            await db
+              .transaction((free) => releaseForwardLease(free, lease.id))
+              .catch((released: unknown) => {
+                this.deps.log.warn(
+                  { tenantId: scope.tenantId, reason: reasonOf(released) },
+                  'audit forwarding could not free a lease after a failed send; it runs out on its own',
+                );
+              });
+            // Only this tenant's batch stops (§19.12 M1): its sink is its own, so the next tenant's is not waiting on it.
+            fail(scope.tenantId, error);
+            return;
+          }
+          await db.transaction((done) =>
+            deleteForwarded(
+              done,
+              events.map((event) => event.id),
+              lease.id,
+            ),
+          );
+          sentIn.set(scope.tenantId, events.length);
+          const recovered = this.failing.get(scope.tenantId);
+          if (recovered !== undefined) {
+            this.failing.delete(scope.tenantId);
+            this.deps.log.info(
+              { tenantId: scope.tenantId, failures: recovered.failures },
+              'audit forwarding recovered',
             );
-            sentIn.set(scope.tenantId, events.length);
-            const recovered = this.failing.get(scope.tenantId);
-            if (recovered !== undefined) {
-              this.failing.delete(scope.tenantId);
-              this.deps.log.info(
-                { tenantId: scope.tenantId, failures: recovered.failures },
-                'audit forwarding recovered',
-              );
-            }
-            // A stop waits for this tenant's batch, not for every tenant's.
+          }
+        };
+        return {
+          // Once the lease committed, outside any unit: the send starts now, and the next tenant waits only for a
+          // free place among the sends out, never for this one to finish.
+          afterUnit: async () => {
+            const sending: Promise<void> = send()
+              // The delete's unit failed: as the job loop reports a unit of its own that failed, the tenant's failure.
+              .catch((error: unknown) => {
+                loopLog.error({ err: error, tenantId: scope.tenantId });
+              })
+              .finally(() => out.delete(sending));
+            out.add(sending);
+            while (out.size >= FORWARD_SENDS_AT_ONCE) await Promise.race(out);
+            // A stop ends the pass here; the sends already out still finish.
             return this.stopped ? STOP_PASS : undefined;
           },
         };
       },
       loopLog,
     );
+    // Every send the pass started, before it counts them; none rejects.
+    await Promise.all(out);
     const sent = [...sentIn.values()].reduce((sum, count) => sum + count, 0);
     if (sent > 0) return { outcome: 'sent', sent, nextDelayMs: FORWARD_BUSY_MS };
     if (failed > 0) return { outcome: 'failed', sent: 0, nextDelayMs: this.nextTry(now) };

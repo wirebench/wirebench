@@ -6,7 +6,7 @@
  */
 import type { AuditEvent } from '@wirebench/engine';
 import type { FastifyBaseLogger } from 'fastify';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { keyId } from '../../../src/audit-log/chain/canonical.js';
 import { AuditSealer } from '../../../src/audit-log/chain/sealer.js';
 import { AuditForwarder, type ForwardSink } from '../../../src/audit-log/forward/forwarder.js';
@@ -224,6 +224,22 @@ describe('the forwarder over two tenants', () => {
     clock.advance(5_000);
     await forwarder.runOnce();
     expect(claimsIn('one')).toBe(2);
+  });
+
+  it('a slow collector holds back only its own tenant: the next tenant is claimed and sent while it is out', async () => {
+    let release: () => void = () => undefined;
+    const slow = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const made = cast({ sinkOne: () => slow });
+    const pass = made.forwarder.runOnce();
+    // Tenant one's send is still out; tenant two's has gone through all the same.
+    await vi.waitFor(() => expect(made.sent).toEqual(['E2']));
+    expect(made.queues.get(ONE.tenantId)).toEqual(['E1']);
+    release();
+    // The pass waits for the send it started, and counts it.
+    expect(await pass).toMatchObject({ outcome: 'sent', sent: 2 });
+    expect(made.queues.get(ONE.tenantId)).toEqual([]);
   });
 
   it('answers failed, backing off, when every tenant’s sink is down; a tenant with no sink is never claimed', async () => {
