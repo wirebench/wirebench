@@ -138,6 +138,8 @@ describeDb('the tenant map and the data-key cache on the bus (hosted spec §20.3
     const b = await node();
     const { scope } = await new TenantAdmin(db, directoryOf(b.h.ctx.tenancy)).create({ slug: 'acme', name: 'Acme' });
     const first = await b.h.ctx.tenancy.dataKey(scope);
+    // The create's own reload of B's map runs on its own time: let it finish, or it would read the quiet tenant below.
+    await b.resolver.invalidate();
     // Writes no process announces, as while B's bus was down: a tenant and a re-sealed key.
     const quiet = randomUUID();
     await db.query(`insert into tenants (id, slug, name) values ($1::uuid, 'quiet', 'Quiet')`, [quiet]);
