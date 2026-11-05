@@ -138,7 +138,12 @@ describeDb('per-tenant retention, mail and forwarding (spec §22.12)', () => {
       expect(await sinks.sinkFor(beta)).toBeUndefined();
       expect(await sinks.sinkFor(acme)).toBeDefined();
       expect(await sinks.sinkFor(acme)).toBe(await sinks.sinkFor(acme));
-      await h.ctx.settings.set(acme, 'auditForward', { url: 'https://siem2.acme.test/events' }, { by: 'test' });
+      await h.ctx.settings.set(
+        acme,
+        'auditForward',
+        { url: 'https://siem2.acme.test/events', token: 'tok-acme-654321' },
+        { by: 'test' },
+      );
       await sinks.sinkFor(acme);
       expect(built).toEqual(['https://siem.acme.test/events', 'https://siem2.acme.test/events']);
       expect(closed).toEqual(['https://siem.acme.test/events']);

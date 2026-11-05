@@ -5,7 +5,8 @@
  * Each section has three shapes:
  *
  * - **input**: what a `PUT` (or `admin tenant settings set`) sends, secrets as plain text. A secret left out keeps the
- *   stored one, so a screen that never shows a secret can still save the other fields.
+ *   stored one, so a screen that never shows a secret can still save the other fields, unless the input changes where
+ *   that secret goes (the issuer or client id, the forwarding URL, the SMTP host): then it must be given again.
  * - **resolved** ({@link SectionValues}): what a module reads through `ctx.settings.of`, secrets opened. Never on the
  *   API, never in a log.
  * - **view** ({@link SectionView}): what the API answers, each secret as `{ set: boolean }` and nothing more.
@@ -200,6 +201,57 @@ export function splitSection<S extends SettingsSection>(
     }
   }
   return { value: record, secret: Object.keys(secret).length === 0 ? undefined : secret };
+}
+
+/** Why a kept secret cannot follow `section`'s input, for the refusal; one per section that keeps a secret. */
+export const SECRET_AGAIN: Partial<Record<SettingsSection, string>> = {
+  oidc: 'The OIDC client secret must be given again when the issuer or the client id changes.',
+  auditForward: 'The forwarding token must be given again when the forwarding URL changes.',
+  smtp: 'The SMTP credentials must be given again in the URL when its scheme, host or port changes.',
+};
+
+/** Where an SMTP URL connects: its scheme, host and port, with the port each scheme defaults to. */
+function smtpEndpoint(url: string): string | undefined {
+  try {
+    const parsed = new URL(url);
+    const port = parsed.port === '' ? (parsed.protocol === 'smtps:' ? '465' : '587') : parsed.port;
+    return `${parsed.protocol}//${parsed.hostname.toLowerCase()}:${port}`;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Whether `input` (parsed) leaves out a secret that `stored` has, while changing where that secret goes: the OIDC
+ * issuer or client id, the forwarding URL, the SMTP scheme, host or port. Kept, the sealed secret would be sent to a
+ * server it was never given for, so the refusal asks for it again ({@link SECRET_AGAIN}).
+ */
+export function keptSecretRedirected<S extends SettingsSection>(
+  section: S,
+  input: SectionInputs[S],
+  stored: {
+    readonly value: Readonly<Record<string, unknown>>;
+    readonly secret: Readonly<Record<string, string>> | undefined;
+  },
+): boolean {
+  const record = input as Record<string, unknown>;
+  switch (section) {
+    case 'oidc':
+      return (
+        record.clientSecret === undefined &&
+        stored.secret?.clientSecret !== undefined &&
+        (record.issuer !== stored.value.issuer || record.clientId !== stored.value.clientId)
+      );
+    case 'auditForward':
+      return record.token === undefined && stored.secret?.token !== undefined && record.url !== stored.value.url;
+    case 'smtp': {
+      if (stored.secret?.username === undefined) return false;
+      if (splitUrlCredentials(record.url as string)?.username !== undefined) return false;
+      return smtpEndpoint(record.url as string) !== smtpEndpoint(stored.value.url as string);
+    }
+    default:
+      return false;
+  }
 }
 
 /** A stored row as a module reads it: the plain fields with the secrets merged back. */

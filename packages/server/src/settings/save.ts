@@ -18,7 +18,13 @@ import { discoverOidc, type OidcSettings } from '../identity/oidc.js';
 import { problem } from '../problem.js';
 import { parseIdpMetadata } from '../sso/saml-metadata.js';
 import type { TenantScope } from '../tenancy/scope.js';
-import { OPERATOR_ONLY_SECTIONS, SECTION_INPUTS, type SectionInputs, type SettingsSection } from './sections.js';
+import {
+  OPERATOR_ONLY_SECTIONS,
+  SECRET_AGAIN,
+  SECTION_INPUTS,
+  type SectionInputs,
+  type SettingsSection,
+} from './sections.js';
 import { settingsInvalid, settingsOperatorOnly, type TenantSettings } from './service.js';
 
 export interface SaveDeps {
@@ -87,7 +93,15 @@ async function check<S extends SettingsSection>(
         !(issuer.protocol === 'https:' || (issuer.protocol === 'http:' && deps.allowInsecure))
       )
         throw refused('settings-oidc-issuer', 'The OIDC issuer must be an https:// URL.');
-      const clientSecret = oidc.clientSecret ?? (await deps.settings.of(scope, 'oidc'))?.clientSecret;
+      const stored = await deps.settings.of(scope, 'oidc');
+      // Before discovery, so a new issuer is never asked anything with the old secret kept (the store refuses it too).
+      if (
+        oidc.clientSecret === undefined &&
+        stored !== undefined &&
+        (stored.issuer !== oidc.issuer || stored.clientId !== oidc.clientId)
+      )
+        throw settingsInvalid(SECRET_AGAIN.oidc!);
+      const clientSecret = oidc.clientSecret ?? stored?.clientSecret;
       if (clientSecret === undefined) throw settingsInvalid('The OIDC settings need a client secret.');
       try {
         await (deps.discover ?? discoverOidc)({

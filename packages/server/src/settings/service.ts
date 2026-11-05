@@ -25,8 +25,10 @@ import type { TenantQuerier } from '../tenancy/tenant-db.js';
 import type { Tenancy } from '../tenancy/tenancy.js';
 import {
   OPERATOR_ONLY_SECTIONS,
+  SECRET_AGAIN,
   SECTION_INPUTS,
   SETTINGS_SECTIONS,
+  keptSecretRedirected,
   resolveSection,
   splitSection,
   splitUrlCredentials,
@@ -371,10 +373,12 @@ class HostedSettings extends Base implements TenantSettings {
     const parsed = SECTION_INPUTS[section].safeParse(input);
     if (!parsed.success)
       throw settingsInvalid(`The ${section} settings are not valid: ${describeIssues(parsed.error)}`);
-    const stored = (await this.#load(scope)).get(section)?.secret;
+    const entry = (await this.#load(scope)).get(section);
+    if (entry !== undefined && keptSecretRedirected(section, parsed.data as never, entry))
+      throw settingsInvalid(SECRET_AGAIN[section]!);
     let split: SplitSection;
     try {
-      split = splitSection(section, parsed.data as never, stored);
+      split = splitSection(section, parsed.data as never, entry?.secret);
     } catch {
       throw settingsInvalid(`The ${section} settings are not valid: the URL does not parse`);
     }

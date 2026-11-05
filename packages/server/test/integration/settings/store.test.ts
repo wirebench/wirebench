@@ -110,6 +110,50 @@ describeDb('the settings store (spec §22.12)', () => {
       expect((await h.ctx.settings.smtp(acme))?.url).toBe(`smtps://acme-mailer:${SMTP_PASSWORD}@mail.acme.test:465`);
     });
 
+    it('asks for a kept secret again when where it goes changes', async () => {
+      const refusal = { code: 'settings-invalid' };
+      await h.ctx.settings.set(acme, 'oidc', OIDC, { by: 'u1' });
+      const oidc = { ...OIDC, clientSecret: undefined };
+      await expect(
+        h.ctx.settings.set(acme, 'oidc', { ...oidc, issuer: 'https://evil.test' }, { by: 'u1' }),
+      ).rejects.toThrow(/client secret must be given again/);
+      await expect(
+        h.ctx.settings.set(acme, 'oidc', { ...oidc, clientId: 'another' }, { by: 'u1' }),
+      ).rejects.toMatchObject(refusal);
+      // With the secret given again, the new issuer is taken.
+      await h.ctx.settings.set(acme, 'oidc', { ...OIDC, issuer: 'https://idp2.acme.test' }, { by: 'u1' });
+      expect((await h.ctx.settings.of(acme, 'oidc'))?.issuer).toBe('https://idp2.acme.test');
+
+      await h.ctx.settings.set(acme, 'auditForward', { url: 'https://siem.acme.test/in', token: 'tok' }, { by: 'u1' });
+      await expect(
+        h.ctx.settings.set(acme, 'auditForward', { url: 'https://siem.evil.test/in' }, { by: 'u1' }),
+      ).rejects.toThrow(/token must be given again/);
+      await h.ctx.settings.set(
+        acme,
+        'auditForward',
+        { url: 'https://siem.acme.test/in', caPem: undefined },
+        { by: 'u1' },
+      );
+
+      const smtp = `smtps://acme-mailer:${SMTP_PASSWORD}@mail.acme.test:465`;
+      await h.ctx.settings.set(acme, 'smtp', { url: smtp, from: 'ops@acme.test' }, { by: 'u1' });
+      for (const url of ['smtps://mail.evil.test:465', 'smtps://mail.acme.test:2525', 'smtp://mail.acme.test:465'])
+        await expect(
+          h.ctx.settings.set(acme, 'smtp', { url, from: 'ops@acme.test' }, { by: 'u1' }),
+          url,
+        ).rejects.toMatchObject(refusal);
+      // The same endpoint, its default port spelt out or not, keeps them; nothing refused was written.
+      await h.ctx.settings.set(acme, 'smtp', { url: 'smtps://mail.acme.test', from: 'new@acme.test' }, { by: 'u1' });
+      expect(await h.ctx.settings.smtp(acme)).toEqual({
+        url: `smtps://acme-mailer:${SMTP_PASSWORD}@mail.acme.test`,
+        from: 'new@acme.test',
+      });
+      expect(await h.ctx.settings.of(acme, 'auditForward')).toMatchObject({
+        url: 'https://siem.acme.test/in',
+        token: 'tok',
+      });
+    });
+
     it('refuses an SMTP host the egress rule refuses, on save', async () => {
       const deps = {
         settings: h.ctx.settings,
