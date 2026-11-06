@@ -5,6 +5,8 @@ import { SecretReviewDialog } from '../components/secret-review-dialog.js';
 import { PairMachineDialog } from '../features/account/pair-machine-dialog.js';
 import { SignInDialog } from '../features/account/sign-in-dialog.js';
 import { TeamDialog } from '../features/team/team-dialog.js';
+import { takeTeamDeepLink } from '../features/team/team-link.js';
+import { isBrowserTab } from '../lib/capabilities.js';
 import { WebhooksDialogs } from '../features/webhooks/webhooks-dialogs.js';
 import { SchedulesDialogs } from '../features/schedules/schedules-dialogs.js';
 import { ImportWebhooksDialog } from '../features/webhook-items/import-webhooks-dialog.js';
@@ -437,6 +439,11 @@ export function AppShell() {
 
   useEffect(() => {
     hydrateUi();
+  }, []);
+
+  // Team management in the browser §2.2: the desktop's *Manage team…* lands here with `?panel=team…`.
+  useEffect(() => {
+    if (isBrowserTab()) takeTeamDeepLink();
   }, []);
 
   // The layout is written to `localStorage` on every change, but the open workspace's *tabs*

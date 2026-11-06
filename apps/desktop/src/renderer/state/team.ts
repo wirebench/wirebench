@@ -19,6 +19,7 @@ import type {
 } from '@shared/wire-base.js';
 import { showToast } from '../components/toast.js';
 import { ipc } from './ipc-client.js';
+import type { TeamDialogTarget } from './ui.js';
 
 export type TeamTab = 'members' | 'workspaces' | 'invitations' | 'license' | 'audit' | 'provisioning' | 'domain';
 
@@ -47,7 +48,8 @@ export interface TeamState {
 }
 
 export interface TeamStore extends TeamState {
-  readonly open: (url: string) => Promise<void>;
+  /** Loads `url`'s teams; `target` picks the team on this first load (team management in the browser §2.2). */
+  readonly open: (url: string, target?: TeamDialogTarget) => Promise<void>;
   readonly reset: () => void;
   readonly refresh: () => Promise<void>;
   readonly selectTeam: (teamId: string) => Promise<void>;
@@ -108,6 +110,9 @@ export function teamWorkspaces(state: TeamState): readonly TeamWorkspaceWire[] {
 }
 
 export const useTeamStore = create<TeamStore>((set, get) => {
+  /** The team `open` was asked to show, until the first load after it has used it. */
+  let preferred: TeamDialogTarget | undefined;
+
   /** Unwraps an answer; a failure toasts `Could not <what>: …`, or marks the dialog signed out. */
   const run = async <T>(what: string, call: () => Promise<IpcResult<T>>): Promise<T | undefined> => {
     const result = await call();
@@ -173,8 +178,9 @@ export const useTeamStore = create<TeamStore>((set, get) => {
   return {
     ...INITIAL,
 
-    open: async (url) => {
+    open: async (url, target) => {
       set({ ...INITIAL, url, loading: true });
+      preferred = target;
       await get().refresh();
     },
 
@@ -194,7 +200,14 @@ export const useTeamStore = create<TeamStore>((set, get) => {
         set({ loading: false });
         return;
       }
-      const current = get().teamId;
+      // A target is used once, on the first load after `open`: a team id, else the team owning a workspace.
+      const wanted =
+        preferred?.teamId ??
+        (preferred?.workspaceId !== undefined
+          ? (spaces?.workspaces ?? []).find((workspace) => workspace.id === preferred?.workspaceId)?.teamId
+          : undefined);
+      preferred = undefined;
+      const current = get().teamId ?? wanted;
       const teamId = list.teams.some((team) => team.id === current) ? current : list.teams[0]?.id;
       set({
         teams: list.teams,
