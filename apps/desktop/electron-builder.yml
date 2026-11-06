@@ -24,7 +24,10 @@ files:
   - package.json
   - '!**/*.map'
   - '!**/{.eslintrc,.editorconfig,.prettierrc,tsconfig*.json,*.md}'
-  - '!**/node_modules/**/{test,__tests__,docs,example,examples}/**'
+  # Third-party packages' tests, docs and examples. Never our own packages: their built `dist/` has
+  # folders of those names that the app loads (`protocol-rest/dist/rest/docs/`), and 7.0.0-rc.1, built
+  # without them, stopped at start-up. `scripts/check-desktop-asar.ts` now fails a build like that.
+  - '!**/node_modules/!(@wirebench)/**/{test,__tests__,docs,example,examples}/**'
   # The engine is a workspace package: its checkout carries sources, tests and a coverage
   # report that the built `dist/` does not need and that nothing at runtime resolves.
   - '!**/node_modules/@wirebench/engine/{src,test,coverage,node_modules}/**'

@@ -13,7 +13,7 @@
  */
 
 import { closeSync, existsSync, openSync, readFileSync, readSync, realpathSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, join, posix } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 /** Not followed: the app loads the vendored binding instead (`packages/host/src/kerberos.ts`). */
@@ -168,10 +168,120 @@ export function excludedButNeeded(appDir: string, excluded: readonly string[]): 
     .map((name) => `${name} is excluded, and ${neededBy.get(name)} depends on it`);
 }
 
+/** A package.json `exports` or `imports` target: a path, or conditions to pick one by. */
+type Target = string | null | { readonly [condition: string]: Target };
+
+/** The conditions Node matches when the main process imports a module, in the order it tries them. */
+const CONDITIONS = ['node', 'import', 'default'];
+
+function pickTarget(target: Target | undefined): string | undefined {
+  if (target === undefined || target === null) return undefined;
+  if (typeof target === 'string') return target;
+  for (const [condition, inner] of Object.entries(target)) {
+    if (CONDITIONS.includes(condition)) {
+      const picked = pickTarget(inner);
+      if (picked !== undefined) return picked;
+    }
+  }
+  return undefined;
+}
+
+/** Matches `request` against an `exports` or `imports` map: an exact key, or a key with one `*`. */
+function mapRequest(map: Record<string, Target> | undefined, request: string): string | undefined {
+  if (map === undefined) return undefined;
+  if (request in map) return pickTarget(map[request]);
+  for (const [key, target] of Object.entries(map)) {
+    const star = key.indexOf('*');
+    if (star < 0) continue;
+    const [prefix, suffix] = [key.slice(0, star), key.slice(star + 1)];
+    if (request.length < key.length - 1 || !request.startsWith(prefix) || !request.endsWith(suffix)) continue;
+    const picked = pickTarget(target);
+    return picked?.replaceAll('*', request.slice(prefix.length, request.length - suffix.length));
+  }
+  return undefined;
+}
+
+/** `import … from '…'`, `export … from '…'` and `import('…')` with a literal specifier. */
+const SPECIFIER = /(?:\bfrom\s*|\bimport\s*\(\s*|\bimport\s+)(['"])([^'"\n]+)\1/g;
+
+/**
+ * Every module a workspace package in the asar imports must be in the asar too, resolved the way Node
+ * resolves it: a relative path, a `#…` entry of the package's `imports`, or another `@wirebench/…`
+ * package through its `exports`. The package walk above cannot see a folder that a broad exclusion
+ * drops from inside a package: 7.0.0-rc.1 shipped without `protocol-rest`'s `dist/rest/docs/`, which
+ * the `{test,__tests__,docs,…}` exclusion matched, and the app stopped at start-up.
+ */
+export function unresolvedWorkspaceImports(asarPath: string): string[] {
+  const { header, read } = readAsar(asarPath);
+  const isFile = (file: string): boolean => {
+    let entry: AsarEntry | undefined = header;
+    for (const part of file.split('/')) entry = entry?.files?.[part];
+    return entry?.size !== undefined;
+  };
+  interface Maps {
+    readonly exports?: Record<string, Target> | string;
+    readonly imports?: Record<string, Target>;
+  }
+  const manifests = new Map<string, Maps>();
+  const manifestOf = (dir: string): Maps => {
+    let found = manifests.get(dir);
+    if (found === undefined) {
+      found = JSON.parse(read(`${dir}/package.json`) ?? '{}') as Maps;
+      manifests.set(dir, found);
+    }
+    return found;
+  };
+  // A bare `@wirebench/name/sub` request, through that package's `exports`.
+  const resolveBare = (request: string): string | undefined => {
+    const [scope, name, ...rest] = request.split('/');
+    const dir = `node_modules/${scope}/${name}`;
+    if (read(`${dir}/package.json`) === undefined) return undefined;
+    const exports = manifestOf(dir).exports;
+    const sub = rest.length === 0 ? '.' : `./${rest.join('/')}`;
+    const target = typeof exports === 'string' ? (sub === '.' ? exports : undefined) : mapRequest(exports, sub);
+    return target === undefined ? undefined : posix.normalize(`${dir}/${target}`);
+  };
+
+  const problems: string[] = [];
+  const files: string[] = [];
+  const collect = (entry: AsarEntry, path: string): void => {
+    for (const [name, child] of Object.entries(entry.files ?? {})) {
+      const childPath = `${path}/${name}`;
+      if (child.files !== undefined) collect(child, childPath);
+      else if (name.endsWith('.js') && !child.unpacked) files.push(childPath);
+    }
+  };
+  for (const name of topLevelPackages(header).filter((pkg) => pkg.startsWith('@wirebench/'))) {
+    const entry = header.files?.node_modules?.files?.['@wirebench']?.files?.[name.slice('@wirebench/'.length)];
+    if (entry !== undefined) collect(entry, `node_modules/${name}`);
+  }
+  for (const file of files.sort()) {
+    const pkgDir = file.split('/').slice(0, 3).join('/');
+    const source = read(file) ?? '';
+    for (const match of source.matchAll(SPECIFIER)) {
+      const request = match[2] ?? '';
+      let resolved: string | undefined;
+      if (request.startsWith('.')) resolved = posix.normalize(`${posix.dirname(file)}/${request}`);
+      else if (request.startsWith('#')) {
+        const target = mapRequest(manifestOf(pkgDir).imports, request);
+        if (target === undefined) resolved = undefined;
+        else resolved = target.startsWith('.') ? posix.normalize(`${pkgDir}/${target}`) : resolveBare(target);
+      } else if (request.startsWith('@wirebench/')) resolved = resolveBare(request);
+      else continue;
+      if (resolved === undefined || !isFile(resolved)) {
+        problems.push(`${file.slice('node_modules/'.length)} imports ${request}, which is not in the asar`);
+      }
+    }
+  }
+  return problems;
+}
+
 export function checkDesktopAsar(resourcesDirs: readonly string[]): string[] {
   return resourcesDirs.flatMap((dir) => {
     const asar = join(dir, 'app.asar');
-    return checkAsarDependencies(asar).map((problem) => `${asar}: ${problem}`);
+    return [...checkAsarDependencies(asar), ...unresolvedWorkspaceImports(asar)].map(
+      (problem) => `${asar}: ${problem}`,
+    );
   });
 }
 
@@ -180,5 +290,7 @@ if (process.argv[1] !== undefined && pathToFileURL(realpathSync(process.argv[1])
   const problems = checkDesktopAsar(dirs);
   for (const problem of problems) console.error(`desktop asar: ${problem}`);
   if (problems.length > 0 || dirs.length === 0) process.exit(1);
-  console.log(`desktop asar: ${dirs.length} build(s) ship exactly the packages the app depends on`);
+  console.log(
+    `desktop asar: ${dirs.length} build(s) ship exactly the packages the app depends on, and every module they import`,
+  );
 }

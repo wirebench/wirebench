@@ -103,6 +103,40 @@ describe('checkDesktopAsar', () => {
   });
 });
 
+describe('the imports of our own packages', () => {
+  const tree = {
+    'package.json': { dependencies: { '@wirebench/engine': '1', '@wirebench/protocol-rest': '1' } },
+    'node_modules/@wirebench/engine/package.json': {
+      imports: { '#protocol-rest/*': { development: './src/*.ts', default: '@wirebench/protocol-rest/*' } },
+    },
+    'node_modules/@wirebench/protocol-rest/package.json': {
+      exports: { './*': { development: './src/*.ts', types: './dist/*.d.ts', default: './dist/*.js' } },
+    },
+    'node_modules/@wirebench/engine/dist/index.js':
+      "export { documentFor } from '#protocol-rest/rest/docs/document'; import x from 'third-party';",
+    'node_modules/@wirebench/protocol-rest/dist/rest/browser.js':
+      "import { documentFor } from './docs/document.js'; const m = await import('../index.js');",
+    'node_modules/@wirebench/protocol-rest/dist/index.js': 'export {};',
+  };
+
+  it('passes when every relative, # and @wirebench import resolves inside the asar', async () => {
+    const dir = await resources({
+      ...tree,
+      'node_modules/@wirebench/protocol-rest/dist/rest/docs/document.js': 'export const documentFor = 1;',
+    });
+    expect(checkDesktopAsar([dir])).toEqual([]);
+  });
+
+  // 7.0.0-rc.1: the docs exclusion dropped protocol-rest's dist/rest/docs/, and the app did not start.
+  it('names each import of a folder an exclusion dropped', async () => {
+    const dir = await resources(tree);
+    expect(checkDesktopAsar([dir])).toEqual([
+      `${join(dir, 'app.asar')}: @wirebench/engine/dist/index.js imports #protocol-rest/rest/docs/document, which is not in the asar`,
+      `${join(dir, 'app.asar')}: @wirebench/protocol-rest/dist/rest/browser.js imports ./docs/document.js, which is not in the asar`,
+    ]);
+  });
+});
+
 describe('the electron-builder exclusion list', () => {
   // The release checks the packed asar; this catches the same mistake on a pull request, against the
   // installed tree: a package only `kerberos` needed becoming a dependency of something that ships.
@@ -124,5 +158,12 @@ describe('the electron-builder exclusion list', () => {
     ]) {
       expect(builderYaml).toContain(pattern);
     }
+  });
+
+  // The release's asar check catches this too, but only once a tag is pushed.
+  it('drops tests, docs and examples from third-party packages only, never from ours', () => {
+    const builderYaml = readFileSync('apps/desktop/electron-builder.yml', 'utf8');
+    expect(builderYaml).toContain("'!**/node_modules/!(@wirebench)/**/{test,__tests__,docs,example,examples}/**'");
+    expect(builderYaml).not.toContain("'!**/node_modules/**/{test,__tests__,docs,example,examples}/**'");
   });
 });
