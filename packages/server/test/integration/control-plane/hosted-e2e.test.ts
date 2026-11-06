@@ -2,8 +2,15 @@
  * The hosted recipe end to end (hosted edition spec §22.17, §11's control-plane line; slice 7 Task 33): a hosted server
  * started from its environment, as an operator starts one, through `loadConfig` and `serve`'s own start-up, on a real
  * listener, with mail through a real SMTP conversation and a fake Paddle that posts signed webhook fixtures. A team
- * signs up, pays, signs in, is suspended when its subscription is canceled, is exported by the operator (and the
- * export verifies offline) and is deleted, leaving no row on the control role and no directory.
+ * signs up, pays, signs in, makes a working team (a team, a workspace, a first push read back), is suspended when its
+ * subscription is canceled, is exported by the operator (and the export verifies offline) and is deleted, leaving no
+ * row on the control role and no directory.
+ *
+ * Success criterion 5 (§13.5): signup to a working team in under five minutes with no operator. A clock runs from the
+ * form's first post to the snapshot read back; the SMTP sink and the fake Paddle stand in for the person's steps, so
+ * the bound shows no step waits on a slow job, and no operator command and no control-loop tick runs in between. The
+ * webhook finishes the signup itself (`signupCompleter`); the loop's `signup-finish` step, which picks up a signup
+ * bound 10 minutes ago, is only the fallback when Paddle stops retrying.
  *
  * The fake signs each fixture as Paddle documents it: `Paddle-Signature: ts=<unix>;h1=<hex>`, HMAC-SHA256 over
  * `<ts>:<raw body>` under the notification destination's secret, a placeholder here. No real key, no real domain: the
@@ -17,6 +24,7 @@ import { EventEmitter } from 'node:events';
 import { access, readFile } from 'node:fs/promises';
 import { request } from 'node:http';
 import { join } from 'node:path';
+import { performance } from 'node:perf_hooks';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { paddleSignature } from '../../../src/control-plane/billing/signature.js';
@@ -43,6 +51,8 @@ const SLUG = 'acme';
 const EMAIL = 'owner@customer.test';
 const HOST = `${SLUG}.${TEST_APP_DOMAIN}`;
 const DAY_MS = 24 * 3_600_000;
+/** Success criterion 5 (spec §13.5): signup to a working team in under five minutes. */
+const WORKING_TEAM_WITHIN_MS = 5 * 60_000;
 
 interface Reply {
   readonly status: number;
@@ -107,6 +117,11 @@ describeHosted('the hosted server end to end (spec §22.17)', () => {
   let tenantId = '';
   let cookie = '';
   let n = 0;
+  /** When the signup form was first posted (`performance.now()`), for criterion 5. */
+  let startedAt = 0;
+  /** Operator commands run, and control-loop ticks fired: neither may come between the form and a working team. */
+  let operatorCommands = 0;
+  let loopTicks = 0;
 
   beforeAll(async () => {
     db = await testDatabase({ migrated: false });
@@ -176,6 +191,7 @@ describeHosted('the hosted server end to end (spec §22.17)', () => {
     );
   };
   const cli = async (argv: readonly string[]) => {
+    operatorCommands++;
     const out: string[] = [];
     const err: string[] = [];
     const code = await main([...argv], {
@@ -195,6 +211,7 @@ describeHosted('the hosted server end to end (spec §22.17)', () => {
     );
 
   it('signs up and pays: the signup form, its mail, the password step and a signed subscription.created', async () => {
+    startedAt = performance.now();
     const posted = await http(
       port,
       'POST',
@@ -221,11 +238,10 @@ describeHosted('the hosted server end to end (spec §22.17)', () => {
 
     const paid = await webhook('created', 'sub_test_e2e', { custom_data: { signup: signupId } });
     expect(paid.status).toBe(200);
-    const status = await eventually(async () => {
-      const res = await http(port, 'GET', `/signup/${token}/status`, { host: TEST_ENTRY_HOST });
-      const json = JSON.parse(res.body) as { status: string; url?: string };
-      return json.status === 'ready' ? json : undefined;
-    }, 'the signup to be ready');
+    // The webhook finishes the signup before it answers: ready on the first poll, with no loop tick in between.
+    const polled = await http(port, 'GET', `/signup/${token}/status`, { host: TEST_ENTRY_HOST });
+    const status = JSON.parse(polled.body) as { status: string; url?: string };
+    expect(status.status).toBe('ready');
     expect(status.url).toBe(`https://${HOST}/sign-in`);
     const row = await control.query<{ id: string; edition: string; status: string }>(
       'select id::text, edition, status from tenants where slug = $1',
@@ -245,6 +261,61 @@ describeHosted('the hosted server end to end (spec §22.17)', () => {
     const me = await http(port, 'GET', '/api/v1/me', { host: HOST, cookie });
     expect(me.status).toBe(200);
     expect(JSON.parse(me.body)).toMatchObject({ user: { email: EMAIL, serverAdmin: true } });
+  });
+
+  it('makes a working team within five minutes of the form, with no operator: a team, a workspace, a first push', async () => {
+    const api = (method: string, path: string, body?: unknown) =>
+      http(
+        port,
+        method,
+        `/api/v1${path}`,
+        {
+          host: HOST,
+          cookie,
+          // A cookie write carries the tenant's own Origin, as the browser client sends it (§17.2).
+          ...(body !== undefined ? { origin: `https://${HOST}`, 'content-type': 'application/json' } : {}),
+        },
+        body !== undefined ? JSON.stringify(body) : undefined,
+      );
+    // A signup makes the tenant and its first user, no team: the new admin makes one.
+    const team = await api('POST', '/teams', { name: 'Payments QA' });
+    expect(team.status, team.body).toBe(201);
+    const teamId = (JSON.parse(team.body) as { id: string }).id;
+    const workspace = await api('POST', `/teams/${teamId}/workspaces`, { name: 'Orders API' });
+    expect(workspace.status, workspace.body).toBe(201);
+    expect(JSON.parse(workspace.body)).toMatchObject({ teamId, myRole: 'admin' });
+    const ws = `/workspaces/${(JSON.parse(workspace.body) as { id: string }).id}`;
+    const empty = await api('GET', `${ws}/sync/head`);
+    expect(JSON.parse(empty.body)).toMatchObject({ head: null, commits: 0 });
+    const pushed = await api('POST', `${ws}/sync/commits`, {
+      parent: null,
+      commits: [
+        {
+          subject: 'First commit',
+          at: new Date().toISOString(),
+          changes: [{ path: 'workspace.yaml', encoding: 'utf8', content: 'name: Orders API\n' }],
+        },
+      ],
+    });
+    expect(pushed.status, pushed.body).toBe(201);
+    const { head } = JSON.parse(pushed.body) as { head: string };
+    const read = await api('GET', `${ws}/sync/head`);
+    expect(read.status).toBe(200);
+    expect(JSON.parse(read.body)).toMatchObject({ head, commits: 1, role: 'admin' });
+    const snapshot = await api('GET', `${ws}/sync/snapshot`);
+    expect(snapshot.status).toBe(200);
+    expect(JSON.parse(snapshot.body)).toEqual({
+      head,
+      files: [{ path: 'workspace.yaml', encoding: 'utf8', content: 'name: Orders API\n' }],
+    });
+    const elapsed = performance.now() - startedAt;
+    expect(startedAt).toBeGreaterThan(0);
+    expect(elapsed, `${String(Math.round(elapsed))} ms from the form to a working team`).toBeLessThan(
+      WORKING_TEAM_WITHIN_MS,
+    );
+    // Nothing between the form and here waited on an operator or on the control loop.
+    expect(operatorCommands).toBe(0);
+    expect(loopTicks).toBe(0);
   });
 
   it('is suspended when its subscription is canceled: the API refuses, and no one signs in', async () => {
@@ -277,7 +348,7 @@ describeHosted('the hosted server end to end (spec §22.17)', () => {
     offsetMs = 15 * DAY_MS;
     await eventually(
       async () => {
-        timers.fire(CONTROL_LOOP_MS);
+        loopTicks += timers.fire(CONTROL_LOOP_MS);
         const left = await control.query('select 1 from tenants where id = $1', [tenantId]);
         return left.rowCount === 0 ? true : undefined;
       },

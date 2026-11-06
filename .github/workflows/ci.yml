@@ -415,6 +415,9 @@ jobs:
       # CLI and its agent bundle (spec §18.7); the suite pairs it through the tab and sends to the runner's
       # own 127.0.0.1 through it. Teardown stops it.
       - run: pnpm --filter @wirebench/cli build
+      # desktop-agent.spec.ts pairs the built desktop app as this machine's agent (spec §13.2 criterion 2),
+      # launched through Playwright's `_electron`.
+      - run: pnpm --filter "@wirebench/desktop..." build
       - uses: docker/setup-buildx-action@v3
       - uses: docker/build-push-action@v6
         with:
@@ -456,7 +459,27 @@ jobs:
             test "$(sql "select count(*) from pg_stat_activity where usename = 'wirebench_app'")" -gt 0
           fi
       - run: pnpm --filter @wirebench/e2e exec playwright install chromium --with-deps
-      - run: pnpm test:e2e:browser
+      # The desktop app needs a display (xvfb) and, to seal its agent key, the Secret Service: an unlocked
+      # gnome-keyring in a D-Bus session. The spec sets XDG_CURRENT_DESKTOP=GNOME, without which Chromium uses
+      # its plain-text store and the app refuses to pair.
+      # libsecret is the library Chromium reaches the Secret Service through; without it the app falls back
+      # to its plain-text store whatever keyring runs.
+      - name: Install xvfb, gnome-keyring and libsecret
+        run: sudo apt-get update && sudo apt-get install -y xvfb gnome-keyring dbus-x11 libsecret-1-0 libsecret-tools
+      - name: Run the browser suite
+        env:
+          WIREBENCH_E2E_REQUIRE_DESKTOP: '1'
+        # The keyring must answer before the suite starts: storing and reading back one value proves the
+        # Secret Service is up and its default collection unlocked, so a later refusal to pair is the app's.
+        run: |
+          dbus-run-session -- sh -c '
+            set -e
+            echo -n e2e | gnome-keyring-daemon --unlock --components=secrets > /dev/null
+            echo -n probe | secret-tool store --label=wirebench-e2e-probe service wirebench-e2e
+            test "$(secret-tool lookup service wirebench-e2e)" = probe
+            echo "keyrings: $(ls ~/.local/share/keyrings 2>&1 | tr "\n" " ") bus: ${DBUS_SESSION_BUS_ADDRESS:-none}"
+            xvfb-run -a pnpm test:e2e:browser
+          '
       - name: Stack logs
         if: failure()
         run: docker compose -f e2e/browser/compose.yaml logs --no-color --tail=200
