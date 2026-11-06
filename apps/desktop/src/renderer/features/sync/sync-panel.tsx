@@ -486,7 +486,7 @@ export function SyncPanel() {
         title="Stop sharing?"
         description={
           server !== undefined
-            ? 'This workspace becomes local-only again. The server copy stays for your team; a team admin can delete it from Manage teams.'
+            ? 'This workspace becomes local-only again. The server copy stays for your team; a team admin can delete it from Manage team.'
             : 'This workspace becomes local-only again. Its history stays on disk; other members keep their own copies.'
         }
         confirmLabel="Stop sharing"

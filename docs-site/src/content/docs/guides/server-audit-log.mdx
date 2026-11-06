@@ -90,7 +90,7 @@ the URL and the values of secret-like query parameters become `<redacted>`. Any 
 knows from the session is masked too, wherever it appears in the URL. A URL longer than 2048 characters
 is cut.
 
-**Turning it on.** A workspace admin opens the **Workspaces** tab in **Account: Manage teams** and
+**Turning it on.** A workspace admin opens the **Workspaces** tab in **Account: Manage team** and
 switches on **Record desktop activity**. Everyone else sees the line *Desktop activity is recorded*. Both show only on a server that supports
 desktop activity.
 Each desktop learns of a change on its next sync fetch. Turning it off stops it on the server at once.
@@ -119,7 +119,7 @@ discarded and counted instead.
 
 - **Server admins** read every event, with any filter, or none.
 - **Team admins** read the events of the teams they administer, one team at a time, and nothing else.
-  They choose the team in **Account: Manage teams**; the Audit tab shows that team's events and exports
+  They choose the team in **Account: Manage team**; the Audit tab shows that team's events and exports
   only those.
 - A plain team member, a CI token and anyone not signed in cannot read the log.
 
@@ -138,7 +138,7 @@ A team admin's export is recorded as `audit.exported` on their own team, so it s
 
 ## Reading the log
 
-A server admin on an Enterprise server opens **Account: Manage teams** and chooses the **Audit** tab. It
+A server admin on an Enterprise server opens **Account: Manage team** and chooses the **Audit** tab. It
 works with no team selected. A team admin sees the **Audit** tab once they select a team they administer,
 and it lists that team's events only.
 

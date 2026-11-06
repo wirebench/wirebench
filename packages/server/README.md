@@ -389,6 +389,12 @@ invitation is created the same way or from the app by a server admin; the link i
 however the team already talks — the server sends no email. `admin list-invitations` and
 `admin revoke-invitation <id>` exist for an operator who cannot yet sign in.
 
+With the browser client on (`WIREBENCH_SERVER_BROWSER_CLIENT`), the link's page also accepts in the browser: a
+form (`POST /invite/<code>`, same-origin only, rate-limited like `POST /api/v1/invitations/accept`) takes a password
+typed twice and an optional name, runs the same accept, sets the browser session and lands on `/`; the tenant's OIDC
+and SAML methods are offered beside it. The page keeps showing the code for the desktop app. With the browser client
+off, the page is the code alone.
+
 Two sign-in methods, both on by default once configured: local accounts (email and password,
 `WIREBENCH_SERVER_LOCAL_AUTH`) and OpenID Connect (`WIREBENCH_SERVER_OIDC_*`). With OIDC, register
 the redirect URI `wirebench-server config check` prints (`<public URL>/api/v1/auth/oidc/callback`)
@@ -473,7 +479,7 @@ _Audit log_ guide for what each event carries and how to handle personal data.
 ## Teams
 
 A server admin creates teams (`POST /api/v1/teams`) and becomes the first admin of each. Team admins do
-the rest, from the app's **Account: Manage teams…** dialog or the API:
+the rest, from the **Account: Manage team…** dialog or the API:
 
 - Add people who already have an account, invite new ones, and change or remove roles. A team keeps at
   least one admin.
@@ -486,6 +492,10 @@ the rest, from the app's **Account: Manage teams…** dialog or the API:
 | viewer | yes           | yes           | no   | no            | no     |
 | editor | yes           | yes           | yes  | no            | no     |
 | admin  | yes           | yes           | yes  | yes           | yes    |
+
+The dialog is the browser client's. With it on, the desktop app's _Manage team…_ opens `<public URL>/?panel=team`
+in the default browser (`GET /api/v1/meta` lists `browser-client`); with it off, the app keeps the dialog in its
+window.
 
 Team admins and server admins are admins of every workspace of their teams. To anyone without a role,
 a workspace (or a team) does not exist: the API answers `404`, never `403`. Deleting a workspace moves
