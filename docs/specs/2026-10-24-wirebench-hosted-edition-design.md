@@ -9,6 +9,7 @@ state); the rest are folded in where they apply · Amended 2026-10-27 for slice 
 ADR-0034) · Amended 2026-10-29 for slice 3 (§18, ADR-0035) · Amended 2026-10-29 for slice 4 (§19, ADR-0036) ·
 Amended 2026-11-03 for slice 5 (§20, ADR-0037) · Amended 2026-11-03 for slice 6 (§21, ADR-0038) · Amended 2026-11-04 for slice 7 (§22, ADR-0039) ·
 Amended 2026-11-04 for slice 8 (§23, ADR-0040) ·
+Amended 2026-11-06 for team management in the browser (§24) ·
 Issue: #776 (slice 1 is #777, slice 2 is #783, slice 3 is #790, slice 4 is #798, slice 5 is #821, slice 6 is #822, slice 7 is #829, slice 8 is #830) ·
 Module ids: `host-seam`,
 `browser-client`, `local-agent`, `tenancy`, `operations`, `domains`, `control-plane`, `custom-domains`
@@ -3329,3 +3330,12 @@ Owner rulings (2026-11-04, popup):
   runs Traefik, Pebble and Pebble's challenge DNS server. A claim's router appears, Pebble issues by HTTP-01, and the
   probe sees the certificate. No real DNS or ACME anywhere.
 - The Settings tab: renderer unit tests for each state. An e2e test of the tab against the Docker server rig.
+
+## 24. Amendment: team management in the browser (2026-11-06)
+
+The Team dialog (members, workspaces, invitations, access, license, audit, provisioning, domain) moves to the
+browser client; the desktop's *Manage team…* opens `<server>/?panel=team` in the default browser when the server's
+`GET /meta` lists `browser-client`, and keeps the in-window dialog for a server without it. With the browser client
+on, the invitation page (§3.2: "a static instruction to open the desktop app") also lets the invitee set a password,
+or continue with the tenant's SSO, and lands them signed in on `/`. The design and its rulings are
+`docs/specs/2026-11-06-team-management-in-browser-design.md`; where it differs from §3.1, §3.2 or §17.2, it wins.
