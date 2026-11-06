@@ -54,6 +54,15 @@ selects like a desktop tree; and, on the server, scheduled runs and SAML sign-in
 logs, live terminal sharing and an audit trail for terminal sessions; imported scripts from other API
 clients that run against their own script API; and install files for Homebrew, winget and a team server
 compose. It took the project format to version 11.
+7.0.0 carries the server code for a hosted edition, and the self-hosted changes it needed: the app in a
+browser tab, a local agent so that tab can send from the person's own machine (also as `wirebench agent`),
+a tenant column under forced row-level security with a database role of its own, several server instances
+behind a balancer with per-team budgets and metrics, and hosted mode itself with Paddle billing, team
+settings in the desktop app and custom domains. Wirebench does not run a hosted service yet. On the desktop
+side it adds nine colour themes, overview pages for APIs and folders, complete documentation for a REST
+API and a Preview update channel. It is a major release because the server now needs PostgreSQL 15 or
+later and the team install's compose file needs a second database password; the project format stays
+at version 11.
 Everything below is what is still open, and
 [Milestones and tracking](#milestones-and-tracking) maps it to the issues and milestones that track it.
 

@@ -6,10 +6,13 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [7.0.0] - 2026-11-06
+
 ### Added
-- **The hosted edition, switched on (server, #829).** `WIREBENCH_SERVER_MODE=hosted` runs the server as a service for
-  many teams. A team signs up at `app.<app-domain>/signup`, pays per seat through Paddle (the merchant of record; there
-  is no free tier), and signs in at `<slug>.<app-domain>` as its first server admin. A subscription past due for 14
+- **Hosted mode (server, #829).** `WIREBENCH_SERVER_MODE=hosted` runs the server as a service for many teams.
+  Wirebench does not offer a hosted service yet: this is the server code for one, not a place to sign up today. In
+  hosted mode, a team signs up at `app.<app-domain>/signup`, pays per seat through Paddle (the merchant of record;
+  there is no free tier), and signs in at `<slug>.<app-domain>` as its first server admin. A subscription past due for 14
   days, or canceled, suspends the team: its sign-in page says why, and its API, sockets and catch URLs refuse it, with
   its data kept. The operator lists, creates, suspends, resumes, renames and deletes teams with `admin tenant`, and a
   deletion removes every row, file and key 14 days on, once the subscription has ended. `config check` names every
@@ -30,11 +33,11 @@ All notable changes to this project are documented here. The format follows
   budget is spent. `GET /readyz` tells a balancer when an instance is ready or draining, and a draining instance
   hands its browser tabs to the next one without a wait. Set an OpenTelemetry endpoint and the server pushes its
   metrics there, by team id only; without one it sends nothing. A one-instance server is unchanged.
-- **Hosted names (server, not yet switched on).** `WIREBENCH_SERVER_APP_DOMAIN` and `WIREBENCH_SERVER_SITE_DOMAIN`
+- **Hosted names (server, hosted mode).** `WIREBENCH_SERVER_APP_DOMAIN` and `WIREBENCH_SERVER_SITE_DOMAIN`
   name the hosted edition's two domains; `app.<app-domain>` emails a person the sign-in links of their teams, the apex
   redirects there, and slugs such as `app`, `api` and the area names are reserved. A deployment recipe in
   `packages/server/deploy/hosted/` issues one wildcard certificate with Traefik. A self-hosted server is unchanged.
-- **Custom domains (hosted, not yet switched on).** On the hosted Enterprise edition, a team's server admin can serve
+- **Custom domains (server, hosted mode).** On the hosted Enterprise edition, a team's server admin can serve
   the team at a name of its own, such as `wirebench.example.com`, beside `<slug>.<app-domain>`. The new **Domain** tab
   in **Manage teams** claims the name, shows the CNAME and TXT records to create with a copy button each, checks them
   (**Check now**, at most once a minute), says in plain words where the name stands, and removes it. Once the
@@ -2737,7 +2740,8 @@ contract, send it with whatever the service demands, and read the answer.
 - English only.
 
 <!-- 1.0.0 was never published; its tag and draft release were withdrawn in favour of 1.1.0. The links resolve once `v1.1.0` is pushed (see docs/release.md). -->
-[Unreleased]: https://github.com/wirebench/wirebench/compare/v6.1.0-rc.7...HEAD
+[Unreleased]: https://github.com/wirebench/wirebench/compare/v7.0.0-rc.1...HEAD
+[7.0.0]: https://github.com/wirebench/wirebench/compare/v6.1.0...v7.0.0-rc.1
 [6.1.0]: https://github.com/wirebench/wirebench/compare/v6.0.0-rc.1...v6.1.0-rc.7
 [6.0.0]: https://github.com/wirebench/wirebench/compare/v5.0.0...v6.0.0
 [5.0.0]: https://github.com/wirebench/wirebench/compare/v4.0.0...v5.0.0
