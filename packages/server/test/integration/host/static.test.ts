@@ -67,6 +67,17 @@ describeDb('the browser tab at the root (hosted spec §17.2, §17.6)', () => {
     expect(location.searchParams.get('redirect_to')).toBe('/workspaces/x?tab=send&a=1');
   });
 
+  it('lists browser-client in GET /meta, which the desktop reads before it opens the team page', async () => {
+    const meta = await h.app.inject({ method: 'GET', url: '/api/v1/meta' });
+    expect(meta.json<{ capabilities: string[] }>().capabilities).toContain('browser-client');
+  });
+
+  it('serves the page for the team deep link, and carries it through sign-in', async () => {
+    const res = await h.app.inject({ method: 'GET', url: '/?panel=team&workspace=01J0000000000000000000000' });
+    expect(res.statusCode).toBe(303);
+    expect(res.headers.location).toBe('/sign-in?redirect_to=/%3Fpanel%3Dteam%26workspace%3D01J0000000000000000000000');
+  });
+
   it('serves index.html to a browser session with the §17.6 policy as a header, never cached', async () => {
     const alice = await browserUser(h, 'alice@example.com');
     for (const url of ['/', '/workspaces/x', '/workspaces/x/']) {
@@ -241,6 +252,9 @@ describeDb('the browser tab while it cannot be served', () => {
       }
       const signOut = await h.app.inject({ method: 'POST', url: '/sign-out', headers: { origin: PUBLIC_URL } });
       expect(signOut.statusCode).toBe(404);
+      // Team management in the browser §2.1: the desktop keeps its own Team dialog for such a server.
+      const meta = await h.app.inject({ method: 'GET', url: '/api/v1/meta' });
+      expect(meta.json<{ capabilities: string[] }>().capabilities).not.toContain('browser-client');
     } finally {
       await h.close();
     }

@@ -163,6 +163,24 @@ export async function acceptInvitation(
   input: InvitationAcceptRequest,
   source: AuditSource,
 ): Promise<SignInResponse> {
+  const user = await claimInvitation(env, scope, input, source);
+  return signIn(env, scope, user, 'local', input.device.name, source);
+}
+
+/** What {@link claimInvitation} needs: the accept request without the desktop's device. */
+export type InvitationClaim = Pick<InvitationAcceptRequest, 'secret' | 'password' | 'displayName'>;
+
+/**
+ * The accept itself, shared by the desktop's `POST /invitations/accept` and the browser's form
+ * (`POST /invite/:secret`, team management in the browser §2.3): it claims the row, creates the user
+ * (or replaces a reset's credential) and returns the user. Each caller then signs its own client in.
+ */
+export async function claimInvitation(
+  env: IdentityEnv,
+  scope: TenantScope,
+  input: InvitationClaim,
+  source: AuditSource,
+): Promise<repo.UserRow> {
   if (!env.settings.local) throw methodDisabled();
   if (input.password.length < MIN_PASSWORD_LENGTH) throw passwordTooShort();
   const invitation = await openInvitationBySecret(env, scope, input.secret);
@@ -214,7 +232,7 @@ export async function acceptInvitation(
   // accepts (it builds only an InvitationEnv), so the server's own logger is the one at hand.
   if (invitation.kind === 'reset')
     announce(env.ctx.hooks.sessionEnded, { tenantId: scope.tenantId, userId: user.id }, env.ctx.log);
-  return signIn(env, scope, user, 'local', input.device.name, source);
+  return user;
 }
 
 /** Revokes an open `invite`; `false` when there is no such open invitation. */

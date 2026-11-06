@@ -29,6 +29,9 @@ import { identitySettings } from '../identity/env.js';
 import { callerForToken } from '../identity/guard.js';
 import { tenantUrl } from '../tenancy/urls.js';
 
+/** What `GET /meta` lists while the browser client is on (team management in the browser §2.1). */
+export const BROWSER_CLIENT_CAPABILITY = 'browser-client';
+
 /** The copied build, beside this file's compiled output; the same path from `src/host/` under a test. */
 export const BROWSER_BUILD_DIR = fileURLToPath(new URL('../../dist/browser/', import.meta.url));
 

@@ -1,9 +1,10 @@
 /**
  * The browser's sign-in routes at the root (hosted spec §17.2), registered through `registerPublic`
  * only when `WIREBENCH_SERVER_BROWSER_CLIENT` is on: the page, the local form, the start of the
- * OIDC flow, whose callback lives with the desktop's in `auth-oidc.ts`, and the sign-out form. SAML's
+ * OIDC flow, whose callback lives with the desktop's in `auth-oidc.ts`, the sign-out form and the
+ * invitation form (`browser-invite.ts`). SAML's
  * start is the sso module's. These routes sit outside `/api/v1`, so the guard's Origin check does not
- * reach them; the two forms check Origin themselves, against login CSRF and forced sign-out.
+ * reach them; the forms check Origin themselves, against login CSRF and forced sign-out.
  */
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { auditSource } from '../../context.js';
@@ -23,6 +24,7 @@ import { chargeKeys, emailKey, ipKey, rateLimit } from '../rate-limit.js';
 import { sendSignInPage } from '../sign-in-page.js';
 import { mintSecret, pkceChallenge } from '../tokens.js';
 import { checkLocalCredentials } from './auth-local.js';
+import { browserInviteRoutes } from './browser-invite.js';
 
 /** An email and a password with room to spare; anything bigger is not a sign-in. */
 const FORM_BODY_LIMIT = 16 * 1024;
@@ -94,6 +96,8 @@ export const browserSignInRoutes =
         clearSessionCookie(reply, url);
         return reply.code(303).header('location', '/sign-in').header('cache-control', 'no-store').send();
       });
+      // The invitation page's form (team management in the browser §2.3), under the same parser and limit.
+      browserInviteRoutes(env, FORM_BODY_LIMIT)(form);
       registered();
     });
 

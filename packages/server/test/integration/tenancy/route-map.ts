@@ -376,6 +376,20 @@ export const ROUTE_MAP: Readonly<Record<string, RouteCase>> = {
     refused: (res) => res.statusCode === 200 && res.body.includes('This invitation has expired or was already used.'),
     request: (ctx) => ({ method: 'GET', url: `/invite/${ctx.a.inviteSecret}` }),
   },
+  'POST /invite/:secret': {
+    cls: 'refused',
+    // The browser's accept form (team management in the browser §2.3): another tenant's secret is the closed page.
+    refused: (res) =>
+      res.statusCode === 404 &&
+      res.body.includes('This invitation has expired or was already used.') &&
+      !String(res.headers['set-cookie'] ?? '').includes('wb_session='),
+    request: async (ctx) => ({
+      method: 'POST',
+      url: `/invite/${(await fresh.invitation(ctx.a)).secret}`,
+      headers: { origin: ctx.from.tenant.origin, 'content-type': 'application/x-www-form-urlencoded' },
+      payload: new URLSearchParams({ password: PASSWORD, confirm: PASSWORD }).toString(),
+    }),
+  },
   'GET /api/v1/users': { cls: 'own', request: (ctx) => json(ctx, 'GET', api('/users')) },
   'PATCH /api/v1/users/:id': {
     cls: 'refused',
