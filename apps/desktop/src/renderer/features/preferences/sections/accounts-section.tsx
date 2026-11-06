@@ -4,6 +4,7 @@ import { BooleanSetting, SettingsGroup, SettingsItem } from '../../../components
 import { signedInServers, useAccountStore } from '../../../state/account.js';
 import { useUiStore } from '../../../state/ui.js';
 import { LicenseBanner } from '../../team/license-banner.js';
+import { manageTeam } from '../../team/team-link.js';
 import type { SectionProps } from './section-props.js';
 
 function hostOf(url: string): string {
@@ -31,7 +32,6 @@ export function AccountsSection({ preferences, update }: SectionProps) {
   const signOut = useAccountStore((state) => state.signOut);
   const remove = useAccountStore((state) => state.remove);
   const openSignInDialog = useUiStore((state) => state.openSignInDialog);
-  const openTeamDialog = useUiStore((state) => state.openTeamDialog);
 
   return (
     <div data-testid="accounts-section">
@@ -78,10 +78,10 @@ export function AccountsSection({ preferences, update }: SectionProps) {
                       <Button
                         data-testid="account-row-manage-teams"
                         onClick={() => {
-                          openTeamDialog(server.url);
+                          void manageTeam(server.url);
                         }}
                       >
-                        Manage teams…
+                        Manage team…
                       </Button>
                       {(manage || endTab !== undefined) && (
                         <Button

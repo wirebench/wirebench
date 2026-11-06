@@ -2,6 +2,7 @@ import { catalogEntry } from '@shared/command-catalog.js';
 import { hasCapability, tabSignOut } from '../lib/capabilities.js';
 import { registerCommand } from '../lib/commands.js';
 import { signedInServers, useAccountStore } from '../state/account.js';
+import { manageTeam } from '../features/team/team-link.js';
 import { useUiStore } from '../state/ui.js';
 
 /** True when at least one known server has a live session — the gate for `account.signOut`. */
@@ -55,7 +56,7 @@ export function registerAccountCommands(): void {
     when: hasSignedInServer,
     whenScope: 'account.signedIn',
     run: () => {
-      useUiStore.getState().openTeamDialog();
+      void manageTeam();
     },
   });
 }

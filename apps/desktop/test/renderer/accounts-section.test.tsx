@@ -84,14 +84,14 @@ describe('AccountsSection', () => {
     expect(screen.getByTestId('accounts-section').textContent).toContain('No servers yet');
   });
 
-  it('a signed-in row offers Manage teams… for that server; a signed-out row does not', () => {
+  it('a signed-in row offers Manage team… for that server; a signed-out row does not', async () => {
     useAccountStore.setState({ servers: [account('https://wb.test'), account('https://old.test', true)] });
     render(<AccountsSection preferences={DEFAULT_PREFERENCES_WIRE} update={vi.fn()} />);
     const old = screen.getByTestId('account-row-old.test');
     expect(old.querySelector('[data-testid="account-row-manage-teams"]')).toBeNull();
     const live = screen.getByTestId('account-row-wb.test');
     fireEvent.click(live.querySelector('[data-testid="account-row-manage-teams"]')!);
-    expect(useUiStore.getState().teamDialog).toEqual({ open: true, url: 'https://wb.test' });
+    await vi.waitFor(() => expect(useUiStore.getState().teamDialog).toEqual({ open: true, url: 'https://wb.test' }));
   });
 
   it('shows the expiry banner under a server whose license has lapsed', async () => {
