@@ -60,7 +60,7 @@ split (#858: User settings → Password, Team settings → Server → Sign-in).
 9. **The second step's rate limits** are a limiter of their own, `two-factor` (spec §3.3), 10 a minute per address
    and per user, with the per-user key in the existing `<tenant>:user:<id>` shape (as `callerKey`) from the
    challenge's user, since the request has no caller yet. The lockout is a second limiter,
-   `two-factor-failures` (capacity 10, refilled over 15 minutes), peeked before an attempt and taken only on a
+   `two-factor-failures` (capacity 10, refilled over an hour), peeked before an attempt and taken only on a
    failure, as the agent module's failed-pairing limit is.
 10. **Self-hosted, the required switch is an environment variable,** `WIREBENCH_SERVER_REQUIRE_TWO_FACTOR`
     (default `false`): a self-hosted server answers every settings section read-only from its environment

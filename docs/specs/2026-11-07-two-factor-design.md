@@ -59,13 +59,14 @@ sign-in, §3.6 rate limits), `docs/specs/2026-11-07-settings-split-design.md` §
 - The second step has a limiter of its own, `two-factor`, apart from the password step's `identity` buckets:
   10 attempts a minute per address and per person (`<tenant>:user:<id>`, from the challenge's user). A
   password sign-in therefore never uses up a second step's attempts, nor the other way round.
-- **Lockout.** A per-person failure bucket, `two-factor-failures`, holds 10 and refills over 15 minutes. It is
+- **Lockout.** A per-person failure bucket, `two-factor-failures`, holds 10 and refills over an hour. It is
   checked before each second-factor attempt and charged only by a wrong one, across challenges, so ten wrong
-  factors in a row lock that person's second step for up to 15 minutes. The password step is not locked, and
-  a person signed in elsewhere keeps their sessions. The lock answers the same `429 identity-rate-limited`
+  factors in a row lock that person's second step; an attempt comes back every six minutes, and all ten after
+  an hour. The password step is not locked, and a person signed in elsewhere keeps their sessions. The lock answers the same `429 identity-rate-limited`
   with `Retry-After` as every other limit, and records `auth.second_factor_locked` once.
-- With five attempts a challenge, ten a lockout window and six-digit codes, guessing a code takes on the order
-  of 50 000 lockout windows (about a year and a half) per person.
+- So a person's second step takes at most ten wrong factors an hour. An authenticator guess, with three codes
+  valid at a time, succeeds about once in 330 000 tries: some 3.8 years of guessing without a pause, each try
+  after a correct password and each failure in the audit log.
 - A wrong code, a used recovery code and a failed passkey record `auth.second_factor_failed` with the method
   and reason; never the code.
 
@@ -240,7 +241,7 @@ Two-step sign-in follows the authentication chapter of the OWASP Application Sec
 | Secrets at rest | Sealed with AES-256-GCM under a key derived (HKDF) from the tenant's data key, which the server secrets key wraps; never answered after enrolment, and not exported (§7) | V2.8.2, V6.2 |
 | Recovery codes | 10 codes of 50 random bits, shown once, stored as keyed HMAC-SHA-256 hashes, each used once (§3.4, §5.3) | V2.6.1, V2.6.3 (V2.6.2: see below) |
 | Passkeys | WebAuthn Level 2 through `@simplewebauthn/server`: origin and RP id checked, one-use challenges that live five minutes, signature counter checked, user verification preferred (§3.5) | V2.9.1–V2.9.3 |
-| Guessing | Second-step limiter apart from the password step, five attempts a challenge, a 15-minute per-person lockout (§3.3) | V2.2.1 |
+| Guessing | Second-step limiter apart from the password step, five attempts a challenge, a per-person lockout of ten wrong factors an hour (§3.3) | V2.2.1 |
 | Half signed in | A server-side challenge row: a 43-character random secret kept as its hash, five minutes, one use; it grants nothing but the second step and is never a session (§3.2) | V3.2.2 |
 | Changes | Adding or removing a factor, new recovery codes and turning two-step sign-in off each need the current password moments before; every enrolment, removal, reset and failure is audited (§5, §7) | V3.7.1, V7.1.3 |
 | Lost factor | A server admin's reset, which also ends the person's sessions, and is audited (ruling 3) | V2.5.6, V2.5.7 |
