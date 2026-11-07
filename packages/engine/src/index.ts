@@ -2683,11 +2683,13 @@ export type {
 } from '#core/server-api/audit';
 export {
   ACCOUNTS_FILE_VERSION,
+  accountRefSchema,
   accountsFileSchema,
+  accountsFileV1Schema,
   parseAccountsFile,
   serverAccountSchema,
 } from '#core/account/schema';
-export type { AccountsFile, ServerAccount } from '#core/account/schema';
+export type { AccountRef, AccountsFile, ServerAccount } from '#core/account/schema';
 export * from '#core/sequence/index';
 export * from '#core/script/index';
 export * from '#core/mock/index';

@@ -309,14 +309,21 @@ class StubServer {
 }
 
 /** The signed-in account for `URL_A` (or none), as `AccountService` answers for it. */
+type Target = string | { readonly url: string; readonly userId: string };
+
+/** Signed in (or not) as {@link ACCOUNT} on URL_A only; a call names it by URL or as the account itself. */
 function accountsFor(signedIn: boolean): {
-  tokenFor: (url: string) => Promise<string | undefined>;
-  markSignedOut: (url: string) => void;
+  tokenFor: (target: Target) => Promise<string | undefined>;
+  markSignedOut: (target: Target) => void;
   list: () => readonly ServerAccount[];
 } {
+  const isAlice = (target: Target): boolean =>
+    typeof target === 'string'
+      ? normalizeServerUrl(target) === URL_A
+      : normalizeServerUrl(target.url) === URL_A && target.userId === ACCOUNT.userId;
   return {
-    tokenFor: (url) => Promise.resolve(signedIn && normalizeServerUrl(url) === URL_A ? TOKEN : undefined),
-    markSignedOut: vi.fn<(url: string) => void>(),
+    tokenFor: (target) => Promise.resolve(signedIn && isAlice(target) ? TOKEN : undefined),
+    markSignedOut: vi.fn<(target: Target) => void>(),
     list: () => [ACCOUNT],
   };
 }
@@ -824,6 +831,10 @@ describe('the dialogs’ lists', () => {
     h.server.add({ name: 'Staging', role: 'editor' });
 
     expect(await openableTeamWorkspaces(h.deps, [URL_A, URL_B])).toEqual([{ url: URL_A, workspace: full }]);
+    // An exact account (the active one) goes with that account's token.
+    expect(await openableTeamWorkspaces(h.deps, [{ url: URL_A, userId: ACCOUNT.userId }])).toEqual([
+      { url: URL_A, workspace: full },
+    ]);
     await expect(openableTeamWorkspaces(h.deps, [URL_B])).rejects.toMatchObject({ code: 'account-signed-out' });
     expect(await openableTeamWorkspaces(h.deps, [])).toEqual([]);
   });
@@ -834,6 +845,7 @@ describe('WorkspaceService — shareToServer end to end', { timeout: 30_000 }, (
     server: StubServer,
     hooks: WorkspaceHooks = {},
     teamSecrets?: WorkspaceServiceDeps['teamSecrets'],
+    active: { readonly url: string; readonly userId: string } | null = { url: URL_A, userId: ACCOUNT.userId },
   ): Promise<{ readonly root: string; readonly service: WorkspaceService }> {
     serial += 1;
     const root = join(base, `service-${String(serial)}`);
@@ -847,13 +859,27 @@ describe('WorkspaceService — shareToServer end to end', { timeout: 30_000 }, (
       hooks,
       server: {
         client: server as unknown as ServerClient,
-        accounts: { ...accountsFor(true), onChange: () => () => undefined, ready: Promise.resolve() },
+        accounts: {
+          ...accountsFor(true),
+          onChange: () => () => undefined,
+          ready: Promise.resolve(),
+          active: () => active,
+        },
       },
       ...(teamSecrets !== undefined ? { teamSecrets } : {}),
     });
     services.push(service);
     return { root, service };
   }
+
+  it('Open a team workspace lists the active account’s workspaces only, and none while none is active', async () => {
+    const server = new StubServer();
+    const full = server.add({ name: 'Payments', role: 'viewer', files: ONE_FILE });
+    const { service } = await newService(server);
+    expect(await service.openableTeamWorkspaces()).toEqual([{ url: URL_A, workspace: full }]);
+    const { service: none } = await newService(server, {}, undefined, null);
+    expect(await none.openableTeamWorkspaces()).toEqual([]);
+  });
 
   it('a new share pushes its first commit to the server', async () => {
     const server = new StubServer();

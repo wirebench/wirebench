@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ServerAccount } from '@wirebench/engine';
+import type { RememberedAccount } from '../src/account-service.js';
 import { tableInto } from './helpers/ipc-table.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
@@ -30,9 +31,15 @@ const ACCOUNT: ServerAccount = {
   addedAt: '2026-09-24T12:00:00.000Z',
 };
 
+const ACTIVE = { url: 'https://wb.test', userId: 'u1' };
+
 function fakeService() {
   return {
     list: vi.fn(() => [ACCOUNT]),
+    active: vi.fn((): { url: string; userId: string } | null => ACTIVE),
+    setActive: vi.fn().mockResolvedValue(ACTIVE),
+    remembered: vi.fn((): RememberedAccount[] => []),
+    refreshRemembered: vi.fn().mockResolvedValue(undefined),
     probe: vi.fn().mockResolvedValue({
       url: 'https://wb.test',
       meta: {
@@ -99,6 +106,9 @@ function fakeClient() {
 
 const deps = (accounts = fakeService(), client = fakeClient()) => ({ accounts, client });
 
+/** What `account.list`, a sign-out and a switch answer here: the one account, active. */
+const LIST = { servers: [toAccountWire(ACCOUNT, ACTIVE)], active: ACTIVE };
+
 describe('account.* channels', () => {
   beforeEach(() => {
     handlers.clear();
@@ -115,7 +125,13 @@ describe('account.* channels', () => {
       addedAt: '2026-09-24T12:00:00.000Z',
       username: null,
       photo: null,
+      active: false,
+      lastActiveAt: null,
     });
+    expect(toAccountWire(ACCOUNT, ACTIVE).active).toBe(true);
+    expect(toAccountWire({ ...ACCOUNT, lastActiveAt: '2026-11-07T10:00:00.000Z' }).lastActiveAt).toBe(
+      '2026-11-07T10:00:00.000Z',
+    );
     expect(toAccountWire({ ...ACCOUNT, signedOut: true }).signedOut).toBe(true);
     expect(toAccountWire({ ...ACCOUNT, username: 'alice', photo: PHOTO })).toMatchObject({
       username: 'alice',
@@ -126,7 +142,7 @@ describe('account.* channels', () => {
   it('registers every channel and answers with wire shapes', async () => {
     const accounts = fakeService();
     registerAccountChannels(table, deps(accounts));
-    expect(await invoke('account.list', undefined)).toEqual({ ok: true, value: { servers: [toAccountWire(ACCOUNT)] } });
+    expect(await invoke('account.list', undefined)).toEqual({ ok: true, value: LIST });
     expect(await invoke('account.probe', { url: 'https://wb.test' })).toMatchObject({
       ok: true,
       value: { url: 'https://wb.test', meta: { apiVersion: 1 } },
@@ -154,11 +170,11 @@ describe('account.* channels', () => {
     ).toMatchObject({ ok: true });
     expect(await invoke('account.signOut', { url: 'https://wb.test' })).toEqual({
       ok: true,
-      value: { servers: [toAccountWire(ACCOUNT)] },
+      value: LIST,
     });
     expect(await invoke('account.remove', { url: 'https://wb.test' })).toEqual({
       ok: true,
-      value: { servers: [toAccountWire(ACCOUNT)] },
+      value: LIST,
     });
   });
 
@@ -356,5 +372,92 @@ describe('account.* channels', () => {
     const result = await invoke('account.devices', { url: 'https://wb.test' });
     expect(!result.ok && result.error.code).toBe('account-signed-out');
     expect(d.client.listDevices).not.toHaveBeenCalled();
+  });
+});
+
+describe('account.* channels — switching accounts', () => {
+  beforeEach(() => {
+    handlers.clear();
+  });
+
+  it('account.setActive switches and answers the list; account.active answers the ref or null', async () => {
+    const accounts = fakeService();
+    registerAccountChannels(table, deps(accounts));
+    expect(await invoke('account.setActive', { account: { url: 'https://WB.test/', userId: 'u1' } })).toEqual({
+      ok: true,
+      value: LIST,
+    });
+    expect(accounts.setActive).toHaveBeenCalledWith({ url: 'https://WB.test/', userId: 'u1' });
+    expect(await invoke('account.active', undefined)).toEqual({ ok: true, value: ACTIVE });
+    accounts.active.mockReturnValue(null);
+    expect(await invoke('account.active', undefined)).toEqual({ ok: true, value: null });
+    expect((await invoke('account.setActive', { url: 'https://wb.test' })).ok).toBe(false);
+  });
+
+  it('a browser-only switch answers its code, so the renderer asks the browser instead', async () => {
+    const { WirebenchError } = await import('@wirebench/engine');
+    const accounts = fakeService();
+    accounts.setActive.mockRejectedValue(new WirebenchError('account-switch-in-browser', 'browser'));
+    registerAccountChannels(table, deps(accounts));
+    const result = await invoke('account.setActive', { account: { url: 'https://wb.test', userId: 'u2' } });
+    expect(!result.ok && result.error.code).toBe('account-switch-in-browser');
+  });
+
+  it('the account channels take an account, normalised; a url alone is still read; neither is refused', async () => {
+    const d = deps();
+    registerAccountChannels(table, d);
+    const account = { url: 'https://WB.test/x', userId: 'u1' };
+    expect(await invoke('account.signOut', { account })).toEqual({ ok: true, value: LIST });
+    expect(d.accounts.signOut).toHaveBeenCalledWith({ url: 'https://wb.test', userId: 'u1' });
+    await invoke('account.remove', { account });
+    expect(d.accounts.remove).toHaveBeenCalledWith({ url: 'https://wb.test', userId: 'u1' });
+    await invoke('account.profile', { account });
+    expect(d.accounts.tokenFor).toHaveBeenCalledWith({ url: 'https://wb.test', userId: 'u1' });
+    expect(d.accounts.setProfile).toHaveBeenCalledWith({ url: 'https://wb.test', userId: 'u1' }, expect.anything());
+    await invoke('account.devices', { url: 'https://wb.test' });
+    expect(d.accounts.tokenFor).toHaveBeenLastCalledWith('https://wb.test');
+    const refused = await invoke('account.devices', {});
+    expect(refused.ok).toBe(false);
+    expect(d.client.listDevices).toHaveBeenCalledTimes(1);
+  });
+
+  it('lists the other accounts the browser holds as remembered rows, asked for afresh', async () => {
+    const accounts = fakeService();
+    accounts.remembered.mockReturnValue([
+      {
+        url: 'https://wb.test',
+        userId: 'u2',
+        email: 'bob@example.com',
+        displayName: 'Bob',
+        username: 'bob',
+        photo: null,
+      },
+    ]);
+    registerAccountChannels(table, deps(accounts));
+    const result = await invoke('account.list', undefined);
+    expect(accounts.refreshRemembered).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({
+      ok: true,
+      value: {
+        active: ACTIVE,
+        servers: [
+          toAccountWire(ACCOUNT, ACTIVE),
+          {
+            url: 'https://wb.test',
+            userId: 'u2',
+            email: 'bob@example.com',
+            displayName: 'Bob',
+            deviceName: 'Web browser',
+            signedOut: false,
+            addedAt: '',
+            username: 'bob',
+            photo: null,
+            active: false,
+            lastActiveAt: null,
+            remembered: true,
+          },
+        ],
+      },
+    });
   });
 });

@@ -373,7 +373,7 @@ export interface WorkspaceServiceDeps {
    * open a server share, which then opens with `sync-not-supported`.
    */
   readonly server?: ServerSyncServices & {
-    readonly accounts: TokenSource & Pick<AccountService, 'onChange' | 'ready' | 'list'>;
+    readonly accounts: TokenSource & Pick<AccountService, 'onChange' | 'ready' | 'list' | 'active'>;
   };
 }
 
@@ -2295,12 +2295,13 @@ export class WorkspaceService implements ProjectRouter {
     return await serverShareTargets(this.shareDeps(), request);
   }
 
-  /** *Open a team workspace…*'s rows across every signed-in server (O1). Read-only, so not queued. */
+  /**
+   * *Open a team workspace…*'s rows: the active account's team workspaces only (switch accounts spec §4), none
+   * while no account is signed in. Read-only, so not queued.
+   */
   async openableTeamWorkspaces(): Promise<OpenableTeamWorkspace[]> {
-    const servers = (this.deps.server?.accounts.list() ?? [])
-      .filter((account) => account.signedOut !== true)
-      .map((account) => account.url);
-    return await openableTeamWorkspaces(this.shareDeps(), servers);
+    const active = this.deps.server?.accounts.active() ?? null;
+    return await openableTeamWorkspaces(this.shareDeps(), active === null ? [] : [active]);
   }
 
   /**

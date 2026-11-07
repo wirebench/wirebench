@@ -141,7 +141,7 @@ import {
   type TlsOptions,
   type WorkspaceRole,
 } from '@wirebench/engine';
-import type { z } from 'zod';
+import { z } from 'zod';
 import {
   auditPageWireSchema,
   serverSettingsWireSchema,
@@ -355,6 +355,14 @@ export class ServerClient {
   /** The passwords go in the body only; a refusal is the server's code and message, which never quote them. */
   async changePassword(url: string, token: string, body: PasswordChangeRequest): Promise<void> {
     await this.call<unknown>(url, { method: 'POST', path: '/api/v1/me/password', token, body });
+  }
+
+  /**
+   * Switch accounts spec §5.5: the other accounts the browser holds on this server, people never tokens. Asked by
+   * a host inside a server only; an older server answers `404`, which the caller reads as none.
+   */
+  rememberedAccounts(url: string, token: string): Promise<RememberedAccountRow[]> {
+    return this.call(url, { method: 'GET', path: '/api/v1/me/accounts', token, schema: rememberedAccountsSchema });
   }
 
   listDevices(url: string, token: string): Promise<DeviceSummary[]> {
@@ -1318,6 +1326,21 @@ export class ServerClient {
     throw new WirebenchError('server-bad-response', `${origin} answered ${String(exchange.status)}`, { details });
   }
 }
+
+/** A row of `GET /me/accounts`; a field a server leaves out reads as none. */
+const rememberedAccountRowSchema = z.object({
+  userId: z.string(),
+  displayName: z.string(),
+  email: z.string(),
+  username: z.string().nullable().optional(),
+  photo: z.object({ version: z.string() }).nullable().optional(),
+});
+export type RememberedAccountRow = z.infer<typeof rememberedAccountRowSchema>;
+/** The list itself, or wrapped as `{ accounts }`. */
+const rememberedAccountsSchema: z.ZodType<RememberedAccountRow[]> = z.union([
+  z.array(rememberedAccountRowSchema),
+  z.object({ accounts: z.array(rememberedAccountRowSchema) }).transform((answer) => answer.accounts),
+]);
 
 const CUSTOM_DOMAIN_PATH = '/api/v1/tenant/domain';
 const SETTINGS_PATH = '/api/v1/tenant/settings';
