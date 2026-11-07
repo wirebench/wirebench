@@ -218,8 +218,8 @@ A step or request with a [callback assertion](/wirebench/docs/guides/callback-as
 webhook at a catch URL of a Wirebench Server workspace. To check it in a pipeline:
 
 - Set `WIREBENCH_SERVER_URL` to the server, and `WIREBENCH_SERVER_TOKEN` to a CI token of the
-  workspace, stored as a pipeline secret. An editor or admin creates the token in **Preferences →
-  Devices & tokens**. A blank value counts as unset.
+  workspace, stored as a pipeline secret. An editor or admin creates the token in **User settings →
+  CI tokens**. A blank value counts as unset.
 - The token never appears in the output or the reports.
 - A wrong or revoked token errors every callback assertion with the server's answer, and the run exits 3.
   With the variables unset, callback assertions error the same way and the rest of the run goes on.

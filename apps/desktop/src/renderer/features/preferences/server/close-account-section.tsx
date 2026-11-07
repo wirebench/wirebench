@@ -28,10 +28,10 @@ export function DeletionBanner() {
       data-testid="server-deletion-banner"
       className="mb-5 rounded-lg border border-status-danger/40 bg-status-danger/10 px-4 py-3 text-sm"
     >
-      <p className="font-semibold text-status-danger">This team is being deleted</p>
+      <p className="font-semibold text-status-danger">This account is being closed</p>
       <p className="mt-0.5 text-fg-muted">
-        It is deleted on {formatDate(deletingAt)}, in {String(days)} {days === 1 ? 'day' : 'days'}. A server admin can
-        cancel it until then, from Close this account.
+        Everything in it is deleted on {formatDate(deletingAt)}, in {String(days)} {days === 1 ? 'day' : 'days'}. A
+        server admin can cancel it until then, from Close this account.
       </p>
     </div>
   );

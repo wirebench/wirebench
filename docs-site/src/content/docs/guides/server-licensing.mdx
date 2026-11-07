@@ -46,9 +46,9 @@ A license is one line of text that starts with `wbl1.`.
 
 <Steps>
 
-1. Sign in as a server admin and choose **Account: Manage team**. A server admin with no team sees only
-   the **License** tab.
-2. Open the **License** tab. It shows the edition, the seats in use and, with a license, its customer and
+1. Sign in as a server admin and choose **Account: Manage team**, which opens Team settings. A server admin with
+   no team sees only its **Server** group.
+2. Open **License and seats**. It shows the edition, the seats in use and, with a license, its customer and
    expiry date.
 3. Paste the license line, or click **Choose file…**, then click **Install license**.
 
@@ -86,7 +86,7 @@ When a license passes its expiry date, it has 30 days of grace. The edition hold
 server admins see a banner with the date it ends. After grace the server is Community again. Nobody is
 signed out, no workspace is locked, and sync keeps working.
 
-The tab's status reads *No license installed*, *Active*, *Expired, in its grace period*, *Expired* or
+The page's status reads *No license installed*, *Active*, *Expired, in its grace period*, *Expired* or
 *Installed, but not valid*.
 
 ## How the check works
@@ -110,7 +110,7 @@ new id would void every bound license.
 
 A stored license can stop passing the check. One cause is a server clock set before the license's issue
 date. Another is a server version that no longer carries the key the license was signed with. The
-License tab then shows *Installed, but not valid* with the reason, and the server runs as Community.
+License and seats page then shows *Installed, but not valid* with the reason, and the server runs as Community.
 
 <Aside>
 `GET /api/v1/meta` reports the edition and nothing else about the license. The full state is at

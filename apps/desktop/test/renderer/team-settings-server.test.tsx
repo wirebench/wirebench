@@ -246,6 +246,20 @@ describe('Team settings › Server (settings split spec §3, ruling 16)', () => 
     await vi.waitFor(() => expect(request).toHaveBeenCalledWith({ url: URL_, slug: 'acme-team' }));
   });
 
+  it('while the account is closing, every other Server page says so', async () => {
+    const deletion = {
+      requestedAt: '2026-11-07T09:00:00.000Z',
+      deletingAt: new Date(Date.now() + 3 * 86_400_000).toISOString(),
+    };
+    install(HOSTED, { tenantBilling: { get: answer({ ...BILLING, deletion }) } });
+    show({ teamId: 'T1', page: 'sign-in' });
+    const banner = await screen.findByTestId('server-deletion-banner');
+    expect(banner.textContent).toContain('This account is being closed');
+    expect(banner.textContent).toContain('in 3 days');
+    expect(banner.textContent).toContain('from Close this account');
+    expect(banner.textContent).not.toContain('team is being deleted');
+  });
+
   it('an older server without settings routes shows License, Provisioning and Audit log only', async () => {
     install(undefined);
     show({ teamId: 'T1', page: 'provisioning' });

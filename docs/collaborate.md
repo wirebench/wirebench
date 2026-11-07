@@ -229,8 +229,8 @@ length. If clone or checkout fails on long paths, run
 ## Sign in to a server
 
 A team that runs Wirebench Server signs in to it from the app. Run **Account: Sign in to a
-server…** from the palette, use the status bar's **Sign in**, or **Add server…** under Settings →
-Accounts, then:
+server…** from the palette, use the status bar's **Sign in**, or **Add server…** under User settings →
+Servers you're signed in to, then:
 
 1. Enter the server's address. Wirebench checks that it is a Wirebench Server of a version this app
    understands and remembers the address as its origin (`https://wirebench.example.com`).
@@ -265,15 +265,31 @@ On Wirebench Server, every shared workspace belongs to a team, and what you can 
 Open **Account: Manage team…** from the palette, the status bar's account menu, or **Manage team…** beside a
 signed-in server under User settings → Servers you're signed in to.
 
-Team management happens in the server's browser client, on its Team settings page. In the desktop app,
+Team management happens in the server's browser client, on its **Team settings** page. In the desktop app,
 **Manage team…** opens that page in your default browser (you sign in there the first time), on the team of the open
 workspace when it is shared to that server. A server from an earlier release without its browser client keeps
-the dialog in the app. Signing in, choosing a team when you share or open a
+the Team dialog in the app. Signing in, choosing a team when you share or open a
 workspace, and sync stay in the desktop app.
 
-- **Teams.** A server admin creates a team and adds its first admin. Team admins add people who already have an
-  account, or invite someone by email. The invitation link is shown once, with **Copy**, and whoever accepts it
-  joins the team with the role it names. Anyone can leave a team; a team always keeps at least one admin.
+Team settings has a team switcher at the top (with **New team…** for a server admin) and a menu in two groups:
+
+- **This team** — **Overview** (the team's name, and **Delete team** for a server admin), **People** (everyone on the team and every open
+  invitation, with *All*, *Joined* and *Waiting* filters and a search), **Workspaces** (the team's workspaces and who
+  can open them) and **What roles can do** (what *Viewer*, *Editor* and *Admin* may do in a workspace). A team
+  admin who is not a server admin also has the team's **Audit log** here.
+- **Server**, for server admins — License and seats, Sign-in, Provisioning, Domain, Email, Audit log, Audit
+  forwarding, Retention and Export, plus Billing and **Close this account** on a hosted team. A self-hosted server
+  shows its settings read-only, naming the environment variable behind each.
+
+The page's address names the team and the page (`?panel=team&team=…&page=people`), so a reload or a bookmark comes
+back to it. Pages and controls you may not use are not shown; the server checks every change again regardless.
+
+- **Teams.** A server admin creates a team and adds its first admin. Team admins use **Add people** on the People
+  page: someone who already has an account joins at once, and anyone else gets an invitation. The invitation link
+  is shown once, with **Copy**, and whoever accepts it joins the team with the role it names. Only the link's hash
+  is kept, so a lost link cannot be shown again: **New link** on a waiting invitation replaces it with a new one for
+  the same email and role, and the old link stops working at once. Anyone can leave a team; a team always keeps at
+  least one admin.
 - **Workspace roles.** A workspace has three roles: *viewer* can pull, *editor* can also push, and *admin* can also
   change its settings and access. Your role comes from, in order:
   1. being a server admin or an admin of the workspace's team (always *admin*);
@@ -281,12 +297,12 @@ workspace, and sync stay in the desktop app.
   3. the workspace's default role, which starts as *viewer* and can be *none*.
 
   Whoever creates a workspace gets an *admin* grant on it.
-- **Access.** On the **Workspaces** tab, **Access…** lists everyone on the team, the role they end up with, and
+- **Access.** On the **Workspaces** page, **Access…** lists everyone on the team, the role they end up with, and
   where it comes from. A workspace admin sets a grant per person, or **Use default** to remove it. A team admin's
   role cannot be lowered by a grant.
 
 If you have no role in a workspace, the server does not show it to you at all. Members who are not admins see the
-same dialog read-only, so everyone can check their own access.
+same pages read-only, so everyone can check their own access.
 
 ## Share with Wirebench Server
 

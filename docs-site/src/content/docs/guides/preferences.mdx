@@ -10,11 +10,27 @@ shortcuts — as opposed to a project's own settings, which travel with the proj
 **Settings** with <kbd>⌘,</kbd> / <kbd>Ctrl+,</kbd>, the gear at the foot of the activity bar, or the
 command palette.
 
-## The Settings page
+## Three kinds of settings
 
-Settings takes the whole window while it is open, and nothing you had open behind it changes. On the
-left are **← Back to app**, a search field, and the sections in five groups; the chosen section is on
-the right. **Back to app** or <kbd>Escape</kbd> returns to your work (Escape leaves a text field alone
+Settings are split by who a change affects:
+
+- **App settings** — this app on this machine: the sections below. This is what <kbd>⌘,</kbd> /
+  <kbd>Ctrl+,</kbd> opens.
+- **User settings** — you, on every server you sign in to: your profile and password, the servers you're signed
+  in to, your signed-in devices and CI tokens. Open it with **Account settings…** in the status bar's account
+  menu, or **Account: Account settings** in the palette. See [User settings](#user-settings).
+- **Team settings** — a team and its server, in the server's browser client. Open it with
+  **Account: Manage team…**. See
+  [Teams and roles](/wirebench/docs/guides/shared-workspaces/#teams-and-roles).
+
+All three look the same: a menu on the left, the chosen page on the right, and **← Back to workspace** at the
+top.
+
+## App settings
+
+App settings takes the whole window while it is open, and nothing you had open behind it changes. On the
+left are **← Back to workspace**, a search field, and the sections in four groups; the chosen section is on
+the right. **Back to workspace** or <kbd>Escape</kbd> returns to your work (Escape leaves a text field alone
 while it has focus, so it can undo what you were typing).
 
 Every setting is a row: its name, a line saying what it does, and its control on the right. Switches,
@@ -27,8 +43,9 @@ you press <kbd>Enter</kbd> or move on, and <kbd>Escape</kbd> puts back the previ
 - **Reset a whole section** — the **•••** menu next to the section's title has
   **Reset _section_ to defaults**.
 - **Search** — type in the search field (<kbd>⌘F</kbd> / <kbd>Ctrl+F</kbd>) to list every matching
-  setting from every section, each labelled with where it lives, for example _Requests › HTTP_. The
-  controls in the results work as they do in their section. <kbd>Escape</kbd> clears the search.
+  setting from every section, each labelled with where it lives, for example _Protocols › HTTP_. The
+  controls in the results work as they do in their section. <kbd>Escape</kbd> clears the search. Search covers
+  App settings only.
 
 ## Sections
 
@@ -37,20 +54,22 @@ you press <kbd>Enter</kbd> or move on, and <kbd>Escape</kbd> puts back the previ
 | General | **Appearance** | Theme (system, light or dark) and colour theme; the editor's font family and size, tab size, line numbers and word wrap; the default request layout (side by side or stacked, split or tabs) |
 | | **Behaviour** | Validate before sending, format responses, autosave, confirm before deleting, preview tabs, and how many history entries and HTTP Log rows to keep |
 | | **Features** | Which protocols and optional features this machine has on; a change applies at the next start, and a row says when a team policy or a requirement keeps it off — see [Feature switches](/wirebench/docs/guides/feature-switches/) |
+| | **Plugins** | Importers, reporters and code generators you installed — see [Plugins](/wirebench/docs/guides/plugins/) |
 | | **Keyboard shortcuts** | Every command's keybinding, and a way to change it |
 | | **Updates** | Whether Wirebench checks GitHub Releases for a new version at launch |
-| Requests | **HTTP** | User-Agent, request/response compression, keep-alive vs. `Connection: close`, socket timeout, max connections, whether to offer HTTP/2 (on by default; NTLM and Kerberos always use HTTP/1.1), and the chunking threshold |
+| Protocols | **HTTP** | User-Agent, request/response compression, keep-alive vs. `Connection: close`, socket timeout, max connections, whether to offer HTTP/2 (on by default; NTLM and Kerberos always use HTTP/1.1), and the chunking threshold |
 | | **REST** | Follow redirects and the maximum redirect chain length, the default `Accept` header, the pretty-print size threshold, and the OAuth2 callback port — all floors a request's own Settings tab can override |
 | | **WSDL** | Definition caching and compression, strict schema handling, and defaults for generated requests (sample values, type comments, optional elements, pretty print) |
 | | **WS-I** | WS-I Basic Profile validation: the profile (currently BP1.1 only) and whether its report is verbose |
-| Network | **Proxy** | No proxy / system proxy / manual, with host, port, username, password, and a comma-separated exclude list (hosts, `*.wildcards`, CIDR blocks, `localhost`) |
+| Network and tools | **Proxy** | No proxy / system proxy / manual, with host, port, username, password, and a comma-separated exclude list (hosts, `*.wildcards`, CIDR blocks, `localhost`) |
 | | **SSL / TLS** | Minimum TLS version, a CA bundle to trust in addition to the system store, the default client keystore, how many days ahead certificate expiry warnings start, and why there's no global "trust all certificates" switch |
-| Workspace | **Git** | The `git` executable Wirebench runs for shared workspaces: auto-detected, or located with a picker |
+| | **Git** | The `git` executable Wirebench runs for shared workspaces: auto-detected, or located with a picker |
 | | **Mock services** | Whether a [mock](/wirebench/docs/guides/mock-services/) listens on every network interface instead of this machine only |
 | | **Terminal** | The terminal's font, size, line height and colour scheme; whether a multi-line paste into an SSH terminal asks first, whether a selection is copied to the clipboard as soon as it is made, and the shell a local terminal runs |
+| | **SSH** | Connection defaults for hosts that do not set their own |
 | | **Secrets** | How long a value fetched from a secret manager stays in memory |
-| Account | **Accounts** | Every server you're known to, sign out or remove one, add another, and whether the status bar shows who you're signed in as |
-| | **Devices & tokens** | CI tokens for the open server workspace |
+| This computer | **This machine** | In the browser client: pair this computer so requests that need it are sent from here |
+| | **Paired browsers** | In the desktop app: the servers whose browser tabs may send requests from this machine |
 
 <Aside type="tip" title="A request's own settings win">
 REST and WSDL preferences are defaults, not locks. A request or project that sets its own
@@ -74,18 +93,6 @@ Settings → Git only ever asks Wirebench to detect, locate, or clear the git ex
 never lets you type a path directly. **Detect** looks for `git` where it would normally be found;
 if that fails, or you want a different one, **Browse…** opens a native picker.
 
-### Accounts
-
-Settings → Accounts lists every server Wirebench knows about, each with its email, display
-name, device name, and whether it's currently signed in. Per row, **Sign out** ends that session
-without forgetting the server, and **Remove** signs out and forgets it; **Add server…** opens the
-same sign-in dialog as the status bar item, to add another. See
-[Sign in to a server](/wirebench/docs/guides/shared-workspaces/#sign-in-to-a-server) for what signing
-in does and when Wirebench asks for it.
-
-**Show sign-in in the status bar** (on by default) controls only whether the status bar's account
-item appears once a server is known — the list of servers itself isn't a preference; it lives
-wherever Wirebench keeps accounts, not in this preferences document.
 
 ### Secrets
 
@@ -201,6 +208,27 @@ listed: <kbd>⌘K</kbd> / <kbd>Ctrl+K</kbd> for the command palette (also <kbd>�
 <kbd>Ctrl+I</kbd> for Import, <kbd>⌘S</kbd> / <kbd>Ctrl+S</kbd> to save, <kbd>⌘⏎</kbd> /
 <kbd>Ctrl+Enter</kbd> to send, and <kbd>⌘,</kbd> / <kbd>Ctrl+,</kbd> for Settings itself. The
 full, generated list is in [Commands and shortcuts](/wirebench/docs/reference/commands/).
+
+## User settings
+
+User settings is about you, on every server: open it with **Account settings…** in the status bar's account menu
+or **Account: Account settings** in the palette. When you are signed in to more than one server, a picker at the
+top chooses which one the pages show.
+
+| Group | Page | What it covers |
+| --- | --- | --- |
+| You | **Profile** | Your name, which you can edit (up to 120 characters; it is what your team sees), your email, and how you sign in |
+| | **Password** | Change the password you sign in with; shown only where the server signs you in with a password |
+| Access | **Servers you're signed in to** | Every server Wirebench knows about, with your email and whether you are signed in; **Sign out**, **Remove**, **Add server…**, and whether the status bar shows who you're signed in as |
+| | **Signed-in devices** | Every device signed in as you, and **Sign out** for each but this one |
+| | **CI tokens** | Tokens for the open server workspace — see [Run in CI](/wirebench/docs/guides/run-in-ci/) |
+
+On **Servers you're signed in to**, **Sign out** ends that session without forgetting the server, and **Remove**
+signs out and forgets it; **Add server…** opens the same sign-in dialog as the status bar item. See
+[Sign in to a server](/wirebench/docs/guides/shared-workspaces/#sign-in-to-a-server) for what signing in does and
+when Wirebench asks for it. **Show sign-in in the status bar** (on by default) controls only whether the status
+bar's account item appears once a server is known — the list of servers itself isn't a preference. A name set by
+your identity provider over SCIM is replaced by the next update it sends.
 
 ## Layout
 

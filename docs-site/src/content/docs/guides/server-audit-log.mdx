@@ -90,7 +90,7 @@ the URL and the values of secret-like query parameters become `<redacted>`. Any 
 knows from the session is masked too, wherever it appears in the URL. A URL longer than 2048 characters
 is cut.
 
-**Turning it on.** A workspace admin opens the **Workspaces** tab in **Account: Manage team** and
+**Turning it on.** A workspace admin opens the **Workspaces** page of Team settings (**Account: Manage team**) and
 switches on **Record desktop activity**. Everyone else sees the line *Desktop activity is recorded*. Both show only on a server that supports
 desktop activity.
 Each desktop learns of a change on its next sync fetch. Turning it off stops it on the server at once.
@@ -119,8 +119,8 @@ discarded and counted instead.
 
 - **Server admins** read every event, with any filter, or none.
 - **Team admins** read the events of the teams they administer, one team at a time, and nothing else.
-  They choose the team in **Account: Manage team**; the Audit tab shows that team's events and exports
-  only those.
+  They choose the team in Team settings (**Account: Manage team**); its **Audit log** page shows that team's
+  events and exports only those.
 - A plain team member, a CI token and anyone not signed in cannot read the log.
 
 An event about a workspace (a push, a team-secret change, a catch URL, a CI token) belongs to the
@@ -138,9 +138,9 @@ A team admin's export is recorded as `audit.exported` on their own team, so it s
 
 ## Reading the log
 
-A server admin on an Enterprise server opens **Account: Manage team** and chooses the **Audit** tab. It
-works with no team selected. A team admin sees the **Audit** tab once they select a team they administer,
-and it lists that team's events only.
+A server admin on an Enterprise server opens **Account: Manage team** and chooses **Audit log** under
+**Server**. It works with no team selected. A team admin sees **Audit log** under **This team** once they select a
+team they administer, and it lists that team's events only.
 
 - **Range** picks the last 24 hours, 7 days, 30 days, or all time.
 - **Kind** picks one group from the table above, `desktop` included.
@@ -155,7 +155,7 @@ feature.
 
 ## Exporting
 
-Click **Export…** in the Audit tab. Wirebench asks where to save the file and writes the events that match
+Click **Export…** on the Audit log page. Wirebench asks where to save the file and writes the events that match
 the current filters as newline-delimited JSON, one event per line, oldest first.
 
 On the machine that runs the server, the same export is a command:
