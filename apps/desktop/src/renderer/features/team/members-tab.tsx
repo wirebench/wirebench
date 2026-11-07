@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Button } from '../../components/button.js';
 import { ConfirmDialog } from '../../components/confirm-dialog.js';
+import { PersonAvatar } from '../../components/person-avatar.js';
 import { useAccountStore } from '../../state/account.js';
 import { selectedTeam, useTeamStore } from '../../state/team.js';
 import type { TeamMemberWire, TeamRoleWire } from '@shared/wire-base.js';
@@ -46,6 +47,7 @@ export function MembersTab() {
               data-testid={`member-row-${member.userId}`}
               className="flex flex-wrap items-center gap-3 py-2"
             >
+              <PersonAvatar url={store.url} userId={member.userId} name={member.displayName} photo={member.photo} />
               <div className="min-w-0 flex-1">
                 <div className="truncate text-sm text-fg-default">
                   {member.displayName}

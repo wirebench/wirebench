@@ -9,20 +9,16 @@ import { Ellipsis, Mail, Search, UserPlus } from 'lucide-react';
 import type { TeamMemberWire, TeamRoleWire } from '@shared/wire-base.js';
 import { Button } from '../../../components/button.js';
 import { ConfirmDialog } from '../../../components/confirm-dialog.js';
+import { PersonAvatar } from '../../../components/person-avatar.js';
 import { useAccountStore } from '../../../state/account.js';
 import { useLicenseStore } from '../../../state/license.js';
 import { selectedTeam, useTeamStore } from '../../../state/team.js';
 import { INPUT_CLASS, ROLE_LABELS, SELECT_CLASS, TEAM_ROLES } from '../roles.js';
 import { AddPeopleDialog } from './add-people-dialog.js';
 import { filterPeople, peopleCounts, peopleRows, type PeopleFilter } from './people.js';
+import { ProfileCard } from './profile-card.js';
 
 const FILTER_LABELS: Readonly<Record<PeopleFilter, string>> = { all: 'All', joined: 'Joined', waiting: 'Waiting' };
-
-function initials(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  const letters = parts.length > 1 ? `${parts[0]?.[0] ?? ''}${parts.at(-1)?.[0] ?? ''}` : (parts[0] ?? '?').slice(0, 2);
-  return letters.toUpperCase();
-}
 
 function days(count: number): string {
   return count === 1 ? '1 day' : `${String(count)} days`;
@@ -52,6 +48,7 @@ export function PeoplePage() {
   const [query, setQuery] = useState('');
   const [dialog, setDialog] = useState<'add' | 'renewed' | undefined>(undefined);
   const [removing, setRemoving] = useState<TeamMemberWire | undefined>(undefined);
+  const [card, setCard] = useState<TeamMemberWire | undefined>(undefined);
   const leaving = removing !== undefined && removing.userId === youId;
 
   const rows = useMemo(
@@ -172,20 +169,39 @@ export function PeoplePage() {
           return (
             <li key={`m:${member.userId}`} data-testid={`member-row-${member.userId}`} className="py-2">
               <div className="flex items-center gap-3">
-                <span
-                  aria-hidden="true"
-                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent-muted text-xs font-medium text-fg-default"
+                {/* The avatar and the name open the profile card (user profile ruling 9). */}
+                <button
+                  type="button"
+                  data-testid={`member-avatar-${member.userId}`}
+                  aria-label={`Profile of ${member.displayName}`}
+                  className="shrink-0 rounded-full focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none"
+                  onClick={() => {
+                    setCard(member);
+                  }}
                 >
-                  {initials(member.displayName)}
-                </span>
+                  <PersonAvatar url={store.url} userId={member.userId} name={member.displayName} photo={member.photo} />
+                </button>
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-sm text-fg-default">
-                    {member.displayName}
+                    <button
+                      type="button"
+                      data-testid={`member-name-${member.userId}`}
+                      className="rounded-sm text-left hover:underline focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none"
+                      onClick={() => {
+                        setCard(member);
+                      }}
+                    >
+                      {member.displayName}
+                    </button>
                     {row.you && <span className="text-fg-subtle"> · you</span>}
                     {member.disabled && <span className="ml-2 text-xs text-fg-faint">disabled</span>}
                   </div>
                   <div className="truncate text-xs text-fg-subtle">
-                    {member.email} · joined {new Date(member.addedAt).toLocaleDateString()}
+                    {member.email}
+                    {member.username ? (
+                      <span data-testid={`member-username-${member.userId}`}> · @{member.username}</span>
+                    ) : null}{' '}
+                    · joined {new Date(member.addedAt).toLocaleDateString()}
                   </div>
                 </div>
                 {isAdmin ? (
@@ -268,6 +284,13 @@ export function PeoplePage() {
 
       {store.serverAdmin && store.url !== undefined && <SeatLine url={store.url} />}
 
+      <ProfileCard
+        url={store.url}
+        member={card}
+        onClose={() => {
+          setCard(undefined);
+        }}
+      />
       <AddPeopleDialog
         open={dialog !== undefined}
         view={dialog ?? 'add'}
