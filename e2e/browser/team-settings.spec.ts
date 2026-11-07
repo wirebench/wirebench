@@ -157,19 +157,19 @@ test('Revoke removes the invitation', async () => {
   await expect(invitationRow(invitee)).toHaveCount(0);
 });
 
-test('leaving a team takes it out of the switcher', async () => {
+// The seeded user is a server admin, who sees every team on the server: leaving takes them off the team's
+// People list, and the team stays in the switcher, with its other admin still on it.
+test('leaving a team takes you off its People list; a server admin still sees the team', async () => {
   await switchTo(seed.secondTeamId, seed.secondTeamName);
   await expect(settings().getByTestId('team-settings-nav-people')).toHaveAttribute('aria-current', 'page');
   await settings().getByTestId('member-leave').click();
   await expect(page.getByText(`Leave ${seed.secondTeamName}?`)).toBeVisible();
   await page.getByTestId('member-remove-confirm-ok').click();
-  await expect(settings().getByTestId('team-switcher')).not.toContainText(seed.secondTeamName);
-  await settings().getByTestId('team-switcher').click();
-  await expect(page.getByTestId(`team-switcher-${seed.teamId}`)).toBeVisible();
-  await expect(page.getByTestId(`team-switcher-${seed.secondTeamId}`)).toHaveCount(0);
-  // Closed by picking the team that is left, not Escape, which would also leave Team settings.
-  await page.getByTestId(`team-switcher-${seed.teamId}`).click();
-  await expect(page.getByTestId(`team-switcher-${seed.teamId}`)).toHaveCount(0);
+  await expect(settings().getByTestId('member-leave')).toHaveCount(0);
+  await expect(memberRow(seed.otherAdminEmail)).toBeVisible();
+  await expect(settings().getByTestId('team-switcher')).toContainText(seed.secondTeamName);
+  // Back on the first team for the tests after this one.
+  await switchTo(seed.teamId, seed.teamName);
 });
 
 test('as a server admin, a reload on a Server page stays on it', async () => {
