@@ -1,7 +1,7 @@
 # User profile: photo, cover, username and about — design
 
 Date: 2026-11-07 · Status: owner decisions 1–5 below are final · Builds on:
-`docs/specs/2026-11-07-settings-split-design.md` §4 (User settings → Profile) · Plan: to follow
+`docs/specs/2026-11-07-settings-split-design.md` §4 (User settings → Profile) · Plan: `docs/plans/2026-11-07-user-profile.md`
 
 ## 1. Owner decisions
 
