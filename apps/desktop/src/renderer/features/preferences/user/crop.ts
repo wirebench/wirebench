@@ -78,3 +78,57 @@ export function cropRect(image: Size, frame: Size, zoom: number, offset: Offset)
   const top = (frame.height - image.height * scale) / 2 + y;
   return { sx: -left / scale, sy: -top / scale, sw: frame.width / scale, sh: frame.height / scale };
 }
+
+/** Chunks that carry metadata, never pixels: a colour profile, camera details, XMP. */
+const METADATA_CHUNKS = new Set(['ICCP', 'EXIF', 'XMP ']);
+/** The VP8X flags that announce those chunks (ICC, EXIF, XMP). */
+const VP8X_METADATA_FLAGS = 0x20 | 0x08 | 0x04;
+
+function fourCc(bytes: Uint8Array, at: number): string {
+  return String.fromCharCode(bytes[at]!, bytes[at + 1]!, bytes[at + 2]!, bytes[at + 3]!);
+}
+
+/**
+ * The WebP without its metadata chunks, and with the VP8X flags that announced them cleared (user profile spec §9:
+ * the server refuses metadata, and a browser's encoder may add a colour profile on its own). Anything that is not a
+ * well-formed RIFF/WEBP file comes back unchanged, for the server to judge.
+ */
+export function stripWebpMetadata(bytes: Uint8Array): Uint8Array {
+  if (bytes.length < 12 || fourCc(bytes, 0) !== 'RIFF' || fourCc(bytes, 8) !== 'WEBP') return bytes;
+  const kept: Uint8Array[] = [];
+  let changed = false;
+  let at = 12;
+  while (at + 8 <= bytes.length) {
+    const size = (bytes[at + 4]! | (bytes[at + 5]! << 8) | (bytes[at + 6]! << 16) | (bytes[at + 7]! << 24)) >>> 0;
+    const end = at + 8 + size + (size % 2);
+    if (end > bytes.length) return bytes;
+    const id = fourCc(bytes, at);
+    if (METADATA_CHUNKS.has(id)) {
+      changed = true;
+    } else {
+      const chunk = bytes.slice(at, end);
+      if (id === 'VP8X' && size >= 1 && (chunk[8]! & VP8X_METADATA_FLAGS) !== 0) {
+        chunk[8] = chunk[8]! & ~VP8X_METADATA_FLAGS;
+        changed = true;
+      }
+      kept.push(chunk);
+    }
+    at = end;
+  }
+  // A trailing piece shorter than a chunk header means the file is cut short: leave it to the server.
+  if (!changed || at !== bytes.length) return bytes;
+  const body = kept.reduce((total, chunk) => total + chunk.length, 0);
+  const out = new Uint8Array(12 + body);
+  out.set(bytes.subarray(0, 12));
+  const riffSize = 4 + body;
+  out[4] = riffSize & 0xff;
+  out[5] = (riffSize >> 8) & 0xff;
+  out[6] = (riffSize >> 16) & 0xff;
+  out[7] = (riffSize >>> 24) & 0xff;
+  let offset = 12;
+  for (const chunk of kept) {
+    out.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return out;
+}
