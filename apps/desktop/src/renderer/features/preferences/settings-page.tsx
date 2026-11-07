@@ -15,6 +15,12 @@ const PreferencesEditor = lazy(async () => {
   return { default: module.PreferencesEditor };
 });
 
+/** User settings, loaded on demand like the App settings editor. */
+const UserSettings = lazy(async () => {
+  const module = await import('./user/user-settings.js');
+  return { default: module.UserSettings };
+});
+
 /**
  * Settings, as a page in the window rather than a modal over it.
  *
@@ -67,6 +73,13 @@ function areaBody(area: SettingsArea, section: SettingsSectionRequest | UserSett
         />
       );
     case 'user':
+      return (
+        <UserSettings
+          key={`user:${section ?? 'default'}`}
+          // In User settings the section is always a user page (the store's `openUserSettings`).
+          {...(section === undefined ? {} : { initialPage: section as UserSettingsPageId })}
+        />
+      );
     case 'team':
       // No page yet; nothing opens these areas until User and Team settings land (plan Tasks 7–8).
       return null;
