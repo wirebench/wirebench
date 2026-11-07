@@ -81,12 +81,12 @@ function invite(email: string, { serverAdmin = true }: { readonly serverAdmin?: 
   return link[1];
 }
 
-/** A plain account (not a server admin), signed up with a password nobody needs again. */
-async function plainAccount(email: string, displayName: string): Promise<void> {
+/** A plain account (not a server admin), signed up with `password`. */
+async function plainAccount(email: string, displayName: string, password: string): Promise<void> {
   await call('POST', '/invitations/accept', {
     secret: invite(email, { serverAdmin: false }),
     displayName,
-    password: randomBytes(18).toString('base64url'),
+    password,
     device: { name: 'browser e2e seed' },
   });
 }
@@ -119,6 +119,8 @@ export async function seedServer(agentEchoUrl: string): Promise<Seed> {
     secondTeamName: `Second team ${stamp}`,
     secondTeamId: '',
     existingEmail: `browser-e2e-existing-${stamp}@example.com`,
+    // Its password too: the two-step sign-in spec signs in as this account, whose seat is already taken.
+    existingPassword: randomBytes(18).toString('base64url'),
     workspaceName: `Browser workspace ${stamp}`,
     projectName: 'Echo project',
     apiName: 'Echo API',
@@ -137,7 +139,7 @@ export async function seedServer(agentEchoUrl: string): Promise<Seed> {
   });
   const team = await call<{ id: string }>('POST', '/teams', { name: seed.teamName }, token);
   const second = await call<{ id: string }>('POST', '/teams', { name: seed.secondTeamName }, token);
-  await plainAccount(seed.existingEmail, 'Existing Person');
+  await plainAccount(seed.existingEmail, 'Existing Person', seed.existingPassword);
   await call('POST', `/teams/${second.id}/members`, { email: seed.existingEmail, role: 'admin' }, token);
   const workspace = await call<{ id: string }>(
     'POST',

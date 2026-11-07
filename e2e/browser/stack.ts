@@ -52,6 +52,8 @@ export interface Seed {
    * the five community seats and creating an invitation needs one free (the migrated stack starts with two taken).
    */
   readonly existingEmail: string;
+  /** {@link existingEmail}'s password, for the two-step sign-in spec (no seat is free for an account of its own). */
+  readonly existingPassword: string;
   readonly workspaceName: string;
   readonly projectName: string;
   readonly apiName: string;
