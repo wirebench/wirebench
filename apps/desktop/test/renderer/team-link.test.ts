@@ -4,6 +4,8 @@ import {
   readTeamDeepLink,
   takeTeamDeepLink,
   teamPageUrl,
+  teamSettingsSearch,
+  withoutTeamSettings,
 } from '../../src/renderer/features/team/team-link.js';
 import { useAccountStore } from '../../src/renderer/state/account.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
@@ -79,6 +81,46 @@ describe('team links (team management in the browser §2)', () => {
     });
     expect(readTeamDeepLink('?panel=team&team=%3Cscript%3E&workspace=')).toEqual({});
     expect(readTeamDeepLink(`?panel=team&team=${'a'.repeat(65)}`)).toEqual({});
+  });
+
+  it('reads team, workspace and page', () => {
+    expect(readTeamDeepLink('?panel=team&team=T1&workspace=W1&page=sign-in')).toEqual({
+      teamId: 'T1',
+      workspaceId: 'W1',
+      page: 'sign-in',
+    });
+    expect(readTeamDeepLink('?page=people&panel=team')).toEqual({ page: 'people' });
+  });
+
+  it('drops a malformed id and page', () => {
+    expect(readTeamDeepLink('?panel=team&team=a%20b&page=People')).toEqual({});
+    expect(readTeamDeepLink(`?panel=team&page=${'a'.repeat(33)}`)).toEqual({});
+    expect(readTeamDeepLink('?panel=team&team=T1&page=..%2Fx')).toEqual({ teamId: 'T1' });
+  });
+
+  it('teamSettingsSearch keeps other parameters and writes panel, team, page in order', () => {
+    expect(teamSettingsSearch('', { teamId: 'T1', page: 'people' })).toBe('?panel=team&team=T1&page=people');
+    expect(
+      teamSettingsSearch('?page=roles&keep=1&workspace=W1&panel=team&team=T0', { teamId: 'T2', page: 'license' }),
+    ).toBe('?keep=1&panel=team&team=T2&page=license');
+    expect(teamSettingsSearch('?keep=1', { teamId: undefined, page: 'license' })).toBe(
+      '?keep=1&panel=team&page=license',
+    );
+  });
+
+  it('withoutTeamSettings strips only its own parameters', () => {
+    expect(withoutTeamSettings('?panel=team&team=T1&workspace=W1&page=people')).toBe('');
+    expect(withoutTeamSettings('?a=1&panel=team&team=T1&b=2&page=people')).toBe('?a=1&b=2');
+    expect(withoutTeamSettings('?a=1')).toBe('?a=1');
+  });
+
+  it('teamPageUrl writes page when given', () => {
+    expect(teamPageUrl('https://wb.test', { teamId: 'T1', page: 'people' })).toBe(
+      'https://wb.test/?panel=team&team=T1&page=people',
+    );
+    expect(teamPageUrl('https://wb.test', { page: 'close-account' })).toBe(
+      'https://wb.test/?panel=team&page=close-account',
+    );
   });
 
   it('takes the deep link once: opens the dialog on it and leaves the rest of the address alone', () => {

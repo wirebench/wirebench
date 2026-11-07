@@ -32,7 +32,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
-  useUiStore.setState({ preferences: { open: false, section: undefined } });
+  useUiStore.setState({ preferences: { open: false, area: 'app', section: undefined } });
 });
 
 describe('Settings as a page', () => {
@@ -193,7 +193,7 @@ describe('the Server group (hosted edition spec §22.13)', () => {
         },
       ],
     });
-    useUiStore.setState({ preferences: { open: true, section: undefined } });
+    useUiStore.setState({ preferences: { open: true, area: 'app', section: undefined } });
     render(<SettingsPage />);
     await waitFor(() => expect(screen.getByTestId('settings-nav-server')).toBeTruthy());
     expect(get).toHaveBeenCalledWith({ url: 'https://wirebench.corp.example' });

@@ -71,6 +71,7 @@ import { ThisMachineSection } from './sections/this-machine-section.js';
 import type { SectionProps } from './sections/section-props.js';
 import { ServerPage, SERVER_PAGE_LABELS } from './server/server-page.js';
 import {
+  HOSTED_ONLY_PAGES,
   isHosted,
   serverLabel,
   serverPages,
@@ -123,7 +124,7 @@ const SERVER_ICONS: Readonly<Record<ServerPageId, LucideIcon>> = {
   retention: Archive,
   billing: CreditCard,
   export: Download,
-  delete: Trash2,
+  'close-account': Trash2,
 };
 
 /**
@@ -161,7 +162,7 @@ function ServerNavGroup({
                 className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none ${
                   isCurrent
                     ? 'bg-surface-active text-fg-default'
-                    : `${page === 'delete' ? 'text-status-danger' : 'text-fg-muted'} hover:bg-surface-hover hover:text-fg-default`
+                    : `${page === 'close-account' ? 'text-status-danger' : 'text-fg-muted'} hover:bg-surface-hover hover:text-fg-default`
                 }`}
               >
                 <Icon size={14} aria-hidden="true" className="shrink-0 opacity-80" />
@@ -281,7 +282,7 @@ export function PreferencesEditor({ initialSection }: PreferencesEditorProps) {
   const serverAvailable = useServerSettingsStore((s) => s.available);
   const serverHosted = useServerSettingsStore((s) => isHosted(s.settings));
   const shownServerPage =
-    serverPage !== undefined && serverAvailable && (serverHosted || !['billing', 'delete'].includes(serverPage))
+    serverPage !== undefined && serverAvailable && (serverHosted || !HOSTED_ONLY_PAGES.has(serverPage))
       ? serverPage
       : undefined;
   const [rawQuery, setRawQuery] = useState('');

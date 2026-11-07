@@ -17,6 +17,8 @@ import type {
 } from './ui-state.js';
 import type { RequestImportCurlTarget } from '@shared/kinds/rest/wire.js';
 import type { SettingsSectionRequest } from '../features/preferences/settings-model.js';
+import type { UserSettingsPageId } from '../features/preferences/user-settings-model.js';
+import type { TeamSettingsPageId } from '../features/team/team-settings-model.js';
 import { DEFAULT_UI_STATE, defaultSidebarSize, readUi, writeUi } from './ui-state.js';
 
 /**
@@ -40,6 +42,17 @@ function moveSidebarTo(draft: Draft<UiSnapshot>, view: SidebarView): void {
 export interface TeamDialogTarget {
   readonly teamId?: string;
   readonly workspaceId?: string;
+}
+
+/** The three settings pages (settings split spec §2): this app, the team and its server, and you. */
+export type SettingsArea = 'app' | 'team' | 'user';
+
+/** Where Team settings opens: a server, a team (else a workspace's team) and a page. */
+export interface TeamSettingsTarget {
+  readonly url?: string;
+  readonly teamId?: string;
+  readonly workspaceId?: string;
+  readonly page?: TeamSettingsPageId;
 }
 
 export interface Selection {
@@ -217,8 +230,14 @@ export interface UiStore extends UiSnapshot {
   readonly secretSourcesDialog: SecretSourcesDialogTarget | null;
   /** The dialog that approves the workspace's shared secret sources on this machine. */
   readonly secretSourcesApproval: boolean;
-  /** Whether the Settings page is open, and which section it should land on. Transient. */
-  readonly preferences: { readonly open: boolean; readonly section: SettingsSectionRequest | undefined };
+  /** Whether a settings page is open, which area, and where it should land. Transient. */
+  readonly preferences: {
+    readonly open: boolean;
+    readonly area: SettingsArea;
+    /** App: a section request. User: a user page. Team: unused (`team` holds the page). */
+    readonly section: SettingsSectionRequest | UserSettingsPageId | undefined;
+    readonly team?: TeamSettingsTarget;
+  };
   /** Project id pending a "remove from workspace" confirmation, from a command or a menu. */
   readonly confirmRemoveProjectId: string | undefined;
   readonly setSelection: (selection: Selection | undefined) => void;
@@ -258,6 +277,9 @@ export interface UiStore extends UiSnapshot {
   readonly setSecretSourcesApproval: (open: boolean) => void;
   /** Opens the Settings page, optionally on one section. Every route into Settings goes here. */
   readonly openPreferences: (section?: SettingsSectionRequest) => void;
+  readonly openUserSettings: (page?: UserSettingsPageId) => void;
+  readonly openTeamSettings: (target?: TeamSettingsTarget) => void;
+  /** Closes whichever area is open (and resets to App settings), or reopens the last one. */
   readonly setPreferencesOpen: (open: boolean) => void;
   readonly requestRemoveProject: (projectId: string | undefined) => void;
   /** Hides the sidebar, remembering its current size in `lastSize` so expand can restore it. What
@@ -390,7 +412,7 @@ export const useUiStore = create<UiStore>((set, get) => {
     },
     workspaceSwitcherOpen: false,
     workspaceManageOpen: false,
-    preferences: { open: false, section: undefined },
+    preferences: { open: false, area: 'app', section: undefined },
     workspaceCreateOpen: false,
     syncPanelOpen: false,
     conflictResolverOpen: false,
@@ -521,13 +543,19 @@ export const useUiStore = create<UiStore>((set, get) => {
       set({ secretSourcesApproval: open });
     },
     openPreferences: (section) => {
-      set({ preferences: { open: true, section } });
+      set({ preferences: { open: true, area: 'app', section } });
+    },
+    openUserSettings: (page) => {
+      set({ preferences: { open: true, area: 'user', section: page } });
+    },
+    openTeamSettings: (target) => {
+      set({ preferences: { open: true, area: 'team', section: undefined, team: target ?? {} } });
     },
     setPreferencesOpen: (open) => {
-      // The section is cleared on close, so reopening from a plain "Settings" lands on the
-      // default rather than wherever the last caller happened to send it.
+      // The area and section are cleared on close, so reopening from a plain "Settings" lands on
+      // App settings' default rather than wherever the last caller happened to send it.
       set((state) => ({
-        preferences: open ? { ...state.preferences, open: true } : { open: false, section: undefined },
+        preferences: open ? { ...state.preferences, open: true } : { open: false, area: 'app', section: undefined },
       }));
     },
     requestRemoveProject: (projectId) => {

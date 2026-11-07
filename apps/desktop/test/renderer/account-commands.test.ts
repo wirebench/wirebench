@@ -44,7 +44,7 @@ describe('account.* commands', () => {
     useUiStore.setState({
       signInDialog: { open: false, url: undefined },
       teamDialog: { open: false, url: undefined },
-      preferences: { open: false, section: undefined },
+      preferences: { open: false, area: 'app', section: undefined },
     });
   });
 
@@ -68,7 +68,7 @@ describe('account.* commands', () => {
     await vi.waitFor(() => expect(signOut).toHaveBeenCalledWith({ url: 'https://one.test' }));
     useAccountStore.setState({ servers: [account('https://one.test'), account('https://two.test')] });
     void command.run(context);
-    expect(useUiStore.getState().preferences).toEqual({ open: true, section: 'accounts' });
+    expect(useUiStore.getState().preferences).toEqual({ open: true, area: 'app', section: 'accounts' });
   });
 
   it('team.manage is gated on a signed-in server and, for a server without the browser client, opens the dialog', async () => {

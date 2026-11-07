@@ -3,6 +3,7 @@ import { signedInServers, useAccountStore } from '../../state/account.js';
 import { useSyncStore } from '../../state/sync.js';
 import { useUiStore } from '../../state/ui.js';
 import { settingsServerUrl, useServerSettingsStore } from './server/server-settings-store.js';
+import type { SettingsSectionRequest } from './settings-model.js';
 
 /**
  * Loaded on demand: the editor pulls in every section's form (and the shortcuts keymap with
@@ -23,6 +24,7 @@ const PreferencesEditor = lazy(async () => {
  */
 export function SettingsPage() {
   const open = useUiStore((state) => state.preferences.open);
+  const area = useUiStore((state) => state.preferences.area);
   const section = useUiStore((state) => state.preferences.section);
   // The Server group (hosted edition spec §22.13): the connected server's own settings, read each time Settings
   // opens; the server answers its server admins only, and the group shows only then. With several signed in, the open
@@ -33,7 +35,8 @@ export function SettingsPage() {
     if (open && serverUrl !== undefined) void useServerSettingsStore.getState().load(serverUrl);
     if (!open || serverUrl === undefined) useServerSettingsStore.getState().reset();
   }, [open, serverUrl]);
-  if (!open) {
+  // User and Team settings have no page yet; nothing opens them (settings split plan, Tasks 7–8).
+  if (!open || area !== 'app') {
     return null;
   }
 
@@ -44,7 +47,10 @@ export function SettingsPage() {
             Settings from a section-specific route must land on that section even when the page
             was last left somewhere else. Every preference applies the moment it changes, so
             there is no draft to lose by leaving. */}
-        <PreferencesEditor key={section ?? 'default'} {...(section === undefined ? {} : { initialSection: section })} />
+        <PreferencesEditor
+          key={section ?? 'default'}
+          {...(section === undefined ? {} : { initialSection: section as SettingsSectionRequest })}
+        />
       </Suspense>
     </div>
   );

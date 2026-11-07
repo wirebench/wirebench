@@ -191,6 +191,28 @@ describe('useUiStore', () => {
     useUiStore.setState(structuredClone(DEFAULT_UI_STATE));
   });
 
+  it('openUserSettings and openTeamSettings set the area; setPreferencesOpen(false) closes either and resets to app', () => {
+    const ui = () => useUiStore.getState();
+    ui().openPreferences('proxy');
+    expect(ui().preferences).toEqual({ open: true, area: 'app', section: 'proxy' });
+    ui().openUserSettings('devices');
+    expect(ui().preferences).toEqual({ open: true, area: 'user', section: 'devices' });
+    ui().setPreferencesOpen(false);
+    expect(ui().preferences).toEqual({ open: false, area: 'app', section: undefined });
+    ui().openTeamSettings({ teamId: 'T1', page: 'people' });
+    expect(ui().preferences).toEqual({
+      open: true,
+      area: 'team',
+      section: undefined,
+      team: { teamId: 'T1', page: 'people' },
+    });
+    ui().setPreferencesOpen(false);
+    expect(ui().preferences).toEqual({ open: false, area: 'app', section: undefined });
+    ui().openTeamSettings();
+    expect(ui().preferences).toEqual({ open: true, area: 'team', section: undefined, team: {} });
+    ui().setPreferencesOpen(false);
+  });
+
   it('toggles the sidebar', () => {
     useUiStore.getState().toggleSidebar();
 
