@@ -16,6 +16,9 @@ export const forbidden = (): WirebenchError => problem('identity-forbidden', 'On
 /** A cookie-authenticated write from another origin, or with no Origin at all (hosted spec §17.2). */
 export const originRefused = (): WirebenchError =>
   problem('identity-origin-refused', 'This request did not come from this server’s own pages.', 403);
+/** `GET /me/accounts` from anything but the browser's session cookie (switch accounts spec §5.5). */
+export const browserOnly = (): WirebenchError =>
+  problem('identity-browser-only', 'Only a browser session holds other accounts to list.', 403);
 export const userDisabled = (): WirebenchError => problem('identity-user-disabled', 'This account is disabled.', 403);
 export const methodDisabled = (): WirebenchError =>
   problem('identity-method-disabled', 'This sign-in method is not offered by this server.', 404);

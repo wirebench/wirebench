@@ -162,6 +162,52 @@ describeDb('SAML sign-in from the browser (hosted spec §17.2)', () => {
       await expectNoSecretsInAudit(h.tdb);
     });
 
+    it('adds an account: the ACS hands the session over to /sign-in/added, which keeps the one held (switch accounts §5.3)', async () => {
+      await boot();
+      await invite('ada@example.com');
+      const held = await signedInUser(h, { email: 'held@example.com', kind: 'browser' });
+      const page = await h.app.inject({
+        method: 'GET',
+        url: '/sign-in?add=1&redirect_to=%2Fw%2F2',
+        headers: { cookie: `${COOKIE}=${held.token}` },
+      });
+      expect(page.body).toContain('href="/sign-in/saml?add=1&amp;redirect_to=%2Fw%2F2"');
+      const { request, flowCookie } = await start('?add=1&redirect_to=%2Fw%2F2');
+      expect(flowCookie).toBe(`${request.relayState}.add`);
+      // The IdP's cross-site post carries no Lax cookie: only the flow cookie, which is SameSite=None.
+      const done = await acs(
+        encode(response(request.id, { nameId: 'ada-1', attributes: { [EMAIL_CLAIM]: 'ada@example.com' } })),
+        request.relayState,
+        flowCookie,
+      );
+      expect(done.statusCode, done.body).toBe(303);
+      expect(done.headers['location']).toBe('/sign-in/added?redirect_to=%2Fw%2F2');
+      expect(cookieValue(done, COOKIE)).toBeUndefined();
+      const added = cookieValue(done, '__Host-wb_added')!;
+      expect(added).toMatch(/^wbs_/);
+      expect(setCookies(done).find((l) => l.startsWith('__Host-wb_added='))).toContain(
+        'HttpOnly; Secure; SameSite=Lax',
+      );
+
+      // The redirect is a top-level GET, which carries the session cookie.
+      const landed = await h.app.inject({
+        method: 'GET',
+        url: '/sign-in/added?redirect_to=%2Fw%2F2',
+        headers: { cookie: `${COOKIE}=${held.token}; __Host-wb_added=${added}` },
+      });
+      expect(landed.statusCode, landed.body).toBe(303);
+      expect(landed.headers['location']).toBe('/w/2');
+      expect(cookieValue(landed, COOKIE)).toBe(added);
+      expect(cookieValue(landed, '__Host-wb_accounts')).toBe(held.token);
+      expect(setCookies(landed).find((l) => l.startsWith('__Host-wb_added='))).toContain('Max-Age=0');
+      expect((await identityRepo.tokensOfUser(h.tdb, held.user.id)).map((t) => t.id)).toEqual([held.tokenId]);
+
+      // Without a handed-over session there is nothing to adopt.
+      const again = await h.app.inject({ method: 'GET', url: '/sign-in/added' });
+      expect(again.statusCode).toBe(400);
+      expect(setCookies(again)).toEqual([]);
+    });
+
     it('refuses a replayed response', async () => {
       await boot();
       await invite('ada@example.com');
