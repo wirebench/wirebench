@@ -33,6 +33,10 @@ describeDb('POST /auth/local/sign-in and /auth/sign-out (§3.1)', () => {
       email: 'Alice@example.com',
       displayName: 'Alice',
       serverAdmin: false,
+      username: null,
+      about: '',
+      photo: null,
+      cover: null,
     });
     const me = await h.app.inject({
       method: 'GET',

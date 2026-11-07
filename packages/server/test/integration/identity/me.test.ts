@@ -25,7 +25,16 @@ describeDb('/me (§3.1)', () => {
     });
     const res = await h.app.inject({ method: 'GET', url: '/api/v1/me', headers: alice.headers });
     expect(res.json()).toEqual({
-      user: { id: alice.user.id, email: 'alice@example.com', displayName: 'alice', serverAdmin: true },
+      user: {
+        id: alice.user.id,
+        email: 'alice@example.com',
+        displayName: 'alice',
+        serverAdmin: true,
+        username: null,
+        about: '',
+        photo: null,
+        cover: null,
+      },
       methods: { local: true, oidc: [{ issuer: 'https://idp.test' }] },
     });
   });
@@ -137,7 +146,7 @@ describeDb('/me (§3.1)', () => {
     const events = recordingAudit(h.hooks);
     await patchMe(alice.headers, { name: 'Alice Liddell' });
     expect(events.map((e) => [e.action, e.target, e.details])).toEqual([
-      ['user.updated', { kind: 'user', id: alice.user.id }, { fields: 'displayName', via: 'self' }],
+      ['user.updated', { kind: 'user', id: alice.user.id }, { fields: ['displayName'], via: 'self' }],
     ]);
     expect(JSON.stringify(events)).not.toContain('Liddell');
     expect((await patchMe(alice.headers, { name: ' Alice Liddell ' })).statusCode).toBe(200);

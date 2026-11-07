@@ -86,11 +86,11 @@ export type ServerUser = z.infer<typeof serverUserSchema>;
 /** `PUT /me/images/:kind`: the WebP the app made, base64. */
 export const imageUploadRequestSchema = z.object({
   contentType: z.literal('image/webp'),
-  // 4/3 of the largest cap, rounded up, plus padding.
+  // The route's 3 MB body limit, so an image past its kind's cap reaches the handler and answers 413, not a 400.
   data: z
     .string()
     .min(1)
-    .max(Math.ceil((IMAGE_LIMITS.cover.maxBytes * 4) / 3) + 4),
+    .max(3 * 1024 * 1024),
 });
 export type ImageUploadRequest = z.infer<typeof imageUploadRequestSchema>;
 export const imageParamsSchema = z.object({ kind: imageKindSchema });

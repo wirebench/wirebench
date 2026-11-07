@@ -70,6 +70,7 @@ export const EXPORT_TABLES: Readonly<Record<string, TableClass>> = {
   session_logs: exported,
   session_log_chunks: exported,
   tenant_settings: { kind: 'redact', columns: { sealed: 'null' } },
+  user_images: exported,
 
   oidc_flows: SHORT_LIVED,
   browser_flows: SHORT_LIVED,

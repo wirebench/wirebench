@@ -1,5 +1,5 @@
 /** Minting a session for a user who just proved who they are, and the sweep that ends stale ones. */
-import { MAX_DEVICE_NAME_LENGTH, type ServerUser, type SignInResponse } from '@wirebench/engine';
+import { MAX_DEVICE_NAME_LENGTH, type ImageRef, type ServerUser, type SignInResponse } from '@wirebench/engine';
 import { recordAudit, type AuditSource } from '../context.js';
 import type { TenantScope } from '../tenancy/scope.js';
 import type { TenantQuerier } from '../tenancy/tenant-db.js';
@@ -9,8 +9,20 @@ import { mintToken, newId } from './tokens.js';
 
 export const emailLower = (email: string): string => email.trim().toLowerCase();
 
+/** An image's reference as the wire carries it (user profile spec §6.2): its version, or `null` when unset. */
+export const imageRef = (version: string | null): ImageRef | null => (version === null ? null : { version });
+
 export function publicUser(user: repo.UserRow): ServerUser {
-  return { id: user.id, email: user.email, displayName: user.displayName, serverAdmin: user.serverAdmin };
+  return {
+    id: user.id,
+    email: user.email,
+    displayName: user.displayName,
+    serverAdmin: user.serverAdmin,
+    username: user.username,
+    about: user.about,
+    photo: imageRef(user.photo),
+    cover: imageRef(user.cover),
+  };
 }
 
 /**

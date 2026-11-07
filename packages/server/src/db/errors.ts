@@ -27,3 +27,14 @@ export function isForeignKeyViolation(error: unknown, constraint?: string): bool
   if (e?.code !== '23503') return false;
   return constraint === undefined || e.constraint === constraint;
 }
+
+/**
+ * The unique key on a username within a tenant (migration 0026), which `PATCH /me` maps to `identity-username-taken`:
+ * two people claiming the same free name at once both pass the route's pre-check, and the second meets this.
+ */
+export const USERNAME_KEY = 'users_username_lower_key';
+
+/** Whether `error` is the race on a username that `USERNAME_KEY` catches. */
+export function isUsernameTaken(error: unknown): boolean {
+  return isUniqueViolation(error, USERNAME_KEY);
+}

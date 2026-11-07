@@ -75,8 +75,15 @@ describe('user profile schemas (user profile spec §2, §5, §6.2)', () => {
     expect(imageRefSchema.safeParse({ version: 'short' }).success).toBe(false);
   });
 
-  it('an upload is WebP base64 no longer than the cover cap allows', () => {
-    const max = Math.ceil((IMAGE_LIMITS.cover.maxBytes * 4) / 3) + 4;
+  it('an upload is WebP base64 no longer than the route body limit', () => {
+    // Past the cover cap but within the body: the server answers that with its own 413.
+    expect(
+      imageUploadRequestSchema.safeParse({
+        contentType: 'image/webp',
+        data: 'A'.repeat(Math.ceil((IMAGE_LIMITS.cover.maxBytes * 4) / 3) + 8),
+      }).success,
+    ).toBe(true);
+    const max = 3 * 1024 * 1024;
     expect(imageUploadRequestSchema.safeParse({ contentType: 'image/webp', data: 'AAAA' }).success).toBe(true);
     expect(imageUploadRequestSchema.safeParse({ contentType: 'image/png', data: 'AAAA' }).success).toBe(false);
     expect(imageUploadRequestSchema.safeParse({ contentType: 'image/webp', data: 'A'.repeat(max + 1) }).success).toBe(

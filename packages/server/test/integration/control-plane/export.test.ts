@@ -15,6 +15,7 @@ import { EXPORT_DAYS } from '../../../src/control-plane/export/runner.js';
 import { recordAudit, SYSTEM_SOURCE } from '../../../src/context.js';
 import { readTarGz } from '../../../src/control-plane/export/tar.js';
 import type { ControlMail } from '../../../src/control-plane/mail.js';
+import { putImage, setProfile } from '../../../src/identity/repo.js';
 import { tenantRoot } from '../../../src/tenancy/paths.js';
 import { describeDb } from '../../helpers/database.js';
 import { describeGit } from '../../helpers/git.js';
@@ -46,6 +47,17 @@ describeDb('a tenant export (spec §22.9)', () => {
       const checkout = join(tenantRoot(x.f.h.dataDir, x.scope), 'checkouts', x.f.admin.user.id);
       await mkdir(checkout, { recursive: true });
       await writeFile(join(checkout, 'secrets.json'), '{"x":"SEALED-CHECKOUT"}');
+      // A profile (user profile spec §6.3): the username and about text go with the user row, the photo as a file.
+      const photo = Buffer.from('RIFF-photo-bytes');
+      await setProfile(x.f.h.tdb, x.f.admin.user.id, { username: 'Root', about: 'Runs the server' });
+      await putImage(x.f.h.tdb, {
+        userId: x.f.admin.user.id,
+        kind: 'photo',
+        contentType: 'image/webp',
+        data: photo,
+        sha256: sha(photo),
+        at: x.f.h.clock.now,
+      });
       const runner = x.runner();
       const queued = await runner.request(x.scope, x.f.admin.user.id);
       const done = await runner.runNext(x.scope);
@@ -53,7 +65,23 @@ describeDb('a tenant export (spec §22.9)', () => {
       const path = runner.path(x.scope, queued.id);
       const entries = await entriesOf(path);
       for (const name of entries.keys())
-        expect(name).toMatch(/^(manifest\.json|tables\/[a-z_]+\.ndjson|repos\/[0-9A-Z]{26}\.bundle)$/);
+        expect(name).toMatch(
+          /^(manifest\.json|tables\/[a-z_]+\.ndjson|repos\/[0-9A-Z]{26}\.bundle|users\/[0-9A-Z]{26}\/(photo|cover)\.webp)$/,
+        );
+      expect(entries.get(`users/${x.f.admin.user.id}/photo.webp`)?.equals(photo)).toBe(true);
+      expect(entries.has(`users/${x.f.admin.user.id}/cover.webp`)).toBe(false);
+      const users = entries
+        .get('tables/users.ndjson')!
+        .toString()
+        .trim()
+        .split('\n')
+        .map((line) => JSON.parse(line) as Record<string, unknown>);
+      expect(users.find((row) => row.id === x.f.admin.user.id)).toMatchObject({
+        username: 'Root',
+        username_lower: 'root',
+        about: 'Runs the server',
+      });
+      expect(entries.get('tables/user_images.ndjson')!.toString()).toContain(photo.toString('base64'));
       for (const skipped of ['device_tokens', 'oidc_flows', 'browser_flows', 'audit_forward_queue', 'tenant_exports']) {
         expect(entries.has(`tables/${skipped}.ndjson`), skipped).toBe(false);
       }
