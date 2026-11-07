@@ -47,6 +47,7 @@ const HOSTED: ServerSettingsWire = {
     smtp: unset,
     retention: unset,
     budgets: { source: 'tenant', writable: false, value: null },
+    twoFactor: unset,
   },
 };
 const fromEnv = (value: Record<string, unknown> | null): ServerSettingsSectionStateWire => ({
@@ -69,6 +70,7 @@ const SELF_HOSTED: ServerSettingsWire = {
     smtp: fromEnv(null),
     retention: fromEnv(null),
     budgets: fromEnv(null),
+    twoFactor: fromEnv({ required: false }),
   },
 };
 const BILLING: TenantBillingWire = {

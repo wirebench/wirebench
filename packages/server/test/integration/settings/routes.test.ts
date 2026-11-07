@@ -68,6 +68,7 @@ describeDb('the tenant settings API (spec §22.12)', () => {
       'retention',
       'saml',
       'smtp',
+      'twoFactor',
     ]);
   });
 
@@ -158,11 +159,29 @@ describeDb('the tenant settings API (spec §22.12)', () => {
     expect((await changes(t.a)).at(-1)).toEqual({ section: 'smtp' });
   });
 
+  it('a server admin sets twoFactor.required; a member is refused; an unknown field is refused', async () => {
+    expect((await put(t.a, 'twoFactor', { required: true }, member)).status).toBe(403);
+    expect((await put(t.a, 'twoFactor', { required: true, grace: 3 })).body).toMatchObject({
+      code: 'settings-invalid',
+    });
+    expect((await put(t.a, 'twoFactor', { required: true })).status).toBeLessThan(300);
+    const read = await t.a.call<{ sections: Record<string, { value: unknown }> }>(
+      admins.acme,
+      'GET',
+      '/tenant/settings',
+    );
+    expect(read.body.sections.twoFactor?.value).toEqual({ required: true });
+    expect(await t.h.ctx.settings.of(t.a.scope, 'twoFactor')).toEqual({ required: true });
+    expect(await t.h.ctx.settings.of(t.b.scope, 'twoFactor')).toBeUndefined();
+  });
+
   describe('self-hosted', () => {
     let h: IdentityHarness;
     let root: SignedInUser;
     beforeAll(async () => {
-      h = await identityHarness({ env: { WIREBENCH_SERVER_HOOKS_KEEP: '42' } });
+      h = await identityHarness({
+        env: { WIREBENCH_SERVER_HOOKS_KEEP: '42', WIREBENCH_SERVER_REQUIRE_TWO_FACTOR: 'true' },
+      });
       root = await signedInUser(h, { email: 'root@example.com', serverAdmin: true });
     }, 60_000);
     afterAll(() => h.close());
@@ -173,6 +192,7 @@ describeDb('the tenant settings API (spec §22.12)', () => {
         source: 'environment',
         sections: {
           retention: { source: 'environment', writable: false, value: { hooksKeep: 42 } },
+          twoFactor: { source: 'environment', writable: false, value: { required: true } },
           oidc: { value: null },
         },
       });

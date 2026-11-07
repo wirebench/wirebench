@@ -24,6 +24,7 @@ database, one data directory; run it behind TLS. Design: `docs/specs/2026-09-24-
 | `WIREBENCH_SERVER_BODY_LIMIT_MB` | no | `32` | Maximum request body in MiB. |
 | `WIREBENCH_SERVER_ALLOW_INSECURE_PUBLIC_URL` | no | `false` | Permit an `http://` public URL (development only). |
 | `WIREBENCH_SERVER_LOCAL_AUTH` | no | `true` | Offer local accounts (email and password). |
+| `WIREBENCH_SERVER_REQUIRE_TWO_FACTOR` | no | `false` | Require two-step sign-in for password sign-in (self-hosted; a hosted team sets it in Team settings). |
 | `WIREBENCH_SERVER_OIDC_ISSUER` | no | — | OIDC issuer URL; setting it turns OIDC sign-in on. Discovery runs at start-up. Refused in hosted mode, like every `WIREBENCH_SERVER_OIDC_*` variable: each team sets its own provider. |
 | `WIREBENCH_SERVER_OIDC_CLIENT_ID` | no | — | Client id registered at the issuer. Required with the issuer. |
 | `WIREBENCH_SERVER_OIDC_CLIENT_SECRET` | no | — | Client secret registered at the issuer. Required with the issuer. Never logged. |

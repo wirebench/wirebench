@@ -59,6 +59,7 @@ function view(sections: Partial<ServerSettingsWire['sections']> = {}): ServerSet
       smtp: unset(),
       retention: unset(),
       budgets: unset('tenant', false),
+      twoFactor: unset(),
       ...sections,
     },
   };
@@ -91,6 +92,7 @@ function environment(sections: Partial<ServerSettingsWire['sections']> = {}): Se
         sessionLogMaxMb: 64,
       }),
       budgets: env({ sendsPerMinute: 600, burst: 100, concurrentSends: 8, runSlots: 4 }),
+      twoFactor: env({ required: false }),
       ...sections,
     },
   };

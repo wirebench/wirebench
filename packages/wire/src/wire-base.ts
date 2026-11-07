@@ -3692,10 +3692,18 @@ export const domainRemoveResponseWireSchema = z.object({ removed: z.literal(true
  * self-hosted server answers every section with `source: "environment"` and `writable: false`, in the environment's
  * own shape (`idpMetadataSource` for the SAML document, `caFile` for the forwarding CA), so the fields stay open.
  */
-export const SERVER_SETTINGS_SECTIONS = ['oidc', 'saml', 'auditForward', 'smtp', 'retention', 'budgets'] as const;
+export const SERVER_SETTINGS_SECTIONS = [
+  'oidc',
+  'saml',
+  'auditForward',
+  'smtp',
+  'retention',
+  'budgets',
+  'twoFactor',
+] as const;
 export type ServerSettingsSectionWire = (typeof SERVER_SETTINGS_SECTIONS)[number];
 /** The sections a tenant's server admin writes; `budgets` is the operator's (spec §22.12). */
-export const SERVER_SETTINGS_WRITABLE = ['oidc', 'saml', 'auditForward', 'smtp', 'retention'] as const;
+export const SERVER_SETTINGS_WRITABLE = ['oidc', 'saml', 'auditForward', 'smtp', 'retention', 'twoFactor'] as const;
 export type ServerSettingsWritableSectionWire = (typeof SERVER_SETTINGS_WRITABLE)[number];
 export const serverSettingsSourceWireSchema = z.enum(['environment', 'tenant']);
 export type ServerSettingsSourceWire = z.infer<typeof serverSettingsSourceWireSchema>;
@@ -3715,6 +3723,8 @@ export const serverSettingsWireSchema = z.object({
     smtp: serverSettingsSectionStateWireSchema,
     retention: serverSettingsSectionStateWireSchema,
     budgets: serverSettingsSectionStateWireSchema,
+    /** Optional: a server older than two-step sign-in answers without it. */
+    twoFactor: serverSettingsSectionStateWireSchema.optional(),
   }),
 });
 export type ServerSettingsWire = z.infer<typeof serverSettingsWireSchema>;

@@ -15,7 +15,7 @@
  */
 import { z } from 'zod';
 
-export const SETTINGS_SECTIONS = ['oidc', 'saml', 'auditForward', 'smtp', 'retention', 'budgets'] as const;
+export const SETTINGS_SECTIONS = ['oidc', 'saml', 'auditForward', 'smtp', 'retention', 'budgets', 'twoFactor'] as const;
 export type SettingsSection = (typeof SETTINGS_SECTIONS)[number];
 
 /** The sections only the operator writes (spec §22.12). */
@@ -78,6 +78,9 @@ const budgetsInput = z.strictObject({
   runSlots: z.number().int().min(1).max(1_000).optional(),
 });
 
+/** Two-step sign-in (spec §6): whether password sign-in needs a second factor. */
+const twoFactorInput = z.strictObject({ required: z.boolean() });
+
 export const SECTION_INPUTS = {
   oidc: oidcInput,
   saml: samlInput,
@@ -85,6 +88,7 @@ export const SECTION_INPUTS = {
   smtp: smtpInput,
   retention: retentionInput,
   budgets: budgetsInput,
+  twoFactor: twoFactorInput,
 } as const satisfies Record<SettingsSection, z.ZodType>;
 
 export type SectionInputs = { readonly [S in SettingsSection]: z.output<(typeof SECTION_INPUTS)[S]> };
@@ -110,6 +114,7 @@ export interface SectionValues {
   readonly smtp: { readonly url: string; readonly from: string };
   readonly retention: z.output<typeof retentionInput>;
   readonly budgets: z.output<typeof budgetsInput>;
+  readonly twoFactor: z.output<typeof twoFactorInput>;
 }
 
 /** A secret on the API: whether one is stored, never what. */
@@ -125,6 +130,7 @@ export interface SectionViews {
   readonly smtp: SectionValues['smtp'] & { readonly credentials: SecretState };
   readonly retention: SectionValues['retention'];
   readonly budgets: SectionValues['budgets'];
+  readonly twoFactor: SectionValues['twoFactor'];
 }
 
 /** A section's row split: the plain `value` and the `secret` fields to seal, `undefined` when it has none. */
@@ -141,6 +147,7 @@ export const SECRET_FIELDS: { readonly [S in SettingsSection]: readonly string[]
   smtp: ['username', 'password'],
   retention: [],
   budgets: [],
+  twoFactor: [],
 };
 
 /** `url` without its credentials, and the credentials apart; `undefined` for a URL that does not parse. */
