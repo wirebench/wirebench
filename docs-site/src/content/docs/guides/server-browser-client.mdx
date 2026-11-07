@@ -10,29 +10,28 @@ the team's server workspaces and works in the same interface as the desktop app,
 the server. This page is for the person who runs the server. For running it at all, see
 [Wirebench Server](/wirebench/docs/guides/wirebench-server/).
 
-The browser client is off unless you turn it on, so upgrading a server opens no new sign-in page and no
-new way to send requests from it.
+Every server serves the browser client; there is nothing to switch on.
 
-## Turn it on
+## Set it up
 
 <Steps>
 
-1. Make a key for the secrets your users store in the browser: 32 random bytes, base64-encoded.
+1. Back up the key the secrets your users store in the browser are sealed under. A server that is not given
+   `WIREBENCH_SERVER_SECRETS_KEY` generates one at its first start, stores it in `secrets-key` in the data
+   directory (mode 0600) and logs where; back that file up with the data directory. To hold the key yourself,
+   set the variable to 32 random bytes, base64-encoded (`openssl rand -base64 32`): it wins over the file.
+   With several instances the variable is required, since every instance needs the same key.
 
-   ```sh
-   openssl rand -base64 32
-   ```
-
-2. Set `WIREBENCH_SERVER_BROWSER_CLIENT=true` and put the key in `WIREBENCH_SERVER_SECRETS_KEY`. The
-   server refuses to start with the switch on and no key.
-
-3. If people sign in with OpenID Connect or SAML, register the extra addresses at the identity provider
+2. If people sign in with OpenID Connect or SAML, register the extra addresses at the identity provider
    (see [Sign-in](#sign-in)).
 
-4. Make sure the reverse proxy forwards the whole origin (see [Behind a reverse proxy](#behind-a-reverse-proxy)),
-   restart the server, and open its public URL in a browser.
+3. Make sure the reverse proxy forwards the whole origin (see [Behind a reverse proxy](#behind-a-reverse-proxy)),
+   and open the server's public URL in a browser.
 
 </Steps>
+
+`WIREBENCH_SERVER_BROWSER_CLIENT`, which turned the browser client on in earlier releases, is no longer read. A
+server that still sets it starts as usual and logs once that the variable can go.
 
 The public URL should be `https://`. The session cookie, `__Host-wb_session`, is `Secure` and `HttpOnly`;
 on an `http://` URL, which the server accepts only with `WIREBENCH_SERVER_ALLOW_INSECURE_PUBLIC_URL`, it
@@ -94,7 +93,8 @@ and from then on the team opens it in the browser.
 ## Secrets
 
 A secret value a user stores in the tab is sealed with AES-256-GCM under a key the server derives for that
-user from `WIREBENCH_SERVER_SECRETS_KEY`, and kept in that user's directory on the server.
+user from the server's secrets key (`WIREBENCH_SERVER_SECRETS_KEY`, or the `secrets-key` file the server
+generated), and kept in that user's directory on the server.
 
 - **Never shown again.** The value leaves the server in no response, not even to the user who typed it. A
   user can replace it, not read it back.

@@ -87,10 +87,10 @@ or missing, and never prints a value. The full list is in
 - `WIREBENCH_SERVER_LOCAL_AUTH=false`, to turn passwords off once that works.
 - `WIREBENCH_SERVER_HOOKS_SECRET_KEY`, from `openssl rand -base64 32`, to let catch URLs check
   webhook signatures.
-- `WIREBENCH_SERVER_BROWSER_CLIENT=true` with `WIREBENCH_SERVER_SECRETS_KEY`, from `openssl rand -base64 32`, to
-  serve the browser client. Keep the key in `server.env`, the same value for good and across every upgrade, and
-  back it up apart from the database: the server seals browser users' secrets under it, and without it an upgrade
-  waits at its keys step and no browser tab opens.
+- `WIREBENCH_SERVER_SECRETS_KEY`, from `openssl rand -base64 32`, only if you want to hold the key yourself. The
+  server seals browser users' secrets under it. Unset, the server generates one at its first start and keeps it in
+  `secrets-key` in the data volume; either way, keep the same key for good and back it up apart from the database,
+  since without it the stored secrets cannot be opened.
 
 ## TLS in front
 
@@ -128,7 +128,7 @@ host's console:
 
 2. In the Wirebench app, run **Account: Sign in to a server…** from the command palette. Enter the
    public URL, choose **Have an invitation code?**, paste the code and choose a password.
-   With the browser client on, you can instead open the link in a browser and choose a password there.
+   You can instead open the link in a browser and choose a password there.
 3. You are signed in as the server's first admin. Create a team with **Account: Manage team…**, then
    invite the rest of your team from there. The server sends no email: copy each link and send it the
    way your team already talks.
@@ -185,8 +185,8 @@ from the next request, with no restart.
 
   The new file needs the server image of the same release or later: if `.env` pins `WIREBENCH_VERSION` to 6.1 or
   earlier, bump it with the file, or the old image signs in as `wirebench_app`, which does not exist yet, and
-  restarts over and over. With the browser client on, keep `WIREBENCH_SERVER_SECRETS_KEY` in `server.env` with
-  the same value as before: without it the upgrade waits at its keys step and no browser tab opens.
+  restarts over and over. If you set `WIREBENCH_SERVER_SECRETS_KEY` in `server.env`, keep it with the same value
+  as before: a server without it generates a new key, and the secrets sealed under the old one stay unopened.
 
   This upgrade moves the data in your volumes, so after `docker compose pull`, first run
   `docker compose run --rm server admin tenancy check` with the new image (it changes nothing and says how long the
