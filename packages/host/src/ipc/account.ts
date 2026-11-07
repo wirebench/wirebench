@@ -49,6 +49,8 @@ export interface AccountChannelDeps {
     | 'regenerateRecoveryCodes'
     | 'renamePasskey'
     | 'removePasskey'
+    | 'passkeyRegistrationOptions'
+    | 'addPasskey'
   >;
 }
 
@@ -192,6 +194,18 @@ export function registerAccountChannels(table: HandlerTable, deps: AccountChanne
   );
   registerHandler(table, channels.account.regenerateRecoveryCodes, (r) =>
     withToken(deps, r.url, (url, token) => c.regenerateRecoveryCodes(url, token, r.password)),
+  );
+  registerHandler(table, channels.account.passkeyOptions, (r) =>
+    withToken(deps, r.url, (url, token) => c.passkeyRegistrationOptions(url, token, r.password)),
+  );
+  registerHandler(table, channels.account.addPasskey, (r) =>
+    withToken(deps, r.url, async (url, token) => {
+      const added = await c.addPasskey(url, token, { name: r.name, response: r.response });
+      return {
+        passkey: added.passkey,
+        ...(added.recoveryCodes !== undefined ? { recoveryCodes: added.recoveryCodes } : {}),
+      };
+    }),
   );
   registerHandler(table, channels.account.renamePasskey, (r) =>
     withToken(deps, r.url, async (url, token) => {

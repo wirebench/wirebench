@@ -90,6 +90,8 @@ function fakeClient() {
     regenerateRecoveryCodes: vi.fn().mockResolvedValue({ recoveryCodes: ['ccccc-ddddd'] }),
     renamePasskey: vi.fn().mockResolvedValue(undefined),
     removePasskey: vi.fn().mockResolvedValue(undefined),
+    passkeyRegistrationOptions: vi.fn().mockResolvedValue({ challenge: 'c' }),
+    addPasskey: vi.fn().mockResolvedValue({ passkey: { id: 'p1', name: 'Phone', createdAt: 'x', lastUsedAt: null } }),
   };
 }
 

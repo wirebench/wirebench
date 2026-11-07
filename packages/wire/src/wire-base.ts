@@ -3052,6 +3052,17 @@ export const accountTwoFactorStatusWireSchema = z.union([
   }),
 ]);
 export type AccountTwoFactorStatusWire = z.infer<typeof accountTwoFactorStatusWireSchema>;
+/** A passkey's creation options and the browser's answer, as `@simplewebauthn` shapes them; the server checks them. */
+export const accountWebauthnJsonSchema = z.record(z.string(), z.unknown());
+export const accountPasskeyAddRequestSchema = z.object({
+  url: z.string(),
+  name: z.string(),
+  response: accountWebauthnJsonSchema,
+});
+export const accountPasskeyAddResponseSchema = z.object({
+  passkey: accountPasskeyWireSchema,
+  recoveryCodes: z.array(z.string()).optional(),
+});
 export const accountPasskeyRenameRequestSchema = z.object({ url: z.string(), id: z.string(), name: z.string() });
 export const accountPasskeyRemoveRequestSchema = z.object({ url: z.string(), id: z.string(), password: z.string() });
 /**

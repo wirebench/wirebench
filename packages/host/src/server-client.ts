@@ -28,7 +28,11 @@ import type {
 } from '@wirebench/engine';
 import {
   localSignInResponseSchema,
+  passkeyAddResponseSchema,
   passkeyBrowserStartResponseSchema,
+  webauthnJsonSchema,
+  type PasskeyAddRequest,
+  type PasskeyAddResponse,
   recoveryCodesResponseSchema,
   totpConfirmResponseSchema,
   totpSetupResponseSchema,
@@ -353,6 +357,27 @@ export class ServerClient {
       token,
       body: { password },
       schema: recoveryCodesResponseSchema,
+    });
+  }
+
+  /** A passkey's creation options, after the password (spec §5.2). */
+  passkeyRegistrationOptions(url: string, token: string, password: string): Promise<Record<string, unknown>> {
+    return this.call(url, {
+      method: 'POST',
+      path: '/api/v1/me/two-factor/passkeys/options',
+      token,
+      body: { password },
+      schema: webauthnJsonSchema,
+    });
+  }
+
+  addPasskey(url: string, token: string, body: PasskeyAddRequest): Promise<PasskeyAddResponse> {
+    return this.call(url, {
+      method: 'POST',
+      path: '/api/v1/me/two-factor/passkeys',
+      token,
+      body,
+      schema: passkeyAddResponseSchema,
     });
   }
 

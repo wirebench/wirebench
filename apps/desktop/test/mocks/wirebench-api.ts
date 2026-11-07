@@ -66,6 +66,8 @@ export function stubWirebenchApi(overrides: ApiOverrides = {}): WirebenchApi {
       regenerateRecoveryCodes: fail('account.regenerateRecoveryCodes'),
       renamePasskey: fail('account.renamePasskey'),
       removePasskey: fail('account.removePasskey'),
+      passkeyOptions: fail('account.passkeyOptions'),
+      addPasskey: fail('account.addPasskey'),
     },
     team: {
       list: fail('team.list'),

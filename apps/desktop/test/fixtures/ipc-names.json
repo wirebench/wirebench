@@ -1,6 +1,7 @@
 {
   "channels": [
     "account.acceptInvitation",
+    "account.addPasskey",
     "account.cancelSignIn",
     "account.cancelTwoFactor",
     "account.changePassword",
@@ -8,6 +9,7 @@
     "account.devices",
     "account.list",
     "account.lookupInvitation",
+    "account.passkeyOptions",
     "account.probe",
     "account.profile",
     "account.regenerateRecoveryCodes",
