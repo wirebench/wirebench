@@ -137,16 +137,16 @@ export function AccountsSection({ preferences, update }: SectionProps) {
           )}
         </SettingsItem>
       </SettingsGroup>
-      <SettingsGroup title="Status bar">
+      <SettingsGroup title="Title bar">
         <BooleanSetting
-          label="Show sign-in in the status bar"
+          label="Show your account at the top right"
           setting="accounts.showInStatusBar"
           value={preferences.accounts.showInStatusBar}
           testId="accounts-show-in-status-bar"
           onChange={(showInStatusBar) => {
             update({ accounts: { showInStatusBar } });
           }}
-          hint="Once a server is known, the status bar shows who you are signed in as."
+          hint="Once a server is known, the title bar shows who you are signed in as, with your account menu."
         />
       </SettingsGroup>
     </div>

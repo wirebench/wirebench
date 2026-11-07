@@ -1,4 +1,5 @@
 import { Suspense, lazy } from 'react';
+import { Loader2 } from 'lucide-react';
 import { useUiStore, type SettingsArea, type TeamSettingsTarget } from '../../state/ui.js';
 import type { SettingsSectionRequest } from './settings-model.js';
 import type { UserSettingsPageId } from './user-settings-model.js';
@@ -49,7 +50,16 @@ export function SettingsPage() {
 
   return (
     <div data-testid="settings-page" className="flex min-h-0 min-w-0 flex-1 bg-surface-base">
-      <Suspense fallback={<p className="p-4 text-sm text-fg-subtle">Loading settings…</p>}>{body}</Suspense>
+      <Suspense
+        fallback={
+          <p role="status" className="flex flex-1 items-center justify-center gap-2 text-sm text-fg-subtle">
+            <Loader2 size={14} aria-hidden="true" className="animate-spin" />
+            Loading settings…
+          </p>
+        }
+      >
+        {body}
+      </Suspense>
     </div>
   );
 }
