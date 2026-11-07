@@ -257,6 +257,65 @@ export async function revokeOpenInvitation(
   return true;
 }
 
+/**
+ * Revokes the open `invite` `id` and creates its replacement for the same email and server-admin flag, in one
+ * transaction; `attach` writes the new row's team link (teams spec §3.4). `undefined` when `id` is not an open
+ * invite. The old link is refused from the commit on.
+ */
+export async function renewInvitation(
+  env: InvitationEnv,
+  scope: TenantScope,
+  id: string,
+  input: { readonly createdBy: string | null; readonly source: AuditSource; readonly serverUrl: string },
+  attach?: (tx: TenantQuerier, invitationId: string) => Promise<void>,
+): Promise<InvitationCreated | undefined> {
+  const now = env.now();
+  const { secret, hash } = mintSecret();
+  let row: repo.InvitationRow | undefined;
+  try {
+    row = await env.ctx.tenancy.db(scope).transaction(async (tx) => {
+      const old = await repo.invitationById(tx, id);
+      if (old === undefined || old.kind !== 'invite' || !isOpen(old, now)) return undefined;
+      if ((await repo.findUserByEmail(tx, old.emailLower)) !== undefined) throw userExists();
+      // The revoke first, so the one-open-invitation index sees a single open row for the email.
+      await repo.revokeInvitation(tx, id, now);
+      // Seats count accounts, so a renew never changes the count; the check tells an admin at the limit now.
+      await env.ctx.license.assertSeatAvailable(tx);
+      const inserted = await repo.insertInvitation(tx, {
+        id: newId(),
+        kind: 'invite',
+        email: old.email,
+        userId: null,
+        secretHash: hash,
+        serverAdmin: old.serverAdmin,
+        createdBy: input.createdBy,
+        createdAt: now,
+        expiresAt: new Date(now.getTime() + env.settings.invitationMs),
+      });
+      if (attach !== undefined) await attach(tx, inserted.id);
+      await recordAudit(env.ctx.hooks, tx, {
+        ...input.source,
+        action: 'user.invitation_revoked',
+        target: { kind: 'invitation', id },
+        details: { emailLower: old.emailLower, renewed: true },
+      });
+      await recordAudit(env.ctx.hooks, tx, {
+        ...input.source,
+        action: 'user.invited',
+        target: { kind: 'invitation', id: inserted.id },
+        details: { emailLower: old.emailLower, serverAdmin: old.serverAdmin, renewedFrom: id },
+      });
+      return inserted;
+    });
+  } catch (error) {
+    // A create (or another renew) for the email committed first: the index decides, as in createInvitation.
+    if (isUniqueViolation(error, 'invitations_one_open_per_email')) throw invitationExists();
+    throw error;
+  }
+  if (row === undefined) return undefined;
+  return { id: row.id, email: row.email, url: inviteUrl(input.serverUrl, secret), expiresAt: row.expiresAt };
+}
+
 export function invitationSummary(row: repo.InvitationRow): InvitationSummary {
   return {
     id: row.id,

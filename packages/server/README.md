@@ -481,6 +481,8 @@ the rest, from the **Account: Manage team…** dialog or the API:
 
 - Add people who already have an account, invite new ones, and change or remove roles. A team keeps at
   least one admin.
+- Renew an open invitation (`POST /api/v1/teams/:teamId/invitations/:id/renew`): one transaction revokes it
+  and makes a new link for the same email and role, so the old link stops working at once.
 - Workspaces belong to a team. Any member can create one and is its admin. Each workspace has a default
   role for the team's members (`none`, `viewer` or `editor`; new workspaces default to `viewer`), and a
   workspace admin can grant any member a different role.

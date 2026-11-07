@@ -458,6 +458,11 @@ export const ROUTE_MAP: Readonly<Record<string, RouteCase>> = {
         role: 'member',
       }),
   },
+  'POST /api/v1/teams/:teamId/invitations/:id/renew': {
+    cls: 'refused',
+    request: async (ctx) =>
+      json(ctx, 'POST', api(`/teams/${ctx.a.teamId}/invitations/${await fresh.teamInvitation(ctx.a)}/renew`)),
+  },
   'DELETE /api/v1/teams/:teamId/invitations/:id': {
     cls: 'refused',
     request: async (ctx) =>
