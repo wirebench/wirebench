@@ -751,7 +751,7 @@ export const CONFIG_VARIABLES: readonly ConfigVariable[] = [
     required: false,
     secret: true,
     description:
-      'Encrypts at rest the secrets each user stores through the browser client, under a key per user derived from this one: 32 random bytes, base64-encoded (`openssl rand -base64 32`). Required when WIREBENCH_SERVER_BROWSER_CLIENT is on, and with `WIREBENCH_SERVER_INSTANCES=multi`, where every instance needs the same key: the instances sign the terminal-share relay between them with a key derived from it. Required in hosted mode, where it wraps every team’s data key.',
+      'Encrypts at rest the secrets each user stores through the browser client, under a key per user derived from this one: 32 random bytes, base64-encoded (`openssl rand -base64 32`). Unset, the server generates one at its first start and stores it in `secrets-key` in the data directory (mode 0600), and reads it from there at every later start; back that file up with the data directory, since without it the stored secrets cannot be opened. The variable wins over the file. Required with `WIREBENCH_SERVER_INSTANCES=multi`, where every instance needs the same key: the instances sign the terminal-share relay between them with a key derived from it. Required in hosted mode, where it wraps every team’s data key.',
   },
   {
     env: 'WIREBENCH_SERVER_EGRESS_DENY_PRIVATE',
@@ -1250,12 +1250,6 @@ export function loadConfig(env: NodeJS.ProcessEnv, version: string): ServerConfi
         ? { variable: 'WIREBENCH_SERVER_SMTP_URL', message: 'is required when WIREBENCH_SERVER_SMTP_FROM is set' }
         : { variable: 'WIREBENCH_SERVER_SMTP_FROM', message: 'is required when WIREBENCH_SERVER_SMTP_URL is set' },
     );
-  }
-  if (config.browserClient && config.mode !== 'hosted' && config.secretsKey === undefined) {
-    problems.push({
-      variable: 'WIREBENCH_SERVER_SECRETS_KEY',
-      message: 'is required when WIREBENCH_SERVER_BROWSER_CLIENT is on; set the key or turn the browser client off',
-    });
   }
   if (config.proxyListen !== undefined && config.proxyTokenFile === undefined) {
     problems.push({

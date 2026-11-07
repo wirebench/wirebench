@@ -282,7 +282,8 @@ describeDb('the file step (spec §19.10)', () => {
     expect(error).toBeInstanceOf(StartupError);
     expect(error).toMatchObject({ exitCode: 2 });
     expect((error as Error).message).toContain('tenancy-move-conflict');
-    expect(await tree(dataDir)).toEqual(before);
+    // As it was, but for the secrets key the start stored before the step (it is no file the step moves).
+    expect((await tree(dataDir)).filter((path) => path !== 'secrets-key')).toEqual(before);
   });
 });
 

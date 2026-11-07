@@ -31,6 +31,7 @@ import { dataKeyState, environmentKeyRoot, storedDataKey, type DataKeyState } fr
 import { tenantRootById } from './paths.js';
 import { revertTenancy, type RevertOptions } from './revert.js';
 import { rewrap } from './rewrap.js';
+import { resolveSecretsKey, SecretsKeyFileError } from '../secrets-key-file.js';
 import { appRolePlan, controlRolePlan, ensureAppRole, ensureControlRole, roleMode, roleNameOf } from './roles.js';
 
 type TenancyRoleCommand = Extract<ServerCommand, { command: 'admin-tenancy-role' }>;
@@ -64,6 +65,25 @@ function configOf(io: ServerIo): ServerConfig | number {
   } catch (error) {
     if (error instanceof ConfigError) {
       for (const problem of error.problems) io.stderr.write(`${problem.variable}: ${problem.message}\n`);
+      return ExitCode.Config;
+    }
+    throw error;
+  }
+}
+
+/**
+ * The loaded configuration with the secrets key the server runs with: the variable's, else the one `serve` stored in
+ * the data directory. Never makes one. The exit code after the problems are written, as {@link configOf}.
+ */
+async function keyedConfigOf(io: ServerIo): Promise<ServerConfig | number> {
+  const loaded = configOf(io);
+  if (typeof loaded === 'number') return loaded;
+  try {
+    const resolved = await resolveSecretsKey(loaded, { create: false });
+    return resolved.key === undefined ? loaded : { ...loaded, secretsKey: resolved.key };
+  } catch (error) {
+    if (error instanceof SecretsKeyFileError) {
+      io.stderr.write(`WIREBENCH_SERVER_SECRETS_KEY: ${error.message}\n`);
       return ExitCode.Config;
     }
     throw error;
@@ -228,7 +248,7 @@ async function dataDirReport(dataDir: string): Promise<string[]> {
  * read only, on the database (one read-only transaction) and on the data directory (stat and list).
  */
 export async function runTenancyCheck(io: ServerIo): Promise<number> {
-  const loaded = configOf(io);
+  const loaded = await keyedConfigOf(io);
   if (typeof loaded === 'number') return loaded;
   const config = loaded;
   const out = (line: string): void => {
@@ -358,7 +378,7 @@ async function rewrapStatus(
 
 /** `admin tenancy status` (spec §19.11): where the upgrade stands. Never prints a slug. */
 export async function runTenancyStatus(io: ServerIo): Promise<number> {
-  const loaded = configOf(io);
+  const loaded = await keyedConfigOf(io);
   if (typeof loaded === 'number') return loaded;
   const db = createDatabase(migrationUrlOf(loaded), { applicationName: ADMIN_APPLICATION_NAME, max: 1 });
   try {
@@ -399,7 +419,7 @@ export async function runTenancyRevert(
   io: ServerIo,
   seams: RevertSeams = {},
 ): Promise<number> {
-  const loaded = configOf(io);
+  const loaded = await keyedConfigOf(io);
   if (typeof loaded === 'number') return loaded;
   const config = loaded;
   // The files move back with the rows: a revert run where the data directory is not mounted would leave them behind.

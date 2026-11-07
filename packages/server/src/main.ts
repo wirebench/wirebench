@@ -1,3 +1,4 @@
+import { join } from 'node:path';
 import { HELP_TEXT, parseServerArgs, UsageError } from './args.js';
 import { ConfigError, describeConfig, instanceModeOf, loadConfig, MULTI_NEEDS_ENTERPRISE } from './config.js';
 import { runVerifyExportCommand } from './audit-log/cli.js';
@@ -15,6 +16,7 @@ import {
   type RevertSeams,
 } from './tenancy/cli.js';
 import { operatorPublicUrl } from './tenancy/urls.js';
+import { SECRETS_KEY_FILE, storesSecretsKey } from './secrets-key-file.js';
 
 /**
  * `serveOptions` exists for tests (signals, exit, drain time, modules), and so does `revert` (the revert's wait); the
@@ -52,6 +54,11 @@ export async function main(
             `instances: multi; ${MULTI_NEEDS_ENTERPRISE}: serve refuses with server-instances-need-enterprise otherwise\n`,
           );
         }
+        // Read only: `config check` never makes the key, it says where `serve` keeps it.
+        if (config.secretsKey === undefined && storesSecretsKey(config))
+          io.stdout.write(
+            `WIREBENCH_SERVER_SECRETS_KEY is not set: serve uses the key stored in ${join(config.dataDir, SECRETS_KEY_FILE)}, and generates it at the first start\n`,
+          );
         // Spec §21.1: accepted, but only hosted mode reads them.
         if (config.mode !== 'hosted' && (config.appDomain !== undefined || config.siteDomain !== undefined))
           io.stdout.write(

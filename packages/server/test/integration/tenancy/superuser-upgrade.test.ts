@@ -89,7 +89,7 @@ describeDb('a 0019 installation on one superuser URL (spec §19.4, owner ruling 
 
   it("moved the fixture's data directory under the default tenant, and every workspace syncs after (spec §19.10)", async () => {
     const t = directoryOf(server.ctx.tenancy).defaultScope().tenantId;
-    expect((await readdir(dataDir)).sort()).toEqual(['no-hooks', 'tenants']);
+    expect((await readdir(dataDir)).sort()).toEqual(['no-hooks', 'secrets-key', 'tenants']);
     const tmp = await readdir(join(dataDir, 'tenants', t, 'tmp'));
     expect(tmp.filter((name) => name.startsWith(`removed-${fixture.workspaces.retired}-`))).toHaveLength(1);
     expect(tmp).not.toContain('scratch-0019.txt');

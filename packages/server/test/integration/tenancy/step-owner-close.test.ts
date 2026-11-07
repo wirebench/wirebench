@@ -77,8 +77,8 @@ describeDb('the file step on the migration connection', () => {
       'the migration connection did not close after the tenancy step: the pool did not end',
     );
     expect((error as Error).message).not.toContain('could not be moved');
-    // The step itself ran and committed.
-    expect((await readTenancyStep(db.owner))?.step).toBe('keys');
+    // The step itself ran and committed, through the keys step under the key the server stored.
+    expect((await readTenancyStep(db.owner))?.step).toBe('done');
     // One app pool and one migration pool, each closed exactly once.
     expect(
       made.map(({ owner, closes }) => ({ owner, closes })).sort((a, b) => Number(a.owner) - Number(b.owner)),

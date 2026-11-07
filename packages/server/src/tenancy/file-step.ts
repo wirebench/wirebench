@@ -28,6 +28,7 @@
  * start-up to finish.
  */
 import { lstat, mkdir, readdir, readFile, realpath, rm, rmdir } from 'node:fs/promises';
+import { SECRETS_KEY_FILE } from '../secrets-key-file.js';
 import { join, relative, resolve, sep } from 'node:path';
 import { WirebenchError } from '@wirebench/engine';
 import type { Database, Querier } from '../db/querier.js';
@@ -52,7 +53,14 @@ export const OLD_TMP_DIR = 'tmp';
 /** A deleted workspace's repository, which the store moved aside rather than deleting. */
 const REMOVED = /^removed-/;
 /** What the data directory's root may hold, before the step and after it. */
-export const KNOWN_ROOT_ENTRIES: readonly string[] = [...MOVED_DIRS, OLD_TMP_DIR, 'no-hooks', TENANTS_DIR];
+export const KNOWN_ROOT_ENTRIES: readonly string[] = [
+  ...MOVED_DIRS,
+  OLD_TMP_DIR,
+  'no-hooks',
+  TENANTS_DIR,
+  // The secrets key a server stores when it is given none (`secrets-key-file.ts`).
+  SECRETS_KEY_FILE,
+];
 
 /**
  * The host's state files that can hold an absolute path under its checkout, relative to one user's checkout (`*` is

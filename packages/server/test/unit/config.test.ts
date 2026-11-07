@@ -640,14 +640,8 @@ describe('browser client and egress configuration (hosted edition spec ยง17.1, ย
     expect(config.secretsKey).toEqual(Buffer.alloc(32, 7));
   });
 
-  it('refuses the browser client without its key, and names only the key', () => {
-    let caught: unknown;
-    try {
-      loadConfig({ ...required, WIREBENCH_SERVER_BROWSER_CLIENT: 'true' }, '1');
-    } catch (error) {
-      caught = error;
-    }
-    expect((caught as ConfigError).problems.map((p) => p.variable)).toEqual(['WIREBENCH_SERVER_SECRETS_KEY']);
+  it('accepts the browser client without the key: the server stores one in its data directory', () => {
+    expect(loadConfig({ ...required, WIREBENCH_SERVER_BROWSER_CLIENT: 'true' }, '1').secretsKey).toBeUndefined();
   });
 
   it('accepts a key with the client off, and refuses a bad key or an idle time out of range', () => {

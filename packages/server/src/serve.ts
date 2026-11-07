@@ -65,6 +65,7 @@ import {
   runTenancySteps,
 } from './tenancy/file-step.js';
 import { TENANTS_DIR } from './tenancy/paths.js';
+import { generatedKeyNotice, resolveSecretsKey, SecretsKeyFileError } from './secrets-key-file.js';
 import { buildServer } from './server.js';
 import { createTenantSettings } from './settings/service.js';
 
@@ -132,6 +133,33 @@ function configFrom(env: NodeJS.ProcessEnv, io: ServerIo): ServerConfig {
   } catch (error) {
     if (error instanceof ConfigError) {
       for (const problem of error.problems) io.stderr.write(`${problem.variable}: ${problem.message}\n`);
+      throw new StartupError(ExitCode.Config, 'configuration is invalid');
+    }
+    throw error;
+  }
+}
+
+/**
+ * `config` with the secrets key it runs with: the variable's, else the one stored in the data directory, which
+ * `create` makes at the first start (`serve`); `migrate` reads a stored one and never makes one. A key file the
+ * server will not use fails the start, as a configuration error. `generated` is the notice to log, once.
+ */
+export async function withSecretsKey(
+  config: ServerConfig,
+  io: ServerIo,
+  create: boolean,
+): Promise<{ readonly config: ServerConfig; readonly generated?: string }> {
+  try {
+    const resolved = await resolveSecretsKey(config, { create });
+    const keyed = resolved.key === undefined ? config : { ...config, secretsKey: resolved.key };
+    if (resolved.source !== 'generated') return { config: keyed };
+    const notice = generatedKeyNotice(resolved.path!);
+    // Before the log is up, where an operator starting the server by hand sees it at once. Never the key.
+    io.stderr.write(`${notice}\n`);
+    return { config: keyed, generated: notice };
+  } catch (error) {
+    if (error instanceof SecretsKeyFileError) {
+      io.stderr.write(`WIREBENCH_SERVER_SECRETS_KEY: ${error.message}\n`);
       throw new StartupError(ExitCode.Config, 'configuration is invalid');
     }
     throw error;
@@ -313,7 +341,8 @@ export async function runMigrate(
 ): Promise<number> {
   let config: ServerConfig;
   try {
-    config = configFrom(env, io);
+    // Reads the key `serve` stored, so the keys step runs here too; never makes one (the data directory may be absent).
+    config = (await withSecretsKey(configFrom(env, io), io, false)).config;
   } catch (error) {
     if (error instanceof StartupError) {
       io.stderr.write(`${error.message}\n`);
@@ -480,7 +509,8 @@ export async function startServer(
 ): Promise<RunningServer> {
   const modules = options.modules ?? [];
   const exit = options.exit ?? ((code: number) => process.exit(code));
-  const config = configFrom(env, io);
+  const keyed = await withSecretsKey(configFrom(env, io), io, true);
+  const config = keyed.config;
   const git = await locateGit(config);
   // With an owner of its own (spec §19.4), the server migrates and grants as the owner, then connects as
   // the app role. With one role it migrates as that role: over the migration URL when one is set apart (a
@@ -561,6 +591,7 @@ export async function startServer(
   }
   /** What the keys step said, logged once the app's logger exists: counts only, never a key, a file or a value. */
   const stepNotes: { readonly level: 'info' | 'warn'; readonly message: string; readonly details: object }[] = [];
+  if (keyed.generated !== undefined) stepNotes.push({ level: 'warn', message: keyed.generated, details: {} });
   // Spec §19.10's order: the migrations, then the file step, then `prepare` and the writability check, so
   // `prepare` can never make an empty tenants/ tree beside a half-moved data directory.
   try {
