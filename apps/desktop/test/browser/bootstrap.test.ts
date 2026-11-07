@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import {
   ME_PATH,
+  addAccountUrl,
   signInUrl,
   RECONNECT_BAR_ID,
   RECONNECT_TEXT,
@@ -149,7 +150,7 @@ describe('startBrowserClient', () => {
 
     expect(h.mountRenderer).toHaveBeenCalledTimes(1);
     const api = h.target.wirebench;
-    const { signOut, onOsThemeChanged, agent, ...env } = api?.env ?? {};
+    const { signOut, signOutAll, switchAccount, addAccount, onOsThemeChanged, agent, ...env } = api?.env ?? {};
     expect(agent?.status()).toBe('none');
     expect(typeof onOsThemeChanged).toBe('function');
     expect(env).toEqual({
@@ -158,7 +159,7 @@ describe('startBrowserClient', () => {
       host: 'browser',
       capabilities: ['send:public', 'send:private'],
     });
-    expect(typeof signOut).toBe('function');
+    for (const action of [signOut, signOutAll, switchAccount, addAccount]) expect(typeof action).toBe('function');
     expect(api?.pathForFile(new File(['x'], 'x.txt'))).toBe('');
   });
 
@@ -195,7 +196,8 @@ describe('startBrowserClient', () => {
       expect(new URL(form.action, 'https://acme.example.test').pathname).toBe('/sign-out');
       expect(form.getAttribute('action')).toBe('/sign-out');
       expect(form.isConnected).toBe(true);
-      expect(form.children).toHaveLength(0);
+      // Back to where the tab was, should another account the browser holds become active (switch accounts §5.4).
+      expect(fieldsOf(form)).toEqual({ redirect_to: '/w/team?tab=1#req' });
 
       // The server's sign-out closes the socket 4401; the form's own navigation already leaves.
       socket.drop(4401);
@@ -205,6 +207,57 @@ describe('startBrowserClient', () => {
     } finally {
       submit.mockRestore();
     }
+  });
+
+  describe('the account actions (switch accounts spec §5)', () => {
+    /** Starts the tab, runs `act` on its env with `submit` stubbed, and hands back the one form it posted. */
+    const posted = async (act: (env: WirebenchApi['env']) => void) => {
+      const submit = vi.spyOn(HTMLFormElement.prototype, 'submit').mockImplementation(() => undefined);
+      try {
+        const h = start();
+        const socket = FakeSocket.last();
+        socket.hello();
+        await h.started;
+        act(h.target.wirebench!.env);
+        // A second action while the first form is leaving does nothing.
+        act(h.target.wirebench!.env);
+        expect(submit).toHaveBeenCalledTimes(1);
+        const form = submit.mock.contexts[0] as HTMLFormElement;
+        form.remove();
+        expect(socket.readyState).toBe(3);
+        return { form, h };
+      } finally {
+        submit.mockRestore();
+      }
+    };
+
+    it('switches with a hidden same-origin post naming the user and where the tab was', async () => {
+      const { form } = await posted((env) => env.switchAccount?.('u-bob'));
+      expect(form.method).toBe('post');
+      expect(form.hidden).toBe(true);
+      expect(form.getAttribute('action')).toBe('/sign-in/switch');
+      expect(fieldsOf(form)).toEqual({ user: 'u-bob', redirect_to: '/w/team?tab=1#req' });
+    });
+
+    it('signs out of every account with a post to /sign-out?all=1', async () => {
+      const { form } = await posted((env) => env.signOutAll?.());
+      expect(form.method).toBe('post');
+      expect(form.getAttribute('action')).toBe('/sign-out?all=1');
+      expect(fieldsOf(form)).toEqual({});
+    });
+
+    it('adds an account by navigating to the sign-in page in add mode, coming back here', async () => {
+      const h = start();
+      const socket = FakeSocket.last();
+      socket.hello();
+      await h.started;
+      h.target.wirebench?.env.addAccount?.();
+      expect(h.assign).toHaveBeenCalledWith('/sign-in?add=1&redirect_to=%2Fw%2Fteam%3Ftab%3D1%23req');
+      // The tab is leaving: the socket's close sends it nowhere else.
+      socket.drop(4401);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(h.assign).toHaveBeenCalledTimes(1);
+    });
   });
 
   it('carries the renderer calls over the socket', async () => {
@@ -842,6 +895,22 @@ describe('more than one pairing', () => {
     await vi.advanceTimersByTimeAsync(0);
     errors.mockRestore();
     expect(seen).toEqual(['7.0.0']);
+  });
+});
+
+/** A posted form's hidden fields, by name. */
+function fieldsOf(form: HTMLFormElement): Record<string, string> {
+  return Object.fromEntries(
+    [...form.querySelectorAll('input')].map((input) => {
+      expect(input.type).toBe('hidden');
+      return [input.name, input.value];
+    }),
+  );
+}
+
+describe('addAccountUrl', () => {
+  it('asks for add mode and sends the current path, query and hash back as redirect_to', () => {
+    expect(addAccountUrl({ pathname: '/', search: '', hash: '' })).toBe('/sign-in?add=1&redirect_to=%2F');
   });
 });
 
