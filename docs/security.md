@@ -798,7 +798,7 @@ is the whole credential.
 ### CI tokens
 
 `wirebench run` reads a workspace's captures with a **CI token**, created by an editor or admin in
-Preferences → Devices & tokens. It is a `wbs_…` token with a narrower reach than a device token:
+User settings → CI tokens. It is a `wbs_…` token with a narrower reach than a device token:
 
 - It is read-only and scoped to one workspace. It never expires and can be revoked; a revoked token is
   refused on its next request.

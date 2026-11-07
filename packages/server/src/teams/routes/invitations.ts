@@ -16,7 +16,7 @@ import {
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { auditSource, recordAudit, type InvitationAcceptedHook, type ServerHooks } from '../../context.js';
 import { findUserById } from '../../identity/repo.js';
-import { createInvitation, revokeOpenInvitation } from '../../identity/invitations.js';
+import { createInvitation, renewInvitation, revokeOpenInvitation } from '../../identity/invitations.js';
 import { jsonSchema } from '../../schema.js';
 import { primaryUrl } from '../../tenancy/urls.js';
 import type { TeamsEnv } from '../env.js';
@@ -99,6 +99,50 @@ export const teamInvitationRoutes =
           role: body.role,
           url: created.url,
           expiresAt: created.expiresAt,
+        });
+      },
+    );
+
+    // Settings split spec §6: only the old link's hash is kept, so a fresh link is the only way to show one again.
+    app.post(
+      '/teams/:teamId/invitations/:id/renew',
+      {
+        preHandler: requireTeamRole(env.ctx.tenancy, 'admin'),
+        schema: {
+          params: jsonSchema(teamInvitationParamsSchema, { io: 'input' }),
+          response: { 201: jsonSchema(teamInvitationCreatedSchema) },
+        },
+      },
+      async (request, reply) => {
+        const { teamId, id } = request.params as { readonly teamId: string; readonly id: string };
+        // Another team's invitation is 404, as revoke answers.
+        const invited = await repo.teamInvitationOf(tdb(request), id);
+        if (invited?.teamId !== teamId) throw invitationNotFound();
+        const { role } = invited;
+        let renewed: InvitationCreated | undefined;
+        try {
+          renewed = await renewInvitation(
+            env.invitations,
+            request.tenant,
+            id,
+            {
+              createdBy: request.caller!.id,
+              source: auditSource(request),
+              serverUrl: primaryUrl(env.invitations.ctx.config, request),
+            },
+            (tx, invitationId) => repo.insertTeamInvitation(tx, { invitationId, teamId, role }),
+          );
+        } catch (error) {
+          if (error instanceof WirebenchError && error.code === 'identity-user-exists') throw userExistsInvite();
+          throw error;
+        }
+        if (renewed === undefined) throw invitationNotFound();
+        return reply.code(201).send({
+          id: renewed.id,
+          email: renewed.email,
+          role,
+          url: renewed.url,
+          expiresAt: renewed.expiresAt,
         });
       },
     );

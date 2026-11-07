@@ -2,15 +2,24 @@ import {
   devicesResponseSchema,
   identityIdParamsSchema,
   meResponseSchema,
+  meUpdateRequestSchema,
   MIN_PASSWORD_LENGTH,
   passwordChangeRequestSchema,
+  type MeUpdateRequest,
   type PasswordChangeRequest,
 } from '@wirebench/engine';
 import type { FastifyInstance } from 'fastify';
 import { announce, auditSource, recordAudit } from '../../context.js';
 import { jsonSchema } from '../../schema.js';
 import type { IdentityEnv } from '../env.js';
-import { invalidCredentials, methodDisabled, notFound, passwordTooShort, unauthenticated } from '../errors.js';
+import {
+  displayNameInvalid,
+  invalidCredentials,
+  methodDisabled,
+  notFound,
+  passwordTooShort,
+  unauthenticated,
+} from '../errors.js';
 import { isTokenExpired, requireUser } from '../guard.js';
 import { hashPassword, verifyPassword } from '../passwords.js';
 import * as repo from '../repo.js';
@@ -30,6 +39,39 @@ export const meRoutes =
           if (user === undefined) throw unauthenticated();
           const methods = (await repo.signInMethodsOf(tx, [user.id])).get(user.id)!;
           return { user: publicUser(user), methods };
+        });
+      },
+    );
+
+    app.patch(
+      '/me',
+      {
+        preHandler: requireUser,
+        schema: {
+          body: jsonSchema(meUpdateRequestSchema, { io: 'input' }),
+          response: { 200: jsonSchema(meResponseSchema) },
+        },
+      },
+      async (request) => {
+        const caller = request.caller!;
+        const name = (request.body as MeUpdateRequest).name.trim();
+        if (name === '') throw displayNameInvalid();
+        return env.ctx.tenancy.db(request.tenant).transaction(async (tx) => {
+          const user = await repo.findUserById(tx, caller.id);
+          if (user === undefined) throw unauthenticated();
+          // An unchanged name is no change: nothing written, nothing audited.
+          if (user.displayName !== name) {
+            await repo.setDisplayName(tx, user.id, name);
+            // As SCIM records it (settings split ruling 3): the field, never the value.
+            await recordAudit(env.ctx.hooks, tx, {
+              ...auditSource(request),
+              action: 'user.updated',
+              target: { kind: 'user', id: user.id },
+              details: { fields: 'displayName', via: 'self' },
+            });
+          }
+          const methods = (await repo.signInMethodsOf(tx, [user.id])).get(user.id)!;
+          return { user: publicUser({ ...user, displayName: name }), methods };
         });
       },
     );

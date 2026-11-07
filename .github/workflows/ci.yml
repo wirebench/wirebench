@@ -430,9 +430,10 @@ jobs:
           cache-from: type=gha,scope=server-image
           cache-to: type=gha,scope=server-image,mode=max
       # Fresh: a secrets key made for this run only, which encrypts nothing that outlives `down -v`. Migrated: the
-      # fixture's own test key, which its sealed values are under. `--free-seat` disables one fixture account: the
+      # fixture's own test key, which its sealed values are under. `--free-seats` disables three fixture accounts: the
       # fixture's test-signed license is invalid under the image's production keys, so the server has the five
-      # community seats, which the fixture's accounts fill, and the suite invites one more.
+      # community seats, which the fixture's accounts fill, and the suite needs three: its admin, one plain
+      # account, and a free seat for the invitation Add people creates.
       - name: Start the stack
         env:
           START: ${{ matrix.start }}
@@ -441,7 +442,7 @@ jobs:
           if [ "$START" = migrated ]; then
             WIREBENCH_E2E_SECRETS_KEY="$(node -p "require('./packages/server/test/fixtures/tenancy/fixture-0019.json').keys.secretsKey")"
             "${compose[@]}" up -d --no-build --wait db echo
-            node packages/server/test/fixtures/tenancy/volume.ts --free-seat -- -f e2e/browser/compose.yaml
+            node packages/server/test/fixtures/tenancy/volume.ts --free-seats -- -f e2e/browser/compose.yaml
           else
             WIREBENCH_E2E_SECRETS_KEY="$(openssl rand -base64 32)"
           fi

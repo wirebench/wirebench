@@ -103,6 +103,21 @@ describe('the server host allowlist (§3.10)', () => {
     }
   });
 
+  it('serves the new account and team channels to a browser session', async () => {
+    const channels = await registry();
+    for (const channel of [
+      'account.profile',
+      'account.updateProfile',
+      'account.changePassword',
+      'account.devices',
+      'account.signOutDevice',
+      'team.renewInvitation',
+    ]) {
+      expect(channels, channel).toContain(channel);
+      expect(isServedChannel(channel), channel).toBe(true);
+    }
+  });
+
   it('serves the save-time secret scan, every channel of it, since a save and a commit go through it', async () => {
     const scan = (await registry()).filter((channel) => channelGroup(channel) === 'secretScan');
     expect(scan.sort()).toEqual([

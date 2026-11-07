@@ -24,15 +24,15 @@ IdP-started sign-in, such as a tile on an IdP's app portal, is refused.
 
 ## What to give the IdP
 
-Open **Account: Manage team…** in the app as a server admin, and choose the **Provisioning** tab. It shows
-each value with a copy button:
+Open **Account: Manage team…** in the app as a server admin, and choose **Provisioning** under **Server** in
+Team settings. It shows the SCIM card first, then the SAML details and the groups, each value with a copy button:
 
 | Value         | Where it comes from                        | IdP field names                                          |
 | ------------- | ------------------------------------------ | -------------------------------------------------------- |
 | Entity ID     | `<public URL>/api/v1/auth/saml/metadata`   | Identifier, Audience URI, SP entity ID                   |
 | ACS URL       | `<public URL>/api/v1/auth/saml/acs`        | Reply URL, Single sign-on URL, Assertion consumer service |
 | SCIM base URL | `<public URL>/scim/v2`                     | Tenant URL, SCIM connector base URL                      |
-| SCIM token    | **Create** in the Provisioning tab, or CLI | Secret token, API token (bearer)                         |
+| SCIM token    | **Create** on the Provisioning page, or CLI | Secret token, API token (bearer)                         |
 
 The entity ID is also the address of this server's SP metadata, so an IdP that imports metadata from a URL
 can read it there. `wirebench-server serve` logs the entity ID, the ACS URL and the SCIM base URL when SAML
@@ -176,7 +176,7 @@ Every change is in the audit log with the SCIM token as the actor.
 
 ## Group links
 
-A group does nothing until a server admin links it to a team, in the Provisioning tab's **Groups** list or
+A group does nothing until a server admin links it to a team, in the Provisioning page's **Groups** list or
 from the console:
 
 ```sh

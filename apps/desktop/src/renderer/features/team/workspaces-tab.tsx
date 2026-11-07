@@ -5,7 +5,7 @@ import { useTeamStore } from '../../state/team.js';
 import { ipc } from '../../state/ipc-client.js';
 import type { DefaultRoleWire, TeamWorkspaceWire } from '@shared/wire-base.js';
 import { AccessPanel } from './access-panel.js';
-import { DEFAULT_ROLES, INPUT_CLASS, ROLE_LABELS, SELECT_CLASS, roleWithSource } from './roles.js';
+import { DEFAULT_ROLES, INPUT_CLASS, ROLE_LABELS, SELECT_CLASS, roleCan, roleWithSource } from './roles.js';
 
 const defaultOptions = DEFAULT_ROLES.map((role) => (
   <option key={role} value={role}>
@@ -26,7 +26,8 @@ function WorkspaceRow({ workspace, onDelete }: WorkspaceRowProps) {
   const featurePolicy = useTeamStore((state) => state.featurePolicy);
   const [name, setName] = useState(workspace.name);
   const [policyOpen, setPolicyOpen] = useState(false);
-  const isAdmin = workspace.myRole === 'admin';
+  const isAdmin = roleCan(workspace.myRole, 'manage-workspace');
+  const canShare = roleCan(workspace.myRole, 'share');
   const offCount = workspace.disabledFeatures?.length ?? 0;
 
   useEffect(() => {
@@ -109,14 +110,16 @@ function WorkspaceRow({ workspace, onDelete }: WorkspaceRowProps) {
           >
             {defaultOptions}
           </select>
-          <Button
-            data-testid={`workspace-access-${workspace.id}`}
-            onClick={() => {
-              void openAccess(workspace.id);
-            }}
-          >
-            Access…
-          </Button>
+          {canShare && (
+            <Button
+              data-testid={`workspace-access-${workspace.id}`}
+              onClick={() => {
+                void openAccess(workspace.id);
+              }}
+            >
+              Access…
+            </Button>
+          )}
           <Button variant="ghost" data-testid={`workspace-delete-${workspace.id}`} onClick={onDelete}>
             Delete
           </Button>

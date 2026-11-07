@@ -1,11 +1,13 @@
-import { afterEach, beforeEach, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { Team, TeamInvitation, TeamInvitationCreated } from '@wirebench/engine';
 import * as identityRepo from '../../../src/identity/repo.js';
 import { pkceChallenge } from '../../../src/identity/tokens.js';
 import * as repo from '../../../src/teams/repo.js';
+import { recordingAudit } from '../../helpers/context.js';
 import { describeDb } from '../../helpers/database.js';
 import { startFakeOidcIssuer, type FakeOidcIssuer } from '../../helpers/fake-oidc-issuer.js';
 import { signedInUser, type IdentityHarness, type SignedInUser } from '../../helpers/identity.js';
+import { licensingHarness, testKeys } from '../../helpers/licensing.js';
 import { call, seedTeam, teamsHarness } from '../../helpers/teams.js';
 
 const PASSWORD = 'correct horse battery';
@@ -99,6 +101,103 @@ describeDb('team invitations (§3.2, §3.4)', () => {
       'teams-invitation-not-found',
     );
     expect((await accept(url, 'Bob')).status).toBe(404);
+  });
+
+  describe('renew', () => {
+    type Renewed = TeamInvitationCreated & { code?: string; message?: string };
+    const renew = (id: string, as = admin, teamId = team.id) =>
+      call<Renewed>(h, as, 'POST', `/teams/${teamId}/invitations/${id}/renew`);
+    const lookup = (url: string) =>
+      call<{ code?: string }>(h, undefined, 'GET', `/invitations/lookup?secret=${secretOf(url)}`);
+
+    it('a team admin renews: a new link, same email and role, the old link refused', async () => {
+      const first = (await invite('bob@example.com', 'admin')).body;
+      const res = await renew(first.id);
+      expect(res.status).toBe(201);
+      expect(res.body).toMatchObject({ email: 'bob@example.com', role: 'admin' });
+      expect(res.body.id).not.toBe(first.id);
+      expect(res.body.url).toMatch(/^https:\/\/wirebench\.test\/invite\/[A-Za-z0-9_-]{43}$/);
+      expect(res.body.url).not.toBe(first.url);
+      expect(await lookup(first.url)).toMatchObject({ status: 404, body: { code: 'identity-invitation-invalid' } });
+      expect((await lookup(res.body.url)).status).toBe(200);
+      const list = await call<TeamInvitation[]>(h, admin, 'GET', `/teams/${team.id}/invitations`);
+      expect(list.body.map((row) => [row.id, row.email, row.role])).toEqual([
+        [res.body.id, 'bob@example.com', 'admin'],
+      ]);
+    });
+
+    it('refuses a member with 403 and an outsider with 404', async () => {
+      const { id } = (await invite('bob@example.com')).body;
+      expect(await renew(id, member)).toMatchObject({ status: 403, body: { code: 'teams-forbidden' } });
+      const stranger = await signedInUser(h, { email: 'stranger@example.com' });
+      expect(await renew(id, stranger)).toMatchObject({ status: 404, body: { code: 'teams-team-not-found' } });
+    });
+
+    it('another team’s invitation, a revoked one and an accepted one are 404', async () => {
+      const other = await seedTeam(h, { name: 'Other', admins: [admin] });
+      const elsewhere = await call<TeamInvitationCreated>(h, admin, 'POST', `/teams/${other.id}/invitations`, {
+        email: 'carol@example.com',
+        role: 'member',
+      });
+      expect((await renew(elsewhere.body.id)).body.code).toBe('teams-invitation-not-found');
+      const revoked = (await invite('dan@example.com')).body;
+      expect((await call(h, admin, 'DELETE', `/teams/${team.id}/invitations/${revoked.id}`)).status).toBe(204);
+      expect((await renew(revoked.id)).body.code).toBe('teams-invitation-not-found');
+      const accepted = (await invite('erin@example.com')).body;
+      expect((await accept(accepted.url, 'Erin')).status).toBe(201);
+      expect(await renew(accepted.id)).toMatchObject({ status: 404, body: { code: 'teams-invitation-not-found' } });
+    });
+
+    it('an email that became an account since is 409 with the hint, and the old invitation stays open', async () => {
+      const first = (await invite('bob@example.com')).body;
+      await signedInUser(h, { email: 'Bob@example.com' });
+      expect(await renew(first.id)).toMatchObject({
+        status: 409,
+        body: {
+          code: 'identity-user-exists',
+          message: 'A user with this email already exists. Add them as a member instead.',
+        },
+      });
+      expect((await lookup(first.url)).status).toBe(200);
+      const row = await identityRepo.invitationById(h.tdb, first.id);
+      expect(row?.revokedAt).toBeNull();
+    });
+
+    it('is one transaction: a seat refusal leaves the old invitation open', async () => {
+      // Community's five enabled accounts: the invitation is made at two, then three more fill every seat.
+      await h.close();
+      h = await licensingHarness(testKeys());
+      admin = await signedInUser(h, { email: 'admin@example.com' });
+      member = await signedInUser(h, { email: 'member@example.com' });
+      team = await seedTeam(h, { name: 'Payments QA', admins: [admin], members: [member] });
+      const first = (await invite('bob@example.com')).body;
+      for (const n of [1, 2, 3]) await signedInUser(h, { email: `user${n}@example.com` });
+      expect(await renew(first.id)).toMatchObject({ status: 409, body: { code: 'licensing-seat-limit' } });
+      expect((await lookup(first.url)).status).toBe(200);
+      const rows = await h.tdb.query<{ id: string; revoked: boolean }>(
+        "select id, revoked_at is not null as revoked from invitations where email_lower = 'bob@example.com'",
+      );
+      expect(rows.rows).toEqual([{ id: first.id, revoked: false }]);
+    });
+
+    it('records the revoke and the new invite, the invite naming the old id', async () => {
+      const first = (await invite('bob@example.com')).body;
+      const events = recordingAudit(h.hooks);
+      const renewed = (await renew(first.id)).body;
+      expect(events.map((e) => [e.action, e.target, e.details])).toEqual([
+        [
+          'user.invitation_revoked',
+          { kind: 'invitation', id: first.id },
+          { emailLower: 'bob@example.com', renewed: true },
+        ],
+        [
+          'user.invited',
+          { kind: 'invitation', id: renewed.id },
+          { emailLower: 'bob@example.com', serverAdmin: false, renewedFrom: first.id },
+        ],
+      ]);
+      expect(events.every((e) => e.actor.kind === 'user')).toBe(true);
+    });
   });
 });
 

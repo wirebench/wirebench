@@ -137,6 +137,12 @@ import {
 import {
   accountAcceptInvitationRequestSchema,
   accountCancelResponseSchema,
+  accountChangePasswordRequestSchema,
+  accountDeviceRefRequestSchema,
+  accountDevicesResponseSchema,
+  accountDoneResponseSchema,
+  accountProfileWireSchema,
+  accountUpdateProfileRequestSchema,
   accountChangedEventSchema,
   accountListResponseSchema,
   accountLookupInvitationRequestSchema,
@@ -658,9 +664,9 @@ export const channels = {
    */
   issuedTokens: soapChannels.issuedTokens,
   /**
-   * Accounts on Wirebench Server. A password crosses exactly once, in `signInLocal` or
-   * `acceptInvitation`; the token never crosses at all — main keeps it in the secret store and
-   * answers with the account minus its ref.
+   * Accounts on Wirebench Server. A password crosses in `signInLocal`, `acceptInvitation` and
+   * `changePassword`, and nowhere else; main never logs or stores it. The token never crosses at
+   * all — main keeps it in the secret store and answers with the account minus its ref.
    */
   account: {
     list: defineChannel('account.list', z.undefined(), accountListResponseSchema),
@@ -683,6 +689,18 @@ export const channels = {
     ),
     signOut: defineChannel('account.signOut', accountUrlRequestSchema, accountListResponseSchema),
     remove: defineChannel('account.remove', accountUrlRequestSchema, accountListResponseSchema),
+    /** User settings (settings split spec §4): you on the server `url` names. */
+    profile: defineChannel('account.profile', accountUrlRequestSchema, accountProfileWireSchema),
+    /** Changes your display name; the stored account takes it too, so the Accounts list and status bar follow. */
+    updateProfile: defineChannel('account.updateProfile', accountUpdateProfileRequestSchema, accountProfileWireSchema),
+    /** The server signs every other device out; this one keeps its token. */
+    changePassword: defineChannel(
+      'account.changePassword',
+      accountChangePasswordRequestSchema,
+      accountDoneResponseSchema,
+    ),
+    devices: defineChannel('account.devices', accountUrlRequestSchema, accountDevicesResponseSchema),
+    signOutDevice: defineChannel('account.signOutDevice', accountDeviceRefRequestSchema, accountDoneResponseSchema),
   },
   /**
    * Teams on Wirebench Server (teams-access §3.5). Every request names the server by `url`; main
@@ -703,6 +721,12 @@ export const channels = {
       'team.revokeInvitation',
       teamInvitationRefRequestWireSchema,
       teamDoneResponseWireSchema,
+    ),
+    /** Revokes the invitation and makes a new link for the same email and role, in one server transaction. */
+    renewInvitation: defineChannel(
+      'team.renewInvitation',
+      teamInvitationRefRequestWireSchema,
+      teamInviteResponseWireSchema,
     ),
     /** What a member can open, with role and source; `server-sync`'s join dialog reads it too (§3.6). */
     listWorkspaces: defineChannel('team.listWorkspaces', teamServerRequestWireSchema, teamWorkspacesResponseWireSchema),

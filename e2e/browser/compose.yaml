@@ -8,7 +8,7 @@
 # The key is never committed: it encrypts nothing that outlives `down -v`.
 #
 # CI also runs the suite on a migrated server: it starts `db` alone, loads the frozen `0019` fixture into it and
-# into the `data` volume (`node packages/server/test/fixtures/tenancy/volume.ts --free-seat -- -f <this file>`),
+# into the `data` volume (`node packages/server/test/fixtures/tenancy/volume.ts --free-seats -- -f <this file>`),
 # then starts the rest with the fixture's secrets key, so the server's first start upgrades a team install's
 # database and data directory before the suite seeds anything.
 #

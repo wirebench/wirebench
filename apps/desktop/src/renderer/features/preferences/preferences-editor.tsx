@@ -1,11 +1,9 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import {
-  ArrowLeft,
   ArrowLeftRight,
   BadgeCheck,
   Braces,
-  CircleUser,
   Ellipsis,
   FileCode,
   GitBranch,
@@ -14,26 +12,16 @@ import {
   Palette,
   Radio,
   RefreshCw,
-  Search,
   Server,
   ShieldCheck,
   SlidersHorizontal,
   ToggleRight,
   Laptop,
   MonitorSmartphone,
-  Smartphone,
   SquareTerminal,
   Waypoints,
   type LucideIcon,
   Puzzle,
-  LogIn,
-  Users,
-  Send,
-  Mail,
-  Archive,
-  CreditCard,
-  Download,
-  Trash2,
 } from 'lucide-react';
 import { Button } from '../../components/button.js';
 import {
@@ -45,6 +33,7 @@ import {
   type SettingsRowsController,
 } from '../../components/settings-grid.js';
 import { detectPlatform } from '../../lib/platform.js';
+import { SettingsNavGroup, SettingsNavItem, SettingsPageHeader, SettingsShell } from './settings-shell.js';
 import type { CommandContext } from '../../lib/commands.js';
 import { isLockedByPolicy, usePreferencesStore } from '../../state/preferences.js';
 import { useUiStore } from '../../state/ui.js';
@@ -59,24 +48,14 @@ import { BehaviourSection } from './sections/behaviour-section.js';
 import { FeaturesSection } from './sections/features-section.js';
 import { PluginsSection } from './sections/plugins-section.js';
 import { UpdatesSection } from './sections/updates-section.js';
-import { AccountsSection } from './sections/accounts-section.js';
 import { SecretsSection } from './sections/secrets-section.js';
 import { MocksSection } from './sections/mocks-section.js';
 import { SshSection } from './sections/ssh-section.js';
 import { TerminalSection } from './sections/terminal-section.js';
 import { ShortcutsSection } from './sections/shortcuts-section.js';
-import { TokensSection } from './sections/tokens-section.js';
 import { PairedBrowsersSection } from './sections/paired-browsers-section.js';
 import { ThisMachineSection } from './sections/this-machine-section.js';
 import type { SectionProps } from './sections/section-props.js';
-import { ServerPage, SERVER_PAGE_LABELS } from './server/server-page.js';
-import {
-  isHosted,
-  serverLabel,
-  serverPages,
-  useServerSettingsStore,
-  type ServerPageId,
-} from './server/server-settings-store.js';
 import {
   availableNav,
   sectionsForSearch,
@@ -109,71 +88,9 @@ const ICONS: Readonly<Record<SettingsSectionId, LucideIcon>> = {
   terminal: SquareTerminal,
   ssh: Server,
   secrets: KeyRound,
-  accounts: CircleUser,
   'this-machine': Laptop,
   'paired-browsers': MonitorSmartphone,
-  tokens: Smartphone,
 };
-
-const SERVER_ICONS: Readonly<Record<ServerPageId, LucideIcon>> = {
-  'sign-in': LogIn,
-  provisioning: Users,
-  'audit-forwarding': Send,
-  email: Mail,
-  retention: Archive,
-  billing: CreditCard,
-  export: Download,
-  delete: Trash2,
-};
-
-/**
- * The *Server* group of the nav (hosted edition spec §22.13): shown only once the connected server answered its
- * settings read, which it does for its server admins only.
- */
-function ServerNavGroup({
-  current,
-  onOpen,
-}: {
-  readonly current: ServerPageId | undefined;
-  readonly onOpen: (page: ServerPageId) => void;
-}) {
-  const available = useServerSettingsStore((s) => s.available);
-  const settings = useServerSettingsStore((s) => s.settings);
-  const billing = useServerSettingsStore((s) => s.billing);
-  const url = useServerSettingsStore((s) => s.url);
-  if (!available || url === undefined) return null;
-  return (
-    <div data-testid="settings-nav-server" className="mt-3">
-      <h2 className="mb-1 px-2 text-xs font-medium text-fg-subtle">Server · {serverLabel(url, billing)}</h2>
-      <ul>
-        {serverPages(settings).map((page) => {
-          const Icon = SERVER_ICONS[page];
-          const isCurrent = page === current;
-          return (
-            <li key={page}>
-              <button
-                type="button"
-                data-testid={`settings-nav-server-${page}`}
-                aria-current={isCurrent ? 'page' : undefined}
-                onClick={() => {
-                  onOpen(page);
-                }}
-                className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none ${
-                  isCurrent
-                    ? 'bg-surface-active text-fg-default'
-                    : `${page === 'delete' ? 'text-status-danger' : 'text-fg-muted'} hover:bg-surface-hover hover:text-fg-default`
-                }`}
-              >
-                <Icon size={14} aria-hidden="true" className="shrink-0 opacity-80" />
-                <span className="min-w-0 flex-1 truncate">{SERVER_PAGE_LABELS[page]}</span>
-              </button>
-            </li>
-          );
-        })}
-      </ul>
-    </div>
-  );
-}
 
 /** The form for one section; `context` is only the Shortcuts table's. */
 function SectionBody({
@@ -220,47 +137,11 @@ function SectionBody({
       return <SshSection {...props} />;
     case 'secrets':
       return <SecretsSection {...props} />;
-    case 'accounts':
-      return <AccountsSection {...props} />;
     case 'this-machine':
       return <ThisMachineSection />;
     case 'paired-browsers':
       return <PairedBrowsersSection />;
-    case 'tokens':
-      return <TokensSection />;
   }
-}
-
-/** The layers that own Escape while they are open. */
-const ESCAPE_LAYERS = '[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]';
-
-/**
- * Whether an Escape someone already handled was spent closing a layer that is still open (a menu,
- * a dialog, a listbox), so it must not also leave Settings.
- *
- * A tooltip handles Escape too: Radix closes it and marks the key handled in the capture phase.
- * After a click on the rail's Settings button the focus stays on that button, its tooltip is
- * open, and Escape used to stop there (G06). A tooltip is not a layer the key belongs to, so an
- * Escape that only closed one still leaves Settings.
- */
-export function escapeClaimedElsewhere(event: Pick<KeyboardEvent, 'defaultPrevented'>, doc: Document): boolean {
-  return event.defaultPrevented && doc.querySelector(ESCAPE_LAYERS) !== null;
-}
-
-/** Whether a key press in `target` belongs to that element (typing, picking) rather than the page. */
-function capturesEscape(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) {
-    return false;
-  }
-  if (target.closest(ESCAPE_LAYERS) !== null) {
-    return true;
-  }
-  if (target.isContentEditable || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement) {
-    return true;
-  }
-  return (
-    target instanceof HTMLInputElement && !['button', 'checkbox', 'radio', 'submit', 'reset'].includes(target.type)
-  );
 }
 
 export interface PreferencesEditorProps {
@@ -276,18 +157,8 @@ export interface PreferencesEditorProps {
  */
 export function PreferencesEditor({ initialSection }: PreferencesEditorProps) {
   const [active, setActive] = useState<SettingsSectionId>(() => resolveSection(initialSection));
-  // A page of the Server group, which stands in for `active` while one is open.
-  const [serverPage, setServerPage] = useState<ServerPageId | undefined>(undefined);
-  const serverAvailable = useServerSettingsStore((s) => s.available);
-  const serverHosted = useServerSettingsStore((s) => isHosted(s.settings));
-  const shownServerPage =
-    serverPage !== undefined && serverAvailable && (serverHosted || !['billing', 'delete'].includes(serverPage))
-      ? serverPage
-      : undefined;
   const [rawQuery, setRawQuery] = useState('');
   const query = rawQuery.trim().toLowerCase();
-  const searchRef = useRef<HTMLInputElement>(null);
-  const mainRef = useRef<HTMLElement>(null);
 
   const preferences = usePreferencesStore((state) => state.preferences);
   const update = usePreferencesStore((state) => state.update);
@@ -336,230 +207,125 @@ export function PreferencesEditor({ initialSection }: PreferencesEditorProps) {
     }
   };
 
-  // Escape: clears a search first, then leaves Settings — unless the key belongs to whatever has
-  // focus (a field reverting its draft, the shortcut recorder, an open menu or dialog).
-  // ⌘F / Ctrl+F: focuses the search, ahead of any app-wide binding.
-  const queryRef = useRef(query);
-  queryRef.current = query;
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') {
-        if (escapeClaimedElsewhere(event, document)) {
-          return;
-        }
-        const inSearch = event.target === searchRef.current;
-        if (!inSearch && capturesEscape(event.target)) {
-          return;
-        }
-        event.preventDefault();
-        if (queryRef.current.length > 0) {
-          setRawQuery('');
-          return;
-        }
-        close(false);
-      }
-    };
-    const onFind = (event: KeyboardEvent): void => {
-      if ((event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === 'f') {
-        event.preventDefault();
-        event.stopPropagation();
-        searchRef.current?.focus();
-        searchRef.current?.select();
-      }
-    };
-    window.addEventListener('keydown', onKeyDown);
-    window.addEventListener('keydown', onFind, { capture: true });
-    return () => {
-      window.removeEventListener('keydown', onKeyDown);
-      window.removeEventListener('keydown', onFind, { capture: true });
-    };
-  }, [close]);
-
   const managed = policy !== undefined && policy.locked.length > 0;
   const section = sectionById(active);
   const searching = query.length > 0;
 
+  const nav = (
+    <>
+      {availableNav().map((group) => (
+        <SettingsNavGroup key={group.title} title={group.title}>
+          {group.sections.map((entry) => (
+            <SettingsNavItem
+              key={entry.id}
+              label={entry.label}
+              icon={ICONS[entry.id]}
+              current={!searching && entry.id === active}
+              modified={sectionModified(preferences, entry)}
+              testId={`settings-nav-${entry.id}`}
+              onSelect={() => {
+                setActive(entry.id);
+                setRawQuery('');
+              }}
+            />
+          ))}
+        </SettingsNavGroup>
+      ))}
+    </>
+  );
+
   return (
     <SettingsVariantProvider variant="card">
       <SettingsRowsControllerProvider controller={controller}>
-        <div data-testid="preferences-editor" className="flex h-full min-h-0 w-full">
-          <aside className="flex w-[232px] shrink-0 flex-col border-r border-hairline bg-surface-sunken">
-            <button
-              type="button"
-              data-testid="settings-back"
-              onClick={() => {
-                close(false);
+        <SettingsShell
+          area="app"
+          nav={nav}
+          search={{ value: rawQuery, onChange: setRawQuery, placeholder: 'Search settings' }}
+          onBack={() => {
+            close(false);
+          }}
+        >
+          {searching ? (
+            <SearchResults
+              query={query}
+              rawQuery={rawQuery.trim()}
+              props={sectionProps}
+              context={commandContext}
+              onOpen={(id) => {
+                setActive(id);
+                setRawQuery('');
               }}
-              className="mx-2.5 mt-3 mb-1.5 flex items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-sm text-fg-muted hover:bg-surface-hover hover:text-fg-default focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none"
-            >
-              <ArrowLeft size={14} aria-hidden="true" />
-              Back to app
-            </button>
-            <div className="relative mx-2.5 mt-1 mb-2.5">
-              <Search
-                size={12}
-                aria-hidden="true"
-                className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-fg-subtle"
-              />
-              <input
-                ref={searchRef}
-                type="text"
-                data-testid="settings-search"
-                aria-label="Search settings"
-                placeholder="Search settings"
-                autoComplete="off"
-                spellCheck={false}
-                value={rawQuery}
-                onChange={(event) => {
-                  setRawQuery(event.target.value);
-                }}
-                className="h-7.5 w-full rounded-md border border-hairline bg-surface-raised pr-12 pl-7 text-sm text-fg-default placeholder:text-fg-faint focus:border-accent focus:outline-none"
-              />
-              <kbd className="pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 rounded-sm border border-hairline px-1 font-mono text-2xs text-fg-subtle">
-                {platform === 'mac' ? '⌘F' : 'Ctrl+F'}
-              </kbd>
-            </div>
-            <nav aria-label="Settings sections" className="min-h-0 flex-1 overflow-auto px-2.5 pb-3">
-              {availableNav().map((group) => (
-                <div key={group.title} className="mt-3 first:mt-1">
-                  <h2 className="mb-1 px-2 text-xs font-medium text-fg-subtle">{group.title}</h2>
-                  <ul>
-                    {group.sections.map((entry) => {
-                      const Icon = ICONS[entry.id];
-                      const current = !searching && shownServerPage === undefined && entry.id === active;
-                      const changed = sectionModified(preferences, entry);
-                      return (
-                        <li key={entry.id}>
-                          <button
-                            type="button"
-                            data-testid={`settings-nav-${entry.id}`}
-                            aria-current={current ? 'page' : undefined}
-                            {...(changed ? { 'data-modified': 'true' } : {})}
-                            onClick={() => {
-                              setActive(entry.id);
-                              setServerPage(undefined);
-                              setRawQuery('');
-                              mainRef.current?.scrollTo?.({ top: 0 });
+            />
+          ) : (
+            <>
+              <SettingsPageHeader
+                title={section.label}
+                subtitle={section.subtitle}
+                actions={
+                  section.keys.kind !== 'none' && (
+                    <DropdownMenu.Root>
+                      <DropdownMenu.Trigger asChild>
+                        <button
+                          type="button"
+                          data-testid="settings-section-menu"
+                          aria-label={`More actions for ${section.label}`}
+                          className="flex h-7 items-center rounded-md border border-hairline bg-surface-raised px-2.5 text-fg-muted hover:bg-surface-hover hover:text-fg-default focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none"
+                        >
+                          <Ellipsis size={14} aria-hidden="true" />
+                        </button>
+                      </DropdownMenu.Trigger>
+                      <DropdownMenu.Portal>
+                        <DropdownMenu.Content
+                          align="end"
+                          sideOffset={4}
+                          className="z-dropdown min-w-56 rounded-lg border border-hairline-strong bg-surface-overlay p-1 shadow-lg"
+                        >
+                          <DropdownMenu.Item
+                            data-testid="settings-reset-section"
+                            onSelect={() => {
+                              resetSection(active);
                             }}
-                            className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none ${
-                              current
-                                ? 'bg-surface-active text-fg-default'
-                                : 'text-fg-muted hover:bg-surface-hover hover:text-fg-default'
-                            }`}
+                            className="cursor-pointer rounded-md px-2.5 py-1.5 text-sm text-fg-default outline-none data-[highlighted]:bg-surface-hover"
                           >
-                            <Icon size={14} aria-hidden="true" className="shrink-0 opacity-80" />
-                            <span className="min-w-0 flex-1 truncate">{entry.label}</span>
-                            {changed && (
-                              <span
-                                aria-hidden="true"
-                                data-testid="settings-nav-modified"
-                                title="Has changed settings"
-                                className="h-1.5 w-1.5 shrink-0 rounded-full bg-highlight"
-                              />
-                            )}
-                          </button>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                </div>
-              ))}
-              <ServerNavGroup
-                current={searching ? undefined : shownServerPage}
-                onOpen={(page) => {
-                  setServerPage(page);
-                  setRawQuery('');
-                  mainRef.current?.scrollTo?.({ top: 0 });
-                }}
+                            Reset {section.label} to defaults
+                          </DropdownMenu.Item>
+                        </DropdownMenu.Content>
+                      </DropdownMenu.Portal>
+                    </DropdownMenu.Root>
+                  )
+                }
               />
-            </nav>
-          </aside>
 
-          <main ref={mainRef} className="min-w-0 flex-1 overflow-auto">
-            <div className="mx-auto max-w-[720px] px-8 pt-9 pb-20">
-              {!searching && shownServerPage !== undefined ? (
-                <ServerPage page={shownServerPage} />
-              ) : searching ? (
-                <SearchResults
-                  query={query}
-                  rawQuery={rawQuery.trim()}
-                  props={sectionProps}
-                  context={commandContext}
-                  onOpen={(id) => {
-                    setActive(id);
-                    setRawQuery('');
-                  }}
-                />
-              ) : (
-                <>
-                  <div className="mb-1.5 flex items-end justify-between gap-4">
-                    <h1 className="text-[22px] leading-tight font-semibold text-fg-default">{section.label}</h1>
-                    {section.keys.kind !== 'none' && (
-                      <DropdownMenu.Root>
-                        <DropdownMenu.Trigger asChild>
-                          <button
-                            type="button"
-                            data-testid="settings-section-menu"
-                            aria-label={`More actions for ${section.label}`}
-                            className="flex h-7 items-center rounded-md border border-hairline bg-surface-raised px-2.5 text-fg-muted hover:bg-surface-hover hover:text-fg-default focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none"
-                          >
-                            <Ellipsis size={14} aria-hidden="true" />
-                          </button>
-                        </DropdownMenu.Trigger>
-                        <DropdownMenu.Portal>
-                          <DropdownMenu.Content
-                            align="end"
-                            sideOffset={4}
-                            className="z-dropdown min-w-56 rounded-lg border border-hairline-strong bg-surface-overlay p-1 shadow-lg"
-                          >
-                            <DropdownMenu.Item
-                              data-testid="settings-reset-section"
-                              onSelect={() => {
-                                resetSection(active);
-                              }}
-                              className="cursor-pointer rounded-md px-2.5 py-1.5 text-sm text-fg-default outline-none data-[highlighted]:bg-surface-hover"
-                            >
-                              Reset {section.label} to defaults
-                            </DropdownMenu.Item>
-                          </DropdownMenu.Content>
-                        </DropdownMenu.Portal>
-                      </DropdownMenu.Root>
-                    )}
-                  </div>
-                  <p className="mb-6 text-sm text-fg-subtle">{section.subtitle}</p>
-
-                  {managed && (
-                    <p
-                      role="note"
-                      data-testid="preferences-policy"
-                      className="mb-5 rounded-lg border border-status-warning px-3 py-2.5 text-sm text-fg-muted"
-                    >
-                      Some settings are managed by your organization and marked “Managed”. They come from{' '}
-                      <code className="font-mono text-xs">{policy.path}</code>.
-                      {policy.ignored.length > 0 && (
-                        <> The policy also names settings it cannot lock: {policy.ignored.join(', ')}.</>
-                      )}
-                    </p>
+              {managed && (
+                <p
+                  role="note"
+                  data-testid="preferences-policy"
+                  className="mb-5 rounded-lg border border-status-warning px-3 py-2.5 text-sm text-fg-muted"
+                >
+                  Some settings are managed by your organization and marked “Managed”. They come from{' '}
+                  <code className="font-mono text-xs">{policy.path}</code>.
+                  {policy.ignored.length > 0 && (
+                    <> The policy also names settings it cannot lock: {policy.ignored.join(', ')}.</>
                   )}
-                  {policy?.error !== undefined && (
-                    <p
-                      role="alert"
-                      data-testid="preferences-policy-error"
-                      className="mb-5 rounded-lg border border-status-danger px-3 py-2.5 text-sm text-fg-muted"
-                    >
-                      The managed-preferences policy at <code className="font-mono text-xs">{policy.path}</code> was not
-                      applied: {policy.error}
-                    </p>
-                  )}
-
-                  <div data-testid={`settings-section-${active}`}>
-                    <SectionBody id={active} props={sectionProps} context={commandContext} />
-                  </div>
-                </>
+                </p>
               )}
-            </div>
-          </main>
-        </div>
+              {policy?.error !== undefined && (
+                <p
+                  role="alert"
+                  data-testid="preferences-policy-error"
+                  className="mb-5 rounded-lg border border-status-danger px-3 py-2.5 text-sm text-fg-muted"
+                >
+                  The managed-preferences policy at <code className="font-mono text-xs">{policy.path}</code> was not
+                  applied: {policy.error}
+                </p>
+              )}
+
+              <div data-testid={`settings-section-${active}`}>
+                <SectionBody id={active} props={sectionProps} context={commandContext} />
+              </div>
+            </>
+          )}
+        </SettingsShell>
       </SettingsRowsControllerProvider>
     </SettingsVariantProvider>
   );

@@ -3,11 +3,15 @@
  * desktop's *Share to a team* would. The browser opens existing server workspaces only (#786 covers
  * creating one), so the workspace, its project and its requests are all here before the spec starts:
  *
- * 1. `admin invite`, run in the server service with `docker compose exec`, invites a server admin.
+ * 1. `admin invite`, run in the server service with `docker compose exec`, invites a server admin (and,
+ *    with `--no-admin`, the two plain accounts Team settings' spec needs).
  * 2. `POST /invitations/accept` sets that user's local password; the answer carries a device token.
  * 3. `POST /teams` makes a team; its creator is its first admin.
  * 4. `POST /teams/:id/workspaces` makes a server workspace in it. The creator, a member, gets the
  *    workspace's admin grant (teams spec §3.2), which is the access the spec needs.
+ * 4b. A second team and one plain account, its other admin (so the seeded user may leave it), which is not on
+ *    the first team, for *Add people*. One account only: each takes a community seat, and creating an
+ *    invitation needs one free.
  * 5. `POST /workspaces/:id/sync/commits` pushes one commit holding the workspace manifest and one
  *    project, written by the engine's own `saveWorkspace`/`saveProject` into a scratch folder, so the
  *    bytes are what the app itself writes. The manifest's id is the server workspace's, which is what
@@ -52,16 +56,39 @@ async function call<T>(method: string, path: string, body: unknown, token?: stri
 }
 
 /** Step 1: `wirebench-server admin invite`, and the secret at the end of the link it prints. */
-function invite(email: string): string {
+function invite(email: string, { serverAdmin = true }: { readonly serverAdmin?: boolean } = {}): string {
   // The compose file names the project after WIREBENCH_E2E_PORT, so this reaches this run's stack.
   const out = execFileSync(
     'docker',
-    ['compose', '-f', COMPOSE_FILE, 'exec', '-T', SERVER_SERVICE, 'node', '/app/dist/bin.js', 'admin', 'invite', email],
+    [
+      'compose',
+      '-f',
+      COMPOSE_FILE,
+      'exec',
+      '-T',
+      SERVER_SERVICE,
+      'node',
+      '/app/dist/bin.js',
+      'admin',
+      'invite',
+      email,
+      ...(serverAdmin ? [] : ['--no-admin']),
+    ],
     { encoding: 'utf8' },
   );
   const link = /\/invite\/([^\s/]+)\s*$/m.exec(out);
   if (link?.[1] === undefined) throw new Error(`admin invite printed no link:\n${out}`);
   return link[1];
+}
+
+/** A plain account (not a server admin), signed up with a password nobody needs again. */
+async function plainAccount(email: string, displayName: string): Promise<void> {
+  await call('POST', '/invitations/accept', {
+    secret: invite(email, { serverAdmin: false }),
+    displayName,
+    password: randomBytes(18).toString('base64url'),
+    device: { name: 'browser e2e seed' },
+  });
 }
 
 /** Every file under `dir` as one push change, `/`-separated, as the tree holds it. */
@@ -88,6 +115,10 @@ export async function seedServer(agentEchoUrl: string): Promise<Seed> {
     // A test value made here and handed to the spec through the environment; it never leaves this run.
     password: randomBytes(18).toString('base64url'),
     teamName: `Browser team ${stamp}`,
+    teamId: '',
+    secondTeamName: `Second team ${stamp}`,
+    secondTeamId: '',
+    existingEmail: `browser-e2e-existing-${stamp}@example.com`,
     workspaceName: `Browser workspace ${stamp}`,
     projectName: 'Echo project',
     apiName: 'Echo API',
@@ -105,6 +136,9 @@ export async function seedServer(agentEchoUrl: string): Promise<Seed> {
     device: { name: 'browser e2e seed' },
   });
   const team = await call<{ id: string }>('POST', '/teams', { name: seed.teamName }, token);
+  const second = await call<{ id: string }>('POST', '/teams', { name: seed.secondTeamName }, token);
+  await plainAccount(seed.existingEmail, 'Existing Person');
+  await call('POST', `/teams/${second.id}/members`, { email: seed.existingEmail, role: 'admin' }, token);
   const workspace = await call<{ id: string }>(
     'POST',
     `/teams/${team.id}/workspaces`,
@@ -147,5 +181,5 @@ export async function seedServer(agentEchoUrl: string): Promise<Seed> {
   } finally {
     await rm(scratch, { recursive: true, force: true });
   }
-  return seed;
+  return { ...seed, teamId: team.id, secondTeamId: second.id };
 }

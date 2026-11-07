@@ -27,6 +27,7 @@ export interface TeamChannelDeps {
     | 'listTeamInvitations'
     | 'inviteToTeam'
     | 'revokeTeamInvitation'
+    | 'renewTeamInvitation'
     | 'listWorkspaces'
     | 'createWorkspace'
     | 'updateWorkspace'
@@ -116,6 +117,11 @@ export function registerTeamChannels(table: HandlerTable, deps: TeamChannelDeps)
       await c.revokeTeamInvitation(url, token, r.teamId, r.invitationId);
       return DONE;
     }),
+  );
+  registerHandler(table, channels.team.renewInvitation, (r) =>
+    withToken(deps, r.url, async (url, token) => ({
+      invitation: await c.renewTeamInvitation(url, token, r.teamId, r.invitationId),
+    })),
   );
   registerHandler(table, channels.team.listWorkspaces, (r) =>
     withToken(deps, r.url, async (url, token) => ({ workspaces: await c.listWorkspaces(url, token) })),

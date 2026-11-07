@@ -9,11 +9,9 @@ import { signInErrorMessage } from '../../state/account.js';
 import { ipc } from '../../state/ipc-client.js';
 import { useUiStore } from '../../state/ui.js';
 
-/**
- * Restated from the engine's `MIN_PASSWORD_LENGTH`: the renderer must not import a value from
- * the engine's Node-only entry. `sign-in-dialog.test.tsx` keeps the copy honest.
- */
-export const MIN_PASSWORD_LENGTH = 12;
+import { MIN_PASSWORD_LENGTH } from './password-rules.js';
+
+export { MIN_PASSWORD_LENGTH };
 
 type Step = 'server' | 'methods' | 'waiting' | 'code' | 'password';
 

@@ -91,15 +91,17 @@ test('a tab without a session is sent to sign in, and a local password signs it 
   await expect(page.getByText('Project folders you opened before')).toHaveCount(0);
 });
 
-test('the team deep link the desktop opens shows the Team dialog on the tab’s server', async () => {
+test('the team deep link the desktop opens shows Team settings on the tab’s server', async () => {
   await page.goto('/?panel=team');
-  const dialog = page.getByTestId('team-dialog');
-  await expect(dialog).toBeVisible({ timeout: 60_000 });
-  await expect(dialog.getByTestId('team-name')).toHaveValue(seed.teamName);
-  // Taken out of the address bar, so a reload does not open it again.
-  await expect(page).toHaveURL(/\/$/);
+  const settings = page.getByTestId('team-settings');
+  await expect(settings).toBeVisible({ timeout: 60_000 });
+  await expect(settings.getByTestId('team-switcher')).toContainText(seed.teamName);
+  await expect(settings.getByTestId('team-settings-nav-people')).toHaveAttribute('aria-current', 'page');
+  // The address stays and names the page, so a reload lands on it again (settings split ruling 17).
+  await expect(page).toHaveURL(/\?panel=team&team=[A-Za-z0-9_-]+&page=people$/);
   await page.keyboard.press('Escape');
-  await expect(dialog).toBeHidden();
+  await expect(settings).toBeHidden();
+  await expect(page).toHaveURL(/\/$/);
 });
 
 test('opens the seeded server workspace', async () => {

@@ -355,6 +355,21 @@ describe('AccountService', () => {
     expect(client.me).toHaveBeenCalledTimes(3);
   });
 
+  it('setDisplayName stores the new name and tells the listeners; an unknown server or the same name changes nothing', async () => {
+    const s = service();
+    await s.signInLocal({ url: URL_A, email: 'alice@example.com', password: 'pw'.repeat(6) });
+    const changed = vi.fn();
+    s.onChange(changed);
+    await s.setDisplayName('https://WB.test/x', 'Alice B');
+    expect(s.list()[0]?.displayName).toBe('Alice B');
+    expect(changed).toHaveBeenCalledTimes(1);
+    const file = parseYaml(await readFile(join(dir, ACCOUNTS_FILE), 'utf8')) as { servers: { displayName: string }[] };
+    expect(file.servers[0]?.displayName).toBe('Alice B');
+    await s.setDisplayName(URL_A, 'Alice B');
+    await s.setDisplayName('https://other.test', 'X');
+    expect(changed).toHaveBeenCalledTimes(1);
+  });
+
   it('refresh changes nothing when reading the token from the keychain fails', async () => {
     const client = fakeClient();
     const secrets = fakeSecrets();

@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { copyAndRead } from '../helpers/clipboard.js';
+import { LIVE_CAPABILITY } from '@wirebench/engine';
 import { startFakeServer, type FakeServer, type FakeUser } from '../helpers/fake-server.js';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
 import { runCommand } from '../helpers/palette.js';
@@ -29,6 +30,20 @@ async function signIn(page: Page, url: string, user: FakeUser): Promise<void> {
   await dialog.getByTestId('sign-in-password').fill(user.password);
   await dialog.getByTestId('sign-in-submit').click();
   await expect(dialog).toBeHidden({ timeout: 20_000 });
+}
+
+/** Replaces main's `shell.openExternal` with a recorder, so a link the window opens is seen, not opened. */
+async function recordOpenedLinks(launched: LaunchedApp): Promise<() => Promise<string[]>> {
+  await launched.app.evaluate(({ shell }) => {
+    const opened: string[] = [];
+    (globalThis as unknown as { __wirebenchOpened: string[] }).__wirebenchOpened = opened;
+    shell.openExternal = (target: string) => {
+      opened.push(target);
+      return Promise.resolve();
+    };
+  });
+  return () =>
+    launched.app.evaluate(() => [...(globalThis as unknown as { __wirebenchOpened: string[] }).__wirebenchOpened]);
 }
 
 async function openTeams(page: Page): Promise<Locator> {
@@ -147,5 +162,39 @@ test.describe('teams and workspace roles', () => {
     await dialog.getByTestId('member-add-role').selectOption('admin');
     await dialog.getByTestId('member-add-submit').click();
     await expect(dialog.getByTestId(`member-role-${uid(ALICE.email)}`)).toHaveValue('admin');
+  });
+
+  test('without browser-client listed, Manage team opens the in-window dialog and no browser', async () => {
+    test.setTimeout(120_000);
+    // The fake server lists `sync` and live updates only: the fallback the desktop keeps (settings split §8).
+    server = await startFakeServer({
+      users: [ALICE],
+      teams: [{ name: 'Payments QA', members: { [ALICE.email]: 'admin' } }],
+    });
+    launched = await launchApp({ userDataDir, keepUserDataDir: true });
+    const opened = await recordOpenedLinks(launched);
+    const page = launched.window;
+    await signIn(page, server.url, ALICE);
+
+    const dialog = await openTeams(page);
+    await expect(dialog.getByTestId('team-name')).toHaveValue('Payments QA');
+    expect(await opened()).toEqual([]);
+  });
+
+  test('with browser-client listed, Manage team opens the browser and no dialog', async () => {
+    test.setTimeout(120_000);
+    server = await startFakeServer({
+      users: [ALICE],
+      teams: [{ name: 'Payments QA', members: { [ALICE.email]: 'admin' } }],
+      capabilities: ['sync', LIVE_CAPABILITY, 'browser-client'],
+    });
+    launched = await launchApp({ userDataDir, keepUserDataDir: true });
+    const opened = await recordOpenedLinks(launched);
+    const page = launched.window;
+    await signIn(page, server.url, ALICE);
+
+    await runCommand(page, 'Account: Manage team');
+    await expect.poll(opened, { timeout: 20_000 }).toEqual([`${server.url}/?panel=team`]);
+    await expect(page.getByTestId('team-dialog')).toHaveCount(0);
   });
 });

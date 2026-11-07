@@ -108,7 +108,7 @@ For nginx, and for what each path needs, see
 [Behind a reverse proxy](/wirebench/docs/guides/wirebench-server/#behind-a-reverse-proxy).
 
 The app trusts the operating system's certificate store. If your internal certificate authority is not
-in it, add it in the app under **Settings → Network → CA bundle**, or set it for every machine with
+in it, add it in the app under **Settings → SSL / TLS → CA bundle**, or set it for every machine with
 [managed preferences](/wirebench/docs/guides/managed-preferences/).
 
 ## Sign in as the first admin
@@ -129,8 +129,9 @@ host's console:
 2. In the Wirebench app, run **Account: Sign in to a server…** from the command palette. Enter the
    public URL, choose **Have an invitation code?**, paste the code and choose a password.
    You can instead open the link in a browser and choose a password there.
-3. You are signed in as the server's first admin. Create a team with **Account: Manage team…**, then
-   invite the rest of your team from there. The server sends no email: copy each link and send it the
+3. You are signed in as the server's first admin. Create a team with **Account: Manage team…**, which
+   opens Team settings in the server's browser client, then invite the rest of your team from its **People** page
+   with **Add people**. The server sends no email: copy each link and send it the
    way your team already talks.
 
 </Steps>
@@ -158,7 +159,7 @@ A license is one line of text in a file, starting with `wbl1.`. The server does 
 start-up. You install it once, and the server keeps it in its database, so it survives restarts,
 upgrades and a new container. There are two ways to install it:
 
-- **In the app.** As a server admin, open **Account: Manage team…**, then the **License** tab. Paste
+- **In the app.** As a server admin, open **Account: Manage team…**, then **License and seats** under **Server**. Paste
   the line or choose the file, then select **Install license**.
 - **From the host.** Mount the file into a one-off container and install it:
 

@@ -2,7 +2,9 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, test, type Locator, type Page } from '@playwright/test';
+import { startFakeServer, type FakeServer, type FakeUser } from '../helpers/fake-server.js';
 import { runCommand } from '../helpers/palette.js';
+import { signIn } from '../helpers/server.js';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
 import {
   createProjectWithCalculator,
@@ -281,5 +283,53 @@ test.describe('request properties and preferences', () => {
 
     await page.keyboard.press('Escape');
     await expect(page.getByTestId('settings-page')).toHaveCount(0);
+  });
+});
+
+test.describe('App settings (settings split spec §2)', () => {
+  let launched: LaunchedApp | undefined;
+  let server: FakeServer | undefined;
+  let userDataDir = '';
+
+  test.beforeEach(() => {
+    userDataDir = mkdtempSync(join(tmpdir(), 'wirebench-e2e-app-settings-'));
+  });
+  test.afterEach(async () => {
+    await launched?.close();
+    launched = undefined;
+    await server?.close();
+    server = undefined;
+    rmSync(userDataDir, { recursive: true, force: true });
+  });
+
+  test('App settings has no Account or Server group', async () => {
+    test.setTimeout(120_000);
+    // A server admin of a hosted team: before the split, the one who saw both groups.
+    const root: FakeUser = {
+      email: 'root@example.com',
+      password: 'correct horse battery',
+      displayName: 'Root',
+      serverAdmin: true,
+    };
+    server = await startFakeServer({ users: [root], tenantSettings: true });
+    launched = await launchApp({ userDataDir, keepUserDataDir: true });
+    const page = launched.window;
+    await signIn(page, server.url, root);
+
+    await page.keyboard.press(process.platform === 'darwin' ? 'Meta+Comma' : 'Control+Comma');
+    const editor = page.getByTestId('preferences-editor');
+    await expect(editor).toBeVisible({ timeout: 20_000 });
+    const nav = editor.getByRole('navigation', { name: 'Settings sections' });
+    for (const group of ['General', 'Protocols', 'Network and tools']) {
+      await expect(nav.getByRole('heading', { name: group, exact: true })).toBeVisible();
+    }
+    await expect(nav.getByRole('heading', { name: 'Account', exact: true })).toHaveCount(0);
+    for (const id of ['settings-nav-accounts', 'settings-nav-tokens', 'settings-nav-server']) {
+      await expect(editor.getByTestId(id)).toHaveCount(0);
+    }
+    // The Server group used to appear once the server answered its settings read; give it that long.
+    await page.waitForTimeout(2_000);
+    await expect(editor.getByTestId('settings-nav-server')).toHaveCount(0);
+    await expect(nav.getByRole('heading', { name: /^Server/ })).toHaveCount(0);
   });
 });

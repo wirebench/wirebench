@@ -124,6 +124,18 @@ describe('AccountService with an embedded account', () => {
     await expect(s.tokenFor(URL_A)).resolves.toBeUndefined();
   });
 
+  it('setDisplayName renames the embedded account in memory and tells the listeners', async () => {
+    const s = service();
+    await s.load();
+    await s.refresh(URL_A);
+    const changed = vi.fn();
+    s.onChange(changed);
+    await s.setDisplayName(`${URL_A}/`, 'Alice B');
+    expect(s.list()[0]!.displayName).toBe('Alice B');
+    expect(changed).toHaveBeenCalledTimes(1);
+    expect(existsSync(join(dir, ACCOUNTS_FILE))).toBe(false);
+  });
+
   it('refuses to sign in to, sign out of or remove the embedded account', async () => {
     const s = service();
     await s.load();
