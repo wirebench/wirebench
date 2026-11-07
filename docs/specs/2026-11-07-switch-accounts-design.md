@@ -3,7 +3,7 @@
 Date: 2026-11-07 · Status: owner decisions 1–5 below are final · Amends:
 `docs/specs/2026-11-07-settings-split-design.md` §4 (User settings' server picker goes) and the identity spec's
 browser session (one cookie, one person) · Builds on: `docs/specs/2026-11-07-user-profile-design.md` (photos) ·
-Plan: to follow
+Plan: `docs/plans/2026-11-07-switch-accounts.md`
 
 ## 1. Owner decisions
 
