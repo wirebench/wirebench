@@ -26,7 +26,7 @@ describe('AccountStatusItem', () => {
     useUiStore.setState({
       signInDialog: { open: false, url: undefined },
       teamDialog: { open: false, url: undefined },
-      preferences: { open: false, section: undefined },
+      preferences: { open: false, area: 'app', section: undefined },
     });
   });
   afterEach(() => {
@@ -78,7 +78,7 @@ describe('AccountStatusItem', () => {
     await screen.findByTestId('account-sign-out-one.test');
     await screen.findByTestId('account-sign-out-two.test');
     fireEvent.click(screen.getByTestId('account-manage'));
-    expect(useUiStore.getState().preferences).toEqual({ open: true, section: 'accounts' });
+    expect(useUiStore.getState().preferences).toEqual({ open: true, area: 'app', section: 'accounts' });
   });
 
   it('the menu offers Manage team…', async () => {
@@ -102,7 +102,7 @@ describe('AccountStatusItem', () => {
     const entry = await screen.findByTestId('account-devices-tokens');
     expect(entry.textContent).toBe('Devices & tokens…');
     fireEvent.click(entry);
-    expect(useUiStore.getState().preferences).toEqual({ open: true, section: 'tokens' });
+    expect(useUiStore.getState().preferences).toEqual({ open: true, area: 'app', section: 'tokens' });
   });
   describe('in a browser tab, whose env carries signOut', () => {
     it('offers one Sign out that calls env.signOut, never the account channel', async () => {

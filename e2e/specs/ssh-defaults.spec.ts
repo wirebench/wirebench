@@ -29,7 +29,7 @@ test('a host with no user of its own connects as the default user from Settings 
   const editor = page.getByTestId('preferences-editor');
   await expect(editor).toBeVisible({ timeout: 20_000 });
   await page.getByTestId('settings-search').fill('keep-alive');
-  await expect(page.getByTestId('settings-search-results')).toContainText('Workspace › SSH');
+  await expect(page.getByTestId('settings-search-results')).toContainText('Network and tools › SSH');
   await page.getByTestId('settings-search').fill('');
   await editor.getByRole('button', { name: 'SSH', exact: true }).click();
   const user = page.getByTestId('preferences-ssh-user');

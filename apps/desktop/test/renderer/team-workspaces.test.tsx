@@ -41,7 +41,7 @@ async function openWith(spaces: TeamWorkspaceWire[], extra: Record<string, unkno
     },
   });
   await useTeamStore.getState().open(URL_);
-  useTeamStore.getState().setTab('workspaces');
+  useTeamStore.getState().setPage('workspaces');
   render(<WorkspacesTab />);
   return api;
 }
@@ -149,7 +149,7 @@ describe('WorkspacesTab (teams-access §3.5)', () => {
       app: { features },
     });
     await useTeamStore.getState().open(URL_);
-    useTeamStore.getState().setTab('workspaces');
+    useTeamStore.getState().setPage('workspaces');
     render(<WorkspacesTab />);
     expect(screen.getByTestId('workspace-features-W1').textContent).toBe('Features (1 off)');
     fireEvent.click(screen.getByTestId('workspace-features-W1'));

@@ -32,7 +32,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
-  useUiStore.setState({ preferences: { open: false, section: undefined } });
+  useUiStore.setState({ preferences: { open: false, area: 'app', section: undefined } });
 });
 
 describe('Settings as a page', () => {
@@ -89,10 +89,10 @@ describe('Settings as a page', () => {
     expect(currentSection(editor)).toBe('Appearance');
   });
 
-  it('closes with Back to app', async () => {
+  it('closes with Back to workspace', async () => {
     renderInShell(<SettingsPage />);
     useUiStore.getState().openPreferences();
-    fireEvent.click(await screen.findByRole('button', { name: 'Back to app' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Back to workspace' }));
     expect(useUiStore.getState().preferences.open).toBe(false);
   });
 
@@ -193,7 +193,7 @@ describe('the Server group (hosted edition spec §22.13)', () => {
         },
       ],
     });
-    useUiStore.setState({ preferences: { open: true, section: undefined } });
+    useUiStore.setState({ preferences: { open: true, area: 'app', section: undefined } });
     render(<SettingsPage />);
     await waitFor(() => expect(screen.getByTestId('settings-nav-server')).toBeTruthy());
     expect(get).toHaveBeenCalledWith({ url: 'https://wirebench.corp.example' });
