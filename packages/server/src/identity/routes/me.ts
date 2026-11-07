@@ -78,7 +78,8 @@ export const meRoutes =
         const name = body.name === undefined ? undefined : body.name.trim();
         if (name === '') throw displayNameInvalid();
         // `null` clears the username, and so does an empty one: the body's schema may hand a JSON null over as ''.
-        const username = body.username === undefined ? undefined : (body.username ?? '').trim() || null;
+        // Spec §2: typed in any case, stored lower-case, so `@Ada` and `@ada` are one name everywhere it shows.
+        const username = body.username === undefined ? undefined : (body.username ?? '').trim().toLowerCase() || null;
         if (typeof username === 'string' && !isValidUsername(username)) throw usernameInvalid(username);
         const about = body.about === undefined ? undefined : cleanAbout(body.about);
         if (about !== undefined && about.length > MAX_ABOUT_LENGTH) throw aboutInvalid();

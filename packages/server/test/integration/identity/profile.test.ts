@@ -59,10 +59,10 @@ describeDb('the user profile routes (user profile spec §6.2)', () => {
   };
 
   describe('PATCH /me', () => {
-    it('sets a username and about text, keeps the typed case, and GET /me shows them', async () => {
+    it('sets a username (stored lower-case) and about text, and GET /me shows them', async () => {
       const res = await patchMe(ada, { username: ' Ada.L ', about: '  Hi\r\nthere  ' });
       expect(res.statusCode).toBe(200);
-      expect(res.json<{ user: object }>().user).toMatchObject({ username: 'Ada.L', about: 'Hi\nthere', photo: null });
+      expect(res.json<{ user: object }>().user).toMatchObject({ username: 'ada.l', about: 'Hi\nthere', photo: null });
       const me = await h.app.inject({ method: 'GET', url: '/api/v1/me', headers: ada.headers });
       expect(me.json()).toEqual(res.json());
     });
