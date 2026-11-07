@@ -404,7 +404,9 @@ never creates an account on its own. Sign-in and invitation endpoints are rate-l
 attempts a minute per address and per email (one process, so the counters reset on restart). Device
 tokens expire after `WIREBENCH_SERVER_TOKEN_IDLE_DAYS` without use or
 `WIREBENCH_SERVER_TOKEN_MAX_DAYS` at most; a user sees and revokes their devices
-in the app, and an admin who disables a user revokes them all.
+in the app, and an admin who disables a user revokes them all. A user changes their own display name with
+`PATCH /api/v1/me` (`{ "name": … }`, 1–120 characters after trimming), recorded in the audit log as
+`user.updated`; on a server provisioned over SCIM, the next push overwrites it.
 
 ## SAML and SCIM
 

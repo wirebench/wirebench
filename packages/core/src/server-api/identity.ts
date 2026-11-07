@@ -79,6 +79,10 @@ export const passwordChangeRequestSchema = z.object({
 });
 export type PasswordChangeRequest = z.infer<typeof passwordChangeRequestSchema>;
 
+/** `PATCH /me`: the caller's own display name, trimmed by the server (the accept form's limit). */
+export const meUpdateRequestSchema = z.object({ name: z.string().min(1).max(MAX_DISPLAY_NAME_LENGTH) });
+export type MeUpdateRequest = z.infer<typeof meUpdateRequestSchema>;
+
 export const deviceSummarySchema = z.object({
   id: z.string(),
   name: z.string(),
