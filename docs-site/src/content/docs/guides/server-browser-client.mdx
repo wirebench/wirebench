@@ -54,7 +54,9 @@ SAML from the browser needs an `https://` public URL. The IdP posts its response
 the browser sends back the cookie that ties the response to the sign-in only when that cookie is `Secure`.
 </Aside>
 
-**Sign out** in the tab's account menu ends the browser session and closes its connections. A session
+**Sign out** in the tab's account menu ends the active account's browser session and closes its connections; when
+the browser holds other accounts, the tab carries on as the most recent of them (see
+[Several accounts](/wirebench/docs/guides/shared-workspaces/#several-accounts)). A session
 expires like a desktop's device token, after `WIREBENCH_SERVER_TOKEN_IDLE_DAYS` without use or
 `WIREBENCH_SERVER_TOKEN_MAX_DAYS` at most; disabling a user ends it at once.
 
@@ -69,8 +71,8 @@ expires like a desktop's device token, after `WIREBENCH_SERVER_TOKEN_IDLE_DAYS` 
 - Manage teams in **Team settings** (**Account: Manage team…**): the team's people, invitations, workspaces and
   roles, and the server's own pages for its server admins. See
   [Teams and roles](/wirebench/docs/guides/shared-workspaces/#teams-and-roles).
-- Edit your name, change your password and sign devices out in **User settings** (**Account settings…** in the
-  account menu at the top right).
+- Edit your name, change your password and sign devices out in **User settings** (**Settings** in the account menu
+  at the top right).
 
 ## What it cannot do
 
