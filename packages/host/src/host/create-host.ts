@@ -1581,7 +1581,7 @@ export async function createHost(platform: HostPlatform, embedder: HostOptions =
     showSecrets: showSecretsFlag,
   });
   registerIssuedTokenChannels(handlerTable, { issuedTokens: issuedTokensService, showSecrets: showSecretsFlag });
-  registerAccountChannels(handlerTable, { accounts: accountService });
+  registerAccountChannels(handlerTable, { accounts: accountService, client: serverClient });
   registerTeamChannels(handlerTable, {
     client: serverClient,
     accounts: accountService,

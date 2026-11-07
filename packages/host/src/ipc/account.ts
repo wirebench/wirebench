@@ -1,11 +1,14 @@
 /**
- * The `account.*` channels over {@link AccountService}. The renderer sends a password once and
- * gets an account back; the token and its secret-store ref stay in main.
+ * The `account.*` channels over {@link AccountService}. The renderer sends a password to sign in, to
+ * accept an invitation or to change it, and gets an account or `done` back; the password is passed
+ * straight to the server, never logged or kept. The token and its secret-store ref stay in main.
  */
 import type { ServerAccount } from '@wirebench/engine';
 import { channels } from '@wirebench/wire/ipc';
 import type { AccountWire } from '@wirebench/wire/wire-base';
 import type { AccountService } from '../account-service.js';
+import type { ServerClient } from '../server-client.js';
+import { withToken } from '../server-token.js';
 import { registerHandler, type HandlerTable } from './register.js';
 
 export interface AccountChannelDeps {
@@ -21,8 +24,15 @@ export interface AccountChannelDeps {
     | 'acceptInvitation'
     | 'signOut'
     | 'remove'
+    | 'tokenFor'
+    | 'markSignedOut'
+    | 'setDisplayName'
   >;
+  /** User settings' calls (settings split spec §4), each with the account's token. */
+  readonly client: Pick<ServerClient, 'me' | 'meta' | 'updateMe' | 'changePassword' | 'listDevices' | 'revokeDevice'>;
 }
+
+const DONE = { done: true } as const;
 
 /** Everything but the secret-store ref; `signedOut` becomes a plain boolean. */
 export function toAccountWire(account: ServerAccount): AccountWire {
@@ -89,4 +99,38 @@ export function registerAccountChannels(table: HandlerTable, deps: AccountChanne
     await deps.accounts.remove(request.url);
     return servers();
   });
+
+  const c = deps.client;
+  registerHandler(table, channels.account.profile, (r) =>
+    withToken(deps, r.url, async (url, token) => {
+      const [me, meta] = await Promise.all([c.me(url, token), c.meta(url)]);
+      return { user: me.user, methods: me.methods, localPasswords: meta.auth.local };
+    }),
+  );
+  registerHandler(table, channels.account.updateProfile, (r) =>
+    withToken(deps, r.url, async (url, token) => {
+      const [me, meta] = await Promise.all([c.updateMe(url, token, r.name), c.meta(url)]);
+      // What the server stored (trimmed), so the Accounts list and the status bar show the same name.
+      await deps.accounts.setDisplayName(url, me.user.displayName);
+      return { user: me.user, methods: me.methods, localPasswords: meta.auth.local };
+    }),
+  );
+  registerHandler(table, channels.account.changePassword, (r) =>
+    withToken(deps, r.url, async (url, token) => {
+      await c.changePassword(url, token, {
+        ...(r.currentPassword !== undefined ? { currentPassword: r.currentPassword } : {}),
+        newPassword: r.newPassword,
+      });
+      return DONE;
+    }),
+  );
+  registerHandler(table, channels.account.devices, (r) =>
+    withToken(deps, r.url, async (url, token) => ({ devices: await c.listDevices(url, token) })),
+  );
+  registerHandler(table, channels.account.signOutDevice, (r) =>
+    withToken(deps, r.url, async (url, token) => {
+      await c.revokeDevice(url, token, r.id);
+      return DONE;
+    }),
+  );
 }
