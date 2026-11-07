@@ -1,5 +1,13 @@
 /** Every `identity-*` problem (spec §3.1, §10), one function each so a code is spelled once. */
-import { MIN_PASSWORD_LENGTH } from '@wirebench/engine';
+import {
+  IMAGE_LIMITS,
+  MAX_ABOUT_LENGTH,
+  MAX_USERNAME_LENGTH,
+  MIN_PASSWORD_LENGTH,
+  MIN_USERNAME_LENGTH,
+  RESERVED_USERNAMES,
+  type ImageKind,
+} from '@wirebench/engine';
 import type { WirebenchError } from '@wirebench/engine';
 import { problem } from '../problem.js';
 
@@ -25,6 +33,30 @@ export const flowInvalid = (): WirebenchError =>
 export const passwordTooShort = (): WirebenchError =>
   problem('identity-password-too-short', `Passwords must be at least ${MIN_PASSWORD_LENGTH} characters long.`, 400);
 export const displayNameInvalid = (): WirebenchError => problem('identity-name-invalid', 'Enter a name.', 400);
+/** `PATCH /me` with none of its fields. */
+export const updateEmpty = (): WirebenchError =>
+  problem('identity-update-empty', 'Send a name, a username or an about text to change.', 400);
+/** User profile spec §2: the pattern, or a reserved name. */
+export const usernameInvalid = (username: string): WirebenchError =>
+  RESERVED_USERNAMES.includes(username.toLowerCase())
+    ? problem('identity-username-invalid', 'This username is reserved.', 400)
+    : problem(
+        'identity-username-invalid',
+        `A username is ${String(MIN_USERNAME_LENGTH)} to ${String(MAX_USERNAME_LENGTH)} letters, digits, dots, dashes or underscores, starting with a letter or digit.`,
+        400,
+      );
+export const usernameTaken = (): WirebenchError =>
+  problem('identity-username-taken', 'Someone on this server already has this username.', 409);
+export const aboutInvalid = (): WirebenchError =>
+  problem('identity-about-invalid', `Keep it to ${String(MAX_ABOUT_LENGTH)} characters.`, 400);
+/** Spec §9: anything the server cannot vouch for as a plain WebP of the right size. */
+export const imageInvalid = (message: string): WirebenchError => problem('identity-image-invalid', message, 400);
+export const imageTooLarge = (kind: ImageKind): WirebenchError =>
+  problem(
+    'identity-image-too-large',
+    `A ${kind} may be at most ${String(IMAGE_LIMITS[kind].maxBytes / 1024)} KB.`,
+    413,
+  );
 export const selfChange = (): WirebenchError =>
   problem('identity-self-change', 'You cannot remove your own admin flag or disable yourself.', 400);
 export const notFound = (what: string): WirebenchError => problem('identity-not-found', `${what} was not found.`, 404);

@@ -146,7 +146,7 @@ describeDb('/me (§3.1)', () => {
     const events = recordingAudit(h.hooks);
     await patchMe(alice.headers, { name: 'Alice Liddell' });
     expect(events.map((e) => [e.action, e.target, e.details])).toEqual([
-      ['user.updated', { kind: 'user', id: alice.user.id }, { fields: 'displayName', via: 'self' }],
+      ['user.updated', { kind: 'user', id: alice.user.id }, { fields: ['displayName'], via: 'self' }],
     ]);
     expect(JSON.stringify(events)).not.toContain('Liddell');
     expect((await patchMe(alice.headers, { name: ' Alice Liddell ' })).statusCode).toBe(200);
