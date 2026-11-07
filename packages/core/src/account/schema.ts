@@ -19,6 +19,9 @@ export const serverAccountSchema = z.object({
   /** Set when the server last answered `identity-unauthenticated`; cleared by a new sign-in. */
   signedOut: z.literal(true).optional(),
   addedAt: z.string(),
+  /** User profile spec §7: kept beside the name so the account menu needs no call; absent when none is set. */
+  username: z.string().optional(),
+  photo: z.object({ version: z.string() }).optional(),
 });
 export type ServerAccount = z.infer<typeof serverAccountSchema>;
 

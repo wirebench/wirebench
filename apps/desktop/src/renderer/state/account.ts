@@ -106,7 +106,7 @@ const SIGN_IN_MESSAGES: Readonly<Record<string, string>> = {
   'server-not-wirebench': 'That address is not a Wirebench Server.',
   'server-api-version': 'This server needs a newer Wirebench. Update the app and try again.',
   'server-bad-response': 'The server answered in a way Wirebench did not understand.',
-  'identity-invalid-credentials': 'Wrong email or password.',
+  'identity-invalid-credentials': 'Wrong email, username or password.',
   'identity-user-disabled': 'This account is disabled. Ask a server admin.',
   'identity-method-disabled': 'The server does not allow this way of signing in.',
   'identity-rate-limited': 'Too many attempts. Wait a minute and try again.',

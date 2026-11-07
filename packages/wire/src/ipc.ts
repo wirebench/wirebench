@@ -143,6 +143,13 @@ import {
   accountDoneResponseSchema,
   accountProfileWireSchema,
   accountUpdateProfileRequestSchema,
+  accountImageRequestSchema,
+  accountImageResponseSchema,
+  accountSetImageRequestSchema,
+  accountSetImageResponseSchema,
+  accountRemoveImageRequestSchema,
+  accountPersonRequestSchema,
+  accountPersonWireSchema,
   accountChangedEventSchema,
   accountListResponseSchema,
   accountLookupInvitationRequestSchema,
@@ -691,8 +698,18 @@ export const channels = {
     remove: defineChannel('account.remove', accountUrlRequestSchema, accountListResponseSchema),
     /** User settings (settings split spec §4): you on the server `url` names. */
     profile: defineChannel('account.profile', accountUrlRequestSchema, accountProfileWireSchema),
-    /** Changes your display name; the stored account takes it too, so the Accounts list and status bar follow. */
+    /**
+     * Changes any of your name, username and about text; the stored account takes the name and username too, so
+     * the Accounts list and the account menu follow.
+     */
     updateProfile: defineChannel('account.updateProfile', accountUpdateProfileRequestSchema, accountProfileWireSchema),
+    /** One person's photo or cover as a `data:` URL, fetched by main with the account's token (user profile §7). */
+    image: defineChannel('account.image', accountImageRequestSchema, accountImageResponseSchema),
+    /** Uploads your photo or cover; answers its new version. A new photo is stored with the account too. */
+    setImage: defineChannel('account.setImage', accountSetImageRequestSchema, accountSetImageResponseSchema),
+    removeImage: defineChannel('account.removeImage', accountRemoveImageRequestSchema, accountDoneResponseSchema),
+    /** A team mate's profile card. */
+    person: defineChannel('account.person', accountPersonRequestSchema, accountPersonWireSchema),
     /** The server signs every other device out; this one keeps its token. */
     changePassword: defineChannel(
       'account.changePassword',

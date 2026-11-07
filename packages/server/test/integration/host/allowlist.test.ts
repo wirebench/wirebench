@@ -108,6 +108,10 @@ describe('the server host allowlist (§3.10)', () => {
     for (const channel of [
       'account.profile',
       'account.updateProfile',
+      'account.image',
+      'account.setImage',
+      'account.removeImage',
+      'account.person',
       'account.changePassword',
       'account.devices',
       'account.signOutDevice',
