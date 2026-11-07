@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
+  ABILITY_LABELS,
+  ABILITY_MIN_ROLE,
   DEFAULT_ROLES,
+  WORKSPACE_ABILITIES,
+  roleCan,
   ROLE_LABELS,
   SOURCE_LABELS,
   TEAM_ROLES,
@@ -29,5 +33,31 @@ describe('team role labels (teams-access §3.5)', () => {
     expect(roleWithSource('admin', 'team-admin')).toBe('Admin (team admin)');
     expect(roleWithSource('viewer', 'default')).toBe('Viewer (workspace default)');
     expect(roleWithSource('admin', 'server-admin')).toBe('Admin (server admin)');
+  });
+
+  it('ABILITY_MIN_ROLE matches the server’s route guards', () => {
+    expect(ABILITY_MIN_ROLE).toEqual({
+      // sync/routes/head.ts, log.ts, snapshot.ts, changes.ts: requireWorkspaceRole('viewer')
+      read: 'viewer',
+      // the same pull routes: anyone who can read the workspace sends from it
+      send: 'viewer',
+      // sync/routes/commits.ts: requireWorkspaceRole('editor'); CI tokens and catch URLs follow it
+      edit: 'editor',
+      // teams/routes/access.ts: requireWorkspaceRole('admin')
+      share: 'admin',
+      // teams/routes/workspaces.ts (update, delete): requireWorkspaceRole('admin')
+      'manage-workspace': 'admin',
+    });
+    for (const ability of WORKSPACE_ABILITIES) expect(ABILITY_LABELS[ability]).toBeTruthy();
+  });
+
+  it('roleCan ranks viewer < editor < admin and refuses none', () => {
+    expect(roleCan('viewer', 'send')).toBe(true);
+    expect(roleCan('viewer', 'edit')).toBe(false);
+    expect(roleCan('editor', 'edit')).toBe(true);
+    expect(roleCan('editor', 'share')).toBe(false);
+    expect(roleCan('admin', 'manage-workspace')).toBe(true);
+    expect(roleCan('none', 'read')).toBe(false);
+    expect(roleCan(undefined, 'read')).toBe(false);
   });
 });

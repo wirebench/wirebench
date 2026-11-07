@@ -40,6 +40,7 @@ import { kindLabel } from '../../kinds/placeholders.js';
 import { ExplorerContextMenu } from './context-menu.js';
 import { workspaceActions } from '../workspace/workspace-actions.js';
 import { hasCapability } from '../../lib/capabilities.js';
+import { roleCan } from '../team/roles.js';
 import { explorerActions } from './explorer-actions.js';
 import { openProjectTab, projectRowActions } from './project-actions.js';
 import { openFolderTab } from '../folder/folder-actions.js';
@@ -601,7 +602,7 @@ export function ExplorerView() {
   const webhooks: ExplorerWebhooks | undefined =
     hooksMeta?.enabled === true
       ? {
-          canEdit: role === 'editor' || role === 'admin',
+          canEdit: roleCan(role, 'edit'),
           hooks: catchUrls.map((hook) => ({
             id: hook.id,
             name: hook.name,

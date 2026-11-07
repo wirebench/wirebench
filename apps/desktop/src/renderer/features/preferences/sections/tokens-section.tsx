@@ -11,6 +11,7 @@ import { showToast } from '../../../components/toast.js';
 import { CI_TOKEN_NAME_MAX, useCiTokensStore } from '../../../state/ci-tokens.js';
 import { useSyncStore } from '../../../state/sync.js';
 import { useWebhooksStore } from '../../../state/webhooks.js';
+import { roleCan } from '../../team/roles.js';
 
 /** The look of `settings-grid`'s text controls. */
 const INPUT =
@@ -37,7 +38,7 @@ export function TokensSection() {
   // A second submit while the first create is out would be refused as a taken name.
   const [pending, setPending] = useState(false);
   const [revoking, setRevoking] = useState<{ readonly id: string; readonly name: string } | undefined>(undefined);
-  const canManage = role === 'editor' || role === 'admin';
+  const canManage = roleCan(role, 'edit');
   const url = server?.url;
   const workspaceId = server?.workspaceId;
 

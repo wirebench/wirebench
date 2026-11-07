@@ -25,7 +25,6 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { Button } from '../../../components/button.js';
-import { ConfirmDialog } from '../../../components/confirm-dialog.js';
 import { signedInServers, useAccountStore } from '../../../state/account.js';
 import { useDomainStore } from '../../../state/domain.js';
 import { useLicenseStore } from '../../../state/license.js';
@@ -44,7 +43,6 @@ import { DomainTab } from '../domain-tab.js';
 import { LicenseBanner } from '../license-banner.js';
 import { LicenseTab } from '../license-tab.js';
 import { ProvisioningTab } from '../provisioning-tab.js';
-import { INPUT_CLASS } from '../roles.js';
 import {
   TEAM_PAGE_LABELS,
   resolveTeamPage,
@@ -53,7 +51,9 @@ import {
   type TeamSettingsPageId,
 } from '../team-settings-model.js';
 import { WorkspacesTab } from '../workspaces-tab.js';
+import { OverviewPage } from './overview-page.js';
 import { PeoplePage } from './people-page.js';
+import { RolesPage } from './roles-page.js';
 import { NewTeamDialog, TeamSwitcher } from './team-switcher.js';
 import { clearTeamAddress, useTeamAddress } from './use-team-address.js';
 
@@ -97,67 +97,6 @@ const SUBTITLES: Readonly<Partial<Record<TeamSettingsPageId, string>>> = {
   domain: 'The address the team’s server answers on.',
 };
 
-/** The team's name, and *Delete team* for a server admin: the dialog's header, until Overview is its own page. */
-function OverviewPage() {
-  const team = useTeamStore(selectedTeam);
-  const serverAdmin = useTeamStore((s) => s.serverAdmin);
-  const renameTeam = useTeamStore((s) => s.renameTeam);
-  const deleteTeam = useTeamStore((s) => s.deleteTeam);
-  const [name, setName] = useState('');
-  const [confirmDelete, setConfirmDelete] = useState(false);
-  useEffect(() => {
-    setName(team?.name ?? '');
-  }, [team?.id, team?.name]);
-  if (team === undefined) return null;
-  const isAdmin = team.myRole === 'admin';
-  const submitRename = (): void => {
-    if (isAdmin && name.trim().length > 0 && name.trim() !== team.name) void renameTeam(name.trim());
-  };
-  return (
-    <div className="flex flex-col gap-4">
-      <input
-        data-testid="team-name"
-        aria-label="Team name"
-        readOnly={!isAdmin}
-        className={`${INPUT_CLASS} text-md font-medium`}
-        value={name}
-        onChange={(event) => {
-          setName(event.target.value);
-        }}
-        onBlur={submitRename}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter') submitRename();
-        }}
-      />
-      {serverAdmin && (
-        <div>
-          <Button
-            variant="ghost"
-            data-testid="team-delete"
-            onClick={() => {
-              setConfirmDelete(true);
-            }}
-          >
-            Delete team
-          </Button>
-        </div>
-      )}
-      <ConfirmDialog
-        open={confirmDelete}
-        onOpenChange={setConfirmDelete}
-        title={`Delete ${team.name}?`}
-        description="Only a team with no workspaces can be deleted. Its members and invitations go with it."
-        confirmLabel="Delete team"
-        destructive
-        testId="team-delete-confirm"
-        onConfirm={() => {
-          void deleteTeam();
-        }}
-      />
-    </div>
-  );
-}
-
 function PageBody({
   page,
   url,
@@ -176,7 +115,7 @@ function PageBody({
     case 'workspaces':
       return <WorkspacesTab />;
     case 'roles':
-      return null;
+      return <RolesPage />;
     case 'audit':
       return (
         <AuditTab
