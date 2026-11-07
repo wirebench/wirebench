@@ -142,6 +142,11 @@ export type WirebenchApi = ApiFromChannels<typeof windowChannels> & {
    * `account.signOut`, so the tab ends its session with the root `/sign-out` instead (hosted edition spec
    * §17.2). The preload never sets it; the renderer offers its plain *Sign out* only when it is there.
    *
+   * `signOutAll`, `switchAccount` and `addAccount` are the browser's other account actions (switch accounts spec §5),
+   * set with `signOut` by the browser bootstrap only: signing out of every account the tab's browser holds, making
+   * another of them active (a user id from `GET /me/accounts`), and the sign-in page in *Add an account* mode. Each
+   * leaves the page, which reloads as whoever is active then.
+   *
    * `onOsThemeChanged` is a live OS-theme source the page itself has: the browser bootstrap sets it over
    * `prefers-color-scheme`, since the server has no OS theme of the user's. When it is there the renderer
    * follows it and not `theme.get`/`theme.changed`; the preload leaves it unset, as main's `nativeTheme`
@@ -157,6 +162,9 @@ export type WirebenchApi = ApiFromChannels<typeof windowChannels> & {
     readonly fixedLayout?: boolean;
     readonly sendTemplatesUnasked?: boolean;
     readonly signOut?: () => void;
+    readonly signOutAll?: () => void;
+    readonly switchAccount?: (userId: string) => void;
+    readonly addAccount?: () => void;
     readonly onOsThemeChanged?: (listener: (os: 'dark' | 'light') => void) => () => void;
     readonly agent?: AgentEnv;
   };

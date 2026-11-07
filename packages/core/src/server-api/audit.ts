@@ -22,6 +22,8 @@ export const AUDIT_ACTIONS = [
   'user.admin_revoked',
   'user.password_reset_issued',
   'user.updated',
+  /** A browser tab switched to another account it holds (switch accounts spec §5.2, ruling 9); `details.from` is the previous one. */
+  'user.session_switched',
   'team.created',
   'team.renamed',
   'team.deleted',

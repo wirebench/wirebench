@@ -198,6 +198,7 @@ export const authOidcRoutes =
             status,
             message: refusalMessage(reason),
             redirectTo: flow.redirectTo,
+            add: flow.addAccount,
           });
         };
         if (query.code === undefined || query.error !== undefined) return refuse(400, 'identity-oidc-refused');
@@ -217,7 +218,16 @@ export const authOidcRoutes =
         if (claims.issuer !== provider.issuer) return refuse(502, 'identity-oidc-failed', claims.email);
         const linked = await linkClaims(env, request.tenant, claims, auditSource(request));
         if (!linked.ok) return refuse(403, linked.code, claims.email);
-        return finishBrowserSignIn(env, request, reply, linked.user, 'oidc', auditSource(request), flow.redirectTo);
+        return finishBrowserSignIn(
+          env,
+          request,
+          reply,
+          linked.user,
+          'oidc',
+          auditSource(request),
+          flow.redirectTo,
+          flow.addAccount ? 'add' : 'replace',
+        );
       },
     );
 

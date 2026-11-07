@@ -24,7 +24,17 @@ export interface SignInPageInput {
   readonly redirectTo: string;
   /** Why the person is seeing the page again: a refused password, an expired flow. */
   readonly message?: string;
+  /**
+   * *Add an account* (switch accounts spec §5.3): the heading says so, every method carries `add=1` so finishing it
+   * keeps the session the browser holds, and *Cancel* goes back to `redirectTo`.
+   */
+  readonly add?: boolean;
+  /** The browser already holds five accounts: the message and *Cancel* only, no method. Only with `add`. */
+  readonly full?: boolean;
 }
+
+/** The page's heading in *Add an account* mode (switch accounts spec §5.3). */
+const ADD_HEADING = 'Add an account';
 
 const STYLE =
   'body{font:15px/1.5 system-ui,sans-serif;margin:3rem auto;max-width:24rem;padding:0 1rem;color:#222}' +
@@ -55,10 +65,10 @@ export function renderSuspendedSignInPage(input: {
   );
 }
 
-function page(serverUrl: string, body: string): string {
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Sign in · Wirebench Server</title>
+function page(serverUrl: string, body: string, heading = 'Sign in'): string {
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(heading)} · Wirebench Server</title>
 <style>${STYLE}</style>
-</head><body><h1>Sign in</h1><p>Wirebench Server at <code>${escapeHtml(serverUrl)}</code></p>${body}</body></html>`;
+</head><body><h1>${escapeHtml(heading)}</h1><p>Wirebench Server at <code>${escapeHtml(serverUrl)}</code></p>${body}</body></html>`;
 }
 
 /** Sends {@link renderSuspendedSignInPage} with the sign-in page's headers. */
@@ -82,14 +92,22 @@ function signInHeaders(reply: FastifyReply): FastifyReply {
 }
 
 export function renderSignInPage(input: SignInPageInput): string {
-  const onward = input.redirectTo === '/' ? '' : `?redirect_to=${encodeURIComponent(input.redirectTo)}`;
+  const add = input.add === true;
+  const query = [
+    ...(add ? ['add=1'] : []),
+    ...(input.redirectTo === '/' ? [] : [`redirect_to=${encodeURIComponent(input.redirectTo)}`]),
+  ];
+  const onward = query.length === 0 ? '' : `?${query.join('&')}`;
   const parts: string[] = [];
   if (input.message !== undefined) parts.push(`<p class="message" role="alert">${escapeHtml(input.message)}</p>`);
+  const cancel = `<a class="method" href="${escapeHtml(input.redirectTo)}">Cancel</a>`;
+  if (add && input.full === true) return page(input.serverUrl, [...parts, cancel].join('\n'), ADD_HEADING);
   if (input.local) {
     parts.push(`<form method="post" action="/sign-in/local">
 <label for="identifier">Email or username</label><input id="identifier" name="identifier" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" required>
 <label for="password">Password</label><input id="password" name="password" type="password" autocomplete="current-password" required>
 ${input.redirectTo === '/' ? '' : `<input type="hidden" name="redirect_to" value="${escapeHtml(input.redirectTo)}">`}
+${add ? '<input type="hidden" name="add" value="1">' : ''}
 <button type="submit">Sign in</button>
 </form>`);
   }
@@ -103,7 +121,8 @@ ${input.redirectTo === '/' ? '' : `<input type="hidden" name="redirect_to" value
     );
   if (!input.local && input.oidc === undefined && input.saml === undefined)
     parts.push('<p>This server offers no way to sign in from a browser. Ask a server admin.</p>');
-  return page(input.serverUrl, parts.join('\n'));
+  if (add) parts.push(cancel);
+  return page(input.serverUrl, parts.join('\n'), add ? ADD_HEADING : 'Sign in');
 }
 
 /**
@@ -113,7 +132,13 @@ ${input.redirectTo === '/' ? '' : `<input type="hidden" name="redirect_to" value
 export async function sendSignInPage(
   reply: FastifyReply,
   ctx: Pick<ServerContext, 'config' | 'meta' | 'license'>,
-  options: { readonly status?: number; readonly message?: string; readonly redirectTo?: string } = {},
+  options: {
+    readonly status?: number;
+    readonly message?: string;
+    readonly redirectTo?: string;
+    readonly add?: boolean;
+    readonly full?: boolean;
+  } = {},
 ): Promise<FastifyReply> {
   const methods = await ctx.meta.signInMethodsFor(reply.request);
   const samlLicensed =
@@ -125,6 +150,8 @@ export async function sendSignInPage(
     ...(samlLicensed ? { saml: { displayName: methods.samlDisplayName ?? 'SSO' } } : {}),
     redirectTo: options.redirectTo ?? '/',
     ...(options.message !== undefined ? { message: options.message } : {}),
+    ...(options.add === true ? { add: true } : {}),
+    ...(options.full === true ? { full: true } : {}),
   });
   return signInHeaders(reply.code(options.status ?? 200)).send(html);
 }

@@ -578,6 +578,13 @@ it on in earlier releases, is no longer read, and a server that still sets it st
   ACS URL `<public URL>/api/v1/auth/saml/browser-acs` at the IdP ([Accounts](#accounts),
   [SAML and SCIM](#saml-and-scim)). SAML from the browser needs an `https://` public URL. The tab's
   account menu signs out (`POST /sign-out`), which ends the session and closes its sockets.
+- **Several accounts per browser.** _Add an account_ (`/sign-in?add=1`) signs someone else in without signing the
+  current person out: the browser keeps up to four more sessions in `__Host-wb_accounts` (`wb_accounts` on
+  `http://`), with the same attributes as the session cookie. `POST /sign-in/switch` makes one of them active
+  (audited `user.session_switched`), `GET /api/v1/me/accounts` lists their people (never their tokens), and
+  `POST /sign-out` ends only the active session, making the most recent other one active; `POST /sign-out?all=1`
+  ends them all. Each remembered session is checked on every use, so one that was revoked, expired or whose user
+  was disabled drops off the list.
 - **What a tab can do.** Open the team's server workspaces, edit and save them, sync, and send every
   request kind from the server (SOAP, REST, GraphQL, gRPC, WebSocket, MCP over HTTP), to public addresses
   and, unless `WIREBENCH_SERVER_EGRESS_DENY_PRIVATE` is set, to private ranges on the server's network.
@@ -625,7 +632,7 @@ it on in earlier releases, is no longer read, and a server that still sets it st
   - `4409 host-lease-expired`: this process could not renew the lease in time, most likely because the database
     was out of reach, so it stopped the host. "The connection to the server was lost. Reconnecting…".
 - **Reverse proxy.** Forward the whole origin, not only `/api/v1/`: the page at `/`, `/assets/`,
-  `/sign-in`, `/sign-out`, and the WebSocket upgrade for `/api/v1/host` with `Upgrade` and `Connection`,
+  `/sign-in` (with `/sign-in/switch`), `/sign-out`, and the WebSocket upgrade for `/api/v1/host` with `Upgrade` and `Connection`,
   as for `/api/v1/live`. The socket refuses an `Origin` other than the public URL.
 - **Building.** The image carries the build. From a checkout, the order is the server's build, then the
   browser build, then the copy: `pnpm --filter @wirebench/server... build`,
