@@ -96,6 +96,30 @@ export async function presentedChallenge(
   const row = await twoFactorRepo.challengeBySecretHash(env.ctx.tenancy.db(scope), hashSecret(secret), env.now());
   if (row?.purpose !== expected.purpose || (expected.purpose === 'sign-in' && row.tokenKind !== expected.kind))
     throw twoFactorExpired();
+  return personLimits(env, scope, row);
+}
+
+/**
+ * The desktop's sign-in challenge whose passkey hand-off `flowId` names (spec §4.2), for the browser's flow page,
+ * under the same limits as {@link presentedChallenge}. A flow already granted is finished in the desktop, not here.
+ */
+export async function flowChallenge(
+  env: GateEnv,
+  request: Pick<FastifyRequest, 'tenant' | 'ip' | 'body' | 'caller'>,
+  flowId: string,
+): Promise<twoFactorRepo.ChallengeRow> {
+  const scope = request.tenant;
+  await charge(env, scope, ipKey(request));
+  const row = await twoFactorRepo.challengeByFlow(env.ctx.tenancy.db(scope), flowId, env.now());
+  if (row?.purpose !== 'sign-in' || row.tokenKind !== 'device' || row.grantHash !== null) throw twoFactorExpired();
+  return personLimits(env, scope, row);
+}
+
+async function personLimits(
+  env: GateEnv,
+  scope: TenantScope,
+  row: twoFactorRepo.ChallengeRow,
+): Promise<twoFactorRepo.ChallengeRow> {
   const person = personKey(scope, row.userId);
   await charge(env, scope, person);
   const lock = await env.twoFactor.failures.peek(scope, person);

@@ -14,6 +14,7 @@ import type { ServerModule } from '../../../../src/context.js';
 import type { IdentityOptions } from '../../../../src/identity/module.js';
 import type { OidcProvider } from '../../../../src/identity/oidc.js';
 import { TenantAdmin } from '../../../../src/tenancy/directory.js';
+import type { TenantResolver } from '../../../../src/tenancy/resolve.js';
 import type { TenantScope } from '../../../../src/tenancy/scope.js';
 import type { TenantDb } from '../../../../src/tenancy/tenant-db.js';
 import { directoryOf } from '../../../../src/tenancy/tenancy.js';
@@ -73,6 +74,8 @@ export interface TwoTenants {
   readonly b: Tenant;
   /** The `/api/v1` scope, captured after every module registered: `injectWS` is decorated on it when one module brought `@fastify/websocket`. */
   readonly api: FastifyInstance;
+  /** The server's own map of hosts to tenants: a scope as the server sees it right now (its live custom name). */
+  readonly resolver: TenantResolver;
   close(): Promise<void>;
 }
 
@@ -107,7 +110,11 @@ export async function twoTenants(
 ): Promise<TwoTenants> {
   const scopes: Partial<Record<'acme' | 'beta', TenantScope>> = {};
   let api: FastifyInstance | undefined;
+  let resolver: TenantResolver | undefined;
   const h = await identityHarness({
+    onTenantResolver: (made) => {
+      resolver = made;
+    },
     ...(options.env !== undefined ? { env: options.env } : {}),
     ...(options.provider !== undefined ? { provider: options.provider } : {}),
     ...(options.identity !== undefined ? { identity: options.identity } : {}),
@@ -153,7 +160,7 @@ export async function twoTenants(
       },
     };
   };
-  return { h, a: tenant('acme'), b: tenant('beta'), api: api!, close: () => h.close() };
+  return { h, a: tenant('acme'), b: tenant('beta'), api: api!, resolver: resolver!, close: () => h.close() };
 }
 
 /** Rows a tenant sees in `table`: the forced policy shows a unit its own only. */

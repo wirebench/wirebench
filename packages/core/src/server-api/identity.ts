@@ -126,6 +126,22 @@ export const passkeyVerifyRequestSchema = z.object({
   response: webauthnJsonSchema,
 });
 export type PasskeyVerifyRequest = z.infer<typeof passkeyVerifyRequestSchema>;
+/** The desktop's passkey hand-off (spec §4.2): its PKCE challenge and loopback, for the browser's flow page. */
+export const passkeyBrowserStartRequestSchema = z.object({
+  challenge: z.string().regex(SECRET_PATTERN),
+  codeChallenge: z.string().regex(SECRET_PATTERN),
+  loopbackPort: z.number().int().min(1).max(65_535),
+});
+export type PasskeyBrowserStartRequest = z.infer<typeof passkeyBrowserStartRequestSchema>;
+export const passkeyBrowserStartResponseSchema = z.object({ url: z.string().url() });
+export type PasskeyBrowserStartResponse = z.infer<typeof passkeyBrowserStartResponseSchema>;
+/** The grant the loopback got, traded with the verifier for the session. */
+export const passkeyCompleteRequestSchema = z.object({
+  flowId: identityIdSchema,
+  grant: z.string().regex(SECRET_PATTERN),
+  codeVerifier: z.string().regex(PKCE_VERIFIER_PATTERN),
+});
+export type PasskeyCompleteRequest = z.infer<typeof passkeyCompleteRequestSchema>;
 export const passkeyAddRequestSchema = z.object({ name: passkeyNameSchema, response: webauthnJsonSchema });
 export type PasskeyAddRequest = z.infer<typeof passkeyAddRequestSchema>;
 export const passkeyAddResponseSchema = z.object({

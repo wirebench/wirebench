@@ -20,6 +20,7 @@ import type { SignInResponse } from '@wirebench/engine';
 import type { AuditSource } from '../../context.js';
 import type { ModuleConfig } from '../../config.js';
 import type { TenantScope } from '../../tenancy/scope.js';
+import type { TenantQuerier } from '../../tenancy/tenant-db.js';
 import { primaryUrl, type ScopeSource } from '../../tenancy/urls.js';
 import type { IdentityEnv } from '../env.js';
 import { passkeyFailed } from '../errors.js';
@@ -65,6 +66,9 @@ export async function signInOptions(
   return options;
 }
 
+/** A passkey that answered for `row`: the write that records its use, conditional on the counter it was read with. */
+type CheckedPasskey = (tx: TenantQuerier) => Promise<boolean>;
+
 /**
  * A passkey's answer to {@link signInOptions}: the session, or a failed attempt. An unknown or another person's
  * credential, a bad signature, another origin and a counter that went backwards all count as a wrong factor, with
@@ -78,6 +82,42 @@ export async function signInWithPasskey(
   row: twoFactorRepo.ChallengeRow,
   response: Record<string, unknown>,
 ): Promise<SignInResponse> {
+  const use = await checkPasskey(env, scope, of, source, row, response);
+  return finishChallenge(env, scope, source, row, 'passkey', use);
+}
+
+/**
+ * The desktop's passkey hand-off (spec §4.2, plan ruling 4): the passkey answered on the browser's page, so instead
+ * of a session the challenge gets a one-time grant for the desktop's loopback, which the desktop trades with its PKCE
+ * verifier at `/auth/two-factor/passkey/complete`. Answers the grant, kept on the row only as its hash.
+ */
+export async function grantWithPasskey(
+  env: PasskeyEnv,
+  scope: TenantScope,
+  of: ScopeSource,
+  source: AuditSource,
+  row: twoFactorRepo.ChallengeRow,
+  response: Record<string, unknown>,
+): Promise<string> {
+  const use = await checkPasskey(env, scope, of, source, row, response);
+  const grant = mintSecret();
+  const granted = await env.ctx.tenancy.db(scope).transaction(async (tx) => {
+    if (!(await use(tx))) return false;
+    await twoFactorRepo.setChallengeGrant(tx, row.id, grant.hash);
+    return true;
+  });
+  if (!granted) return failedAttempt(env, scope, source, row, 'passkey', 'replay');
+  return grant.secret;
+}
+
+async function checkPasskey(
+  env: PasskeyEnv,
+  scope: TenantScope,
+  of: ScopeSource,
+  source: AuditSource,
+  row: twoFactorRepo.ChallengeRow,
+  response: Record<string, unknown>,
+): Promise<CheckedPasskey> {
   const db = env.ctx.tenancy.db(scope);
   const expected = row.webauthnChallenge;
   // One answer per options: whatever it is, the WebAuthn challenge is spent.
@@ -112,9 +152,7 @@ export async function signInWithPasskey(
   }
   if (!verified.verified) return failedAttempt(env, scope, source, row, 'passkey', 'passkey-invalid');
   const counter = verified.authenticationInfo.newCounter;
-  return finishChallenge(env, scope, source, row, 'passkey', (tx) =>
-    twoFactorRepo.usePasskey(tx, passkey.id, passkey.counter, counter, env.now()),
-  );
+  return (tx) => twoFactorRepo.usePasskey(tx, passkey.id, passkey.counter, counter, env.now());
 }
 
 /** The creation options of a new passkey for `user` (spec §5.2), its WebAuthn challenge on a `register` row. */

@@ -16,6 +16,7 @@
 import { agentRedeemMessage, agentRequestMessage, LIVE_PATH, TERMINAL_SHARE_PATH } from '@wirebench/engine';
 import type { InjectOptions, LightMyRequestResponse } from 'fastify';
 import { claim, removeClaim } from '../../../src/custom-domains/repo.js';
+import { primaryUrl } from '../../../src/tenancy/urls.js';
 import { mintSecret, newId, pkceChallenge } from '../../../src/identity/tokens.js';
 import { sealTotpSecret } from '../../../src/identity/two-factor/keys.js';
 import * as twoFactorRepo from '../../../src/identity/two-factor/repo.js';
@@ -163,19 +164,18 @@ async function twoFactorChallenge(ctx: Ctx, kind: 'device' | 'browser'): Promise
 
 /**
  * A software passkey for `tenant`'s relying party: its primary URL (spec §3.5), which is its live custom name while it
- * has one. The custom-domain templates claim and drop that name during the sweep, so it is read when the template is.
+ * has one. The custom-domain templates claim and drop that name during the sweep, so it is read from the server's own
+ * map of hosts when the template is built.
  */
-async function softKeyOf(tenant: Ctx['from']['tenant']): Promise<SoftAuthenticator> {
-  const live = await tenant.tdb.query<{ host: string }>(
-    'select host from tenant_hosts where live order by host limit 1',
-  );
-  const host = live.rows[0]?.host ?? tenant.host;
-  return new SoftAuthenticator(host, `https://${host}`);
+function softKeyOf(ctx: Ctx, tenant: Ctx['from']['tenant']): SoftAuthenticator {
+  const scope = ctx.w.t.resolver.resolve(tenant.host) ?? tenant.scope;
+  const origin = primaryUrl(ctx.w.t.h.ctx.config, scope);
+  return new SoftAuthenticator(new URL(origin).hostname, origin);
 }
 
 /** A passkey of `owner`'s in `tenant`, written through the repository, with the software key that signs for it. */
 async function withPasskey(ctx: Ctx, tenant: Ctx['from']['tenant'], owner: SignedInUser) {
-  const key = await softKeyOf(tenant);
+  const key = softKeyOf(ctx, tenant);
   const id = newId();
   await twoFactorRepo.insertPasskey(tenant.tdb, {
     id,
@@ -197,26 +197,41 @@ async function foreignPasskey(ctx: Ctx): Promise<{ id: string; sender: SignedInU
   return { id, sender: ctx.from.tenant.slug === ctx.a.tenant.slug ? owner : await fresh.user(ctx.from.tenant) };
 }
 
-/** A sign-in challenge of a fresh user of A's with a passkey, its WebAuthn challenge asked, and the key's answer. */
-async function passkeyChallenge(ctx: Ctx): Promise<{ secret: string; response: Record<string, unknown> }> {
+/**
+ * A sign-in challenge of a fresh user of A's with a passkey, its WebAuthn challenge asked, and the key's answer;
+ * finished as `kind`, and with the desktop's passkey hand-off started when `flow`.
+ */
+async function passkeyChallenge(
+  ctx: Ctx,
+  kind: 'device' | 'browser' = 'device',
+  flow = false,
+): Promise<{ secret: string; response: Record<string, unknown>; flowId: string }> {
   const tenant = ctx.a.tenant;
   const now = ctx.w.t.h.clock.now;
   const user = await fresh.user(tenant);
   const { key } = await withPasskey(ctx, tenant, user);
   const { secret, hash } = mintSecret();
   const webauthnChallenge = mintSecret().secret;
+  const id = newId();
   await twoFactorRepo.insertChallenge(tenant.tdb, {
-    id: newId(),
+    id,
     userId: user.user.id,
     secretHash: hash,
     purpose: 'sign-in',
     deviceName: 'probe',
-    tokenKind: 'device',
+    tokenKind: kind,
     webauthnChallenge,
     at: now,
     expiresAt: new Date(now.getTime() + 5 * 60_000),
   });
-  return { secret, response: key.get({ challenge: webauthnChallenge }) };
+  const flowId = newId();
+  if (flow)
+    await twoFactorRepo.startChallengeFlow(tenant.tdb, id, {
+      flowId,
+      codeChallenge: pkceChallenge(mintSecret().secret),
+      loopbackPort: 49152,
+    });
+  return { secret, response: key.get({ challenge: webauthnChallenge }), flowId };
 }
 
 /**
@@ -415,7 +430,7 @@ export const ROUTE_MAP: Readonly<Record<string, RouteCase>> = {
           at: now,
           expiresAt: new Date(now.getTime() + 5 * 60_000),
         });
-        key = await softKeyOf(tenant);
+        key = softKeyOf(ctx, tenant);
       }
       return json(
         ctx,
@@ -515,6 +530,56 @@ export const ROUTE_MAP: Readonly<Record<string, RouteCase>> = {
       return json(ctx, 'POST', api('/auth/two-factor/passkey/verify'), { challenge: secret, response }, {});
     },
   },
+  'POST /api/v1/auth/two-factor/passkey/browser-start': {
+    cls: 'refused',
+    statuses: [401],
+    request: async (ctx) => {
+      const { secret } = await passkeyChallenge(ctx);
+      return json(
+        ctx,
+        'POST',
+        api('/auth/two-factor/passkey/browser-start'),
+        { challenge: secret, codeChallenge: pkceChallenge(VERIFIER), loopbackPort: 49152 },
+        {},
+      );
+    },
+  },
+  // A's flow, granted as its flow page would grant it: B's host knows no such flow.
+  'POST /api/v1/auth/two-factor/passkey/complete': {
+    cls: 'refused',
+    statuses: [400],
+    request: async (ctx) => {
+      const tenant = ctx.a.tenant;
+      const now = ctx.w.t.h.clock.now;
+      const user = await fresh.user(tenant);
+      const id = newId();
+      const flowId = newId();
+      const grant = mintSecret();
+      await twoFactorRepo.insertChallenge(tenant.tdb, {
+        id,
+        userId: user.user.id,
+        secretHash: mintSecret().hash,
+        purpose: 'sign-in',
+        deviceName: 'probe',
+        tokenKind: 'device',
+        at: now,
+        expiresAt: new Date(now.getTime() + 5 * 60_000),
+      });
+      await twoFactorRepo.startChallengeFlow(tenant.tdb, id, {
+        flowId,
+        codeChallenge: pkceChallenge(VERIFIER),
+        loopbackPort: 49152,
+      });
+      await twoFactorRepo.setChallengeGrant(tenant.tdb, id, grant.hash);
+      return json(
+        ctx,
+        'POST',
+        api('/auth/two-factor/passkey/complete'),
+        { flowId, grant: grant.secret, codeVerifier: VERIFIER },
+        {},
+      );
+    },
+  },
   'POST /api/v1/auth/sign-out': {
     cls: 'own',
     request: async (ctx) =>
@@ -573,6 +638,52 @@ export const ROUTE_MAP: Readonly<Record<string, RouteCase>> = {
         },
         payload: new URLSearchParams({ method: 'totp', code }).toString(),
       };
+    },
+  },
+  'GET /sign-in/two-factor.js': { cls: 'own', request: () => ({ method: 'GET', url: '/sign-in/two-factor.js' }) },
+  'POST /sign-in/two-factor/cancel': {
+    cls: 'own',
+    request: (ctx) => ({
+      method: 'POST',
+      url: '/sign-in/two-factor/cancel',
+      headers: { origin: ctx.from.tenant.origin, 'content-type': 'application/x-www-form-urlencoded' },
+      payload: '',
+    }),
+  },
+  // The page script's calls, for A's browser challenge in its cookie: B's host has no such challenge.
+  'POST /sign-in/two-factor/passkey/options': {
+    cls: 'refused',
+    statuses: [401],
+    request: async (ctx) => {
+      const { secret } = await passkeyChallenge(ctx, 'browser');
+      return {
+        method: 'POST',
+        url: '/sign-in/two-factor/passkey/options',
+        headers: { origin: ctx.from.tenant.origin, cookie: `__Host-wb_2fa=${secret}` },
+        payload: {},
+      };
+    },
+  },
+  'POST /sign-in/two-factor/passkey/verify': {
+    cls: 'refused',
+    refused: (res) => !String(res.headers['set-cookie'] ?? '').includes('wb_session='),
+    request: async (ctx) => {
+      const { secret, response } = await passkeyChallenge(ctx, 'browser');
+      return {
+        method: 'POST',
+        url: '/sign-in/two-factor/passkey/verify',
+        headers: { origin: ctx.from.tenant.origin, cookie: `__Host-wb_2fa=${secret}` },
+        payload: { response },
+      };
+    },
+  },
+  // The desktop's flow page, for A's flow: B's host answers no page for it.
+  'GET /sign-in/two-factor/passkey': {
+    cls: 'refused',
+    refused: (res) => !res.body.includes('data-flow'),
+    request: async (ctx) => {
+      const { flowId } = await passkeyChallenge(ctx, 'device', true);
+      return { method: 'GET', url: `/sign-in/two-factor/passkey?flow=${flowId}` };
     },
   },
   'POST /sign-out': {
