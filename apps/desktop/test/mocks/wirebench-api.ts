@@ -68,6 +68,8 @@ export function stubWirebenchApi(overrides: ApiOverrides = {}): WirebenchApi {
       removePasskey: fail('account.removePasskey'),
       passkeyOptions: fail('account.passkeyOptions'),
       addPasskey: fail('account.addPasskey'),
+      serverPeople: fail('account.serverPeople'),
+      resetTwoFactor: fail('account.resetTwoFactor'),
     },
     team: {
       list: fail('team.list'),

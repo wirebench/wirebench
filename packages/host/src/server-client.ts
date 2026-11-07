@@ -28,6 +28,8 @@ import type {
 } from '@wirebench/engine';
 import {
   localSignInResponseSchema,
+  usersResponseSchema,
+  type UserSummary,
   passkeyAddResponseSchema,
   passkeyBrowserStartResponseSchema,
   webauthnJsonSchema,
@@ -397,6 +399,11 @@ export class ServerClient {
       token,
       body: { password },
     });
+  }
+
+  /** Every user of the server (server admins only): `GET /users`. */
+  listUsers(url: string, token: string): Promise<UserSummary[]> {
+    return this.call(url, { method: 'GET', path: '/api/v1/users', token, schema: usersResponseSchema });
   }
 
   /** A server admin's reset of another person's two-step sign-in (two-step spec §7); it ends their sessions. */

@@ -17,6 +17,8 @@
     "account.removePasskey",
     "account.removeTotp",
     "account.renamePasskey",
+    "account.resetTwoFactor",
+    "account.serverPeople",
     "account.setUpTotp",
     "account.signInLocal",
     "account.signOut",

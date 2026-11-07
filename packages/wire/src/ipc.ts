@@ -161,6 +161,8 @@ import {
   accountTotpConfirmResponseSchema,
   accountRecoveryCodesWireSchema,
   accountPasskeyRenameRequestSchema,
+  accountServerPeopleResponseSchema,
+  accountUserRefRequestSchema,
   accountWebauthnJsonSchema,
   accountPasskeyAddRequestSchema,
   accountPasskeyAddResponseSchema,
@@ -760,6 +762,9 @@ export const channels = {
     passkeyOptions: defineChannel('account.passkeyOptions', accountPasswordRequestSchema, accountWebauthnJsonSchema),
     addPasskey: defineChannel('account.addPasskey', accountPasskeyAddRequestSchema, accountPasskeyAddResponseSchema),
     renamePasskey: defineChannel('account.renamePasskey', accountPasskeyRenameRequestSchema, accountDoneResponseSchema),
+    /** A server admin's view of who has two-step sign-in, and their reset of it (spec §6, §7). */
+    serverPeople: defineChannel('account.serverPeople', accountUrlRequestSchema, accountServerPeopleResponseSchema),
+    resetTwoFactor: defineChannel('account.resetTwoFactor', accountUserRefRequestSchema, accountDoneResponseSchema),
     removePasskey: defineChannel('account.removePasskey', accountPasskeyRemoveRequestSchema, accountDoneResponseSchema),
   },
   /**

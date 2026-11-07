@@ -304,6 +304,40 @@ describe('Sign-in', () => {
     expect(within(saml).getByTestId('server-saml-state').textContent).toBe('Not set');
     expect(saml.textContent).toContain('WIREBENCH_SERVER_SAML_IDP_METADATA');
   });
+
+  it('requires two-step sign-in with one switch, and counts the people without a second step', async () => {
+    const save = vi.fn().mockResolvedValue(ok(view({ twoFactor: set({ required: true }) })));
+    const serverPeople = vi.fn().mockResolvedValue(
+      ok({
+        people: [
+          { userId: 'a', password: true, twoFactor: false, disabled: false },
+          { userId: 'b', password: true, twoFactor: true, disabled: false },
+          { userId: 'c', password: false, twoFactor: false, disabled: false },
+          { userId: 'd', password: true, twoFactor: false, disabled: true },
+        ],
+      }),
+    );
+    installWirebenchApi({ serverSettings: { save }, account: { serverPeople } });
+    loaded(view());
+    render(<SignInSection />);
+    const card = screen.getByTestId('server-two-factor');
+    expect(within(card).getByTestId('server-two-factor-state').textContent).toBe('Optional');
+    expect((await screen.findByTestId('server-two-factor-missing')).textContent).toBe(
+      '1 person with a password has no second step yet.',
+    );
+    fireEvent.click(screen.getByTestId('server-two-factor-required'));
+    fireEvent.click(screen.getByTestId('server-two-factor-save'));
+    await vi.waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+    expect(save).toHaveBeenCalledWith({ url: URL_, section: 'twoFactor', value: { required: true } });
+  });
+
+  it('a self-hosted server shows the requirement from its environment', () => {
+    loaded(environment({ twoFactor: { source: 'environment', writable: false, value: { required: true } } }));
+    render(<SignInSection />);
+    const card = screen.getByTestId('server-two-factor');
+    expect(card.textContent).toContain('WIREBENCH_SERVER_REQUIRE_TWO_FACTOR');
+    expect(card.querySelector('input')).toBeNull();
+  });
 });
 
 describe('Provisioning', () => {

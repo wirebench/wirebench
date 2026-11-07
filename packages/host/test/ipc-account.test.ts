@@ -91,6 +91,8 @@ function fakeClient() {
     renamePasskey: vi.fn().mockResolvedValue(undefined),
     removePasskey: vi.fn().mockResolvedValue(undefined),
     passkeyRegistrationOptions: vi.fn().mockResolvedValue({ challenge: 'c' }),
+    listUsers: vi.fn().mockResolvedValue([]),
+    resetTwoFactor: vi.fn().mockResolvedValue(undefined),
     addPasskey: vi.fn().mockResolvedValue({ passkey: { id: 'p1', name: 'Phone', createdAt: 'x', lastUsedAt: null } }),
   };
 }

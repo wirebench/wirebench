@@ -51,6 +51,8 @@ export interface AccountChannelDeps {
     | 'removePasskey'
     | 'passkeyRegistrationOptions'
     | 'addPasskey'
+    | 'listUsers'
+    | 'resetTwoFactor'
   >;
 }
 
@@ -205,6 +207,22 @@ export function registerAccountChannels(table: HandlerTable, deps: AccountChanne
         passkey: added.passkey,
         ...(added.recoveryCodes !== undefined ? { recoveryCodes: added.recoveryCodes } : {}),
       };
+    }),
+  );
+  registerHandler(table, channels.account.serverPeople, (r) =>
+    withToken(deps, r.url, async (url, token) => ({
+      people: (await c.listUsers(url, token)).map((user) => ({
+        userId: user.id,
+        password: user.methods.local,
+        twoFactor: user.twoFactor === true,
+        disabled: user.disabledAt !== undefined,
+      })),
+    })),
+  );
+  registerHandler(table, channels.account.resetTwoFactor, (r) =>
+    withToken(deps, r.url, async (url, token) => {
+      await c.resetTwoFactor(url, token, r.userId);
+      return DONE;
     }),
   );
   registerHandler(table, channels.account.renamePasskey, (r) =>

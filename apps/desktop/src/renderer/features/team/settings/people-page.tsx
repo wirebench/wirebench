@@ -15,6 +15,9 @@ import { selectedTeam, useTeamStore } from '../../../state/team.js';
 import { INPUT_CLASS, ROLE_LABELS, SELECT_CLASS, TEAM_ROLES } from '../roles.js';
 import { AddPeopleDialog } from './add-people-dialog.js';
 import { filterPeople, peopleCounts, peopleRows, type PeopleFilter } from './people.js';
+import { useServerPeople } from './two-factor-people.js';
+import { ipc } from '../../../state/ipc-client.js';
+import { showToast } from '../../../components/toast.js';
 
 const FILTER_LABELS: Readonly<Record<PeopleFilter, string>> = { all: 'All', joined: 'Joined', waiting: 'Waiting' };
 
@@ -53,6 +56,19 @@ export function PeoplePage() {
   const [dialog, setDialog] = useState<'add' | 'renewed' | undefined>(undefined);
   const [removing, setRemoving] = useState<TeamMemberWire | undefined>(undefined);
   const leaving = removing !== undefined && removing.userId === youId;
+  // Two-step sign-in (spec §6, §7): a server admin sees who has it, and can reset it for someone who lost theirs.
+  const twoFactor = useServerPeople(store.url, store.serverAdmin);
+  const [resetting, setResetting] = useState<TeamMemberWire | undefined>(undefined);
+  const reset = async (member: TeamMemberWire): Promise<void> => {
+    if (store.url === undefined) return;
+    const result = await ipc().account.resetTwoFactor({ url: store.url, userId: member.userId });
+    if (!result.ok) {
+      showToast(result.error.message);
+      return;
+    }
+    showToast(`Two-step sign-in reset for ${member.email}. They were signed out everywhere.`);
+    await twoFactor.reload();
+  };
 
   const rows = useMemo(
     () => peopleRows(store.members, store.invitations, youId, new Date()),
@@ -183,6 +199,15 @@ export function PeoplePage() {
                     {member.displayName}
                     {row.you && <span className="text-fg-subtle"> · you</span>}
                     {member.disabled && <span className="ml-2 text-xs text-fg-faint">disabled</span>}
+                    {twoFactor.people?.get(member.userId)?.twoFactor === true && (
+                      <span
+                        data-testid={`member-two-factor-${member.userId}`}
+                        title="Two-step sign-in is on"
+                        className="ml-2 rounded-full bg-surface-active px-1.5 py-0.5 text-2xs text-fg-muted"
+                      >
+                        2-step
+                      </span>
+                    )}
                   </div>
                   <div className="truncate text-xs text-fg-subtle">
                     {member.email} · joined {new Date(member.addedAt).toLocaleDateString()}
@@ -218,7 +243,7 @@ export function PeoplePage() {
                     Leave team
                   </Button>
                 ) : (
-                  isAdmin && (
+                  (isAdmin || twoFactor.people?.get(member.userId)?.twoFactor === true) && (
                     <DropdownMenu.Root>
                       <DropdownMenu.Trigger asChild>
                         <button
@@ -236,15 +261,28 @@ export function PeoplePage() {
                           sideOffset={4}
                           className="z-dropdown min-w-40 rounded-lg border border-hairline-strong bg-surface-overlay p-1 shadow-lg"
                         >
-                          <DropdownMenu.Item
-                            data-testid={`member-remove-${member.userId}`}
-                            onSelect={() => {
-                              setRemoving(member);
-                            }}
-                            className="cursor-pointer rounded-md px-2.5 py-1.5 text-sm text-status-danger outline-none data-[highlighted]:bg-surface-hover"
-                          >
-                            Remove
-                          </DropdownMenu.Item>
+                          {twoFactor.people?.get(member.userId)?.twoFactor === true && (
+                            <DropdownMenu.Item
+                              data-testid={`member-reset-two-factor-${member.userId}`}
+                              onSelect={() => {
+                                setResetting(member);
+                              }}
+                              className="cursor-pointer rounded-md px-2.5 py-1.5 text-sm text-fg-default outline-none data-[highlighted]:bg-surface-hover"
+                            >
+                              Reset two-step sign-in
+                            </DropdownMenu.Item>
+                          )}
+                          {isAdmin && (
+                            <DropdownMenu.Item
+                              data-testid={`member-remove-${member.userId}`}
+                              onSelect={() => {
+                                setRemoving(member);
+                              }}
+                              className="cursor-pointer rounded-md px-2.5 py-1.5 text-sm text-status-danger outline-none data-[highlighted]:bg-surface-hover"
+                            >
+                              Remove
+                            </DropdownMenu.Item>
+                          )}
                         </DropdownMenu.Content>
                       </DropdownMenu.Portal>
                     </DropdownMenu.Root>
@@ -288,6 +326,21 @@ export function PeoplePage() {
         confirmTestId="member-remove-confirm-ok"
         onConfirm={() => {
           if (removing !== undefined) void store.removeMember(removing.userId);
+        }}
+      />
+      <ConfirmDialog
+        open={resetting !== undefined}
+        onOpenChange={(next) => {
+          if (!next) setResetting(undefined);
+        }}
+        title={`Reset two-step sign-in for ${resetting?.email ?? ''}?`}
+        description="Their authenticator, passkeys and recovery codes are removed, and they are signed out on every device. They sign in with their password alone, or set two-step sign-in up again if this server requires it."
+        confirmLabel="Reset"
+        destructive
+        testId="member-reset-two-factor-confirm"
+        confirmTestId="member-reset-two-factor-confirm-ok"
+        onConfirm={() => {
+          if (resetting !== undefined) void reset(resetting);
         }}
       />
     </div>

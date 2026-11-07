@@ -22,6 +22,7 @@ import {
   secretText,
 } from './server-card.js';
 import { compact, optional, useSection, wholeNumber } from './use-section.js';
+import { useServerPeople, withoutSecondStep } from '../../team/settings/two-factor-people.js';
 
 const ENV = 'WIREBENCH_SERVER_';
 
@@ -311,12 +312,91 @@ export function SamlCard() {
   );
 }
 
-/** The Sign-in page: both providers, one card each. */
+/**
+ * Requiring two-step sign-in (two-step sign-in spec §6): one switch for password sign-in, with how many people with a
+ * password have no second step yet. Turning it on ends no session; each person is asked at their next sign-in. Single
+ * sign-on is left to the identity provider (ruling 1). Self-hosted, it is `WIREBENCH_SERVER_REQUIRE_TWO_FACTOR`.
+ */
+export function TwoFactorCard() {
+  const card = useSection('twoFactor', 'Two-step sign-in', (value) => ({ required: value?.['required'] === true }));
+  const { people } = useServerPeople(card.url === '' ? undefined : card.url, true);
+  const missing = people === undefined ? undefined : withoutSecondStep(people);
+  const count =
+    missing === undefined ? null : (
+      <p data-testid="server-two-factor-missing" className="mt-2 text-xs text-fg-subtle">
+        {missing === 0
+          ? 'Everyone who signs in with a password has a second step.'
+          : `${String(missing)} ${missing === 1 ? 'person' : 'people'} with a password ${missing === 1 ? 'has' : 'have'} no second step yet.`}
+      </p>
+    );
+  if (card.state?.source === 'environment') {
+    return (
+      <div>
+        <EnvironmentCard
+          title="Two-step sign-in"
+          testId="server-two-factor"
+          set={card.value?.['required'] === true}
+          rows={[
+            {
+              label: 'Required for password sign-in',
+              variable: `${ENV}REQUIRE_TWO_FACTOR`,
+              value: card.value?.['required'] === true ? 'true' : 'false',
+            },
+          ]}
+        />
+        {count}
+      </div>
+    );
+  }
+  if (card.state === undefined) return null;
+  const saved = card.value?.['required'] === true;
+  return (
+    <ServerCard
+      title="Two-step sign-in"
+      testId="server-two-factor"
+      chip={
+        <Chip tone={saved ? 'ok' : 'neutral'} testId="server-two-factor-state">
+          {saved ? 'Required' : 'Optional'}
+        </Chip>
+      }
+      footer={
+        <SaveFooter
+          testId="server-two-factor"
+          busy={card.busy}
+          canRemove={false}
+          onRemove={() => undefined}
+          onSave={() => void card.save({ required: card.draft.required })}
+          saveDisabled={card.draft.required === saved}
+        />
+      }
+    >
+      <label className="flex items-center gap-2 text-sm text-fg-default">
+        <input
+          type="checkbox"
+          data-testid="server-two-factor-required"
+          checked={card.draft.required}
+          disabled={!card.writable}
+          onChange={(event) => card.setDraft({ required: event.target.checked })}
+        />
+        Require two-step sign-in for password sign-in.
+      </label>
+      <p className="mt-1 text-xs text-fg-subtle">
+        People without one set it up at their next sign-in; no one is signed out now. Single sign-on leaves the second
+        step to your identity provider.
+      </p>
+      {count}
+      <CardError error={card.error} testId="server-two-factor-error" />
+    </ServerCard>
+  );
+}
+
+/** The Sign-in page: both providers, one card each, then the two-step requirement. */
 export function SignInSection() {
   return (
     <div data-testid="server-sign-in">
       <OidcCard />
       <SamlCard />
+      <TwoFactorCard />
     </div>
   );
 }

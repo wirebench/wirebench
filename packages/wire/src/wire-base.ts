@@ -3063,6 +3063,19 @@ export const accountPasskeyAddResponseSchema = z.object({
   passkey: accountPasskeyWireSchema,
   recoveryCodes: z.array(z.string()).optional(),
 });
+/**
+ * For a server admin (two-step sign-in spec §6, §7): who has two-step sign-in on, and who signs in with a password at
+ * all, for the People badge and the Sign-in page's count.
+ */
+export const accountServerPersonWireSchema = z.object({
+  userId: z.string(),
+  password: z.boolean(),
+  twoFactor: z.boolean(),
+  disabled: z.boolean(),
+});
+export type AccountServerPersonWire = z.infer<typeof accountServerPersonWireSchema>;
+export const accountServerPeopleResponseSchema = z.object({ people: z.array(accountServerPersonWireSchema) });
+export const accountUserRefRequestSchema = z.object({ url: z.string(), userId: z.string() });
 export const accountPasskeyRenameRequestSchema = z.object({ url: z.string(), id: z.string(), name: z.string() });
 export const accountPasskeyRemoveRequestSchema = z.object({ url: z.string(), id: z.string(), password: z.string() });
 /**
