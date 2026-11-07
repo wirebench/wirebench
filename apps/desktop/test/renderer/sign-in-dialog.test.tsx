@@ -108,7 +108,7 @@ describe('SignInDialog', () => {
     await userEvent.type(screen.getByTestId('sign-in-email'), 'alice@example.com');
     await userEvent.type(screen.getByTestId('sign-in-password'), 'wrong-password!');
     await userEvent.click(screen.getByTestId('sign-in-submit'));
-    expect((await screen.findByTestId('sign-in-error')).textContent).toBe('Wrong email or password.');
+    expect((await screen.findByTestId('sign-in-error')).textContent).toBe('Wrong email, username or password.');
     expect(signInLocal).toHaveBeenCalledWith({
       url: 'https://wb.test',
       identifier: 'alice@example.com',
@@ -118,6 +118,26 @@ describe('SignInDialog', () => {
     await userEvent.click(screen.getByTestId('sign-in-submit'));
     await waitFor(() => expect(useUiStore.getState().signInDialog.open).toBe(false));
     expect(showToast).toHaveBeenCalledWith('Signed in as alice@example.com');
+  });
+
+  it('local: labels the field Email or username, a plain text field, and sends a username as typed', async () => {
+    const signInLocal = vi.fn().mockResolvedValue(ok({ account: ACCOUNT }));
+    await reachMethods();
+    installWirebenchApi({ account: { signInLocal, probe: vi.fn() } });
+    const field = screen.getByLabelText('Email or username');
+    expect(field).toBe(screen.getByTestId('sign-in-email'));
+    expect(field.getAttribute('type')).toBe('text');
+    expect(field.getAttribute('autocomplete')).toBe('username');
+    await userEvent.type(field, '  Alice.Dev ');
+    await userEvent.type(screen.getByTestId('sign-in-password'), 'right-password!');
+    await userEvent.click(screen.getByTestId('sign-in-submit'));
+    await waitFor(() =>
+      expect(signInLocal).toHaveBeenCalledWith({
+        url: 'https://wb.test',
+        identifier: 'Alice.Dev',
+        password: 'right-password!',
+      }),
+    );
   });
 
   it('OIDC: shows Waiting for the browser… with Cancel, and Cancel calls account.cancelSignIn', async () => {
