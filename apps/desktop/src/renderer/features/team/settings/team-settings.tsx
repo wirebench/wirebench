@@ -1,0 +1,386 @@
+/**
+ * Team settings (settings split spec §3): the team and its server, as a page in the window. The browser client's
+ * way to manage a team; the desktop keeps the Team dialog only for a server without the browser client.
+ *
+ * Which pages show comes from `teamNav` over what the server said about the caller, and a page the caller may not
+ * see is never rendered, even when the address names it. The server checks every write again regardless.
+ */
+import { useEffect, useState, type ReactNode } from 'react';
+import {
+  Archive,
+  BadgeCheck,
+  CreditCard,
+  Download,
+  Globe,
+  LayoutDashboard,
+  LogIn,
+  Mail,
+  ScrollText,
+  Send,
+  ShieldCheck,
+  Trash2,
+  Users,
+  UsersRound,
+  FolderKanban,
+  type LucideIcon,
+} from 'lucide-react';
+import { Button } from '../../../components/button.js';
+import { ConfirmDialog } from '../../../components/confirm-dialog.js';
+import { signedInServers, useAccountStore } from '../../../state/account.js';
+import { useDomainStore } from '../../../state/domain.js';
+import { useLicenseStore } from '../../../state/license.js';
+import { selectedTeam, teamWorkspaces, useTeamStore } from '../../../state/team.js';
+import { useUiStore, type TeamSettingsTarget } from '../../../state/ui.js';
+import { ServerPage } from '../../preferences/server/server-page.js';
+import { isHosted, useServerSettingsStore, type ServerPageId } from '../../preferences/server/server-settings-store.js';
+import {
+  SettingsNavGroup,
+  SettingsNavItem,
+  SettingsPageHeader,
+  SettingsShell,
+} from '../../preferences/settings-shell.js';
+import { AuditTab } from '../audit-tab.js';
+import { DomainTab } from '../domain-tab.js';
+import { InvitationsTab } from '../invitations-tab.js';
+import { LicenseBanner } from '../license-banner.js';
+import { LicenseTab } from '../license-tab.js';
+import { MembersTab } from '../members-tab.js';
+import { ProvisioningTab } from '../provisioning-tab.js';
+import { INPUT_CLASS } from '../roles.js';
+import {
+  TEAM_PAGE_LABELS,
+  resolveTeamPage,
+  teamNav,
+  type TeamNavFacts,
+  type TeamSettingsPageId,
+} from '../team-settings-model.js';
+import { WorkspacesTab } from '../workspaces-tab.js';
+import { NewTeamDialog, TeamSwitcher } from './team-switcher.js';
+import { clearTeamAddress, useTeamAddress } from './use-team-address.js';
+
+const ICONS: Readonly<Record<TeamSettingsPageId, LucideIcon>> = {
+  overview: LayoutDashboard,
+  people: Users,
+  workspaces: FolderKanban,
+  roles: ShieldCheck,
+  audit: ScrollText,
+  license: BadgeCheck,
+  'sign-in': LogIn,
+  provisioning: UsersRound,
+  domain: Globe,
+  email: Mail,
+  'audit-forwarding': Send,
+  retention: Archive,
+  export: Download,
+  billing: CreditCard,
+  'close-account': Trash2,
+};
+
+/** The pages Settings → Server drew before they moved here; each still draws its own header. */
+const SERVER_SECTION_PAGES: ReadonlySet<TeamSettingsPageId> = new Set<ServerPageId>([
+  'sign-in',
+  'email',
+  'audit-forwarding',
+  'retention',
+  'export',
+  'billing',
+  'close-account',
+]);
+
+const SUBTITLES: Readonly<Partial<Record<TeamSettingsPageId, string>>> = {
+  overview: 'The team’s name, and deleting it.',
+  people: 'Everyone on the team, and the invitations still open.',
+  workspaces: 'The team’s workspaces and who can open them.',
+  roles: 'What Viewer, Editor and Admin may do in a workspace.',
+  audit: 'What happened, who did it and when.',
+  license: 'This server’s license and its seats.',
+  provisioning: 'How an identity provider creates people and puts them on teams.',
+  domain: 'The address the team’s server answers on.',
+};
+
+/** The team's name, and *Delete team* for a server admin: the dialog's header, until Overview is its own page. */
+function OverviewPage() {
+  const team = useTeamStore(selectedTeam);
+  const serverAdmin = useTeamStore((s) => s.serverAdmin);
+  const renameTeam = useTeamStore((s) => s.renameTeam);
+  const deleteTeam = useTeamStore((s) => s.deleteTeam);
+  const [name, setName] = useState('');
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  useEffect(() => {
+    setName(team?.name ?? '');
+  }, [team?.id, team?.name]);
+  if (team === undefined) return null;
+  const isAdmin = team.myRole === 'admin';
+  const submitRename = (): void => {
+    if (isAdmin && name.trim().length > 0 && name.trim() !== team.name) void renameTeam(name.trim());
+  };
+  return (
+    <div className="flex flex-col gap-4">
+      <input
+        data-testid="team-name"
+        aria-label="Team name"
+        readOnly={!isAdmin}
+        className={`${INPUT_CLASS} text-md font-medium`}
+        value={name}
+        onChange={(event) => {
+          setName(event.target.value);
+        }}
+        onBlur={submitRename}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') submitRename();
+        }}
+      />
+      {serverAdmin && (
+        <div>
+          <Button
+            variant="ghost"
+            data-testid="team-delete"
+            onClick={() => {
+              setConfirmDelete(true);
+            }}
+          >
+            Delete team
+          </Button>
+        </div>
+      )}
+      <ConfirmDialog
+        open={confirmDelete}
+        onOpenChange={setConfirmDelete}
+        title={`Delete ${team.name}?`}
+        description="Only a team with no workspaces can be deleted. Its members and invitations go with it."
+        confirmLabel="Delete team"
+        destructive
+        testId="team-delete-confirm"
+        onConfirm={() => {
+          void deleteTeam();
+        }}
+      />
+    </div>
+  );
+}
+
+function PageBody({
+  page,
+  url,
+  facts,
+}: {
+  readonly page: TeamSettingsPageId;
+  readonly url: string;
+  readonly facts: TeamNavFacts;
+}): ReactNode {
+  const store = useTeamStore();
+  const team = selectedTeam(store);
+  switch (page) {
+    case 'overview':
+      return <OverviewPage />;
+    case 'people':
+      return (
+        <div className="flex flex-col gap-6">
+          <MembersTab />
+          {facts.teamAdmin && <InvitationsTab />}
+        </div>
+      );
+    case 'workspaces':
+      return <WorkspacesTab />;
+    case 'roles':
+      return null;
+    case 'audit':
+      return (
+        <AuditTab
+          url={url}
+          teamId={store.serverAdmin ? undefined : team?.id}
+          workspaces={teamWorkspaces(store).map((workspace) => ({ id: workspace.id, name: workspace.name }))}
+        />
+      );
+    case 'license':
+      return <LicenseTab url={url} />;
+    case 'provisioning':
+      return <ProvisioningTab url={url} teams={store.teams.map((item) => ({ id: item.id, name: item.name }))} />;
+    case 'domain':
+      return <DomainTab url={url} />;
+    default:
+      return null;
+  }
+}
+
+/** A page: the Server pages that moved here bring their own header; the rest get one here. */
+function Page({
+  page,
+  url,
+  facts,
+}: {
+  readonly page: TeamSettingsPageId;
+  readonly url: string;
+  readonly facts: TeamNavFacts;
+}) {
+  if (SERVER_SECTION_PAGES.has(page)) return <ServerPage page={page as ServerPageId} />;
+  if (page === 'provisioning' && facts.settingsAvailable) {
+    // SCIM first, then the groups (ruling 7).
+    return (
+      <>
+        <ServerPage page="provisioning" />
+        <div className="mt-6">
+          <PageBody page={page} url={url} facts={facts} />
+        </div>
+      </>
+    );
+  }
+  return (
+    <div data-testid={`team-page-${page}`}>
+      <SettingsPageHeader title={TEAM_PAGE_LABELS[page]} subtitle={SUBTITLES[page] ?? ''} />
+      <PageBody page={page} url={url} facts={facts} />
+    </div>
+  );
+}
+
+export function TeamSettings({ target }: { readonly target: TeamSettingsTarget }) {
+  const servers = signedInServers(useAccountStore((state) => state.servers));
+  const url = target.url ?? servers[0]?.url;
+  const store = useTeamStore();
+  const team = selectedTeam(store);
+  const license = useLicenseStore((s) => s.state);
+  const [creating, setCreating] = useState(false);
+
+  // Loads the team on its server, and lets go of it on the way out.
+  useEffect(() => {
+    if (url === undefined) return undefined;
+    void useTeamStore.getState().open(url, target);
+    return () => {
+      useTeamStore.getState().reset();
+    };
+  }, [url, target]);
+
+  // The Server group's reads (ruling 8): the domain and the server's own settings, a server admin's only.
+  const admin = store.serverAdmin && !store.signedOut;
+  useEffect(() => {
+    if (url === undefined || !admin) return undefined;
+    void useDomainStore.getState().load(url);
+    void useServerSettingsStore.getState().load(url);
+    return () => {
+      useDomainStore.getState().reset();
+      useServerSettingsStore.getState().reset();
+    };
+  }, [url, admin]);
+
+  // Primitive selectors: a read counts only once it is of this server.
+  const domainAvailable = useDomainStore((s) => s.url === url && s.available);
+  const domainLoaded = useDomainStore((s) => s.url === url && s.loaded);
+  const settingsAvailable = useServerSettingsStore((s) => s.url === url && s.available);
+  const settingsLoaded = useServerSettingsStore((s) => s.url === url && s.loaded);
+  const hosted = useServerSettingsStore((s) => s.url === url && isHosted(s.settings));
+  const facts: TeamNavFacts = {
+    hasTeam: team !== undefined,
+    teamAdmin: team?.myRole === 'admin',
+    serverAdmin: store.serverAdmin,
+    settingsAvailable,
+    hosted,
+    domain: domainAvailable,
+  };
+  // A server admin's menu waits for the Server group's reads, so a Server page the address names is not dropped
+  // before they answer.
+  // …and a selected team that is not in the list (mid-switch) is no state to settle the page on.
+  const ready =
+    !store.loading &&
+    (store.teamId === undefined || team !== undefined) &&
+    (!store.serverAdmin || (settingsLoaded && domainLoaded));
+  const shown = !facts.hasTeam && store.page === undefined ? undefined : resolveTeamPage(store.page, facts);
+
+  useEffect(() => {
+    if (ready && shown !== undefined && shown !== store.page) useTeamStore.getState().setPage(shown);
+  }, [ready, shown, store.page]);
+  useTeamAddress(store.teamId, ready ? shown : undefined);
+
+  const leave = (): void => {
+    clearTeamAddress();
+    useUiStore.getState().setPreferencesOpen(false);
+  };
+
+  const nav = teamNav(facts).map((group) => (
+    <SettingsNavGroup key={group.title} title={group.title}>
+      {group.pages.map((page) => (
+        <SettingsNavItem
+          key={page}
+          label={TEAM_PAGE_LABELS[page]}
+          icon={ICONS[page]}
+          current={ready && page === shown}
+          danger={page === 'close-account'}
+          testId={`team-settings-nav-${page}`}
+          onSelect={() => {
+            store.setPage(page);
+          }}
+        />
+      ))}
+    </SettingsNavGroup>
+  ));
+
+  let body: ReactNode;
+  if (store.signedOut) {
+    body = (
+      <div data-testid="team-signed-out" className="flex flex-col items-start gap-3 text-sm text-fg-subtle">
+        <p>{url} no longer accepts this session.</p>
+        <Button
+          variant="primary"
+          data-testid="team-sign-in-again"
+          onClick={() => {
+            leave();
+            useUiStore.getState().openSignInDialog(url);
+          }}
+        >
+          Sign in again
+        </Button>
+      </div>
+    );
+  } else if (url === undefined) {
+    body = <p className="text-sm text-fg-subtle">Sign in to a server to manage its teams.</p>;
+  } else if (!ready) {
+    body = <p className="text-sm text-fg-subtle">Loading…</p>;
+  } else if (shown === undefined) {
+    body = store.serverAdmin ? (
+      <div data-testid="team-settings-empty" className="flex flex-col items-start gap-3">
+        <h1 className="text-[22px] leading-tight font-semibold text-fg-default">Create your first team</h1>
+        <p className="text-sm text-fg-subtle">A team holds people and the workspaces they share.</p>
+        <Button
+          variant="primary"
+          onClick={() => {
+            setCreating(true);
+          }}
+        >
+          New team…
+        </Button>
+      </div>
+    ) : (
+      <p data-testid="team-settings-empty" className="text-sm text-fg-subtle">
+        You’re not on a team on this server yet. A server admin can add you.
+      </p>
+    );
+  } else {
+    body = (
+      <>
+        {store.serverAdmin && <LicenseBanner url={url} {...(license !== undefined ? { state: license } : {})} />}
+        <Page page={shown} url={url} facts={facts} />
+      </>
+    );
+  }
+
+  return (
+    <>
+      <SettingsShell
+        area="team"
+        header={
+          store.signedOut || url === undefined ? undefined : (
+            <TeamSwitcher
+              onNewTeam={() => {
+                setCreating(true);
+              }}
+            />
+          )
+        }
+        nav={store.signedOut ? null : nav}
+        onBack={leave}
+      >
+        {body}
+      </SettingsShell>
+      <NewTeamDialog open={creating} onOpenChange={setCreating} />
+    </>
+  );
+}

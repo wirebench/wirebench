@@ -36,20 +36,30 @@ export function TeamDialog() {
   const [newName, setNewName] = useState('');
   const [name, setName] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(false);
+  // The dialog's own tab: the store's page is Team settings'.
+  const [storeTab, setStoreTab] = useState<TeamTab>('members');
 
   const target = useUiStore((state) => state.teamDialog.target);
   const url = requestedUrl ?? servers[0]?.url;
 
+  // Load while open and reset on close. The store is shared with Team settings, so a closed dialog leaves it alone.
   useEffect(() => {
-    if (open && url !== undefined) void useTeamStore.getState().open(url, target);
-    if (!open) useTeamStore.getState().reset();
+    if (!open || url === undefined) return undefined;
+    setStoreTab('members');
+    void useTeamStore.getState().open(url, target);
+    return () => {
+      useTeamStore.getState().reset();
+    };
   }, [open, url, target]);
 
   // Spec §23.6: the Domain tab is a hosted server's, with the feature. Only the server's answer to the read says so.
   const domainShown = useDomainStore((s) => s.available && s.url === url);
   useEffect(() => {
-    if (open && url !== undefined && store.serverAdmin && !store.signedOut) void useDomainStore.getState().load(url);
-    if (!open) useDomainStore.getState().reset();
+    if (!open || url === undefined) return undefined;
+    if (store.serverAdmin && !store.signedOut) void useDomainStore.getState().load(url);
+    return () => {
+      useDomainStore.getState().reset();
+    };
   }, [open, url, store.serverAdmin, store.signedOut]);
 
   useEffect(() => {
@@ -57,6 +67,14 @@ export function TeamDialog() {
   }, [team?.id, team?.name]);
 
   const isAdmin = team?.myRole === 'admin';
+
+  // The fallbacks the store used to apply after each load: a tab the caller may no longer use goes back to Members.
+  useEffect(() => {
+    if (store.loading) return;
+    if (!store.serverAdmin && (storeTab === 'license' || storeTab === 'domain')) setStoreTab('members');
+    if (storeTab === 'audit' && !store.serverAdmin && !isAdmin) setStoreTab('members');
+    if (storeTab === 'invitations' && team !== undefined && !isAdmin) setStoreTab('members');
+  }, [store.loading, store.serverAdmin, isAdmin, team, storeTab]);
   // A team admin reads the audit events of the selected team only; a server admin reads them all.
   const canAudit = store.serverAdmin || isAdmin;
   const adminTabs: TabItem<TeamTab>[] = [
@@ -74,8 +92,7 @@ export function TeamDialog() {
   ];
   const tabs: TabItem<TeamTab>[] = team === undefined ? adminTabs : [...teamTabs, ...adminTabs];
   // A Domain tab that is no longer offered (another server, or the feature gone) falls back like the others.
-  const tab: TeamTab =
-    store.tab === 'domain' && !domainShown ? (team === undefined ? 'license' : 'members') : store.tab;
+  const tab: TeamTab = storeTab === 'domain' && !domainShown ? (team === undefined ? 'license' : 'members') : storeTab;
   const activeTab: TeamTab =
     team === undefined ? (tab === 'audit' || tab === 'provisioning' || tab === 'domain' ? tab : 'license') : tab;
 
@@ -244,7 +261,15 @@ export function TeamDialog() {
                     </div>
                   )}
                   <div className="mt-2 border-b border-hairline">
-                    <Tabs label="Team" items={tabs} active={activeTab} onSelect={store.setTab} />
+                    <Tabs
+                      label="Team"
+                      items={tabs}
+                      active={activeTab}
+                      onSelect={(next) => {
+                        setStoreTab(next);
+                        store.closeAccess();
+                      }}
+                    />
                   </div>
                   <div className="min-h-0 flex-1 overflow-y-auto pt-3">
                     {activeTab === 'members' && <MembersTab />}

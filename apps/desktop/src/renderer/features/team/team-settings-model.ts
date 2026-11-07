@@ -89,3 +89,8 @@ export const TEAM_PAGE_LABELS: Readonly<Record<TeamSettingsPageId, string>> = {
   billing: 'Billing',
   'close-account': 'Close this account',
 };
+
+/** Whether `page` names a Team settings page at all; whether this caller may see it is {@link resolveTeamPage}'s. */
+export function isTeamSettingsPage(page: string): page is TeamSettingsPageId {
+  return (TEAM_PAGES as readonly string[]).includes(page) || (SERVER_GROUP_PAGES as readonly string[]).includes(page);
+}

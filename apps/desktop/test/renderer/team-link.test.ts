@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } fr
 import {
   manageTeam,
   readTeamDeepLink,
-  takeTeamDeepLink,
+  openTeamDeepLink,
   teamPageUrl,
   teamSettingsSearch,
   withoutTeamSettings,
@@ -123,25 +123,46 @@ describe('team links (team management in the browser §2)', () => {
     );
   });
 
-  it('takes the deep link once: opens the dialog on it and leaves the rest of the address alone', () => {
-    window.history.replaceState(null, '', '/workspaces/x?panel=team&workspace=W1&keep=1#h');
-    expect(takeTeamDeepLink()).toBe(true);
-    expect(useUiStore.getState().teamDialog).toEqual({ open: true, url: undefined, target: { workspaceId: 'W1' } });
+  it('opens Team settings on the deep link and leaves the address alone (ruling 17)', () => {
+    window.history.replaceState(null, '', '/workspaces/x?panel=team&workspace=W1&page=roles&keep=1#h');
+    expect(openTeamDeepLink()).toBe(true);
+    expect(useUiStore.getState().preferences).toEqual({
+      open: true,
+      area: 'team',
+      section: undefined,
+      team: { workspaceId: 'W1', page: 'roles' },
+    });
     expect(`${window.location.pathname}${window.location.search}${window.location.hash}`).toBe(
-      '/workspaces/x?keep=1#h',
+      '/workspaces/x?panel=team&workspace=W1&page=roles&keep=1#h',
     );
-    useUiStore.setState({ teamDialog: { open: false, url: undefined } });
-    expect(takeTeamDeepLink()).toBe(false);
+    useUiStore.getState().setPreferencesOpen(false);
+    // A page that is not one is left out, so Team settings falls back to People.
+    window.history.replaceState(null, '', '/?panel=team&page=nope');
+    expect(openTeamDeepLink()).toBe(true);
+    expect(useUiStore.getState().preferences.team).toEqual({});
+    useUiStore.getState().setPreferencesOpen(false);
+    window.history.replaceState(null, '', '/?keep=1');
+    expect(openTeamDeepLink()).toBe(false);
+    expect(useUiStore.getState().preferences.open).toBe(false);
     expect(useUiStore.getState().teamDialog.open).toBe(false);
   });
 
-  it('in a browser tab, opens the dialog in place and asks nothing', async () => {
+  it('manageTeam in a browser tab opens Team settings', async () => {
     const api = installWirebenchApi();
     setHost('browser');
     await manageTeam('https://wb.test');
-    expect(useUiStore.getState().teamDialog).toEqual({ open: true, url: 'https://wb.test' });
+    expect(useUiStore.getState().preferences).toMatchObject({
+      open: true,
+      area: 'team',
+      team: { url: 'https://wb.test' },
+    });
+    expect(useUiStore.getState().teamDialog.open).toBe(false);
     expect(api.account.probe).not.toHaveBeenCalled();
     expect(open).not.toHaveBeenCalled();
+    useUiStore.getState().setPreferencesOpen(false);
+    await manageTeam();
+    expect(useUiStore.getState().preferences).toMatchObject({ open: true, area: 'team', team: {} });
+    useUiStore.getState().setPreferencesOpen(false);
   });
 
   it('in the desktop, opens the team page in the browser when the server serves the browser client', async () => {

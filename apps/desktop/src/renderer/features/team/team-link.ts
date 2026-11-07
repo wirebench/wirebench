@@ -1,16 +1,16 @@
 /**
- * Where team management happens (team management in the browser §2): the Team dialog is the browser
- * client's. In a browser tab *Manage team…* opens it in place; in the desktop it opens the server's team
- * page in the default browser, on the right server and team, when the server serves the browser client,
- * and keeps the in-window dialog for a server that does not (ruling 1). The browser tab reads that link
- * once at start-up and opens the dialog on it.
+ * Where team management happens (team management in the browser §2, settings split spec §5): Team settings is the
+ * browser client's. In a browser tab *Manage team…* opens it in place; in the desktop it opens the server's team
+ * page in the default browser, on the right server and team, when the server serves the browser client, and keeps
+ * the in-window dialog for a server that does not (ruling 1). The browser tab reads that link at start-up and opens
+ * Team settings on it.
  */
 import { isBrowserTab } from '../../lib/capabilities.js';
 import { signedInServers, useAccountStore } from '../../state/account.js';
 import { ipc } from '../../state/ipc-client.js';
 import { useUiStore, type TeamDialogTarget } from '../../state/ui.js';
 import { useWorkspaceStore } from '../../state/workspace.js';
-import type { TeamSettingsPageId } from './team-settings-model.js';
+import { isTeamSettingsPage, type TeamSettingsPageId } from './team-settings-model.js';
 
 /** What a server's `GET /meta` lists while it serves the browser client. */
 export const BROWSER_CLIENT_CAPABILITY = 'browser-client';
@@ -90,22 +90,18 @@ export function withoutTeamSettings(search: string): string {
 }
 
 /**
- * Reads the deep link from the address bar once, takes it out (so a reload or a copied address does not
- * open the dialog again), and opens the dialog on it. `true` when there was one.
+ * Reads the deep link from the address bar and opens Team settings on it. The address stays as it is (ruling 17):
+ * Team settings keeps it current, so a reload or a bookmark lands on the same page. `true` when there was one.
  */
-export function takeTeamDeepLink(location: Pick<Location, 'search' | 'pathname' | 'hash'> = window.location): boolean {
+export function openTeamDeepLink(location: Pick<Location, 'search'> = window.location): boolean {
   const address = readTeamDeepLink(location.search);
   if (address === undefined) return false;
-  window.history.replaceState(
-    window.history.state,
-    '',
-    `${location.pathname}${withoutTeamSettings(location.search)}${location.hash}`,
-  );
-  // The dialog has no pages; Team settings (which keeps the address, ruling 17) takes over from it later.
-  const { teamId, workspaceId } = address;
-  useUiStore.getState().openTeamDialog(undefined, {
+  const { teamId, workspaceId, page } = address;
+  useUiStore.getState().openTeamSettings({
     ...(teamId !== undefined ? { teamId } : {}),
     ...(workspaceId !== undefined ? { workspaceId } : {}),
+    // A page that is not one is left out, so the page falls back to People.
+    ...(page !== undefined && isTeamSettingsPage(page) ? { page } : {}),
   });
   return true;
 }
@@ -138,7 +134,7 @@ function chooseServer(url: string | undefined): { url: string; target?: TeamDial
 }
 
 /**
- * *Manage team…*. Every entry point calls this. In a browser tab it opens the dialog, as before. In the desktop it
+ * *Manage team…*. Every entry point calls this. In a browser tab it opens Team settings. In the desktop it
  * asks the server whether it serves the browser client and, if so, opens its team page in the default browser
  * (`window.open` reaches `shell.openExternal` through the window's open handler and its http(s) allow-list);
  * otherwise, or when the server cannot be asked, it opens the dialog in the window (rulings 1 and 4).
@@ -146,7 +142,7 @@ function chooseServer(url: string | undefined): { url: string; target?: TeamDial
 export async function manageTeam(url?: string): Promise<void> {
   const ui = useUiStore.getState();
   if (isBrowserTab()) {
-    ui.openTeamDialog(url);
+    ui.openTeamSettings(url === undefined ? {} : { url });
     return;
   }
   const chosen = chooseServer(url);

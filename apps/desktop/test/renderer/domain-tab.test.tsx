@@ -363,14 +363,13 @@ describe('the Domain tab in the team dialog', () => {
       },
       domain: { get: fail('licensing-feature-required', 'No.') },
     });
-    useTeamStore.setState({ tab: 'domain' });
     render(<TeamDialog />);
     await waitFor(() => expect(selectedTeam(useTeamStore.getState())?.id).toBe('T1'));
     expect(await screen.findByRole('tab', { name: 'Members', selected: true })).toBeTruthy();
     expect(screen.queryByTestId('domain-tab')).toBeNull();
   });
 
-  it('a server admin who is no longer one leaves the Domain tab for Members', async () => {
+  it('a server admin who is no longer one leaves the Domain page for People', async () => {
     installWirebenchApi({
       team: {
         list: ok({
@@ -381,8 +380,7 @@ describe('the Domain tab in the team dialog', () => {
         members: ok({ members: [] }),
       },
     });
-    useTeamStore.setState({ tab: 'domain' });
-    await useTeamStore.getState().open(URL_);
-    expect(useTeamStore.getState().tab).toBe('members');
+    await useTeamStore.getState().open(URL_, { page: 'domain' });
+    expect(useTeamStore.getState().page).toBe('people');
   });
 });

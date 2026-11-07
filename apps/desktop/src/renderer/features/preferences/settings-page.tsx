@@ -1,7 +1,7 @@
 import { Suspense, lazy, useEffect } from 'react';
 import { signedInServers, useAccountStore } from '../../state/account.js';
 import { useSyncStore } from '../../state/sync.js';
-import { useUiStore, type SettingsArea } from '../../state/ui.js';
+import { useUiStore, type SettingsArea, type TeamSettingsTarget } from '../../state/ui.js';
 import { settingsServerUrl, useServerSettingsStore } from './server/server-settings-store.js';
 import type { SettingsSectionRequest } from './settings-model.js';
 import type { UserSettingsPageId } from './user-settings-model.js';
@@ -10,6 +10,13 @@ import type { UserSettingsPageId } from './user-settings-model.js';
  * Loaded on demand: the editor pulls in every section's form (and the shortcuts keymap with
  * them), which is a lot of code for a page most sessions never open.
  */
+const TeamSettings = lazy(async () => {
+  const module = await import('../team/settings/team-settings.js');
+  return { default: module.TeamSettings };
+});
+
+const NO_TARGET: TeamSettingsTarget = {};
+
 const PreferencesEditor = lazy(async () => {
   const module = await import('./preferences-editor.js');
   return { default: module.PreferencesEditor };
@@ -32,14 +39,17 @@ export function SettingsPage() {
   // workspace's server when it is shared on one, else the first (see `settingsServerUrl`).
   const linked = useSyncStore((state) => (state.status.kind === 'server' ? state.status.remote : undefined));
   const serverUrl = useAccountStore((state) => settingsServerUrl(signedInServers(state.servers), linked));
+  // App settings only: Team settings reads its own server's, and resets the store when it closes.
+  const appOpen = open && area === 'app';
   useEffect(() => {
-    if (open && serverUrl !== undefined) void useServerSettingsStore.getState().load(serverUrl);
-    if (!open || serverUrl === undefined) useServerSettingsStore.getState().reset();
-  }, [open, serverUrl]);
+    if (appOpen && serverUrl !== undefined) void useServerSettingsStore.getState().load(serverUrl);
+    if (!open || (appOpen && serverUrl === undefined)) useServerSettingsStore.getState().reset();
+  }, [open, appOpen, serverUrl]);
+  const team = useUiStore((state) => state.preferences.team);
   if (!open) {
     return null;
   }
-  const body = areaBody(area, section);
+  const body = areaBody(area, section, team);
   if (body === null) {
     return null;
   }
@@ -56,7 +66,11 @@ export function SettingsPage() {
  * Settings from a section-specific route must land on that section even when the page was last left somewhere else.
  * Every preference applies the moment it changes, so there is no draft to lose by leaving.
  */
-function areaBody(area: SettingsArea, section: SettingsSectionRequest | UserSettingsPageId | undefined) {
+function areaBody(
+  area: SettingsArea,
+  section: SettingsSectionRequest | UserSettingsPageId | undefined,
+  team: TeamSettingsTarget | undefined,
+) {
   switch (area) {
     case 'app':
       return (
@@ -66,9 +80,11 @@ function areaBody(area: SettingsArea, section: SettingsSectionRequest | UserSett
           {...(section === undefined ? {} : { initialSection: section as SettingsSectionRequest })}
         />
       );
-    case 'user':
     case 'team':
-      // No page yet; nothing opens these areas until User and Team settings land (plan Tasks 7–8).
+      // Remounted per server, so another server's *Manage team…* loads that server.
+      return <TeamSettings key={`team:${team?.url ?? ''}`} target={team ?? NO_TARGET} />;
+    case 'user':
+      // No page yet; nothing opens User settings until it lands (plan Task 7).
       return null;
   }
 }
