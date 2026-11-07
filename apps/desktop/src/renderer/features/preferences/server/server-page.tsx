@@ -4,9 +4,10 @@
  * read-only from its environment, and only a hosted team has Billing and Close this account.
  */
 import type { ReactNode } from 'react';
+import { SettingsPageHeader } from '../settings-shell.js';
 import { AuditForwardingSection } from './audit-forwarding-section.js';
 import { BillingSection } from './billing-section.js';
-import { DeleteTeamSection, DeletionBanner } from './delete-team-section.js';
+import { CloseAccountSection, DeletionBanner } from './close-account-section.js';
 import { EmailSection } from './email-section.js';
 import { ExportSection } from './export-section.js';
 import { ProvisioningSection } from './provisioning-section.js';
@@ -70,7 +71,7 @@ function body(page: ServerPageId): ReactNode {
     case 'export':
       return <ExportSection />;
     case 'close-account':
-      return <DeleteTeamSection />;
+      return <CloseAccountSection />;
   }
 }
 
@@ -81,8 +82,7 @@ export function ServerPage({ page }: { readonly page: ServerPageId }) {
   const team = serverLabel(url, billing);
   return (
     <div data-testid={`server-page-${page}`}>
-      <h1 className="mb-1.5 text-[22px] leading-tight font-semibold text-fg-default">{SERVER_PAGE_LABELS[page]}</h1>
-      <p className="mb-6 text-sm text-fg-subtle">{subtitle(page, team, hosted)}</p>
+      <SettingsPageHeader title={SERVER_PAGE_LABELS[page]} subtitle={subtitle(page, team, hosted)} />
       {hosted && page !== 'close-account' && <DeletionBanner />}
       {body(page)}
     </div>

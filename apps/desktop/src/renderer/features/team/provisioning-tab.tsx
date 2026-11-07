@@ -43,9 +43,12 @@ function CopyRow({
 export function ProvisioningTab({
   url,
   teams,
+  scim = true,
 }: {
   readonly url: string;
   readonly teams: readonly { readonly id: string; readonly name: string }[];
+  /** `false` where the SCIM card of Team settings' Provisioning page shows the tokens instead (ruling 7). */
+  readonly scim?: boolean;
 }) {
   const store = useProvisioningStore();
   const [name, setName] = useState('');
@@ -86,105 +89,107 @@ export function ProvisioningTab({
         </p>
       )}
 
-      <section aria-labelledby="provisioning-scim" className="flex flex-col gap-2">
-        <h3 id="provisioning-scim" className="font-medium text-fg-default">
-          SCIM
-        </h3>
-        {store.info !== undefined && (
-          <dl className="grid grid-cols-[8rem_1fr] gap-x-3 gap-y-1">
-            <CopyRow label="Base URL" value={store.info.scimBaseUrl} testId="provisioning-scim-url" />
-          </dl>
-        )}
-        <table data-testid="provisioning-tokens" className="w-full text-left">
-          <thead className="text-xs text-fg-subtle">
-            <tr>
-              <th className="font-normal">Name</th>
-              <th className="font-normal">Created</th>
-              <th className="font-normal">Last used</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {store.tokens.map((token) => (
-              <tr key={token.id} data-testid={`provisioning-token-${token.id}`}>
-                <td>{token.name}</td>
-                <td>{token.createdAt.slice(0, 10)}</td>
-                <td>{token.lastUsedAt?.slice(0, 16).replace('T', ' ') ?? 'Never'}</td>
-                <td className="text-right">
-                  <Button
-                    variant="ghost"
-                    data-testid={`provisioning-revoke-${token.id}`}
-                    disabled={store.busy}
-                    onClick={() => {
-                      setRevoking({ id: token.id, name: token.name });
-                    }}
-                  >
-                    Revoke…
-                  </Button>
-                </td>
-              </tr>
-            ))}
-            {store.loaded && store.tokens.length === 0 && (
+      {scim && (
+        <section aria-labelledby="provisioning-scim" className="flex flex-col gap-2">
+          <h3 id="provisioning-scim" className="font-medium text-fg-default">
+            SCIM
+          </h3>
+          {store.info !== undefined && (
+            <dl className="grid grid-cols-[8rem_1fr] gap-x-3 gap-y-1">
+              <CopyRow label="Base URL" value={store.info.scimBaseUrl} testId="provisioning-scim-url" />
+            </dl>
+          )}
+          <table data-testid="provisioning-tokens" className="w-full text-left">
+            <thead className="text-xs text-fg-subtle">
               <tr>
-                <td colSpan={4} className="text-fg-subtle">
-                  No SCIM tokens yet.
-                </td>
+                <th className="font-normal">Name</th>
+                <th className="font-normal">Created</th>
+                <th className="font-normal">Last used</th>
+                <th />
               </tr>
-            )}
-          </tbody>
-        </table>
-        {store.created !== undefined ? (
-          <div data-testid="provisioning-created" className="flex flex-col gap-2 rounded border border-hairline p-2">
-            <p>Give this token to the identity provider now. It is not shown again.</p>
-            <div className="flex items-center gap-2">
+            </thead>
+            <tbody>
+              {store.tokens.map((token) => (
+                <tr key={token.id} data-testid={`provisioning-token-${token.id}`}>
+                  <td>{token.name}</td>
+                  <td>{token.createdAt.slice(0, 10)}</td>
+                  <td>{token.lastUsedAt?.slice(0, 16).replace('T', ' ') ?? 'Never'}</td>
+                  <td className="text-right">
+                    <Button
+                      variant="ghost"
+                      data-testid={`provisioning-revoke-${token.id}`}
+                      disabled={store.busy}
+                      onClick={() => {
+                        setRevoking({ id: token.id, name: token.name });
+                      }}
+                    >
+                      Revoke…
+                    </Button>
+                  </td>
+                </tr>
+              ))}
+              {store.loaded && store.tokens.length === 0 && (
+                <tr>
+                  <td colSpan={4} className="text-fg-subtle">
+                    No SCIM tokens yet.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+          {store.created !== undefined ? (
+            <div data-testid="provisioning-created" className="flex flex-col gap-2 rounded border border-hairline p-2">
+              <p>Give this token to the identity provider now. It is not shown again.</p>
+              <div className="flex items-center gap-2">
+                <input
+                  data-testid="provisioning-created-token"
+                  aria-label="New SCIM token"
+                  readOnly
+                  className={`${INPUT_CLASS} flex-1 font-mono text-xs`}
+                  value={store.created.token}
+                />
+                <Button
+                  data-testid="provisioning-created-copy"
+                  onClick={() => void navigator.clipboard.writeText(store.created?.token ?? '')}
+                >
+                  Copy
+                </Button>
+                <Button variant="primary" data-testid="provisioning-created-done" onClick={store.dismissCreated}>
+                  Done
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <form
+              className="flex gap-2"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void create();
+              }}
+            >
               <input
-                data-testid="provisioning-created-token"
-                aria-label="New SCIM token"
-                readOnly
-                className={`${INPUT_CLASS} flex-1 font-mono text-xs`}
-                value={store.created.token}
+                data-testid="provisioning-token-name"
+                aria-label="Token name"
+                placeholder="Identity provider"
+                maxLength={64}
+                className={`${INPUT_CLASS} flex-1`}
+                value={name}
+                onChange={(event) => {
+                  setName(event.target.value);
+                }}
               />
               <Button
-                data-testid="provisioning-created-copy"
-                onClick={() => void navigator.clipboard.writeText(store.created?.token ?? '')}
+                type="submit"
+                variant="primary"
+                data-testid="provisioning-token-create"
+                disabled={store.busy || name.trim().length === 0}
               >
-                Copy
+                Create token
               </Button>
-              <Button variant="primary" data-testid="provisioning-created-done" onClick={store.dismissCreated}>
-                Done
-              </Button>
-            </div>
-          </div>
-        ) : (
-          <form
-            className="flex gap-2"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void create();
-            }}
-          >
-            <input
-              data-testid="provisioning-token-name"
-              aria-label="Token name"
-              placeholder="Identity provider"
-              maxLength={64}
-              className={`${INPUT_CLASS} flex-1`}
-              value={name}
-              onChange={(event) => {
-                setName(event.target.value);
-              }}
-            />
-            <Button
-              type="submit"
-              variant="primary"
-              data-testid="provisioning-token-create"
-              disabled={store.busy || name.trim().length === 0}
-            >
-              Create token
-            </Button>
-          </form>
-        )}
-      </section>
+            </form>
+          )}
+        </section>
+      )}
 
       <section aria-labelledby="provisioning-saml" className="flex flex-col gap-2">
         <h3 id="provisioning-saml" className="font-medium text-fg-default">
