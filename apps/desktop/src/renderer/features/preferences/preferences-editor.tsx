@@ -4,7 +4,6 @@ import {
   ArrowLeftRight,
   BadgeCheck,
   Braces,
-  CircleUser,
   Ellipsis,
   FileCode,
   GitBranch,
@@ -19,19 +18,10 @@ import {
   ToggleRight,
   Laptop,
   MonitorSmartphone,
-  Smartphone,
   SquareTerminal,
   Waypoints,
   type LucideIcon,
   Puzzle,
-  LogIn,
-  Users,
-  Send,
-  Mail,
-  Archive,
-  CreditCard,
-  Download,
-  Trash2,
 } from 'lucide-react';
 import { Button } from '../../components/button.js';
 import {
@@ -58,25 +48,14 @@ import { BehaviourSection } from './sections/behaviour-section.js';
 import { FeaturesSection } from './sections/features-section.js';
 import { PluginsSection } from './sections/plugins-section.js';
 import { UpdatesSection } from './sections/updates-section.js';
-import { AccountsSection } from './user/servers-page.js';
 import { SecretsSection } from './sections/secrets-section.js';
 import { MocksSection } from './sections/mocks-section.js';
 import { SshSection } from './sections/ssh-section.js';
 import { TerminalSection } from './sections/terminal-section.js';
 import { ShortcutsSection } from './sections/shortcuts-section.js';
-import { TokensSection } from './sections/tokens-section.js';
 import { PairedBrowsersSection } from './sections/paired-browsers-section.js';
 import { ThisMachineSection } from './sections/this-machine-section.js';
 import type { SectionProps } from './sections/section-props.js';
-import { ServerPage, SERVER_PAGE_LABELS } from './server/server-page.js';
-import {
-  HOSTED_ONLY_PAGES,
-  isHosted,
-  serverLabel,
-  serverPages,
-  useServerSettingsStore,
-  type ServerPageId,
-} from './server/server-settings-store.js';
 import {
   availableNav,
   sectionsForSearch,
@@ -109,57 +88,9 @@ const ICONS: Readonly<Record<SettingsSectionId, LucideIcon>> = {
   terminal: SquareTerminal,
   ssh: Server,
   secrets: KeyRound,
-  accounts: CircleUser,
   'this-machine': Laptop,
   'paired-browsers': MonitorSmartphone,
-  tokens: Smartphone,
 };
-
-const SERVER_ICONS: Readonly<Record<ServerPageId, LucideIcon>> = {
-  'sign-in': LogIn,
-  provisioning: Users,
-  'audit-forwarding': Send,
-  email: Mail,
-  retention: Archive,
-  billing: CreditCard,
-  export: Download,
-  'close-account': Trash2,
-};
-
-/**
- * The *Server* group of the nav (hosted edition spec §22.13): shown only once the connected server answered its
- * settings read, which it does for its server admins only.
- */
-function ServerNavGroup({
-  current,
-  onOpen,
-}: {
-  readonly current: ServerPageId | undefined;
-  readonly onOpen: (page: ServerPageId) => void;
-}) {
-  const available = useServerSettingsStore((s) => s.available);
-  const settings = useServerSettingsStore((s) => s.settings);
-  const billing = useServerSettingsStore((s) => s.billing);
-  const url = useServerSettingsStore((s) => s.url);
-  if (!available || url === undefined) return null;
-  return (
-    <SettingsNavGroup title={`Server · ${serverLabel(url, billing)}`} testId="settings-nav-server">
-      {serverPages(settings).map((page) => (
-        <SettingsNavItem
-          key={page}
-          label={SERVER_PAGE_LABELS[page]}
-          icon={SERVER_ICONS[page]}
-          current={page === current}
-          danger={page === 'close-account'}
-          testId={`settings-nav-server-${page}`}
-          onSelect={() => {
-            onOpen(page);
-          }}
-        />
-      ))}
-    </SettingsNavGroup>
-  );
-}
 
 /** The form for one section; `context` is only the Shortcuts table's. */
 function SectionBody({
@@ -206,14 +137,10 @@ function SectionBody({
       return <SshSection {...props} />;
     case 'secrets':
       return <SecretsSection {...props} />;
-    case 'accounts':
-      return <AccountsSection {...props} />;
     case 'this-machine':
       return <ThisMachineSection />;
     case 'paired-browsers':
       return <PairedBrowsersSection />;
-    case 'tokens':
-      return <TokensSection />;
   }
 }
 
@@ -230,14 +157,6 @@ export interface PreferencesEditorProps {
  */
 export function PreferencesEditor({ initialSection }: PreferencesEditorProps) {
   const [active, setActive] = useState<SettingsSectionId>(() => resolveSection(initialSection));
-  // A page of the Server group, which stands in for `active` while one is open.
-  const [serverPage, setServerPage] = useState<ServerPageId | undefined>(undefined);
-  const serverAvailable = useServerSettingsStore((s) => s.available);
-  const serverHosted = useServerSettingsStore((s) => isHosted(s.settings));
-  const shownServerPage =
-    serverPage !== undefined && serverAvailable && (serverHosted || !HOSTED_ONLY_PAGES.has(serverPage))
-      ? serverPage
-      : undefined;
   const [rawQuery, setRawQuery] = useState('');
   const query = rawQuery.trim().toLowerCase();
 
@@ -301,25 +220,17 @@ export function PreferencesEditor({ initialSection }: PreferencesEditorProps) {
               key={entry.id}
               label={entry.label}
               icon={ICONS[entry.id]}
-              current={!searching && shownServerPage === undefined && entry.id === active}
+              current={!searching && entry.id === active}
               modified={sectionModified(preferences, entry)}
               testId={`settings-nav-${entry.id}`}
               onSelect={() => {
                 setActive(entry.id);
-                setServerPage(undefined);
                 setRawQuery('');
               }}
             />
           ))}
         </SettingsNavGroup>
       ))}
-      <ServerNavGroup
-        current={searching ? undefined : shownServerPage}
-        onOpen={(page) => {
-          setServerPage(page);
-          setRawQuery('');
-        }}
-      />
     </>
   );
 
@@ -334,9 +245,7 @@ export function PreferencesEditor({ initialSection }: PreferencesEditorProps) {
             close(false);
           }}
         >
-          {!searching && shownServerPage !== undefined ? (
-            <ServerPage page={shownServerPage} />
-          ) : searching ? (
+          {searching ? (
             <SearchResults
               query={query}
               rawQuery={rawQuery.trim()}

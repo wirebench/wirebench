@@ -13,7 +13,7 @@ import { useUiStore } from '../../../state/ui.js';
 import { useUserSettingsStore } from '../../../state/user-settings.js';
 import { TokensSection } from '../sections/tokens-section.js';
 import { settingsServerUrl } from '../server/server-settings-store.js';
-import { sectionById, sectionModified } from '../settings-model.js';
+import { storedSectionModified } from '../settings-model.js';
 import { SettingsNavGroup, SettingsNavItem, SettingsPageHeader, SettingsShell } from '../settings-shell.js';
 import { USER_NAV, resolveUserPage, userNav, type UserSettingsPageId } from '../user-settings-model.js';
 import { DevicesPage } from './devices-page.js';
@@ -68,8 +68,7 @@ export function UserSettings({ initialPage }: { readonly initialPage?: UserSetti
   const facts = { localPasswords: profile?.localPasswords ?? false };
   const page = resolveUserPage(requested, facts);
   const entry = PAGES.find((candidate) => candidate.id === page)!;
-  const accounts = sectionById('accounts');
-  const serversModified = sectionModified(preferences, accounts);
+  const serversModified = storedSectionModified(preferences, 'accounts');
 
   const nav = userNav(facts).map((group) => (
     <SettingsNavGroup key={group.title} title={group.title}>

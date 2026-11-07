@@ -787,7 +787,8 @@ export function AppShell() {
       <OpenTeamWorkspaceDialog />
       <SignInDialog />
       <PairMachineDialog />
-      <TeamDialog />
+      {/* The browser client manages a team in Team settings; the dialog is the desktop's fallback. */}
+      {!isBrowserTab() && <TeamDialog />}
       <WebhooksDialogs />
       <SchedulesDialogs />
       <WebhookSettingsDialog />

@@ -288,4 +288,5 @@ Windows and Linux). The first shortcut listed for a command can be changed in
 | Account: Sign in to a server… | — | — |
 | Pair this machine… | — | — |
 | Account: Sign out… | — | — |
+| Account: Account settings | — | — |
 | Account: Manage team… | — | — |

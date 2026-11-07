@@ -1,8 +1,5 @@
-import { Suspense, lazy, useEffect } from 'react';
-import { signedInServers, useAccountStore } from '../../state/account.js';
-import { useSyncStore } from '../../state/sync.js';
+import { Suspense, lazy } from 'react';
 import { useUiStore, type SettingsArea, type TeamSettingsTarget } from '../../state/ui.js';
-import { settingsServerUrl, useServerSettingsStore } from './server/server-settings-store.js';
 import type { SettingsSectionRequest } from './settings-model.js';
 import type { UserSettingsPageId } from './user-settings-model.js';
 
@@ -41,17 +38,6 @@ export function SettingsPage() {
   const open = useUiStore((state) => state.preferences.open);
   const area = useUiStore((state) => state.preferences.area);
   const section = useUiStore((state) => state.preferences.section);
-  // The Server group (hosted edition spec §22.13): the connected server's own settings, read each time Settings
-  // opens; the server answers its server admins only, and the group shows only then. With several signed in, the open
-  // workspace's server when it is shared on one, else the first (see `settingsServerUrl`).
-  const linked = useSyncStore((state) => (state.status.kind === 'server' ? state.status.remote : undefined));
-  const serverUrl = useAccountStore((state) => settingsServerUrl(signedInServers(state.servers), linked));
-  // App settings only: Team settings reads its own server's, and resets the store when it closes.
-  const appOpen = open && area === 'app';
-  useEffect(() => {
-    if (appOpen && serverUrl !== undefined) void useServerSettingsStore.getState().load(serverUrl);
-    if (!open || (appOpen && serverUrl === undefined)) useServerSettingsStore.getState().reset();
-  }, [open, appOpen, serverUrl]);
   const team = useUiStore((state) => state.preferences.team);
   if (!open) {
     return null;

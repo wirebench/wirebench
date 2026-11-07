@@ -421,7 +421,7 @@ for sign-ins started from the browser. `serve` logs it too, but the SP metadata 
 add it at the IdP by hand. SAML from the browser needs an `https://` public URL: the IdP posts the response
 from its own site, and browsers only send the cookie that ties it to the sign-in when it is `Secure`.
 
-SCIM 2.0 answers at `<public URL>/scim/v2` with a bearer token from the app's Provisioning tab or the
+SCIM 2.0 answers at `<public URL>/scim/v2` with a bearer token from Team settings → Provisioning or the
 console. Deactivating a user at the IdP disables the account and revokes its devices; nothing is deleted.
 A server admin links IdP groups to teams, and SCIM removes only the members it added:
 
@@ -435,7 +435,7 @@ docs site's _SAML sign-in and SCIM provisioning_ guide for the Entra ID and Okta
 
 A server with no license is the Community edition: everything it does today, for up to five enabled
 accounts. A license file sets the Team or Enterprise edition. It is checked offline against a public key
-built into the server; nothing is sent anywhere. Install it from the app's License tab, or here:
+built into the server; nothing is sent anywhere. Install it from Team settings → License and seats, or here:
 
     docker compose -f packages/server/compose.yaml exec server node /app/dist/bin.js admin license install /path/in/container/team.lic
 
@@ -452,7 +452,7 @@ third parties as a hosted or managed service, and you may not circumvent the lic
 
 The server records who did what: sign-ins and failed sign-ins, users, teams, workspace roles, pushes,
 team-secret changes, catch URLs, CI tokens and license changes. Recording is on for every edition. Server
-admins read it in the app's Audit tab, and team admins read their own team's events there, which needs an
+admins read it in Team settings → Audit log, and team admins read their own team's events there, which needs an
 Enterprise license; the console export works on any edition:
 
     docker compose -f packages/server/compose.yaml exec -T server node /app/dist/bin.js admin audit export --from 2026-10-01T00:00:00Z > audit.ndjson
@@ -479,7 +479,7 @@ _Audit log_ guide for what each event carries and how to handle personal data.
 ## Teams
 
 A server admin creates teams (`POST /api/v1/teams`) and becomes the first admin of each. Team admins do
-the rest, from the **Account: Manage team…** dialog or the API:
+the rest, from the browser client's **Team settings** page (**Account: Manage team…**) or the API:
 
 - Add people who already have an account, invite new ones, and change or remove roles. A team keeps at
   least one admin.
@@ -495,9 +495,9 @@ the rest, from the **Account: Manage team…** dialog or the API:
 | editor | yes           | yes           | yes  | no            | no     |
 | admin  | yes           | yes           | yes  | yes           | yes    |
 
-The dialog is the browser client's. The desktop app's _Manage team…_ opens `<public URL>/?panel=team`
+Team settings is the browser client's. The desktop app's _Manage team…_ opens `<public URL>/?panel=team`
 in the default browser (`GET /api/v1/meta` lists `browser-client`); against a server from an earlier release that
-does not list it, the app keeps the dialog in its window.
+does not list it, the app keeps its Team dialog in its window.
 
 Team admins and server admins are admins of every workspace of their teams. To anyone without a role,
 a workspace (or a team) does not exist: the API answers `404`, never `403`. Deleting a workspace moves

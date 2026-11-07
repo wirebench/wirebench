@@ -82,6 +82,26 @@ describe('AppShell', () => {
     cleanup();
   });
 
+  it('a browser tab does not mount the Team dialog', async () => {
+    // The desktop keeps it for a server without the browser client (team management in the browser, ruling 4).
+    useUiStore.setState({ teamDialog: { open: true, url: undefined } });
+    render(<App />);
+    expect(await screen.findByTestId('team-dialog')).toBeTruthy();
+    cleanup();
+
+    // In the browser client, Team settings is the way to manage a team (settings split spec §3).
+    Object.defineProperty(window.wirebench, 'env', {
+      configurable: true,
+      value: { e2e: false, osTheme: 'dark', host: 'browser', capabilities: ['send:public'] },
+    });
+    useUiStore.setState({ teamDialog: { open: true, url: undefined } });
+    render(<App />);
+    expect(screen.getByTestId('status-bar')).toBeTruthy();
+    expect(screen.queryByTestId('team-dialog')).toBeNull();
+    // A modal left open would hide the rest of the shell from the next case's queries.
+    useUiStore.setState({ teamDialog: { open: false, url: undefined } });
+  });
+
   it('renders every shell region', () => {
     render(<App />);
 

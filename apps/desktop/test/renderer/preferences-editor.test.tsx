@@ -44,7 +44,7 @@ describe('PreferencesEditor', () => {
   it('lists every section', () => {
     render(<PreferencesEditor />);
     const nav = screen.getByRole('navigation', { name: 'Settings sections' });
-    for (const group of ['General', 'Protocols', 'Network and tools', 'Account']) {
+    for (const group of ['General', 'Protocols', 'Network and tools']) {
       expect(within(nav).getByRole('heading', { name: group })).toBeTruthy();
     }
     for (const label of [
@@ -62,8 +62,6 @@ describe('PreferencesEditor', () => {
       'Mock services',
       'Terminal',
       'Secrets',
-      'Accounts',
-      'Devices & tokens',
     ]) {
       expect(within(nav).getByRole('button', { name: label })).toBeTruthy();
     }
@@ -910,87 +908,42 @@ describe('PreferencesEditor — changed settings', () => {
   });
 });
 
-describe('PreferencesEditor — the Server group (hosted edition spec §22.13)', () => {
-  const state = (source: 'tenant' | 'environment') => ({ source, writable: source === 'tenant', value: null });
-  const settings = (source: 'tenant' | 'environment') => ({
-    source,
-    sections: {
-      oidc: state(source),
-      saml: state(source),
-      auditForward: state(source),
-      smtp: state(source),
-      retention: state(source),
-      budgets: { source, writable: false, value: null },
-    },
-  });
-
+describe('PreferencesEditor — what moved out (settings split spec §2)', () => {
   beforeEach(() => {
     installWirebenchApi();
     usePreferencesStore.setState({ preferences: DEFAULTS, loaded: true });
-    useServerSettingsStore.getState().reset();
   });
   afterEach(() => {
     cleanup();
     useServerSettingsStore.getState().reset();
   });
 
-  it('is absent for anyone the server does not answer', () => {
-    render(<PreferencesEditor />);
-    expect(screen.queryByTestId('settings-nav-server')).toBeNull();
-  });
-
-  it('lists every page for a hosted team, and opens one in place of the section', () => {
+  it('App settings has no Account or Server group', () => {
+    // Even with the server's settings read answered, which used to show the Server group here.
     useServerSettingsStore.setState({
-      // A custom domain (§23): its first label is not the team's slug, nor its name.
-      url: 'https://api.example.org',
+      url: 'https://acme.app.test',
       available: true,
       loaded: true,
-      settings: settings('tenant'),
-      billing: {
-        slug: 'acme',
-        name: 'Acme Ltd',
-        activeMembers: 3,
-        edition: 'team',
-        editionSource: 'subscription',
-        status: 'active',
-        suspendedReason: null,
-        subscription: null,
-        deletion: null,
+      settings: {
+        source: 'tenant',
+        sections: {
+          oidc: { source: 'tenant', writable: true, value: null },
+          saml: { source: 'tenant', writable: true, value: null },
+          auditForward: { source: 'tenant', writable: true, value: null },
+          smtp: { source: 'tenant', writable: true, value: null },
+          retention: { source: 'tenant', writable: true, value: null },
+          budgets: { source: 'tenant', writable: false, value: null },
+        },
       },
     });
     render(<PreferencesEditor />);
-    const group = screen.getByTestId('settings-nav-server');
-    expect(group.querySelector('h2')?.textContent).toBe('Server · Acme Ltd');
-    expect([...group.querySelectorAll('li')].map((li) => li.textContent)).toEqual([
-      'Sign-in',
-      'Provisioning',
-      'Audit forwarding',
-      'Email',
-      'Retention',
-      'Billing',
-      'Export',
-      'Close this account',
-    ]);
-    fireEvent.click(screen.getByTestId('settings-nav-server-sign-in'));
-    expect(screen.getByTestId('server-page-sign-in')).toBeTruthy();
-    expect(screen.getByTestId('settings-nav-server-sign-in').getAttribute('aria-current')).toBe('page');
-    expect(screen.getByTestId('settings-nav-appearance').getAttribute('aria-current')).toBeNull();
-    fireEvent.click(screen.getByTestId('settings-nav-appearance'));
-    expect(screen.queryByTestId('server-page-sign-in')).toBeNull();
-  });
-
-  it('has no Billing or Close this account on a self-hosted server, and names it by its host', () => {
-    useServerSettingsStore.setState({
-      url: 'https://wirebench.corp.example',
-      available: true,
-      loaded: true,
-      settings: settings('environment'),
-    });
-    render(<PreferencesEditor />);
-    const group = screen.getByTestId('settings-nav-server');
-    expect(group.querySelector('h2')?.textContent).toBe('Server · wirebench.corp.example');
-    expect(screen.queryByTestId('settings-nav-server-billing')).toBeNull();
-    expect(screen.queryByTestId('settings-nav-server-close-account')).toBeNull();
-    expect(screen.getByTestId('settings-nav-server-export')).toBeTruthy();
+    expect(screen.queryByTestId('settings-nav-accounts')).toBeNull();
+    expect(screen.queryByTestId('settings-nav-tokens')).toBeNull();
+    expect(screen.queryByTestId('settings-nav-server')).toBeNull();
+    const nav = screen.getByRole('navigation', { name: 'Settings sections' });
+    expect(within(nav).queryByRole('heading', { name: 'Account' })).toBeNull();
+    // The status-bar switch went with Accounts (ruling 14): App settings search no longer finds it.
+    fireEvent.change(screen.getByPlaceholderText('Search settings'), { target: { value: 'status bar' } });
+    expect(screen.queryByText('Show sign-in in the status bar')).toBeNull();
   });
 });

@@ -33,15 +33,15 @@ function Separator() {
  * The status bar's account item (identity spec §3.8). Hidden until a server is known and while
  * `accounts.showInStatusBar` is off. A signed-out server shows *Sign in*, which reopens the
  * dialog on that URL; a signed-in one shows the email with a menu holding *Sign out of <server>*
- * per server, *Manage team…* (team management in the browser §2.1) and *Manage accounts…*. In a browser tab (`env.signOut` set) the
- * per-server items give way to one *Sign out*, which ends the tab's session, and *Manage accounts…*
- * opens the reduced Accounts view a window without `accounts` gets: that session's row alone.
+ * per server, *Manage team…* (team management in the browser §2.1), *Account settings…* and *Signed-in devices…*,
+ * which open User settings (settings split ruling 13). In a browser tab (`env.signOut` set) the per-server items give
+ * way to one *Sign out*, which ends the tab's session, and Account settings shows that session's row alone.
  */
 export function AccountStatusItem() {
   const servers = useAccountStore((state) => state.servers);
   const show = usePreferencesStore((state) => state.preferences.accounts.showInStatusBar);
   const openSignInDialog = useUiStore((state) => state.openSignInDialog);
-  const openPreferences = useUiStore((state) => state.openPreferences);
+  const openUserSettings = useUiStore((state) => state.openUserSettings);
   const signOut = useAccountStore((state) => state.signOut);
   const [open, setOpen] = useState(false);
   const endTab = tabSignOut();
@@ -137,19 +137,19 @@ export function AccountStatusItem() {
               data-testid="account-manage"
               className={ITEM_CLASS}
               onSelect={() => {
-                openPreferences('accounts');
+                openUserSettings('servers');
               }}
             >
-              Manage accounts…
+              Account settings…
             </DropdownMenu.Item>
             <DropdownMenu.Item
-              data-testid="account-devices-tokens"
+              data-testid="account-devices"
               className={ITEM_CLASS}
               onSelect={() => {
-                openPreferences('tokens');
+                openUserSettings('devices');
               }}
             >
-              Devices & tokens…
+              Signed-in devices…
             </DropdownMenu.Item>
           </DropdownMenu.Content>
         </DropdownMenu.Portal>

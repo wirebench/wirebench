@@ -36,17 +36,16 @@ export type SettingsSectionId =
   | 'terminal'
   | 'ssh'
   | 'secrets'
-  | 'accounts'
   | 'this-machine'
-  | 'paired-browsers'
-  | 'tokens';
+  | 'paired-browsers';
 
 /**
  * What a caller may ask Settings to open on: a page section, or one of the stored-section ids
  * (`editor`, `ui`) callers used before Appearance and Behaviour split them. Those two are
- * aliases — see {@link resolveSection}.
+ * aliases — see {@link resolveSection}. Not every stored section: `accounts` is User settings' now,
+ * so asking App settings for it does not typecheck.
  */
-export type SettingsSectionRequest = SettingsSectionId | PreferencesSectionWire;
+export type SettingsSectionRequest = SettingsSectionId | Extract<PreferencesSectionWire, 'editor' | 'ui'>;
 
 /** The preferences a section holds, for its modified dot and its "Reset … to defaults". */
 type SectionKeys =
@@ -54,7 +53,7 @@ type SectionKeys =
   | { readonly kind: 'stored'; readonly section: PreferencesStoredSectionWire }
   /** Fields drawn from several stored sections: reset by patching each back to its default. */
   | { readonly kind: 'fields'; readonly keys: readonly string[] }
-  /** Holds no preferences (CI tokens live on the server). */
+  /** Holds no preferences (the pairing pages keep theirs elsewhere). */
   | { readonly kind: 'none' };
 
 export interface SettingsSection {
@@ -268,26 +267,6 @@ export const SETTINGS_NAV: readonly SettingsNavGroup[] = [
       },
     ],
   },
-  // Leaves for User settings once it has these pages (settings split plan, Task 12).
-  {
-    title: 'Account',
-    sections: [
-      {
-        id: 'accounts',
-        label: 'Accounts',
-        subtitle: 'Servers you are signed in to.',
-        keys: stored('accounts'),
-        searchable: true,
-      },
-      {
-        id: 'tokens',
-        label: 'Devices & tokens',
-        subtitle: 'CI tokens for the open server workspace.',
-        keys: { kind: 'none' },
-        searchable: false,
-      },
-    ],
-  },
 ];
 
 /** Whether the connected host can do what `section` needs; see {@link SettingsSection.capability}. */
@@ -335,7 +314,7 @@ export function resolveSection(request: SettingsSectionRequest | undefined): Set
   }
   // A section the host cannot use is not shown, so a caller asking for one lands on the default.
   const section = SETTINGS_SECTIONS.find((candidate) => candidate.id === request);
-  return section === undefined || sectionAvailable(section) ? request : DEFAULT_SECTION;
+  return section !== undefined && sectionAvailable(section) ? section.id : DEFAULT_SECTION;
 }
 
 export function sectionById(id: SettingsSectionId): SettingsSection & { readonly group: string } {
@@ -452,6 +431,14 @@ export function sectionKeys(preferences: PreferencesWire, section: SettingsSecti
     case 'none':
       return [];
   }
+}
+
+/**
+ * Whether a stored section differs from its defaults: User settings' Servers page, which holds `accounts` now that it
+ * is no App settings section (settings split ruling 14).
+ */
+export function storedSectionModified(preferences: PreferencesWire, section: PreferencesStoredSectionWire): boolean {
+  return storedKeys(preferences, section).some((key) => isModified(preferences, key));
 }
 
 /** Whether anything in the section differs from its default — the sidebar's dot. */

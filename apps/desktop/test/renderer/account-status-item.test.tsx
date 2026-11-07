@@ -77,8 +77,18 @@ describe('AccountStatusItem', () => {
     fireEvent.click(item);
     await screen.findByTestId('account-sign-out-one.test');
     await screen.findByTestId('account-sign-out-two.test');
-    fireEvent.click(screen.getByTestId('account-manage'));
-    expect(useUiStore.getState().preferences).toEqual({ open: true, area: 'app', section: 'accounts' });
+  });
+
+  it('Account settings… opens User settings on Servers you’re signed in to', async () => {
+    useAccountStore.setState({ servers: [account('https://wb.test')] });
+    render(<AccountStatusItem />);
+    const item = screen.getByTestId('status-bar-account');
+    fireEvent.pointerDown(item, { button: 0, ctrlKey: false });
+    fireEvent.click(item);
+    const entry = await screen.findByTestId('account-manage');
+    expect(entry.textContent).toBe('Account settings…');
+    fireEvent.click(entry);
+    expect(useUiStore.getState().preferences).toEqual({ open: true, area: 'user', section: 'servers' });
   });
 
   it('the menu offers Manage team…', async () => {
@@ -93,16 +103,16 @@ describe('AccountStatusItem', () => {
     await vi.waitFor(() => expect(useUiStore.getState().teamDialog).toEqual({ open: true, url: 'https://wb.test' }));
   });
 
-  it('the menu offers Devices & tokens…, which opens that Preferences section', async () => {
+  it('Signed-in devices… opens User settings on Signed-in devices', async () => {
     useAccountStore.setState({ servers: [account('https://wb.test')] });
     render(<AccountStatusItem />);
     const item = screen.getByTestId('status-bar-account');
     fireEvent.pointerDown(item, { button: 0, ctrlKey: false });
     fireEvent.click(item);
-    const entry = await screen.findByTestId('account-devices-tokens');
-    expect(entry.textContent).toBe('Devices & tokens…');
+    const entry = await screen.findByTestId('account-devices');
+    expect(entry.textContent).toBe('Signed-in devices…');
     fireEvent.click(entry);
-    expect(useUiStore.getState().preferences).toEqual({ open: true, area: 'app', section: 'tokens' });
+    expect(useUiStore.getState().preferences).toEqual({ open: true, area: 'user', section: 'devices' });
   });
   describe('in a browser tab, whose env carries signOut', () => {
     it('offers one Sign out that calls env.signOut, never the account channel', async () => {

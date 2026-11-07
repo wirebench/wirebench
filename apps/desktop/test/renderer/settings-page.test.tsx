@@ -59,11 +59,11 @@ describe('Settings as a page', () => {
 
   it('lands on the section the caller asked for', async () => {
     renderInShell(<SettingsPage />);
-    useUiStore.getState().openPreferences('accounts');
+    useUiStore.getState().openPreferences('wsdl');
 
     const editor = await screen.findByTestId('preferences-editor');
     await waitFor(() => {
-      expect(currentSection(editor)).toBe('Accounts');
+      expect(currentSection(editor)).toBe('WSDL');
     });
   });
 
@@ -76,7 +76,7 @@ describe('Settings as a page', () => {
 
   it('forgets that section on close, so a plain open lands on the default', async () => {
     renderInShell(<SettingsPage />);
-    useUiStore.getState().openPreferences('accounts');
+    useUiStore.getState().openPreferences('wsdl');
     await screen.findByTestId('preferences-editor');
 
     useUiStore.getState().setPreferencesOpen(false);
@@ -160,13 +160,13 @@ describe('Settings as a page', () => {
   });
 });
 
-describe('the Server group (hosted edition spec §22.13)', () => {
+describe('App settings without the Server group (settings split spec §2)', () => {
   afterEach(() => {
     useAccountStore.setState({ servers: [] });
     useServerSettingsStore.getState().reset();
   });
 
-  it('reads the signed-in server’s settings when Settings opens, and shows the group to its server admin', async () => {
+  it('App settings has no Account or Server group, and reads no server settings', async () => {
     const get = vi.fn().mockResolvedValue({
       ok: true,
       value: {
@@ -195,7 +195,11 @@ describe('the Server group (hosted edition spec §22.13)', () => {
     });
     useUiStore.setState({ preferences: { open: true, area: 'app', section: undefined } });
     render(<SettingsPage />);
-    await waitFor(() => expect(screen.getByTestId('settings-nav-server')).toBeTruthy());
-    expect(get).toHaveBeenCalledWith({ url: 'https://wirebench.corp.example' });
+    const editor = await screen.findByTestId('preferences-editor');
+    expect(editor.querySelector('[data-testid="settings-nav-accounts"]')).toBeNull();
+    expect(editor.querySelector('[data-testid="settings-nav-tokens"]')).toBeNull();
+    expect(editor.querySelector('[data-testid="settings-nav-server"]')).toBeNull();
+    // Team settings reads its own server's settings; App settings has nothing to show them in.
+    expect(get).not.toHaveBeenCalled();
   });
 });

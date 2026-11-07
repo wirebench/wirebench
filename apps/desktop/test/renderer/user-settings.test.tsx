@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { MIN_PASSWORD_LENGTH as ENGINE_MIN } from '@wirebench/engine';
+import { MAX_DISPLAY_NAME_LENGTH as ENGINE_MAX_NAME, MIN_PASSWORD_LENGTH as ENGINE_MIN } from '@wirebench/engine';
 import type { AccountDeviceWire, AccountProfileWire, AccountWire } from '@wirebench/wire/wire-base';
 import { UserSettings } from '../../src/renderer/features/preferences/user/user-settings.js';
 import { MIN_PASSWORD_LENGTH } from '../../src/renderer/features/account/password-rules.js';
@@ -9,7 +9,7 @@ import { useAccountStore } from '../../src/renderer/state/account.js';
 import { usePreferencesStore } from '../../src/renderer/state/preferences.js';
 import { DEFAULT_PREFERENCES_WIRE } from '../../src/renderer/state/preferences-defaults.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
-import { useUserSettingsStore } from '../../src/renderer/state/user-settings.js';
+import { MAX_DISPLAY_NAME_LENGTH, useUserSettingsStore } from '../../src/renderer/state/user-settings.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 
 const ONE = 'https://one.test';
@@ -277,5 +277,9 @@ describe('User settings (settings split spec §4)', () => {
 
   it('keeps the renderer’s minimum password length equal to the engine’s', () => {
     expect(MIN_PASSWORD_LENGTH).toBe(ENGINE_MIN);
+  });
+
+  it('keeps the renderer’s display-name limit equal to the engine’s', () => {
+    expect(MAX_DISPLAY_NAME_LENGTH).toBe(ENGINE_MAX_NAME);
   });
 });

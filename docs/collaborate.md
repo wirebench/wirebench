@@ -250,7 +250,7 @@ this installation: it lives in the OS keychain (`secrets.json` names it under `w
 the value is never in a file) and expires after 30 days without use, or 180 days at most. The
 password is sent once to the server and kept nowhere.
 
-**Sign out** (status bar → *Sign out of <server>*, or Settings → Accounts) revokes the token on the
+**Sign out** (status bar → *Sign out of <server>*, or User settings → Servers you're signed in to) revokes the token on the
 server and forgets it here. If the server stops accepting the token — an admin removed the device, it
 expired — the app says so once, with **Sign in again**, and does nothing on its own.
 
@@ -263,10 +263,10 @@ is made.
 
 On Wirebench Server, every shared workspace belongs to a team, and what you can do in it depends on your role.
 Open **Account: Manage team…** from the palette, the status bar's account menu, or **Manage team…** beside a
-signed-in server under Settings → Accounts.
+signed-in server under User settings → Servers you're signed in to.
 
-Team management happens in the server's browser client. In the desktop app, **Manage team…** opens the server's
-team page in your default browser (you sign in there the first time), on the team of the open
+Team management happens in the server's browser client, on its Team settings page. In the desktop app,
+**Manage team…** opens that page in your default browser (you sign in there the first time), on the team of the open
 workspace when it is shared to that server. A server from an earlier release without its browser client keeps
 the dialog in the app. Signing in, choosing a team when you share or open a
 workspace, and sync stay in the desktop app.
