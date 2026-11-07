@@ -69,8 +69,7 @@ export const invitePageRoutes =
           state: 'open',
           email: row.email,
           secret,
-          // Only where the browser client is on: otherwise there is no browser app to land in.
-          ...(env.ctx.config.browserClient ? { browser: await browserAcceptFor(env, request, row) } : {}),
+          browser: await browserAcceptFor(env, request, row),
         });
       },
     );

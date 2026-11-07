@@ -9,6 +9,7 @@ import {
   loadConfig,
   migrationUrlOf,
   insecureUrlProblems,
+  retiredVariableNotes,
 } from '../../src/config.js';
 
 const required = {
@@ -223,7 +224,6 @@ describe('describeConfig', () => {
         'WIREBENCH_SERVER_AUDIT_FORWARD_URL',
         'WIREBENCH_SERVER_AUDIT_MAX_AGE_DAYS',
         'WIREBENCH_SERVER_BODY_LIMIT_MB',
-        'WIREBENCH_SERVER_BROWSER_CLIENT',
         'WIREBENCH_SERVER_CONTROL_DATABASE_URL',
         'WIREBENCH_SERVER_DATABASE_URL',
         'WIREBENCH_SERVER_DATA_DIR',
@@ -619,9 +619,9 @@ describe('scheduled-runs configuration (scheduled-runs §7)', () => {
 describe('browser client and egress configuration (hosted edition spec §17.1, §17.5)', () => {
   const KEY = Buffer.alloc(32, 7).toString('base64');
 
-  it('defaults to off, no key, private networks allowed and a 30 minute idle time', () => {
+  it('defaults to no key, private networks allowed and a 30 minute idle time', () => {
     const config = loadConfig(required, '1');
-    expect(config).toMatchObject({ browserClient: false, egressDenyPrivate: false, hostIdleMinutes: 30 });
+    expect(config).toMatchObject({ egressDenyPrivate: false, hostIdleMinutes: 30 });
     expect(config.secretsKey).toBeUndefined();
   });
 
@@ -629,19 +629,28 @@ describe('browser client and egress configuration (hosted edition spec §17.1, �
     const config = loadConfig(
       {
         ...required,
-        WIREBENCH_SERVER_BROWSER_CLIENT: 'true',
         WIREBENCH_SERVER_SECRETS_KEY: KEY,
         WIREBENCH_SERVER_EGRESS_DENY_PRIVATE: '1',
         WIREBENCH_SERVER_HOST_IDLE_MINUTES: '1440',
       },
       '1',
     );
-    expect(config).toMatchObject({ browserClient: true, egressDenyPrivate: true, hostIdleMinutes: 1440 });
+    expect(config).toMatchObject({ egressDenyPrivate: true, hostIdleMinutes: 1440 });
     expect(config.secretsKey).toEqual(Buffer.alloc(32, 7));
   });
 
-  it('accepts the browser client without the key: the server stores one in its data directory', () => {
-    expect(loadConfig({ ...required, WIREBENCH_SERVER_BROWSER_CLIENT: 'true' }, '1').secretsKey).toBeUndefined();
+  it('loads with the retired WIREBENCH_SERVER_BROWSER_CLIENT set, to any value, and says once it is not used', () => {
+    for (const value of ['true', 'false', 'yes']) {
+      const env = { ...required, WIREBENCH_SERVER_BROWSER_CLIENT: value };
+      const config = loadConfig(env, '1');
+      expect(config).not.toHaveProperty('browserClient');
+      expect(config.secretsKey).toBeUndefined();
+      expect(retiredVariableNotes(env)).toEqual([
+        'WIREBENCH_SERVER_BROWSER_CLIENT is no longer used (the browser client is always on); remove it',
+      ]);
+      expect(describeConfig(env).map((row) => row.variable)).not.toContain('WIREBENCH_SERVER_BROWSER_CLIENT');
+    }
+    expect(retiredVariableNotes(required)).toEqual([]);
   });
 
   it('accepts a key with the client off, and refuses a bad key or an idle time out of range', () => {
@@ -650,7 +659,6 @@ describe('browser client and egress configuration (hosted edition spec §17.1, �
       ['WIREBENCH_SERVER_SECRETS_KEY', 'c2hvcnQ='],
       ['WIREBENCH_SERVER_HOST_IDLE_MINUTES', '0'],
       ['WIREBENCH_SERVER_HOST_IDLE_MINUTES', '1441'],
-      ['WIREBENCH_SERVER_BROWSER_CLIENT', 'yes'],
     ] as const) {
       let caught: unknown;
       try {

@@ -12,7 +12,6 @@ import { describeDb } from '../../helpers/database.js';
 import { identityHarness, type IdentityHarness } from '../../helpers/identity.js';
 
 const ENV = {
-  WIREBENCH_SERVER_BROWSER_CLIENT: 'true',
   WIREBENCH_SERVER_SECRETS_KEY: Buffer.alloc(32, 7).toString('base64'),
 };
 const hosted = (config: ServerConfig): ServerConfig => ({ ...config, mode: 'hosted', appDomain: 'example.test' });

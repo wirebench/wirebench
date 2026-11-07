@@ -9,12 +9,12 @@ import { readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { Writable } from 'node:stream';
 import { afterAll, beforeAll, expect, it, vi } from 'vitest';
-import { BUILTIN_MODULES } from '../../../src/modules.js';
 import { startServer, type RunningServer } from '../../../src/serve.js';
 import { loadFixture0019, type Fixture0019 } from '../../fixtures/tenancy/load.js';
 import { describeDb, TEST_DATABASE_URL, testDatabase } from '../../helpers/database.js';
 import { mkTempDir, removeTempDir } from '../../helpers/git.js';
 import { freePort } from '../../helpers/net.js';
+import { SERVED_MODULES } from '../../helpers/browser-build.js';
 
 describeDb('a 0019 installation on one superuser URL (spec §19.4, owner ruling 2026-10-29)', () => {
   let db: Awaited<ReturnType<typeof testDatabase>>;
@@ -46,7 +46,7 @@ describeDb('a 0019 installation on one superuser URL (spec §19.4, owner ruling 
     server = await startServer(
       env,
       { stdout: { write: vi.fn() }, stderr: { write: vi.fn() }, env },
-      { signals: new EventEmitter(), exit: vi.fn(), logStream, modules: BUILTIN_MODULES },
+      { signals: new EventEmitter(), exit: vi.fn(), logStream, modules: SERVED_MODULES },
     );
   });
   afterAll(async () => {

@@ -79,7 +79,7 @@ export function ssoModule(options: SsoOptions = {}): ServerModule {
             idpEntityId: metadata.entityId,
             entityId: urls.entityId,
             acsUrl: urls.acsUrl,
-            ...(ctx.config.browserClient ? { browserAcsUrl: urls.browserAcsUrl } : {}),
+            browserAcsUrl: urls.browserAcsUrl,
             scimBaseUrl: urls.scimBaseUrl,
           },
           'saml sign-in on',
@@ -130,11 +130,11 @@ export function ssoModule(options: SsoOptions = {}): ServerModule {
       }
     },
 
-    async registerPublic(root: FastifyInstance, ctx: ServerContext): Promise<void> {
+    async registerPublic(root: FastifyInstance): Promise<void> {
       // Beside `/api/v1`, never inside it: a SCIM token must not reach the device-token routes (§6.2).
       await root.register(scimPlugin(shared!), { prefix: '/scim/v2' });
       // Hosted spec §17.2: the browser's SAML start sits beside identity's `/sign-in` page.
-      if (ctx.config.browserClient) browserSamlStartRoutes(shared!)(root);
+      browserSamlStartRoutes(shared!)(root);
     },
   };
 }

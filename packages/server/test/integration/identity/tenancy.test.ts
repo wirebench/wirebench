@@ -31,7 +31,6 @@ describeDb('identity in a tenant (tenancy Task 8)', () => {
     idp = await startFakeOidcIssuer();
     h = await identityHarness({
       env: {
-        WIREBENCH_SERVER_BROWSER_CLIENT: 'true',
         WIREBENCH_SERVER_SECRETS_KEY: Buffer.alloc(32, 7).toString('base64'),
         WIREBENCH_SERVER_OIDC_ISSUER: idp.url,
         WIREBENCH_SERVER_OIDC_CLIENT_ID: idp.clientId,

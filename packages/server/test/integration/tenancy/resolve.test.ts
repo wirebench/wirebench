@@ -23,7 +23,6 @@ import { OIDC_ENV, identityHarness, signedInUser, type IdentityHarness } from '.
 const PUBLIC_URL = 'https://wirebench.test';
 const APP_DOMAIN = 'example.test';
 const BROWSER_ENV = {
-  WIREBENCH_SERVER_BROWSER_CLIENT: 'true',
   WIREBENCH_SERVER_SECRETS_KEY: Buffer.alloc(32, 7).toString('base64'),
 };
 const hosted = (config: ServerConfig): ServerConfig => ({ ...config, mode: 'hosted', appDomain: APP_DOMAIN });

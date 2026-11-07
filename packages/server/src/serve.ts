@@ -18,6 +18,7 @@ import {
   migrationUrlOf,
   moduleConfigOf,
   MULTI_NEEDS_ENTERPRISE,
+  retiredVariableNotes,
   type ServerConfig,
 } from './config.js';
 import {
@@ -592,6 +593,8 @@ export async function startServer(
   /** What the keys step said, logged once the app's logger exists: counts only, never a key, a file or a value. */
   const stepNotes: { readonly level: 'info' | 'warn'; readonly message: string; readonly details: object }[] = [];
   if (keyed.generated !== undefined) stepNotes.push({ level: 'warn', message: keyed.generated, details: {} });
+  // A variable set for an older release still starts the server; it is named once, so an operator can drop it.
+  for (const note of retiredVariableNotes(env)) stepNotes.push({ level: 'info', message: note, details: {} });
   // Spec §19.10's order: the migrations, then the file step, then `prepare` and the writability check, so
   // `prepare` can never make an empty tenants/ tree beside a half-moved data directory.
   try {

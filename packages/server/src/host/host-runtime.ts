@@ -2,7 +2,7 @@
  * The typed boundary between the server and the host bundle (hosted edition spec §17.3). `@wirebench/host`
  * is source-only (ADR-0033), so the build bundles it with esbuild into `dist/host/bundle.js` and the
  * server reaches it only through this file: the shapes below, which `host-bundle/entry.ts` is typechecked
- * against, and {@link loadHostRuntime}, which imports the bundle only when the browser client is on.
+ * against, and {@link loadHostRuntime}, which imports the bundle at start-up.
  *
  * Nothing here imports the host: the server's `tsc -b` would refuse its sources (TS6059).
  */
@@ -138,29 +138,19 @@ export const HOST_BUNDLE_URL = new URL('../../dist/host/bundle.js', import.meta.
 const loaded = new Map<string, Promise<BundleExports>>();
 
 /**
- * The bundle's `createServerHost`, or `undefined` when the browser client is off, in which case the
- * bundle is never imported, so a server without it neither pays for it nor needs it built.
+ * The bundle's `createServerHost`. Every server serves the browser client, so every server needs the bundle built.
  *
- * @throws Error when the switch is on and the bundle is missing or is not one this server built.
+ * @throws Error when the bundle is missing or is not one this server built.
  */
-export async function loadHostRuntime(options: {
-  readonly browserClient: boolean;
-  readonly bundle?: URL;
-}): Promise<CreateServerHost | undefined> {
-  if (!options.browserClient) return undefined;
+export async function loadHostRuntime(options: { readonly bundle?: URL } = {}): Promise<CreateServerHost> {
   return (await bundleExports(options.bundle)).createServerHost;
 }
 
 /**
- * The bundle's shared socket loop (`runHostSocket` of `@wirebench/host`), or `undefined` when the browser
- * client is off. Loaded from the same bundle as {@link loadHostRuntime}'s host, so the server and the agent
- * run one implementation of the wire.
+ * The bundle's shared socket loop (`runHostSocket` of `@wirebench/host`). Loaded from the same bundle as
+ * {@link loadHostRuntime}'s host, so the server and the agent run one implementation of the wire.
  */
-export async function loadHostSocketLoop(options: {
-  readonly browserClient: boolean;
-  readonly bundle?: URL;
-}): Promise<RunSharedHostSocket | undefined> {
-  if (!options.browserClient) return undefined;
+export async function loadHostSocketLoop(options: { readonly bundle?: URL } = {}): Promise<RunSharedHostSocket> {
   return (await bundleExports(options.bundle)).runHostSocket;
 }
 

@@ -135,7 +135,6 @@ describeHosted('the hosted server end to end (spec §22.17)', () => {
       port,
       internalPort: await freePort(),
       smtpPort: smtp.port,
-      browserClient: true,
     });
     // The production list, with the browser build's stand-in and the control plane's clock and timer.
     const modules = BUILTIN_MODULES.map((module) => {

@@ -265,7 +265,6 @@ const inputSchema = z.object({
   schedulesAlertHosts: alertHostsText.optional(),
   smtpUrl: smtpUrlText.optional(),
   smtpFrom: z.email().optional(),
-  browserClient: booleanText('false'),
   secretsKey: keyText.transform((value) => Buffer.from(value, 'base64')).optional(),
   egressDenyPrivate: booleanText('false'),
   hostIdleMinutes: integerText(1, 1440, '30'),
@@ -737,15 +736,6 @@ export const CONFIG_VARIABLES: readonly ConfigVariable[] = [
     description: 'The sender address of email alerts; required with WIREBENCH_SERVER_SMTP_URL, and in hosted mode.',
   },
   {
-    env: 'WIREBENCH_SERVER_BROWSER_CLIENT',
-    key: 'browserClient',
-    required: false,
-    defaultText: 'false',
-    secret: false,
-    description:
-      'Serve the app in a browser tab at `/`: the browser sign-in page (`/sign-in`), cookie sessions and the tab’s socket (`/api/v1/host`), which runs a host per signed-in user. Needs WIREBENCH_SERVER_SECRETS_KEY. False, none of it runs.',
-  },
-  {
     env: 'WIREBENCH_SERVER_SECRETS_KEY',
     key: 'secretsKey',
     required: false,
@@ -1147,6 +1137,21 @@ function userOf(url: string): string | undefined {
   } catch {
     return undefined;
   }
+}
+
+/**
+ * Variables a server read once and no longer does. One set still starts the server: `serve` and `config check` each
+ * say once that it is ignored, so an operator can drop it.
+ */
+export const RETIRED_VARIABLES: readonly { readonly env: string; readonly why: string }[] = [
+  { env: 'WIREBENCH_SERVER_BROWSER_CLIENT', why: 'the browser client is always on' },
+];
+
+/** One line for each retired variable that `env` still sets; never its value. */
+export function retiredVariableNotes(env: NodeJS.ProcessEnv): string[] {
+  return RETIRED_VARIABLES.filter((variable) => env[variable.env] !== undefined).map(
+    (variable) => `${variable.env} is no longer used (${variable.why}); remove it`,
+  );
 }
 
 /** Parses `env` into a config or throws a {@link ConfigError} naming every problem at once. */

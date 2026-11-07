@@ -1,7 +1,7 @@
 /**
  * The host bundle's entry (hosted edition spec §17.3): `scripts/bundle-host.mjs` bundles this file, with
  * `@wirebench/host` and `@wirebench/wire`, into `dist/host/bundle.js`, which `src/host/host-runtime.ts`
- * imports when the browser client is on. Only the package root is imported: `@wirebench/host/desktop`
+ * imports at start-up. Only the package root is imported: `@wirebench/host/desktop`
  * is the Electron shell's (`pnpm check:host-boundary`).
  *
  * `tsconfig.json` beside this file typechecks it against the host's own types, which is what holds the

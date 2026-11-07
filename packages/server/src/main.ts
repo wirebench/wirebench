@@ -1,6 +1,13 @@
 import { join } from 'node:path';
 import { HELP_TEXT, parseServerArgs, UsageError } from './args.js';
-import { ConfigError, describeConfig, instanceModeOf, loadConfig, MULTI_NEEDS_ENTERPRISE } from './config.js';
+import {
+  ConfigError,
+  describeConfig,
+  instanceModeOf,
+  loadConfig,
+  MULTI_NEEDS_ENTERPRISE,
+  retiredVariableNotes,
+} from './config.js';
 import { runVerifyExportCommand } from './audit-log/cli.js';
 import { runAdminTenant } from './control-plane/cli.js';
 import { runAdmin } from './identity/cli.js';
@@ -54,6 +61,7 @@ export async function main(
             `instances: multi; ${MULTI_NEEDS_ENTERPRISE}: serve refuses with server-instances-need-enterprise otherwise\n`,
           );
         }
+        for (const note of retiredVariableNotes(io.env)) io.stdout.write(`${note}\n`);
         // Read only: `config check` never makes the key, it says where `serve` keeps it.
         if (config.secretsKey === undefined && storesSecretsKey(config))
           io.stdout.write(
@@ -69,10 +77,9 @@ export async function main(
             `OIDC redirect URI to register at the issuer: ${operatorPublicUrl(config)}/api/v1/auth/oidc/callback\n`,
           );
           // Hosted spec §17.2: sign-ins started from the browser come back to a second one.
-          if (config.browserClient)
-            io.stdout.write(
-              `OIDC redirect URI for the browser client: ${operatorPublicUrl(config)}/api/v1/auth/oidc/browser-callback\n`,
-            );
+          io.stdout.write(
+            `OIDC redirect URI for the browser client: ${operatorPublicUrl(config)}/api/v1/auth/oidc/browser-callback\n`,
+          );
         }
         return ExitCode.Ok;
       } catch (error) {

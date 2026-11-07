@@ -40,7 +40,6 @@ describeDb('the server host in two tenants (tenancy Task 18)', () => {
     build = await browserBuildFixture();
     t = await twoTenants({
       env: {
-        WIREBENCH_SERVER_BROWSER_CLIENT: 'true',
         WIREBENCH_SERVER_SECRETS_KEY: randomBytes(32).toString('base64'),
         WIREBENCH_SERVER_HOST_IDLE_MINUTES: '30',
       },

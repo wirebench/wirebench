@@ -18,7 +18,6 @@ import { idpMetadata } from '../../helpers/saml-idp.js';
 const ENV = {
   WIREBENCH_SERVER_SAML_IDP_METADATA: '/etc/wirebench/idp-metadata.xml',
   WIREBENCH_SERVER_SAML_DISPLAY_NAME: 'Example SSO',
-  WIREBENCH_SERVER_BROWSER_CLIENT: 'true',
   WIREBENCH_SERVER_SECRETS_KEY: Buffer.alloc(32, 7).toString('base64'),
 };
 const HOST = 'acme.example.test';

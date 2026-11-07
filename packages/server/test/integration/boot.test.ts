@@ -1,10 +1,12 @@
 import { EventEmitter } from 'node:events';
+import { Writable } from 'node:stream';
 import { chmod, mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ModuleConfig } from '../../src/config.js';
 import { permissiveLicense, type ServerModule } from '../../src/context.js';
 import { SECRETS_KEY_FILE } from '../../src/secrets-key-file.js';
+import { SERVED_MODULES } from '../helpers/browser-build.js';
 import { main } from '../../src/main.js';
 import { startServer, StartupError } from '../../src/serve.js';
 import { describeDb, testDatabase } from '../helpers/database.js';
@@ -131,6 +133,36 @@ describeDb('startServer', () => {
       expect(stderr.join('')).toContain(`WIREBENCH_SERVER_SECRETS_KEY: ${keyFile()} is not a secrets key`);
       expect(await readFile(keyFile(), 'utf8')).toBe('not a key\n');
     });
+  });
+
+  it('starts with the retired WIREBENCH_SERVER_BROWSER_CLIENT set, serves the browser client anyway, and says so once', async () => {
+    const lines: string[] = [];
+    const logStream = new Writable({
+      write(chunk: Buffer, _encoding, done) {
+        lines.push(chunk.toString('utf8'));
+        done();
+      },
+    });
+    const environment = { ...env(), WIREBENCH_SERVER_BROWSER_CLIENT: 'false', WIREBENCH_SERVER_LOG_LEVEL: 'info' };
+    const server = await startServer(
+      environment,
+      { stdout: { write: vi.fn() }, stderr: { write: vi.fn() }, env: environment },
+      { signals: new EventEmitter(), exit: vi.fn(), logStream, modules: SERVED_MODULES },
+    );
+    try {
+      const page = await fetch(`http://127.0.0.1:${server.port}/`, { redirect: 'manual' });
+      expect(page.status).toBe(303);
+      expect(page.headers.get('location')).toMatch(/^\/sign-in/);
+      expect((await fetch(`http://127.0.0.1:${server.port}/sign-in`)).status).toBe(200);
+      const meta = (await (await fetch(`http://127.0.0.1:${server.port}/api/v1/meta`)).json()) as {
+        capabilities: string[];
+      };
+      expect(meta.capabilities).toContain('browser-client');
+    } finally {
+      await server.close();
+    }
+    const notes = lines.filter((line) => line.includes('WIREBENCH_SERVER_BROWSER_CLIENT is no longer used'));
+    expect(notes).toHaveLength(1);
   });
 
   it('returns the context a module replaced the license on, not the permissive default', async () => {

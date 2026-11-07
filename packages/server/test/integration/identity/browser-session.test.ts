@@ -13,7 +13,6 @@ const DAY = 24 * 60 * 60 * 1000;
 const PUBLIC_URL = 'https://wirebench.test';
 const COOKIE = '__Host-wb_session';
 const BROWSER_ENV = {
-  WIREBENCH_SERVER_BROWSER_CLIENT: 'true',
   WIREBENCH_SERVER_SECRETS_KEY: Buffer.alloc(32, 7).toString('base64'),
 };
 
@@ -176,19 +175,5 @@ describeDb('cookie sessions on the identity guard (hosted spec §17.2)', () => {
     await sweepExpired({ ctx: h.ctx, settings, now: () => h.clock.now });
     const left = (await h.tdb.query('select id from browser_flows order by id')).rows.map((row) => row.id as string);
     expect(left).toEqual(['live']);
-  });
-});
-
-describeDb('cookie sessions with the browser client off', () => {
-  let h: IdentityHarness;
-  beforeEach(async () => {
-    h = await identityHarness();
-  });
-  afterEach(() => h.close());
-
-  it('ignores the cookie entirely', async () => {
-    const alice = await signedInUser(h, { email: 'alice@example.com', kind: 'browser' });
-    const res = await h.app.inject({ method: 'GET', url: '/api/v1/me', headers: withCookie(alice.token) });
-    expect(res.statusCode).toBe(401);
   });
 });

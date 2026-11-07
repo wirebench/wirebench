@@ -56,7 +56,6 @@ describeDb('signup to first sign-in (spec §22.6, §13 criterion 5)', () => {
       // The browser's form sign-in is the path the status poll's page leads to.
       env: {
         ...SMTP,
-        WIREBENCH_SERVER_BROWSER_CLIENT: 'true',
         WIREBENCH_SERVER_SECRETS_KEY: Buffer.alloc(32, 7).toString('base64'),
       },
       configure: hosted,

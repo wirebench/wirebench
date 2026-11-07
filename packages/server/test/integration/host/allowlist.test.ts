@@ -138,10 +138,10 @@ describe('the server host allowlist (§3.10)', () => {
   });
 
   it('classifies every channel a real server host registers', async () => {
-    const createServerHost = await loadHostRuntime({ browserClient: true });
+    const createServerHost = await loadHostRuntime();
     const dataDir = await mkdtemp(join(tmpdir(), 'wb-host-allowlist-'));
     try {
-      const host = await createServerHost!({
+      const host = await createServerHost({
         userId: '01JB3Z9K7Q4ZJ6X1V8W2M5N0PA',
         scope: scopeOf({ id: '00000000-0000-4000-8000-000000000001', slug: 'default' }),
         dataDir,

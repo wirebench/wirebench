@@ -1,6 +1,6 @@
 /**
  * The browser tab's page and files at the root (hosted edition spec §17.2, §17.6), registered through the
- * host module's `registerPublic` only when the browser client is on. The build is the desktop renderer's
+ * host module's `registerPublic` on every server. The build is the desktop renderer's
  * Vite build (`apps/desktop/dist-browser`), which `copy-browser` copies to `dist/browser/` after the
  * server's `build`:
  *
@@ -29,7 +29,7 @@ import { identitySettings } from '../identity/env.js';
 import { callerForToken } from '../identity/guard.js';
 import { tenantUrl } from '../tenancy/urls.js';
 
-/** What `GET /meta` lists while the browser client is on (team management in the browser §2.1). */
+/** What `GET /meta` lists, since every server serves the browser client (team management in the browser §2.1). */
 export const BROWSER_CLIENT_CAPABILITY = 'browser-client';
 
 /** The copied build, beside this file's compiled output; the same path from `src/host/` under a test. */

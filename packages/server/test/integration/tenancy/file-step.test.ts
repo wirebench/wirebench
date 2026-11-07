@@ -18,6 +18,7 @@ import { describeDb, testDatabase } from '../../helpers/database.js';
 import { mkTempDir, removeTempDir } from '../../helpers/git.js';
 import { freePort } from '../../helpers/net.js';
 import { canSymlink } from '../../helpers/symlink.js';
+import { SERVED_MODULES } from '../../helpers/browser-build.js';
 
 const USER = '01JB3Z9K7Q4ZJ6X1V8W2M5N0PA';
 /** `WIREBENCH_SERVER_SECRETS_KEY`: with it the step goes on through `keys` to `done` (Task 24). */
@@ -276,7 +277,7 @@ describeDb('the file step (spec §19.10)', () => {
       {
         signals: new EventEmitter(),
         exit: vi.fn(),
-        modules: BUILTIN_MODULES,
+        modules: SERVED_MODULES,
       },
     ).catch((caught: unknown) => caught);
     expect(error).toBeInstanceOf(StartupError);
@@ -366,7 +367,7 @@ describeDb('the file step on the frozen 0019 fixture', () => {
       {
         signals: new EventEmitter(),
         exit: vi.fn(),
-        modules: BUILTIN_MODULES,
+        modules: SERVED_MODULES,
       },
     );
   };
@@ -433,7 +434,7 @@ describeDb('the file step on the frozen 0019 fixture', () => {
       {
         signals: new EventEmitter(),
         exit: vi.fn(),
-        modules: BUILTIN_MODULES,
+        modules: SERVED_MODULES,
         logStream: new Writable({
           write(chunk: Buffer, _encoding, done) {
             logged.push(chunk.toString());

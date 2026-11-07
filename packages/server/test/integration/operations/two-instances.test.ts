@@ -108,7 +108,6 @@ describeDb('two instances on one database and one data directory (hosted spec §
       WIREBENCH_SERVER_INSTANCES: 'multi',
       WIREBENCH_SERVER_INSTANCE_URL: `http://127.0.0.1:${String(await freePort())}`,
       WIREBENCH_SERVER_SECRETS_KEY: SECRETS_KEY,
-      WIREBENCH_SERVER_BROWSER_CLIENT: 'true',
       WIREBENCH_SERVER_TENANT_SENDS_PER_MINUTE: String(SENDS_PER_MINUTE),
     };
     let hosts: HostInstances | undefined;

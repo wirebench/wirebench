@@ -8,14 +8,13 @@ import { connect } from 'node:net';
 import { afterEach, beforeEach, expect, it } from 'vitest';
 import { local, type SessionEnded } from '../../../src/context.js';
 import { BROWSER_CONTENT_SECURITY_POLICY } from '../../../src/host/browser-client.js';
-import { hostModule } from '../../../src/host/module.js';
 import { sessionCookieName } from '../../../src/identity/cookies.js';
 import * as repo from '../../../src/identity/repo.js';
 import { hashToken } from '../../../src/identity/tokens.js';
 import { mkTempDir, removeTempDir } from '../../helpers/git.js';
 import { describeDb } from '../../helpers/database.js';
 import { browserUser, hostHarness, openHost, PUBLIC_URL, type HostHarness } from '../../helpers/host.js';
-import { identityHarness, signedInUser } from '../../helpers/identity.js';
+import { signedInUser } from '../../helpers/identity.js';
 
 const COOKIE = sessionCookieName(PUBLIC_URL);
 const IMMUTABLE = 'public, max-age=31536000, immutable';
@@ -241,26 +240,8 @@ describeDb('the browser tab at the root (hosted spec §17.2, §17.6)', () => {
   });
 });
 
-describeDb('the browser tab while it cannot be served', () => {
-  it('is 404 at /, /sign-out and the assets with the browser client off', async () => {
-    const h = await identityHarness({ modules: [hostModule()] });
-    try {
-      const alice = await signedInUser(h, { email: 'alice@example.com', kind: 'browser' });
-      for (const url of ['/', '/workspaces/x', '/assets/index-Ab3_9-xZ.js']) {
-        const res = await h.app.inject({ method: 'GET', url, headers: cookie(alice.token) });
-        expect(res.statusCode, url).toBe(404);
-      }
-      const signOut = await h.app.inject({ method: 'POST', url: '/sign-out', headers: { origin: PUBLIC_URL } });
-      expect(signOut.statusCode).toBe(404);
-      // Team management in the browser §2.1: the desktop keeps its own Team dialog for such a server.
-      const meta = await h.app.inject({ method: 'GET', url: '/api/v1/meta' });
-      expect(meta.json<{ capabilities: string[] }>().capabilities).not.toContain('browser-client');
-    } finally {
-      await h.close();
-    }
-  });
-
-  it('refuses to start with the browser client on and no build', async () => {
+describeDb('the browser tab without a build', () => {
+  it('refuses to start with no build', async () => {
     const empty = await mkTempDir('wbs-no-browser-');
     try {
       await expect(hostHarness({ browserRoot: empty })).rejects.toThrow(/The browser client is not built/);

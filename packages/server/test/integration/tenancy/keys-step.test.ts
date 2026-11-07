@@ -24,6 +24,7 @@ import { loadFixture0019, type Fixture0019 } from '../../fixtures/tenancy/load.j
 import { describeDb, testDatabase } from '../../helpers/database.js';
 import { mkTempDir, removeTempDir } from '../../helpers/git.js';
 import { freePort } from '../../helpers/net.js';
+import { SERVED_MODULES } from '../../helpers/browser-build.js';
 
 interface SecretsFile {
   entries: Record<string, { value: string; encrypted: boolean; label?: string }>;
@@ -293,7 +294,7 @@ describeDb('the keys step on the frozen 0019 fixture (spec §19.10)', () => {
         const error = await startServer(
           env,
           { stdout: { write: vi.fn() }, stderr: { write: vi.fn() }, env },
-          { signals: new EventEmitter(), exit: vi.fn(), modules: BUILTIN_MODULES },
+          { signals: new EventEmitter(), exit: vi.fn(), modules: SERVED_MODULES },
         ).catch((caught: unknown) => caught);
         expect(error).toBeInstanceOf(StartupError);
         expect((error as Error).message).toContain('could not be moved or re-wrapped (EACCES)');
@@ -366,7 +367,7 @@ describeDb('the keys step on the frozen 0019 fixture (spec §19.10)', () => {
           {
             signals: new EventEmitter(),
             exit: vi.fn(),
-            modules: BUILTIN_MODULES,
+            modules: SERVED_MODULES,
             logStream: new Writable({
               write(chunk: Buffer, _encoding, done) {
                 logged.push(chunk.toString());

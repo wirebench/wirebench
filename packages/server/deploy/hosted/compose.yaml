@@ -82,7 +82,6 @@ services:
       WIREBENCH_SERVER_INSTANCE_URL: http://server:8091
       # Traefik is the only way in, so its X-Forwarded-Host and X-Forwarded-For are the request's.
       WIREBENCH_SERVER_TRUST_PROXY: 'true'
-      WIREBENCH_SERVER_BROWSER_CLIENT: 'true'
       WIREBENCH_SERVER_SECRETS_KEY: ${WIREBENCH_SECRETS_KEY:?set WIREBENCH_SECRETS_KEY in .env}
       # Each team's audit chain is sealed under a key derived from this one (spec §19.7), so its export verifies offline.
       WIREBENCH_SERVER_AUDIT_CHAIN_KEY: ${WIREBENCH_AUDIT_CHAIN_KEY:?set WIREBENCH_AUDIT_CHAIN_KEY in .env}

@@ -221,7 +221,6 @@ it.runIf(OUT !== undefined)(
     const target = await cookieTarget();
     const h = await identityHarness({
       env: {
-        WIREBENCH_SERVER_BROWSER_CLIENT: 'true',
         WIREBENCH_SERVER_SECRETS_KEY: FIXTURE_KEYS.secretsKey,
         WIREBENCH_SERVER_AUDIT_CHAIN_KEY: FIXTURE_KEYS.auditChainKey,
         WIREBENCH_SERVER_HOOKS_SECRET_KEY: FIXTURE_KEYS.hooksSecretKey,

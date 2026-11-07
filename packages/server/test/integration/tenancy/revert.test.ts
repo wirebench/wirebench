@@ -56,6 +56,7 @@ import { canSymlink } from '../../helpers/symlink.js';
 import { workspaceSnapshot } from '../../helpers/schedule-runs.js';
 import { seedSyncWorkspace } from '../../helpers/sync.js';
 import { call, seedTeam } from '../../helpers/teams.js';
+import { SERVED_MODULES } from '../../helpers/browser-build.js';
 
 /**
  * The migrations of a slice 4 server, through `0021`: the revert's only starting point. From `0022` on (slice 5) it
@@ -232,7 +233,7 @@ describeDb('admin tenancy revert on the frozen 0019 fixture (spec §19.10, plan 
     return startServer(
       withPort,
       { stdout: { write: vi.fn() }, stderr: { write: vi.fn() }, env: withPort },
-      { signals: new EventEmitter(), exit: vi.fn(), modules: BUILTIN_MODULES },
+      { signals: new EventEmitter(), exit: vi.fn(), modules: SERVED_MODULES },
     );
   };
 

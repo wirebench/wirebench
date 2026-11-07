@@ -4,7 +4,6 @@ import { LIVE_CAPABILITY, LIVE_CLOSE, LIVE_LIMITS, LIVE_PATH, type SyncPushReque
 import * as identityRepo from '../../../src/identity/repo.js';
 import { mintToken, newId } from '../../../src/identity/tokens.js';
 import type { ServerModule } from '../../../src/context.js';
-import { BUILTIN_MODULES } from '../../../src/modules.js';
 import { startServer, type RunningServer } from '../../../src/serve.js';
 import * as teamsRepo from '../../../src/teams/repo.js';
 import { describeDb, testDatabase } from '../../helpers/database.js';
@@ -15,6 +14,7 @@ import { liveHarness, openLive, rawUpgrade, type LiveHarness } from '../../helpe
 import { freePort } from '../../helpers/net.js';
 import { seedTeam, seedWorkspace } from '../../helpers/teams.js';
 import { directoryOf } from '../../../src/tenancy/tenancy.js';
+import { SERVED_MODULES } from '../../helpers/browser-build.js';
 
 /** The server's own tenant, which its routes lock in. */
 const scopeOf = (server: RunningServer) => directoryOf(server.ctx.tenancy).defaultScope();
@@ -243,7 +243,7 @@ describeDb('live-updates at shutdown (live-updates §5.1, host spec §3.7)', () 
     const server = await startServer(env(), io(), {
       signals: new EventEmitter(),
       exit: vi.fn(),
-      modules: BUILTIN_MODULES,
+      modules: SERVED_MODULES,
     });
     const { token, workspaceId } = await seedAdmin(server);
     const admitted = await openLive(server, token);
@@ -292,7 +292,7 @@ describeDb('live-updates at shutdown (live-updates §5.1, host spec §3.7)', () 
     });
     let draining = false;
     // Holds the drain open, as a host's quit path would, so the test can look at the server meanwhile.
-    const modules: ServerModule[] = BUILTIN_MODULES.map((m) =>
+    const modules: ServerModule[] = SERVED_MODULES.map((m) =>
       m.name !== 'live-updates'
         ? m
         : {
@@ -349,7 +349,7 @@ describeDb('live-updates at shutdown (live-updates §5.1, host spec §3.7)', () 
   });
 
   it('a drain listener that never ends holds the shutdown no longer than the drain time', async () => {
-    const modules: ServerModule[] = BUILTIN_MODULES.map((m) =>
+    const modules: ServerModule[] = SERVED_MODULES.map((m) =>
       m.name !== 'live-updates'
         ? m
         : {

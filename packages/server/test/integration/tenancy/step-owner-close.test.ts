@@ -6,12 +6,12 @@
 import { EventEmitter } from 'node:events';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { Database } from '../../../src/db/querier.js';
-import { BUILTIN_MODULES } from '../../../src/modules.js';
 import { startServer, StartupError } from '../../../src/serve.js';
 import { readTenancyStep } from '../../../src/tenancy/file-step.js';
 import { describeDb, testDatabase } from '../../helpers/database.js';
 import { mkTempDir, removeTempDir } from '../../helpers/git.js';
 import { freePort } from '../../helpers/net.js';
+import { SERVED_MODULES } from '../../helpers/browser-build.js';
 
 /** Every pool start-up made, with how often each was closed; the migration URL's is made with no options. */
 const made = vi.hoisted(() => [] as { owner: boolean; closes: number }[]);
@@ -66,7 +66,7 @@ describeDb('the file step on the migration connection', () => {
     const error = await startServer(
       env,
       { stdout: { write: vi.fn() }, stderr: { write: vi.fn() }, env },
-      { signals: new EventEmitter(), exit: vi.fn(), modules: BUILTIN_MODULES },
+      { signals: new EventEmitter(), exit: vi.fn(), modules: SERVED_MODULES },
     )
       .catch((caught: unknown) => caught)
       .finally(() => {

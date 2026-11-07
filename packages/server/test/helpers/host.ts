@@ -1,6 +1,6 @@
 /**
  * The host socket against a listening server (hosted edition spec §17.3): identity, teams-access,
- * server-sync, live-updates and the host module with the browser client on, the built host bundle
+ * server-sync, live-updates and the host module, the built host bundle
  * (`global-setup.ts` builds it) and manual timers for live and for the idle eviction. The client is
  * Node's WebSocket, given the `Cookie` and `Origin` a browser tab would send.
  */
@@ -77,7 +77,6 @@ export async function hostHarness(
         }
       : {}),
     env: {
-      WIREBENCH_SERVER_BROWSER_CLIENT: 'true',
       WIREBENCH_SERVER_SECRETS_KEY: randomBytes(32).toString('base64'),
       WIREBENCH_SERVER_HOST_IDLE_MINUTES: '30',
       ...options.env,

@@ -144,7 +144,6 @@ with the variable's name and the rule it broke, never the value.
 | `WIREBENCH_SERVER_SCHEDULES_ALERT_HOSTS` | no | — | The only hosts Slack, Teams and webhook alerts may go to: names or `*.example.com`, comma-separated. Unset, any https host. |
 | `WIREBENCH_SERVER_SMTP_URL` | no | — | Where email alerts are sent: `smtp://user:pass@mail.example.com:587` (STARTTLS when offered) or `smtps://…:465`. Unset, email alerts are refused. Required in hosted mode, with the sender: the entry, the signup and the team mails go out through it. Never logged. |
 | `WIREBENCH_SERVER_SMTP_FROM` | no | — | The sender address of email alerts; required with WIREBENCH_SERVER_SMTP_URL, and in hosted mode. |
-| `WIREBENCH_SERVER_BROWSER_CLIENT` | no | `false` | Serve the app in a browser tab at `/`: the browser sign-in page (`/sign-in`), cookie sessions and the tab’s socket (`/api/v1/host`), which runs a host per signed-in user. Needs WIREBENCH_SERVER_SECRETS_KEY. False, none of it runs. |
 | `WIREBENCH_SERVER_SECRETS_KEY` | no | — | Encrypts at rest the secrets each user stores through the browser client, under a key per user derived from this one: 32 random bytes, base64-encoded (`openssl rand -base64 32`). Unset, the server generates one at its first start and stores it in `secrets-key` in the data directory (mode 0600), and reads it from there at every later start; back that file up with the data directory, since without it the stored secrets cannot be opened. The variable wins over the file. Required with `WIREBENCH_SERVER_INSTANCES=multi`, where every instance needs the same key: the instances sign the terminal-share relay between them with a key derived from it. Required in hosted mode, where it wraps every team’s data key. Never logged. |
 | `WIREBENCH_SERVER_EGRESS_DENY_PRIVATE` | no | `false` | Also refuse private network addresses (10/8, 172.16/12, 192.168/16, 100.64/10, fc00::/7) for connections the server opens for users: scheduled runs, alerts and the browser client. Loopback, link-local and cloud metadata addresses are always refused. |
 | `WIREBENCH_SERVER_HOST_IDLE_MINUTES` | no | `30` | Minutes after a user’s last browser connection closes before the server stops that user’s host and frees its memory (1–1440). The user’s files stay. |
@@ -203,23 +202,23 @@ from the console the same way, or from the app by a server admin. The server sen
 send it however your team already talks. `admin list-invitations` and
 `admin revoke-invitation <id>` help an operator who cannot sign in yet.
 
-With the browser client on (`WIREBENCH_SERVER_BROWSER_CLIENT`), the invitation link's page also lets the invitee join
+The invitation link's page also lets the invitee join
 in the browser: they type a password twice, and their name if they like, or continue with the server's OIDC or SAML
 sign-in, and land signed in on the browser app. The form posts only from the page itself (its `Origin` is checked),
 counts against the same rate limit as the app's accept, and is the same accept: the invitation is used once whichever
-way it is taken. A password-reset link sets the new password the same way. With the browser client off the page only
-shows the code for the app.
+way it is taken. A password-reset link sets the new password the same way. The page keeps showing the code for the
+app.
 
 ## Sign-in
 
 - **Local accounts** (email and password) are on unless `WIREBENCH_SERVER_LOCAL_AUTH` is `false`.
 - **OpenID Connect** is on once `WIREBENCH_SERVER_OIDC_ISSUER` is set. Register the redirect URI that
   `config check` prints, `<public URL>/api/v1/auth/oidc/callback`, at the identity
-  provider. With the browser client on, also register `<public URL>/api/v1/auth/oidc/browser-callback`,
+  provider. For the browser client, also register `<public URL>/api/v1/auth/oidc/browser-callback`,
   which `config check` prints too. A login is linked to an existing account or an open invitation by the
   provider's verified email. It never creates an account on its own.
 - **SAML** is on once `WIREBENCH_SERVER_SAML_IDP_METADATA` is set, on an Enterprise server. SCIM
-  provisioning comes with it. With the browser client on, the IdP also needs a second ACS URL,
+  provisioning comes with it. For the browser client, the IdP also needs a second ACS URL,
   `<public URL>/api/v1/auth/saml/browser-acs`. See
   [SAML sign-in and SCIM provisioning](/wirebench/docs/guides/server-saml-scim/).
 - Sign-in and invitation endpoints accept ten attempts a minute per address and per email. The counters
@@ -245,10 +244,10 @@ becomes the first admin of each. Team admins do the rest:
 | editor | yes           | yes           | yes  | no            | no     |
 | admin  | yes           | yes           | yes  | yes           | yes    |
 
-The dialog lives in the browser client. With it on, the desktop app's **Manage team…** opens `<public URL>/?panel=team`
+The dialog lives in the browser client. The desktop app's **Manage team…** opens `<public URL>/?panel=team`
 in the default browser, on the team of the open workspace when it is shared to this server; `GET /api/v1/meta` lists
-`browser-client` so the app can tell. On a server with the browser client off, the app keeps the dialog in its own
-window.
+`browser-client` so the app can tell. On a server from an earlier release without it, the app keeps the dialog in
+its own window.
 
 Team admins and server admins are admins of every workspace of their teams. To anyone without a role, a
 workspace does not exist. Deleting a workspace moves its repository under `<data dir>/tmp/`; nothing is
@@ -265,8 +264,8 @@ forward:
   Without them, the app shows *Reconnecting…* and falls back to polling; sync keeps working.
 - `/hooks/` with every method, the request body and the client's address, when catch URLs are on.
 - `/scim/v2/` with every method, when an identity provider provisions accounts over SCIM.
-- The whole origin, and `/api/v1/host` with the `Upgrade` and `Connection` headers, when the
-  [browser client](/wirebench/docs/guides/server-browser-client/#behind-a-reverse-proxy) is on.
+- The whole origin, and `/api/v1/host` with the `Upgrade` and `Connection` headers, for the
+  [browser client](/wirebench/docs/guides/server-browser-client/#behind-a-reverse-proxy).
 
 With nginx:
 
