@@ -139,13 +139,7 @@ describe('server platform surface (§17.3)', () => {
 describe('loadHostRuntime', () => {
   const missing = new URL('file:///nonexistent/wirebench/host/bundle.js');
 
-  it('imports nothing while the browser client is off', async () => {
-    expect(await loadHostRuntime({ browserClient: false, bundle: missing })).toBeUndefined();
-  });
-
-  it('says to build the server when the switch is on and the bundle is missing', async () => {
-    await expect(loadHostRuntime({ browserClient: true, bundle: missing })).rejects.toThrow(
-      'The host bundle could not be loaded',
-    );
+  it('says to build the server when the bundle is missing', async () => {
+    await expect(loadHostRuntime({ bundle: missing })).rejects.toThrow('The host bundle could not be loaded');
   });
 });

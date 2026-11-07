@@ -265,7 +265,6 @@ const inputSchema = z.object({
   schedulesAlertHosts: alertHostsText.optional(),
   smtpUrl: smtpUrlText.optional(),
   smtpFrom: z.email().optional(),
-  browserClient: booleanText('false'),
   secretsKey: keyText.transform((value) => Buffer.from(value, 'base64')).optional(),
   egressDenyPrivate: booleanText('false'),
   hostIdleMinutes: integerText(1, 1440, '30'),
@@ -737,21 +736,12 @@ export const CONFIG_VARIABLES: readonly ConfigVariable[] = [
     description: 'The sender address of email alerts; required with WIREBENCH_SERVER_SMTP_URL, and in hosted mode.',
   },
   {
-    env: 'WIREBENCH_SERVER_BROWSER_CLIENT',
-    key: 'browserClient',
-    required: false,
-    defaultText: 'false',
-    secret: false,
-    description:
-      'Serve the app in a browser tab at `/`: the browser sign-in page (`/sign-in`), cookie sessions and the tab’s socket (`/api/v1/host`), which runs a host per signed-in user. Needs WIREBENCH_SERVER_SECRETS_KEY. False, none of it runs.',
-  },
-  {
     env: 'WIREBENCH_SERVER_SECRETS_KEY',
     key: 'secretsKey',
     required: false,
     secret: true,
     description:
-      'Encrypts at rest the secrets each user stores through the browser client, under a key per user derived from this one: 32 random bytes, base64-encoded (`openssl rand -base64 32`). Required when WIREBENCH_SERVER_BROWSER_CLIENT is on, and with `WIREBENCH_SERVER_INSTANCES=multi`, where every instance needs the same key: the instances sign the terminal-share relay between them with a key derived from it. Required in hosted mode, where it wraps every team’s data key.',
+      'Encrypts at rest the secrets each user stores through the browser client, under a key per user derived from this one: 32 random bytes, base64-encoded (`openssl rand -base64 32`). Unset, the server generates one at its first start and stores it in `secrets-key` in the data directory (mode 0600), and reads it from there at every later start; back that file up with the data directory, since without it the stored secrets cannot be opened. The variable wins over the file. Required with `WIREBENCH_SERVER_INSTANCES=multi`, where every instance needs the same key: the instances sign the terminal-share relay between them with a key derived from it. Required in hosted mode, where it wraps every team’s data key.',
   },
   {
     env: 'WIREBENCH_SERVER_EGRESS_DENY_PRIVATE',
@@ -1149,6 +1139,21 @@ function userOf(url: string): string | undefined {
   }
 }
 
+/**
+ * Variables a server read once and no longer does. One set still starts the server: `serve` and `config check` each
+ * say once that it is ignored, so an operator can drop it.
+ */
+export const RETIRED_VARIABLES: readonly { readonly env: string; readonly why: string }[] = [
+  { env: 'WIREBENCH_SERVER_BROWSER_CLIENT', why: 'the browser client is always on' },
+];
+
+/** One line for each retired variable that `env` still sets; never its value. */
+export function retiredVariableNotes(env: NodeJS.ProcessEnv): string[] {
+  return RETIRED_VARIABLES.filter((variable) => env[variable.env] !== undefined).map(
+    (variable) => `${variable.env} is no longer used (${variable.why}); remove it`,
+  );
+}
+
 /** Parses `env` into a config or throws a {@link ConfigError} naming every problem at once. */
 export function loadConfig(env: NodeJS.ProcessEnv, version: string): ServerConfig {
   const { input, problems: fileProblems } = inputFrom(env);
@@ -1250,12 +1255,6 @@ export function loadConfig(env: NodeJS.ProcessEnv, version: string): ServerConfi
         ? { variable: 'WIREBENCH_SERVER_SMTP_URL', message: 'is required when WIREBENCH_SERVER_SMTP_FROM is set' }
         : { variable: 'WIREBENCH_SERVER_SMTP_FROM', message: 'is required when WIREBENCH_SERVER_SMTP_URL is set' },
     );
-  }
-  if (config.browserClient && config.mode !== 'hosted' && config.secretsKey === undefined) {
-    problems.push({
-      variable: 'WIREBENCH_SERVER_SECRETS_KEY',
-      message: 'is required when WIREBENCH_SERVER_BROWSER_CLIENT is on; set the key or turn the browser client off',
-    });
   }
   if (config.proxyListen !== undefined && config.proxyTokenFile === undefined) {
     problems.push({

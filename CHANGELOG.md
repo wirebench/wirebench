@@ -7,19 +7,33 @@ All notable changes to this project are documented here. The format follows
 ## [Unreleased]
 
 ### Added
-- **Accept an invitation in the browser.** With the browser client on, an invitation link's page lets the invitee
+- **Accept an invitation in the browser.** An invitation link's page lets the invitee
   choose a password (typed twice) and their name, or continue with the team's single sign-on, and lands them signed
   in on the browser app. A password-reset link sets the new password the same way. The page still shows the code
   for the desktop app, which keeps working as before.
 
 ### Changed
-- **Team management moves to the browser.** On a server with the browser client on
-  (`WIREBENCH_SERVER_BROWSER_CLIENT`), the desktop app's **Manage team…** (the palette's *Account: Manage team…*, the
+- **The browser client is always on (server).** Every server serves the app in a browser tab at `/`, with the
+  `/sign-in` page, cookie sessions, `/api/v1/host`, the invitation page's browser form and local-agent pairing.
+  `WIREBENCH_SERVER_BROWSER_CLIENT` is removed: a server that still sets it starts as usual and logs once that the
+  variable is no longer used, so it can be dropped. Register the browser's OIDC redirect URI and second SAML ACS URL
+  at the identity provider if you have not (`config check` prints the OIDC one). A server run from a checkout needs
+  the browser build (`pnpm --filter @wirebench/desktop build:browser`, then `pnpm --filter @wirebench/server
+  copy-browser`); the image carries it.
+- **The server makes its own secrets key (server).** A server not given `WIREBENCH_SERVER_SECRETS_KEY` generates
+  one at its first start, 32 random bytes in base64, and stores it in `secrets-key` in the data directory (mode 0600,
+  written once and never replaced), then reads it at every later start. It logs once that it made a key and where:
+  back that file up with the data directory, since without it the secrets users stored on the server cannot be
+  opened. The variable, when set, wins over the file. A key file that cannot be read, is not a 32-byte key, or is
+  readable by the group or others fails the start. Hosted mode and `WIREBENCH_SERVER_INSTANCES=multi` still require
+  the variable, since every instance needs the same key. `migrate` and `admin tenancy` read the stored key and never
+  make one.
+- **Team management moves to the browser.** The desktop app's **Manage team…** (the palette's *Account: Manage team…*, the
   status bar's account menu and Settings → Accounts) opens the server's team page in your default browser, on the
   same server and, when the open workspace is shared there, on its team. Members, workspaces, invitations, access,
   the license, the audit log, provisioning and the domain are managed there. Signing in, choosing a team when you
-  share or open a workspace, and sync stay in the desktop. A server without the browser client keeps the dialog in
-  the app. `GET /api/v1/meta` lists `browser-client` while it is on.
+  share or open a workspace, and sync stay in the desktop. A server from an earlier release without the browser
+  client keeps the dialog in the app. `GET /api/v1/meta` lists `browser-client`.
 
 ## [7.0.0] - 2026-11-06
 

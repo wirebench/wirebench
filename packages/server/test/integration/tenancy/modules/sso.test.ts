@@ -29,7 +29,6 @@ const keys = testKeys();
 const DAY = 86_400_000;
 const COOKIE = '__Host-wb_session';
 const ENV = {
-  WIREBENCH_SERVER_BROWSER_CLIENT: 'true',
   WIREBENCH_SERVER_SECRETS_KEY: Buffer.alloc(32, 7).toString('base64'),
 };
 

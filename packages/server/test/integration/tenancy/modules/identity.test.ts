@@ -14,7 +14,6 @@ import { countIn, twoTenants, type Tenant, type TwoTenants } from './two-tenants
 const PASSWORD = 'correct horse battery';
 const DAY = 86_400_000;
 const BROWSER_ENV = {
-  WIREBENCH_SERVER_BROWSER_CLIENT: 'true',
   WIREBENCH_SERVER_SECRETS_KEY: Buffer.alloc(32, 7).toString('base64'),
 };
 

@@ -59,8 +59,7 @@ database, one data directory; run it behind TLS. Design: `docs/specs/2026-09-24-
 | `WIREBENCH_SERVER_SCHEDULES_ALERT_HOSTS` | no | — | The only hosts Slack, Teams and webhook alerts may go to: names or `*.example.com`, comma-separated. Unset, any https host. |
 | `WIREBENCH_SERVER_SMTP_URL` | no | — | Where email alerts are sent: `smtp://user:pass@mail.example.com:587` (STARTTLS when offered) or `smtps://…:465`. Unset, email alerts are refused. Required in hosted mode, with the sender: the entry, the signup and the team mails go out through it. Never logged. |
 | `WIREBENCH_SERVER_SMTP_FROM` | no | — | The sender address of email alerts; required with WIREBENCH_SERVER_SMTP_URL, and in hosted mode. |
-| `WIREBENCH_SERVER_BROWSER_CLIENT` | no | `false` | Serve the app in a browser tab at `/`: the browser sign-in page (`/sign-in`), cookie sessions and the tab’s socket (`/api/v1/host`), which runs a host per signed-in user. Needs WIREBENCH_SERVER_SECRETS_KEY. False, none of it runs. |
-| `WIREBENCH_SERVER_SECRETS_KEY` | no | — | Encrypts at rest the secrets each user stores through the browser client, under a key per user derived from this one: 32 random bytes, base64-encoded (`openssl rand -base64 32`). Required when WIREBENCH_SERVER_BROWSER_CLIENT is on, and with `WIREBENCH_SERVER_INSTANCES=multi`, where every instance needs the same key: the instances sign the terminal-share relay between them with a key derived from it. Required in hosted mode, where it wraps every team’s data key. Never logged. |
+| `WIREBENCH_SERVER_SECRETS_KEY` | no | — | Encrypts at rest the secrets each user stores through the browser client, under a key per user derived from this one: 32 random bytes, base64-encoded (`openssl rand -base64 32`). Unset, the server generates one at its first start and stores it in `secrets-key` in the data directory (mode 0600), and reads it from there at every later start; back that file up with the data directory, since without it the stored secrets cannot be opened. The variable wins over the file. Required with `WIREBENCH_SERVER_INSTANCES=multi`, where every instance needs the same key: the instances sign the terminal-share relay between them with a key derived from it. Required in hosted mode, where it wraps every team’s data key. Never logged. |
 | `WIREBENCH_SERVER_EGRESS_DENY_PRIVATE` | no | `false` | Also refuse private network addresses (10/8, 172.16/12, 192.168/16, 100.64/10, fc00::/7) for connections the server opens for users: scheduled runs, alerts and the browser client. Loopback, link-local and cloud metadata addresses are always refused. |
 | `WIREBENCH_SERVER_HOST_IDLE_MINUTES` | no | `30` | Minutes after a user’s last browser connection closes before the server stops that user’s host and frees its memory (1–1440). The user’s files stay. |
 | `WIREBENCH_SERVER_INSTANCES` | no | `single` | `single`: one server process. `multi`: several instances against one database and one data volume, which needs an Enterprise license that is valid or in grace (the start is refused otherwise), WIREBENCH_SERVER_INSTANCE_URL and WIREBENCH_SERVER_SECRETS_KEY. |
@@ -274,8 +273,8 @@ on a compose install the owner, `wirebench`, is one. An owner that is not a supe
 first takes them with `GRANT wirebench_app TO <owner>;`, which a role that created the app role with `CREATEROLE`
 may do on PostgreSQL 16 and later; otherwise a superuser, or the role that created it, runs both statements.
 
-The image carries the browser client's build. A server run from a checkout with
-`WIREBENCH_SERVER_BROWSER_CLIENT` on needs it too, or it refuses to start: run
+The image carries the browser client's build. A server run from a checkout needs it too, or it refuses to start:
+run
 `pnpm --filter @wirebench/desktop build:browser`, then `pnpm --filter @wirebench/server copy-browser`
 after the server's `pnpm build`.
 
@@ -389,16 +388,15 @@ invitation is created the same way or from the app by a server admin; the link i
 however the team already talks — the server sends no email. `admin list-invitations` and
 `admin revoke-invitation <id>` exist for an operator who cannot yet sign in.
 
-With the browser client on (`WIREBENCH_SERVER_BROWSER_CLIENT`), the link's page also accepts in the browser: a
+The link's page also accepts in the browser: a
 form (`POST /invite/<code>`, same-origin only, rate-limited like `POST /api/v1/invitations/accept`) takes a password
 typed twice and an optional name, runs the same accept, sets the browser session and lands on `/`; the tenant's OIDC
-and SAML methods are offered beside it. The page keeps showing the code for the desktop app. With the browser client
-off, the page is the code alone.
+and SAML methods are offered beside it. The page keeps showing the code for the desktop app.
 
 Two sign-in methods, both on by default once configured: local accounts (email and password,
 `WIREBENCH_SERVER_LOCAL_AUTH`) and OpenID Connect (`WIREBENCH_SERVER_OIDC_*`). With OIDC, register
 the redirect URI `wirebench-server config check` prints (`<public URL>/api/v1/auth/oidc/callback`)
-at the identity provider. With the browser client on (`WIREBENCH_SERVER_BROWSER_CLIENT`), also
+at the identity provider. For the browser client, also
 register a second redirect URI, `<public URL>/api/v1/auth/oidc/browser-callback`, which the same
 command prints too: sign-ins started from the browser's `/sign-in` page come back there. A login is
 linked to an existing account, or to an open invitation, by the provider's **verified** email, and
@@ -416,7 +414,7 @@ needs the entity ID `<public URL>/api/v1/auth/saml/metadata` and the ACS URL
 `<public URL>/api/v1/auth/saml/acs`; `serve` logs both. The metadata is read at start-up, so an IdP
 certificate rotation needs a restart. SAML never creates an account: SCIM or an invitation does.
 
-With the browser client on, the IdP also needs a second ACS URL, `<public URL>/api/v1/auth/saml/browser-acs`,
+For the browser client, the IdP also needs a second ACS URL, `<public URL>/api/v1/auth/saml/browser-acs`,
 for sign-ins started from the browser. `serve` logs it too, but the SP metadata names only the first, so
 add it at the IdP by hand. SAML from the browser needs an `https://` public URL: the IdP posts the response
 from its own site, and browsers only send the cookie that ties it to the sign-in when it is `Secure`.
@@ -493,9 +491,9 @@ the rest, from the **Account: Manage team…** dialog or the API:
 | editor | yes           | yes           | yes  | no            | no     |
 | admin  | yes           | yes           | yes  | yes           | yes    |
 
-The dialog is the browser client's. With it on, the desktop app's _Manage team…_ opens `<public URL>/?panel=team`
-in the default browser (`GET /api/v1/meta` lists `browser-client`); with it off, the app keeps the dialog in its
-window.
+The dialog is the browser client's. The desktop app's _Manage team…_ opens `<public URL>/?panel=team`
+in the default browser (`GET /api/v1/meta` lists `browser-client`); against a server from an earlier release that
+does not list it, the app keeps the dialog in its window.
 
 Team admins and server admins are admins of every workspace of their teams. To anyone without a role,
 a workspace (or a team) does not exist: the API answers `404`, never `403`. Deleting a workspace moves
@@ -560,11 +558,14 @@ API stays the source of truth; while connected, it polls only every five minutes
 
 The server can serve the app itself in a browser tab at its public URL, so a teammate opens a team
 workspace without installing anything. It is the desktop app's own interface, run against a host the
-server keeps for each signed-in user. Off by default: an upgrade opens no new sign-in page and no
-server-side send path until an operator asks for them.
+server keeps for each signed-in user. Every server serves it; `WIREBENCH_SERVER_BROWSER_CLIENT`, which switched
+it on in earlier releases, is no longer read, and a server that still sets it starts and logs once that it can go.
 
-- **Switching it on.** Set `WIREBENCH_SERVER_BROWSER_CLIENT=true` and `WIREBENCH_SERVER_SECRETS_KEY`
-  (32 random bytes, base64: `openssl rand -base64 32`); `config check` refuses the one without the other.
+- **The secrets key.** Users' secrets are sealed under `WIREBENCH_SERVER_SECRETS_KEY` (32 random bytes, base64:
+  `openssl rand -base64 32`). Unset, the server generates one at its first start, stores it in `secrets-key` in
+  the data directory (mode 0600, written once and never replaced) and logs where; back that file up with the data
+  directory. The variable wins over the file. A key file that cannot be read, is not a key, or is readable by the
+  group or others fails the start. Hosted mode and `WIREBENCH_SERVER_INSTANCES=multi` require the variable.
   The public URL should be `https://`: the session cookie is `__Host-wb_session` (`Secure`, `HttpOnly`,
   `SameSite=Lax`), and on an `http://` URL allowed by `WIREBENCH_SERVER_ALLOW_INSECURE_PUBLIC_URL` it
   falls back to a plain `wb_session`, for development only.
@@ -703,8 +704,7 @@ sends those requests instead. The desktop app is one (_Pair this machine…_ in 
 Paired browsers); `wirebench agent` is the same agent without a window, for a machine with only the CLI
 ([docs/cli.md](../../docs/cli.md#wirebench-agent)). The two are separate agents, each with its own pairings,
 key and allowlist; one agent per machine and server is the intended set-up. Both may be paired, and then a
-tab sends a request that reads a team secret through the desktop app's. The agent routes exist only when
-`WIREBENCH_SERVER_BROWSER_CLIENT` is on.
+tab sends a request that reads a team secret through the desktop app's.
 
 - **Pairing.** In the tab, Settings → This machine → _Pair this machine_ shows a six-character code. Type it
   into the desktop app's _Pair this machine…_, or run `wirebench agent pair <code> --server <public URL>`.

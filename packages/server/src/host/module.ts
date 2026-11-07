@@ -1,8 +1,8 @@
 /**
  * The `host` ServerModule (hosted edition spec §5.2, §17.3): `GET /api/v1/host`, a browser tab's socket
  * to the signed-in user's host, and at the root the tab's page and files (`browser-client.ts`, §17.6).
- * It registers nothing unless `WIREBENCH_SERVER_BROWSER_CLIENT` is on, and
- * then loads the host bundle at start-up, so a server without a built bundle fails to start rather than
+ * Every server serves the browser client, so it
+ * loads the host bundle at start-up, so a server without a built bundle fails to start rather than
  * on the first socket.
  *
  * It comes after `terminal-shares`, after `live-updates` in any case: its route needs the
@@ -137,24 +137,14 @@ export function hostModule(options: HostModuleOptions = {}): ServerModule {
 
     async register(app: FastifyInstance, ctx: ServerContext): Promise<void> {
       const { config } = ctx;
-      if (!config.browserClient) return;
       // Team management in the browser §2.1: the desktop opens the team page here only when this is listed.
       ctx.meta.addCapability(BROWSER_CLIENT_CAPABILITY);
-      const createServerHost = await loadHostRuntime({
-        browserClient: true,
-        ...(options.bundle !== undefined ? { bundle: options.bundle } : {}),
-      });
-      const runSocket = await loadHostSocketLoop({
-        browserClient: true,
-        ...(options.bundle !== undefined ? { bundle: options.bundle } : {}),
-      });
+      const bundle = options.bundle !== undefined ? { bundle: options.bundle } : {};
+      const createServerHost = await loadHostRuntime(bundle);
+      const runSocket = await loadHostSocketLoop(bundle);
       const runLive = app.liveConnection;
-      if (
-        createServerHost === undefined ||
-        runSocket === undefined ||
-        runLive === undefined ||
-        config.secretsKey === undefined
-      ) {
+      // The key is the variable's or the one `serve` stored (`secrets-key-file.ts`); a context built without one fails.
+      if (runLive === undefined || config.secretsKey === undefined) {
         throw new Error('the host module needs the host bundle, the live module and WIREBENCH_SERVER_SECRETS_KEY');
       }
       /** Set once the migration's steps are seen `done`; nothing moves them back while this process serves. */
@@ -428,7 +418,6 @@ export function hostModule(options: HostModuleOptions = {}): ServerModule {
 
     // The tab itself (spec §17.2, §17.6): `/`, the renderer's other page paths and the build's assets.
     async registerPublic(root: FastifyInstance, ctx: ServerContext): Promise<void> {
-      if (!ctx.config.browserClient) return;
       await browserClientRoutes(root, ctx, {
         now,
         ...(options.browserRoot !== undefined ? { root: options.browserRoot } : {}),

@@ -1,7 +1,6 @@
 /**
  * `POST /invite/:secret`: the invitation page's own form, which accepts an invitation in the browser
- * (team management in the browser §2.3). Registered in the browser sign-in routes' form scope, so only
- * when `WIREBENCH_SERVER_BROWSER_CLIENT` is on. It runs the desktop accept's claim (`claimInvitation`:
+ * (team management in the browser §2.3). Registered in the browser sign-in routes' form scope. It runs the desktop accept's claim (`claimInvitation`:
  * the one conditional `UPDATE`, the seat check, the hooks), then signs the browser in as the sign-in
  * form does and sends it to `/`. The password is whatever the person typed; nothing here chooses one.
  */

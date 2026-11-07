@@ -171,56 +171,55 @@ export const authOidcRoutes =
     );
 
     // The browser client's callback (hosted spec §17.2): the same checks as above, then the session
-    // cookie instead of a grant for the loopback. Registered only when the browser client is on.
-    if (env.ctx.config.browserClient)
-      app.get(
-        '/auth/oidc/browser-callback',
-        {
-          config: { cookieAuth: false },
-          preHandler: [rateLimit(env, (request) => [ipKey(request)])],
-          schema: { querystring: jsonSchema(oidcCallbackQuerySchema, { io: 'input' }) },
-        },
-        async (request, reply) => {
-          const provider = await requireProvider(env, request);
-          const query = request.query as OidcCallbackQuery;
-          const flow = await takeBrowserFlow(env, request, reply, 'oidc', query.state);
-          if (flow === undefined) return sendSignInPage(reply, env.ctx, { status: 400, message: FLOW_EXPIRED_MESSAGE });
-          const refuse = async (status: number, reason: string, email?: string) => {
-            await env.ctx.tenancy.db(request.tenant).transaction((tx) =>
-              recordAudit(env.ctx.hooks, tx, {
-                ...auditSource(request),
-                ...ANONYMOUS_SOURCE,
-                action: 'auth.sign_in_failed',
-                target: { kind: 'server' },
-                details: { method: 'oidc', reason, emailLower: email?.toLowerCase() ?? null },
-              }),
-            );
-            return sendSignInPage(reply, env.ctx, {
-              status,
-              message: refusalMessage(reason),
-              redirectTo: flow.redirectTo,
-            });
-          };
-          if (query.code === undefined || query.error !== undefined) return refuse(400, 'identity-oidc-refused');
-          let claims: OidcClaims;
-          try {
-            claims = await provider.exchange({
-              callbackUrl: new URL(request.url, primaryUrl(env.ctx.config, request)),
-              state: query.state,
-              nonce: flow.nonce ?? '',
-              codeVerifier: flow.codeVerifier ?? '',
-            });
-          } catch (error) {
-            request.log.warn({ err: error, flowId: flow.id }, 'oidc code exchange failed');
-            return refuse(502, 'identity-oidc-failed');
-          }
-          // §6: the issuer is pinned from configuration.
-          if (claims.issuer !== provider.issuer) return refuse(502, 'identity-oidc-failed', claims.email);
-          const linked = await linkClaims(env, request.tenant, claims, auditSource(request));
-          if (!linked.ok) return refuse(403, linked.code, claims.email);
-          return finishBrowserSignIn(env, request, reply, linked.user, 'oidc', auditSource(request), flow.redirectTo);
-        },
-      );
+    // cookie instead of a grant for the loopback.
+    app.get(
+      '/auth/oidc/browser-callback',
+      {
+        config: { cookieAuth: false },
+        preHandler: [rateLimit(env, (request) => [ipKey(request)])],
+        schema: { querystring: jsonSchema(oidcCallbackQuerySchema, { io: 'input' }) },
+      },
+      async (request, reply) => {
+        const provider = await requireProvider(env, request);
+        const query = request.query as OidcCallbackQuery;
+        const flow = await takeBrowserFlow(env, request, reply, 'oidc', query.state);
+        if (flow === undefined) return sendSignInPage(reply, env.ctx, { status: 400, message: FLOW_EXPIRED_MESSAGE });
+        const refuse = async (status: number, reason: string, email?: string) => {
+          await env.ctx.tenancy.db(request.tenant).transaction((tx) =>
+            recordAudit(env.ctx.hooks, tx, {
+              ...auditSource(request),
+              ...ANONYMOUS_SOURCE,
+              action: 'auth.sign_in_failed',
+              target: { kind: 'server' },
+              details: { method: 'oidc', reason, emailLower: email?.toLowerCase() ?? null },
+            }),
+          );
+          return sendSignInPage(reply, env.ctx, {
+            status,
+            message: refusalMessage(reason),
+            redirectTo: flow.redirectTo,
+          });
+        };
+        if (query.code === undefined || query.error !== undefined) return refuse(400, 'identity-oidc-refused');
+        let claims: OidcClaims;
+        try {
+          claims = await provider.exchange({
+            callbackUrl: new URL(request.url, primaryUrl(env.ctx.config, request)),
+            state: query.state,
+            nonce: flow.nonce ?? '',
+            codeVerifier: flow.codeVerifier ?? '',
+          });
+        } catch (error) {
+          request.log.warn({ err: error, flowId: flow.id }, 'oidc code exchange failed');
+          return refuse(502, 'identity-oidc-failed');
+        }
+        // §6: the issuer is pinned from configuration.
+        if (claims.issuer !== provider.issuer) return refuse(502, 'identity-oidc-failed', claims.email);
+        const linked = await linkClaims(env, request.tenant, claims, auditSource(request));
+        if (!linked.ok) return refuse(403, linked.code, claims.email);
+        return finishBrowserSignIn(env, request, reply, linked.user, 'oidc', auditSource(request), flow.redirectTo);
+      },
+    );
 
     app.post(
       '/auth/oidc/complete',

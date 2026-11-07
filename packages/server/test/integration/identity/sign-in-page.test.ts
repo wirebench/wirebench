@@ -16,7 +16,6 @@ const PUBLIC_URL = 'https://wirebench.test';
 const COOKIE = '__Host-wb_session';
 const CSP = "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'";
 const BROWSER_ENV = {
-  WIREBENCH_SERVER_BROWSER_CLIENT: 'true',
   WIREBENCH_SERVER_SECRETS_KEY: Buffer.alloc(32, 7).toString('base64'),
 };
 const PASSWORD = 'correct horse battery';
@@ -55,15 +54,6 @@ describeDb('the sign-in page and local form sign-in (hosted spec §17.2)', () =>
       payload: new URLSearchParams(fields).toString(),
       remoteAddress: ip,
     });
-
-  describe('with the browser client off', () => {
-    it('serves none of the routes', async () => {
-      h = await identityHarness();
-      expect((await h.app.inject({ method: 'GET', url: '/sign-in' })).statusCode).toBe(404);
-      expect((await signInForm({ email: 'a@example.com', password: PASSWORD })).statusCode).toBe(404);
-      expect((await h.app.inject({ method: 'GET', url: '/sign-in/oidc' })).statusCode).toBe(404);
-    });
-  });
 
   describe('the page', () => {
     it('offers the local form only when local is the only method, under the page CSP', async () => {

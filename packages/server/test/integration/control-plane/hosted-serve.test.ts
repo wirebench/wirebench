@@ -7,12 +7,12 @@
  */
 import { EventEmitter } from 'node:events';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { BUILTIN_MODULES } from '../../../src/modules.js';
 import { startServer, type RunningServer } from '../../../src/serve.js';
 import { describeDb, TEST_DATABASE_URL, testDatabase, type TestDatabase } from '../../helpers/database.js';
 import { mkTempDir, removeTempDir } from '../../helpers/git.js';
 import { hostedEnv, TEST_ENTRY_HOST, TEST_PADDLE_WEBHOOK_SECRET } from '../../helpers/hosted-env.js';
 import { freePort } from '../../helpers/net.js';
+import { SERVED_MODULES } from '../../helpers/browser-build.js';
 
 // The control pool's opener, watched: which URL it is given, and whether it is called at all.
 const opened = vi.hoisted(() => ({ urls: [] as string[] }));
@@ -60,7 +60,7 @@ describeDb('serve in hosted mode (spec §22.1, §22.2)', () => {
     ...overrides,
   });
   const start = (env: Record<string, string>) =>
-    startServer(env, { ...io(), env }, { modules: BUILTIN_MODULES, signals: new EventEmitter(), exit: vi.fn() });
+    startServer(env, { ...io(), env }, { modules: SERVED_MODULES, signals: new EventEmitter(), exit: vi.fn() });
   /** An unsigned post to the webhook: `401` when the module serves it, `404` when nothing does. */
   const unsignedWebhook = (server: RunningServer) =>
     server.app.inject({
@@ -118,6 +118,8 @@ describeDb('serve in hosted mode (spec §22.1, §22.2)', () => {
     expect(opened.urls).toEqual([]);
     expect((await unsignedWebhook(running)).statusCode).toBe(404);
     const signup = await running.app.inject({ method: 'GET', url: '/signup', headers: { host: TEST_ENTRY_HOST } });
-    expect(signup.statusCode).toBe(404);
+    // No signup form: the path is only one of the browser client's pages, which sends a caller with no session to sign in.
+    expect(signup.statusCode).toBe(303);
+    expect(signup.headers['location']).toMatch(/^\/sign-in/);
   });
 });

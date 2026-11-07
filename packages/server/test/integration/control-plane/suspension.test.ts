@@ -287,7 +287,6 @@ describeDb('a suspension’s hosts and shares (hosted spec §22.7)', () => {
     build = await browserBuildFixture();
     t = await twoTenants({
       env: {
-        WIREBENCH_SERVER_BROWSER_CLIENT: 'true',
         WIREBENCH_SERVER_SECRETS_KEY: randomBytes(32).toString('base64'),
       },
       modules: (clock) => [

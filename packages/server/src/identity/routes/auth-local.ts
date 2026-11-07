@@ -97,7 +97,7 @@ export const authLocalRoutes =
       if (request.caller === undefined) {
         // A cookie the guard found stale (revoked, expired, unknown) is still dropped, so the browser
         // stops presenting it; the answer stays 401 since no session was ended.
-        if (env.ctx.config.browserClient && sessionToken(request, url) !== undefined) clearSessionCookie(reply, url);
+        if (sessionToken(request, url) !== undefined) clearSessionCookie(reply, url);
         throw unauthenticated();
       }
       const caller = request.caller;

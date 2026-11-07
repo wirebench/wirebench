@@ -4,7 +4,7 @@ import { MAX_DISPLAY_NAME_LENGTH, MIN_PASSWORD_LENGTH } from '@wirebench/engine'
  * The invitation page (§3.1): static text, no script, no external asset, and the
  * only interpolated values are the server's own origin, the admin-typed email, the secret that is
  * already in the URL, provider display names and what the person typed. Everything is escaped.
- * With the browser client on it also carries the browser's accept form (team management in the browser §2.3).
+ * It also carries the browser's accept form (team management in the browser §2.3).
  */
 const ESCAPES: Readonly<Record<string, string>> = {
   '&': '&amp;',
@@ -19,7 +19,7 @@ export function escapeHtml(text: string): string {
 }
 
 /**
- * What the page offers a browser when the browser client is on (team management in the browser §2.3):
+ * What the page offers a browser (team management in the browser §2.3):
  * a password form when local sign-in is on, and, for an `invite`, the federated methods whose first
  * sign-in with the invited email creates the account.
  */

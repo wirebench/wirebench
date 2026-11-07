@@ -159,7 +159,6 @@ export async function isolationWorld(options: { readonly policiesDisabled?: bool
     db,
     onRoute: (route) => routes.push(route),
     env: {
-      WIREBENCH_SERVER_BROWSER_CLIENT: 'true',
       WIREBENCH_SERVER_SECRETS_KEY: randomBytes(32).toString('base64'),
       WIREBENCH_SERVER_SCHEDULES_SECRET_KEY: SCHEDULES_KEY,
       WIREBENCH_SERVER_AUDIT_CHAIN_KEY: CHAIN_KEY,

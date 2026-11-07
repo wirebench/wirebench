@@ -175,7 +175,10 @@ describeDb('invitations (§3.1, §3.7)', () => {
     const open = await h.app.inject({ method: 'GET', url: `/invite/${secretOf(url)}` });
     expect(open.statusCode).toBe(200);
     expect(open.headers['content-type']).toContain('text/html');
-    expect(open.headers['content-security-policy']).toBe("default-src 'none'; style-src 'unsafe-inline'");
+    // The browser accept's form is on the page (team management in the browser §2.3), so the form may post back.
+    expect(open.headers['content-security-policy']).toBe(
+      "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'",
+    );
     expect(open.body).toContain('bob@example.com');
     expect(open.body).toContain(secretOf(url));
     const closed = await h.app.inject({ method: 'GET', url: `/invite/${mintSecret().secret}` });

@@ -30,7 +30,6 @@ const SAML_ENV = {
   WIREBENCH_SERVER_SAML_DISPLAY_NAME: 'Example <SSO>',
 };
 const BROWSER_ENV = {
-  WIREBENCH_SERVER_BROWSER_CLIENT: 'true',
   WIREBENCH_SERVER_SECRETS_KEY: Buffer.alloc(32, 7).toString('base64'),
 };
 
@@ -49,9 +48,9 @@ describeDb('SAML sign-in from the browser (hosted spec §17.2)', () => {
   const keys = testKeys();
   let h: IdentityHarness;
 
-  const boot = async (options: { licensed?: boolean; browserClient?: boolean } = {}) => {
+  const boot = async (options: { licensed?: boolean } = {}) => {
     h = await licensingHarness(keys, {
-      env: { ...SAML_ENV, ...(options.browserClient === false ? {} : BROWSER_ENV) },
+      env: { ...SAML_ENV, ...BROWSER_ENV },
       extra: (clock) => [
         auditLogModule({ now: () => clock.now }),
         ssoModule({ now: () => clock.now, sweepIntervalMs: 0, metadata: parseIdpMetadata(idpMetadata()) }),
@@ -117,7 +116,7 @@ describeDb('SAML sign-in from the browser (hosted spec §17.2)', () => {
       payload: new URLSearchParams({ SAMLResponse: samlResponse, RelayState: relayState }).toString(),
     });
 
-  describe('licensed, with the browser client on', () => {
+  describe('licensed', () => {
     it('the sign-in page lists SSO under its escaped display name', async () => {
       await boot();
       const page = await h.app.inject({ method: 'GET', url: '/sign-in' });
@@ -313,11 +312,5 @@ describeDb('SAML sign-in from the browser (hosted spec §17.2)', () => {
     const res = await h.app.inject({ method: 'GET', url: '/sign-in/saml' });
     expect(res.statusCode).toBe(403);
     expect(res.json<{ code: string }>().code).toBe('licensing-feature-required');
-  });
-
-  it('serves neither the start nor the browser ACS with the browser client off', async () => {
-    await boot({ browserClient: false });
-    expect((await h.app.inject({ method: 'GET', url: '/sign-in/saml' })).statusCode).toBe(404);
-    expect((await acs('x', 'y', undefined)).statusCode).toBe(404);
   });
 });

@@ -21,7 +21,6 @@ const PUBLIC_URL = 'https://wirebench.test';
 const COOKIE = '__Host-wb_session';
 const FORM_CSP = "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'";
 const BROWSER_ENV = {
-  WIREBENCH_SERVER_BROWSER_CLIENT: 'true',
   WIREBENCH_SERVER_SECRETS_KEY: Buffer.alloc(32, 7).toString('base64'),
 };
 const PASSWORD = 'correct horse battery';
@@ -75,23 +74,6 @@ describeDb('accepting an invitation in the browser (team management in the brows
       payload: new URLSearchParams(fields).toString(),
       remoteAddress: ip,
     });
-
-  describe('with the browser client off', () => {
-    it('keeps the desktop-only page, and the form route does not exist', async () => {
-      await start({});
-      const secret = await invite();
-      const res = await page(secret);
-      expect(res.statusCode).toBe(200);
-      expect(res.headers['content-security-policy']).toBe("default-src 'none'; style-src 'unsafe-inline'");
-      expect(res.headers['referrer-policy']).toBe('no-referrer');
-      expect(res.body).toContain(secret);
-      expect(res.body).not.toContain('<form');
-      expect(res.body).not.toContain('/sign-in/oidc');
-      const posted = await post(secret, { password: PASSWORD, confirm: PASSWORD });
-      expect(posted.statusCode).toBe(404);
-      expect(await repo.findUserByEmail(h.tdb, 'bob@example.com')).toBeUndefined();
-    });
-  });
 
   describe('the page', () => {
     it('offers the form, the desktop steps as the other way in, under the form policy', async () => {

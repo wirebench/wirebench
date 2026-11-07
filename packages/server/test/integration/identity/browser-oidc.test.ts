@@ -9,7 +9,6 @@ import { EVIL_REDIRECTS, identityHarness, signedInUser, type IdentityHarness } f
 const COOKIE = '__Host-wb_session';
 const FLOW_COOKIE = '__Host-wb_flow';
 const BROWSER_ENV = {
-  WIREBENCH_SERVER_BROWSER_CLIENT: 'true',
   WIREBENCH_SERVER_SECRETS_KEY: Buffer.alloc(32, 7).toString('base64'),
 };
 
@@ -27,7 +26,7 @@ const cookieValue = (res: Injected, name: string): string | undefined =>
 describeDb('OIDC sign-in from the browser (hosted spec §17.2)', () => {
   let idp: FakeOidcIssuer;
   let h: IdentityHarness;
-  const boot = async (browserClient = true) => {
+  const boot = async () => {
     idp = await startFakeOidcIssuer();
     h = await identityHarness({
       env: {
@@ -35,7 +34,7 @@ describeDb('OIDC sign-in from the browser (hosted spec §17.2)', () => {
         WIREBENCH_SERVER_OIDC_CLIENT_ID: idp.clientId,
         WIREBENCH_SERVER_OIDC_CLIENT_SECRET: idp.clientSecret,
         WIREBENCH_SERVER_ALLOW_INSECURE_PUBLIC_URL: 'true',
-        ...(browserClient ? BROWSER_ENV : {}),
+        ...BROWSER_ENV,
       },
     });
   };
@@ -59,7 +58,7 @@ describeDb('OIDC sign-in from the browser (hosted spec §17.2)', () => {
       headers: cookie === undefined ? {} : { cookie: `${FLOW_COOKIE}=${cookie}` },
     });
 
-  describe('with the browser client on', () => {
+  describe('from the browser', () => {
     beforeEach(() => boot());
 
     it('start → IdP → browser callback sets a browser session cookie and lands on /', async () => {
@@ -229,13 +228,5 @@ describeDb('OIDC sign-in from the browser (hosted spec §17.2)', () => {
       const url = new URL(res.json<{ authorizationUrl: string }>().authorizationUrl);
       expect(url.searchParams.get('redirect_uri')).toBe('https://wirebench.test/api/v1/auth/oidc/callback');
     });
-  });
-
-  it('serves neither the start nor the callback with the browser client off', async () => {
-    await boot(false);
-    expect((await h.app.inject({ method: 'GET', url: '/sign-in/oidc' })).statusCode).toBe(404);
-    expect(
-      (await h.app.inject({ method: 'GET', url: '/api/v1/auth/oidc/browser-callback?state=x&code=y' })).statusCode,
-    ).toBe(404);
   });
 });

@@ -53,7 +53,6 @@ describeDb('two names, one tenant (spec §23.5)', () => {
   beforeAll(async () => {
     t = await twoTenants({
       env: {
-        WIREBENCH_SERVER_BROWSER_CLIENT: 'true',
         WIREBENCH_SERVER_SECRETS_KEY: Buffer.alloc(32, 7).toString('base64'),
       },
       modules: (clock) => [

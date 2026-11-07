@@ -38,7 +38,7 @@ The entity ID is also the address of this server's SP metadata, so an IdP that i
 can read it there. `wirebench-server serve` logs the entity ID, the ACS URL and the SCIM base URL when SAML
 is on.
 
-With the [browser client](/wirebench/docs/guides/server-browser-client/) on, add a second ACS URL,
+For the [browser client](/wirebench/docs/guides/server-browser-client/), add a second ACS URL,
 `<public URL>/api/v1/auth/saml/browser-acs`, for sign-ins started from a browser tab. `serve` logs it too,
 but the SP metadata names only the first, so enter it at the IdP by hand (in Entra ID, as another Reply
 URL; in Okta, under **Other Requestable SSO URLs**). SAML from the browser needs an `https://` public URL.

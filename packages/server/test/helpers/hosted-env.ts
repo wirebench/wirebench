@@ -22,8 +22,6 @@ export interface HostedEnvOptions {
   readonly internalPort: number;
   /** Where the mail goes; a port nothing listens on when the test reads no mail. */
   readonly smtpPort: number;
-  /** The browser client, whose sign-in page the signup leads to; it needs a build (`browserBuildFixture`). */
-  readonly browserClient?: boolean;
 }
 
 export function hostedEnv(options: HostedEnvOptions): Record<string, string> {
@@ -41,7 +39,6 @@ export function hostedEnv(options: HostedEnvOptions): Record<string, string> {
     WIREBENCH_SERVER_SECRETS_KEY: Buffer.alloc(32, 7).toString('base64'),
     // Each tenant's audit chain key is derived from it (spec §19.7), so an export verifies offline.
     WIREBENCH_SERVER_AUDIT_CHAIN_KEY: 'placeholder-audit-chain-key-for-tests-only',
-    WIREBENCH_SERVER_BROWSER_CLIENT: options.browserClient === true ? 'true' : 'false',
     WIREBENCH_SERVER_INSTANCE_URL: `http://127.0.0.1:${String(options.internalPort)}`,
     WIREBENCH_SERVER_INTERNAL_HOST: '127.0.0.1',
     WIREBENCH_SERVER_PADDLE_ENVIRONMENT: 'sandbox',

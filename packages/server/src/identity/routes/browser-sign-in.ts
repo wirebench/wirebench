@@ -1,6 +1,6 @@
 /**
  * The browser's sign-in routes at the root (hosted spec §17.2), registered through `registerPublic`
- * only when `WIREBENCH_SERVER_BROWSER_CLIENT` is on: the page, the local form, the start of the
+ * on every server: the page, the local form, the start of the
  * OIDC flow, whose callback lives with the desktop's in `auth-oidc.ts`, the sign-out form and the
  * invitation form (`browser-invite.ts`). SAML's
  * start is the sso module's. These routes sit outside `/api/v1`, so the guard's Origin check does not

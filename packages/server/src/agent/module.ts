@@ -1,8 +1,7 @@
 /**
  * The `agent` ServerModule (hosted edition spec §18.2): pairing a user's local agent with this server, and
- * the single-use nonces a browser tab hands that agent. It registers nothing unless
- * `WIREBENCH_SERVER_BROWSER_CLIENT` is on (only a browser tab has an agent to pair), but its migration
- * always runs, as every module's does, so the version list stays contiguous.
+ * the single-use nonces a browser tab hands that agent. Every server serves the browser client, so every
+ * server registers it.
  *
  * It comes after `host`. It announces `agentUnpaired` for the server host to drop a pairing from its view;
  * nothing listens yet (Part B's server host will).
@@ -40,8 +39,7 @@ export function agentModule(options: AgentModuleOptions = {}): ServerModule {
     migrationsDir: AGENT_MIGRATIONS_DIR,
 
     async register(app: FastifyInstance, ctx: ServerContext): Promise<void> {
-      if (!ctx.config.browserClient) return;
-      // loadConfig refuses the browser client without the key; checked again so the type knows it.
+      // `serve` runs with the variable's key or the one it stored; checked again so the type knows it.
       if (ctx.config.secretsKey === undefined) throw new Error('the agent module needs WIREBENCH_SERVER_SECRETS_KEY');
       await agentRoutes({ ctx, now, limiterNow: options.now, secretsKey: ctx.config.secretsKey })(app);
       const interval = options.sweepIntervalMs ?? DAY_MS;

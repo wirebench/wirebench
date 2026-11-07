@@ -5,7 +5,22 @@
  */
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import type { ServerModule } from '../../src/context.js';
+import { hostModule } from '../../src/host/module.js';
+import { BUILTIN_MODULES } from '../../src/modules.js';
 import { mkTempDir, removeTempDir } from './git.js';
+
+/**
+ * A browser build checked in beside the tests, read only: the page and one asset. For a test that starts the whole
+ * server and never looks at the tab, since every server serves it and refuses to start without a build.
+ */
+export const STATIC_BROWSER_BUILD = fileURLToPath(new URL('../fixtures/browser-build/', import.meta.url));
+
+/** The production module list, with the host module serving {@link STATIC_BROWSER_BUILD} in place of `dist/browser`. */
+export const SERVED_MODULES: readonly ServerModule[] = BUILTIN_MODULES.map((module) =>
+  module.name === 'host' ? hostModule({ browserRoot: STATIC_BROWSER_BUILD }) : module,
+);
 
 export interface BrowserBuildFixture {
   readonly root: string;

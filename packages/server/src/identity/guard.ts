@@ -2,7 +2,7 @@
  * The guard other modules use (identity spec §3.2). One `onRequest` hook parses the header when
  * present and leaves `request.caller` undefined when absent; the two `preHandler`s turn absence
  * into `identity-unauthenticated` / `identity-forbidden`. Nothing else in the server reads
- * `Authorization`. With the browser client on, the same hook also reads the session cookie
+ * `Authorization`. The same hook also reads the browser client's session cookie
  * (hosted spec §17.2).
  */
 import { timingSafeEqual } from 'node:crypto';
@@ -185,9 +185,8 @@ export function authenticate(env: IdentityEnv, fallbacks: readonly BearerFallbac
   return async (request) => {
     const token = bearerToken(request.headers.authorization);
     if (token === undefined) {
-      // No header (or not a device token): the cookie when the browser client is on, else the preHandlers decide.
-      if (env.ctx.config.browserClient && request.routeOptions.config.cookieAuth !== false)
-        await cookieCaller(env, tokensOf(request), request);
+      // No header (or not a device token): the browser client's session cookie, else the preHandlers decide.
+      if (request.routeOptions.config.cookieAuth !== false) await cookieCaller(env, tokensOf(request), request);
       return;
     }
     try {

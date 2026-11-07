@@ -240,7 +240,7 @@ Accounts, then:
    the code from an invitation link (an admin sends it) and lets you choose your display name and
    password.
 
-With the browser client on, the invitation link's page also lets you join in the browser: type a password twice
+The invitation link's page also lets you join in the browser: type a password twice
 (and your name, if you like), or continue with the team's single sign-on, and you land signed in on the browser
 app. A password-reset link sets the new password the same way. The page always shows the code for the desktop app
 too.
@@ -267,8 +267,8 @@ signed-in server under Settings → Accounts.
 
 Team management happens in the server's browser client. In the desktop app, **Manage team…** opens the server's
 team page in your default browser (you sign in there the first time), on the team of the open
-workspace when it is shared to that server. A server whose operator has not turned the browser client on
-(`WIREBENCH_SERVER_BROWSER_CLIENT`) keeps the dialog in the app. Signing in, choosing a team when you share or open a
+workspace when it is shared to that server. A server from an earlier release without its browser client keeps
+the dialog in the app. Signing in, choosing a team when you share or open a
 workspace, and sync stay in the desktop app.
 
 - **Teams.** A server admin creates a team and adds its first admin. Team admins add people who already have an

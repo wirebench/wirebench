@@ -80,7 +80,7 @@ describeDb('identity module boot', () => {
     expect(stderr.write.mock.calls.map((c) => String(c[0])).join('')).toContain('identity-no-method');
   });
 
-  it('config check prints the redirect URI once an issuer is configured, never the secret', async () => {
+  it('config check prints both redirect URIs once an issuer is configured, never the secret', async () => {
     const stdout = { write: vi.fn() };
     const code = await main(['config', 'check'], {
       stdout,
@@ -94,8 +94,21 @@ describeDb('identity module boot', () => {
     expect(code).toBe(0);
     const text = stdout.write.mock.calls.map((c) => String(c[0])).join('');
     expect(text).toContain('https://wirebench.test/api/v1/auth/oidc/callback');
-    expect(text).not.toContain('browser-callback');
+    // The browser client's own (hosted spec §17.2), which every server serves.
+    expect(text).toContain('https://wirebench.test/api/v1/auth/oidc/browser-callback');
     expect(text).not.toContain('top-secret');
+  });
+
+  it('config check accepts the retired WIREBENCH_SERVER_BROWSER_CLIENT and says it is not used', async () => {
+    const stdout = { write: vi.fn() };
+    const code = await main(['config', 'check'], {
+      stdout,
+      stderr: { write: vi.fn() },
+      env: env({ WIREBENCH_SERVER_BROWSER_CLIENT: 'false' }),
+    });
+    expect(code).toBe(0);
+    const text = stdout.write.mock.calls.map((c) => String(c[0])).join('');
+    expect(text).toContain('WIREBENCH_SERVER_BROWSER_CLIENT is no longer used (the browser client is always on)');
   });
 
   it('config check reports the two instance variables, and that multi needs Enterprise (spec §20.1)', async () => {
@@ -133,23 +146,5 @@ describeDb('identity module boot', () => {
       }),
     ).toBe(2);
     expect(stderr.write.mock.calls.map((c) => String(c[0])).join('')).toContain('WIREBENCH_SERVER_INSTANCE_URL');
-  });
-
-  it('config check also prints the browser client’s redirect URI when it is on', async () => {
-    const stdout = { write: vi.fn() };
-    const code = await main(['config', 'check'], {
-      stdout,
-      stderr: { write: vi.fn() },
-      env: env({
-        WIREBENCH_SERVER_OIDC_ISSUER: 'https://idp.test',
-        WIREBENCH_SERVER_OIDC_CLIENT_ID: 'c',
-        WIREBENCH_SERVER_OIDC_CLIENT_SECRET: 'top-secret',
-        WIREBENCH_SERVER_BROWSER_CLIENT: 'true',
-        WIREBENCH_SERVER_SECRETS_KEY: Buffer.alloc(32, 7).toString('base64'),
-      }),
-    });
-    expect(code).toBe(0);
-    const text = stdout.write.mock.calls.map((c) => String(c[0])).join('');
-    expect(text).toContain('https://wirebench.test/api/v1/auth/oidc/browser-callback');
   });
 });

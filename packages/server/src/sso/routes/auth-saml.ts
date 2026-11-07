@@ -260,37 +260,36 @@ export const authSamlRoutes =
       // The browser client's ACS (hosted spec §17.2): the same checks, then the session cookie instead
       // of a grant for the loopback. The IdP's page posts here, so there is no Origin to check; the
       // flow cookie is what ties the response to the browser that started the flow.
-      if (env.ctx.config.browserClient)
-        acs.post(
-          '/auth/saml/browser-acs',
-          {
-            bodyLimit: ACS_BODY_LIMIT,
-            // The IdP's page posts this, with the IdP's Origin; a session cookie must not get in the way.
-            config: { cookieAuth: false },
-            preHandler: [rateLimit(env, (request) => [ipKey(request)])],
-          },
-          async (request, reply) => {
-            const saml = await requireSaml(env, request);
-            const flow = await takeBrowserFlow(env, request, reply, 'saml', formField(request.body, 'RelayState'));
-            if (flow === undefined || flow.nonce === null)
-              return sendSignInPage(reply, env.ctx, { status: 400, message: FLOW_EXPIRED_MESSAGE });
-            const answer = await answerResponse({ ...env, saml }, request, {
-              samlResponse: formField(request.body, 'SAMLResponse'),
-              requestId: flow.nonce,
-              acsUrl: env.urlsFor(request).browserAcsUrl,
-              flowId: flow.id,
+      acs.post(
+        '/auth/saml/browser-acs',
+        {
+          bodyLimit: ACS_BODY_LIMIT,
+          // The IdP's page posts this, with the IdP's Origin; a session cookie must not get in the way.
+          config: { cookieAuth: false },
+          preHandler: [rateLimit(env, (request) => [ipKey(request)])],
+        },
+        async (request, reply) => {
+          const saml = await requireSaml(env, request);
+          const flow = await takeBrowserFlow(env, request, reply, 'saml', formField(request.body, 'RelayState'));
+          if (flow === undefined || flow.nonce === null)
+            return sendSignInPage(reply, env.ctx, { status: 400, message: FLOW_EXPIRED_MESSAGE });
+          const answer = await answerResponse({ ...env, saml }, request, {
+            samlResponse: formField(request.body, 'SAMLResponse'),
+            requestId: flow.nonce,
+            acsUrl: env.urlsFor(request).browserAcsUrl,
+            flowId: flow.id,
+          });
+          if (!answer.ok) {
+            await recordRefusal(env, request, answer.code, answer.email);
+            return sendSignInPage(reply, env.ctx, {
+              status: 403,
+              message: refusalMessage(answer.code),
+              redirectTo: flow.redirectTo,
             });
-            if (!answer.ok) {
-              await recordRefusal(env, request, answer.code, answer.email);
-              return sendSignInPage(reply, env.ctx, {
-                status: 403,
-                message: refusalMessage(answer.code),
-                redirectTo: flow.redirectTo,
-              });
-            }
-            return finishBrowserSignIn(env, request, reply, answer.user, 'saml', auditSource(request), flow.redirectTo);
-          },
-        );
+          }
+          return finishBrowserSignIn(env, request, reply, answer.user, 'saml', auditSource(request), flow.redirectTo);
+        },
+      );
       registered();
     });
 

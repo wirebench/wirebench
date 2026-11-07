@@ -11,7 +11,6 @@ import { identityHarness, signedInUser, type IdentityHarness, type SignedInUser 
 const PUBLIC_URL = 'https://wirebench.test';
 const COOKIE = '__Host-wb_session';
 const BROWSER_ENV = {
-  WIREBENCH_SERVER_BROWSER_CLIENT: 'true',
   WIREBENCH_SERVER_SECRETS_KEY: Buffer.alloc(32, 7).toString('base64'),
 };
 
@@ -609,15 +608,10 @@ describeDb('local-agent pairing (hosted edition spec §18.2)', () => {
   });
 });
 
-describeDb('the agent module with the browser client off', () => {
-  let h: IdentityHarness;
-  beforeEach(async () => {
-    h = await identityHarness({ modules: [agentModule({ sweepIntervalMs: 0 })] });
-  });
-  afterEach(() => h.close());
-
-  it('registers no routes', async () => {
-    const res = await h.app.inject({ method: 'POST', url: '/api/v1/agent/pairings', payload: {} });
-    expect(res.statusCode).toBe(404);
+describeDb('the agent module without a secrets key', () => {
+  it('refuses to register: the pairing codes are hashed under a key derived from it', async () => {
+    await expect(identityHarness({ modules: [agentModule({ sweepIntervalMs: 0 })] })).rejects.toThrow(
+      /the agent module needs WIREBENCH_SERVER_SECRETS_KEY/,
+    );
   });
 });
