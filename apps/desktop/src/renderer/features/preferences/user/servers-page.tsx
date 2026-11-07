@@ -1,11 +1,20 @@
+import { useCallback, useMemo } from 'react';
 import { Button } from '../../../components/button.js';
 import { hasCapability, tabSignOut } from '../../../lib/capabilities.js';
-import { BooleanSetting, SettingsGroup, SettingsItem } from '../../../components/settings-grid.js';
+import {
+  BooleanSetting,
+  SettingsGroup,
+  SettingsItem,
+  SettingsRowsControllerProvider,
+  type SettingsRowsController,
+} from '../../../components/settings-grid.js';
+import { isLockedByPolicy, usePreferencesStore } from '../../../state/preferences.js';
 import { signedInServers, useAccountStore } from '../../../state/account.js';
 import { useUiStore } from '../../../state/ui.js';
 import { LicenseBanner } from '../../team/license-banner.js';
 import { manageTeam } from '../../team/team-link.js';
-import type { SectionProps } from './section-props.js';
+import type { SectionProps } from '../sections/section-props.js';
+import { canReset, isModified, resetPatch } from '../settings-model.js';
 
 function hostOf(url: string): string {
   try {
@@ -16,7 +25,8 @@ function hostOf(url: string): string {
 }
 
 /**
- * Preferences → Accounts (identity spec §3.9): every known server, its state, and the two
+ * Accounts (identity spec §3.9), shown as User settings → Servers you're signed in to and, until the App settings
+ * Account group goes, there too: every known server, its state, and the two
  * actions per row. The list itself is not a preference — it lives in `accounts.yaml` in main and
  * arrives through the account store — only the status bar toggle is.
  *
@@ -140,5 +150,38 @@ export function AccountsSection({ preferences, update }: SectionProps) {
         />
       </SettingsGroup>
     </div>
+  );
+}
+
+/**
+ * User settings → Servers you're signed in to: the Accounts list and its *Status bar* switch (ruling 14), wired to
+ * the preferences store, since this page is not inside App settings' editor.
+ */
+export function ServersPage() {
+  const preferences = usePreferencesStore((state) => state.preferences);
+  const update = usePreferencesStore((state) => state.update);
+  const policy = usePreferencesStore((state) => state.policy);
+  const locked = useCallback((key: string) => isLockedByPolicy(policy, key), [policy]);
+  const controller: SettingsRowsController = useMemo(
+    () => ({
+      isModified: (key) => isModified(preferences, key),
+      canReset: (key) => canReset(preferences, key),
+      reset: (key) => {
+        void update(resetPatch(preferences, [key]));
+      },
+      locked,
+    }),
+    [preferences, update, locked],
+  );
+  return (
+    <SettingsRowsControllerProvider controller={controller}>
+      <AccountsSection
+        preferences={preferences}
+        update={(patch) => {
+          void update(patch);
+        }}
+        locked={locked}
+      />
+    </SettingsRowsControllerProvider>
   );
 }
