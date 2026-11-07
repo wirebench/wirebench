@@ -128,12 +128,45 @@ The team export (operations slice) includes `username` and `about` with the user
 5. **A server admin cannot edit someone else's profile** in this slice (only their name, as today, through SCIM).
 6. **Mentions, search by username and a profile page of one's own outside settings** are not in this slice.
 
-## 9. Testing
+## 9. Security
+
+Owner instruction: standard best practice throughout (OWASP ASVS V2 authentication, V5 validation, V12 files).
+
+- **Never trust the app's resize.** The server re-checks every upload: base64 decodes cleanly, the bytes are a WebP
+  file whose header and dimensions match the kind, within the byte cap. A `VP8X` file carrying `EXIF`, `XMP ` or
+  `ICCP` chunks is refused (`identity-image-invalid`): the app never writes them, so their presence means a hand-made
+  upload, and refusing them keeps location and device metadata off the server. Animated WebP (`ANIM`) is refused.
+- **Serving images safely:** `Content-Type: image/webp` from the stored type (never sniffed from the request),
+  `X-Content-Type-Options: nosniff`, `Content-Disposition: inline; filename="photo.webp"`,
+  `Content-Security-Policy: default-src 'none'; sandbox`, `Cache-Control: private`. Images are only read by a
+  signed-in caller of the same tenant; the URL holds no secret, and RLS fences tenants in the database too.
+- **No account enumeration through sign-in:** one answer and one status for unknown email, unknown username and
+  wrong password, and the password hash is still verified against a fixed dummy hash when no account matches, so
+  the timing is the same. Username sign-in is rate-limited exactly like email sign-in, per identifier and per IP.
+- **Username takeover:** usernames are ASCII from a closed set (no look-alike Unicode); the reserved list blocks
+  names that could pass for staff. A freed username can be claimed at once; since sign-in also needs that account's
+  password, a reused username grants nothing of the old owner's.
+- **Abuse limits:** `PATCH /me` and image uploads share a per-user limiter (30 changes a minute, 20 uploads an
+  hour) answering `rate-limited` with `Retry-After`.
+- **About text is data, never markup:** stored as typed (after trimming and the length check, control characters
+  except line breaks removed) and rendered as React text, so no HTML, Markdown or links are interpreted. The same
+  for names and usernames in every place they show, including the server's own HTML pages, which escape them.
+- **Rights:** a profile is readable by the person, people who share a team with them, and server admins; everyone
+  else gets 404, not 403, so the endpoint does not confirm who exists. Only the person changes their own profile.
+- **Audit and privacy:** `user.updated` records which fields changed, never their values; images and about text never
+  enter logs; the export carries them because the export is the whole team's data (operations slice).
+- **Client side:** the renderer only shows images as `data:` URLs it got from its own host over IPC, so the desktop
+  CSP keeps `img-src 'self' data:`; a picked file is decoded by the browser's image decoder only, never parsed by
+  app code, and anything that does not decode is refused before upload.
+
+## 10. Testing
 
 - Server unit and integration: username rules and uniqueness per tenant (two tenants may share a username),
   sign-in by username and by email, both fields refused, rate limit keyed by identifier, image header and size
   checks, image read rights across tenants and teams, profile read rights, audit field lists, migration catalog
   (columns, keys, RLS policy).
+- Security (§9): metadata and animation chunks refused, response headers on images, equal answer and timing for
+  unknown username and wrong password, profile 404 for strangers, the per-user limiter, control characters removed.
 - Renderer: Profile page (save, errors, counter), crop dialog maths (frame to canvas rectangle) as a pure function,
   avatar fallback to initials, profile card, People row `@username`.
 - e2e (browser): set a username, sign out, sign in with it; upload a photo and see it in the account menu and on
