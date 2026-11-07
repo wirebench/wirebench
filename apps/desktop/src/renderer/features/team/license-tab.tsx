@@ -106,12 +106,17 @@ export function LicenseTab({ url }: { readonly url: string }) {
           )}
         </dl>
       )}
+      <label htmlFor="license-input" className="mt-2 flex flex-col gap-0.5">
+        <span className="text-sm text-fg-default">Install a license</span>
+        <span className="text-xs text-fg-subtle">Paste the license text you were sent, then install it.</span>
+      </label>
       <textarea
+        id="license-input"
         data-testid="license-input"
         aria-label="License"
         rows={3}
         spellCheck={false}
-        className={`${INPUT_CLASS} font-mono text-xs`}
+        className={`${INPUT_CLASS} min-h-20 resize-y py-1.5 font-mono text-xs`}
         placeholder="wbl1.…"
         value={text}
         onChange={(event) => {
