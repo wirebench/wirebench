@@ -77,7 +77,7 @@ async function openRequest(name: string): Promise<void> {
 test('a tab without a session is sent to sign in, and a local password signs it in', async () => {
   await page.goto('/');
   await expect(page).toHaveURL(/\/sign-in\?redirect_to=%2F$|\/sign-in\?redirect_to=\/$/);
-  await page.locator('#email').fill(seed.email);
+  await page.locator('#identifier').fill(seed.email);
   await page.locator('#password').fill(seed.password);
   await page.getByRole('button', { name: 'Sign in' }).click();
   await expect(page).toHaveURL(/\/$/);
@@ -204,7 +204,7 @@ test('signing out lands on the sign-in page, and the app is no longer served', a
   // The server answers the post with `/sign-in`; the tab's host socket, closed 4401 by the same sign-out,
   // may send the page there first with its way back (`?redirect_to=%2F`). Either is the sign-in page.
   await expect(page).toHaveURL(/\/sign-in(\?redirect_to=%2F)?$/);
-  await expect(page.locator('#email')).toBeVisible();
+  await expect(page.locator('#identifier')).toBeVisible();
   await page.goto('/');
   await expect(page).toHaveURL(/\/sign-in\?redirect_to=/);
 });

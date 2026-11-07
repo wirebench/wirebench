@@ -87,7 +87,7 @@ export function renderSignInPage(input: SignInPageInput): string {
   if (input.message !== undefined) parts.push(`<p class="message" role="alert">${escapeHtml(input.message)}</p>`);
   if (input.local) {
     parts.push(`<form method="post" action="/sign-in/local">
-<label for="email">Email</label><input id="email" name="email" type="email" autocomplete="username" required>
+<label for="identifier">Email or username</label><input id="identifier" name="identifier" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" required>
 <label for="password">Password</label><input id="password" name="password" type="password" autocomplete="current-password" required>
 ${input.redirectTo === '/' ? '' : `<input type="hidden" name="redirect_to" value="${escapeHtml(input.redirectTo)}">`}
 <button type="submit">Sign in</button>

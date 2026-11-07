@@ -19,9 +19,12 @@ export const originRefused = (): WirebenchError =>
 export const userDisabled = (): WirebenchError => problem('identity-user-disabled', 'This account is disabled.', 403);
 export const methodDisabled = (): WirebenchError =>
   problem('identity-method-disabled', 'This sign-in method is not offered by this server.', 404);
-/** One message for an unknown email and a wrong password (§6). */
+/** One message for an unknown email, an unknown username and a wrong password (§6, user profile spec §5). */
 export const invalidCredentials = (): WirebenchError =>
-  problem('identity-invalid-credentials', 'The email or password is not right.', 401);
+  problem('identity-invalid-credentials', 'The email, username or password is not right.', 401);
+/** User profile spec §5: a sign-in names its account by `identifier` or, from an older desktop, `email`; not both. */
+export const identifierInvalid = (): WirebenchError =>
+  problem('identity-identifier-invalid', 'Send either an identifier or an email, not both.', 400);
 export const invitationInvalid = (): WirebenchError =>
   problem('identity-invitation-invalid', 'This invitation has expired or was already used.', 404);
 export const invitationExists = (): WirebenchError =>
