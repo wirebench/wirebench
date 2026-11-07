@@ -17,6 +17,9 @@ import { agentRedeemMessage, agentRequestMessage, LIVE_PATH, TERMINAL_SHARE_PATH
 import type { InjectOptions, LightMyRequestResponse } from 'fastify';
 import { claim, removeClaim } from '../../../src/custom-domains/repo.js';
 import { mintSecret, newId, pkceChallenge } from '../../../src/identity/tokens.js';
+import { sealTotpSecret } from '../../../src/identity/two-factor/keys.js';
+import * as twoFactorRepo from '../../../src/identity/two-factor/repo.js';
+import { newTotpSecret, stepAt, totpAt } from '../../../src/identity/two-factor/totp.js';
 import { license } from '../../helpers/licensing.js';
 import {
   bearer,
@@ -127,6 +130,33 @@ async function reclaim(ctx: Ctx, claimAgain: boolean): Promise<void> {
     await removeClaim(tx);
     if (claimAgain) await claim(tx, { name, createdBy: null, now: ctx.w.t.h.clock.now });
   });
+}
+
+/**
+ * A fresh user of A's with a confirmed authenticator, and a second-step challenge of theirs finished as `kind`: its
+ * secret and the current code. Always A's (two-step sign-in spec §3.2), so B's host, which has no such challenge,
+ * refuses it, while A's own finishes the sign-in.
+ */
+async function twoFactorChallenge(ctx: Ctx, kind: 'device' | 'browser'): Promise<{ secret: string; code: string }> {
+  const tenant = ctx.a.tenant;
+  const now = ctx.w.t.h.clock.now;
+  const user = await fresh.user(tenant);
+  const totp = newTotpSecret();
+  const dataKey = await ctx.w.t.h.ctx.tenancy.dataKey(tenant.scope);
+  await twoFactorRepo.upsertPendingTotp(tenant.tdb, user.user.id, sealTotpSecret(dataKey, user.user.id, totp), now);
+  await twoFactorRepo.confirmTotp(tenant.tdb, user.user.id, stepAt(now.getTime()) - 2, now);
+  const { secret, hash } = mintSecret();
+  await twoFactorRepo.insertChallenge(tenant.tdb, {
+    id: newId(),
+    userId: user.user.id,
+    secretHash: hash,
+    purpose: 'sign-in',
+    deviceName: 'probe',
+    tokenKind: kind,
+    at: now,
+    expiresAt: new Date(now.getTime() + 5 * 60_000),
+  });
+  return { secret, code: totpAt(totp, stepAt(now.getTime())) };
 }
 
 /** An agent-signed request of `pairingId`, by `key`, on the tenant `ctx.from` is (the path is the server's). */
@@ -295,6 +325,14 @@ export const ROUTE_MAP: Readonly<Record<string, RouteCase>> = {
         {},
       ),
   },
+  'POST /api/v1/auth/two-factor/verify': {
+    cls: 'refused',
+    statuses: [401],
+    request: async (ctx) => {
+      const { secret, code } = await twoFactorChallenge(ctx, 'device');
+      return json(ctx, 'POST', api('/auth/two-factor/verify'), { challenge: secret, method: 'totp', code }, {});
+    },
+  },
   'POST /api/v1/auth/sign-out': {
     cls: 'own',
     request: async (ctx) =>
@@ -336,6 +374,24 @@ export const ROUTE_MAP: Readonly<Record<string, RouteCase>> = {
       headers: { origin: ctx.from.tenant.origin, 'content-type': 'application/x-www-form-urlencoded' },
       payload: new URLSearchParams({ email: ctx.a.admin.user.email, password: PASSWORD }).toString(),
     }),
+  },
+  'POST /sign-in/two-factor': {
+    cls: 'refused',
+    // As the password form: a refusal is the page again, a sign-in sets the session cookie.
+    refused: (res) => !String(res.headers['set-cookie'] ?? '').includes('wb_session='),
+    request: async (ctx) => {
+      const { secret, code } = await twoFactorChallenge(ctx, 'browser');
+      return {
+        method: 'POST',
+        url: '/sign-in/two-factor',
+        headers: {
+          origin: ctx.from.tenant.origin,
+          cookie: `__Host-wb_2fa=${secret}`,
+          'content-type': 'application/x-www-form-urlencoded',
+        },
+        payload: new URLSearchParams({ method: 'totp', code }).toString(),
+      };
+    },
   },
   'POST /sign-out': {
     cls: 'own',

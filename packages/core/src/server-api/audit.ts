@@ -13,6 +13,12 @@ export const AUDIT_ACTIONS = [
   'auth.sign_in_failed',
   'auth.signed_out',
   'auth.password_changed',
+  /**
+   * A wrong second factor at sign-in, and the lockout it led to (two-step sign-in spec §3.3), by method and reason;
+   * never what was typed.
+   */
+  'auth.second_factor_failed',
+  'auth.second_factor_locked',
   'user.invited',
   'user.invitation_revoked',
   'user.created',

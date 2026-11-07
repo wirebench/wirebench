@@ -35,6 +35,35 @@ export type ServerUser = z.infer<typeof serverUserSchema>;
 export const signInResponseSchema = z.object({ token: z.string().regex(DEVICE_TOKEN_PATTERN), user: serverUserSchema });
 export type SignInResponse = z.infer<typeof signInResponseSchema>;
 
+/** The second factors a person may have (two-step sign-in spec §3.1), in the order the clients offer them. */
+export const TWO_FACTOR_METHODS = ['totp', 'passkey', 'recovery'] as const;
+export const twoFactorMethodSchema = z.enum(TWO_FACTOR_METHODS);
+export type TwoFactorMethod = z.infer<typeof twoFactorMethodSchema>;
+/** Room for a code typed with spaces or dashes; the server normalises it. */
+export const MAX_TWO_FACTOR_CODE_LENGTH = 32;
+
+/**
+ * A correct password of a person with two-step sign-in (spec §3.1): no session yet, the challenge to answer instead.
+ * `setup` is a person without a method on a server that requires one (§4.3).
+ */
+export const twoFactorChallengeResponseSchema = z.object({
+  twoFactor: z.object({
+    challenge: z.string().regex(SECRET_PATTERN),
+    methods: z.array(twoFactorMethodSchema),
+    setup: z.boolean(),
+  }),
+});
+export type TwoFactorChallengeResponse = z.infer<typeof twoFactorChallengeResponseSchema>;
+/** What `POST /auth/local/sign-in` answers: a session (201), or the second step's challenge (200). */
+export const localSignInResponseSchema = z.union([signInResponseSchema, twoFactorChallengeResponseSchema]);
+export type LocalSignInResponse = z.infer<typeof localSignInResponseSchema>;
+export const twoFactorVerifyRequestSchema = z.object({
+  challenge: z.string().regex(SECRET_PATTERN),
+  method: z.enum(['totp', 'recovery']),
+  code: z.string().min(1).max(MAX_TWO_FACTOR_CODE_LENGTH),
+});
+export type TwoFactorVerifyRequest = z.infer<typeof twoFactorVerifyRequestSchema>;
+
 export const localSignInRequestSchema = z.object({
   email: emailSchema,
   password: passwordSchema,

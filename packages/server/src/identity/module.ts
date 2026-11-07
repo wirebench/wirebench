@@ -14,6 +14,7 @@ import { authenticate, type BearerFallback } from './guard.js';
 import { discoverOidc, type OidcProvider, type OidcSettings } from './oidc.js';
 import { TenantRateLimiter } from './rate-limit.js';
 import { authLocalRoutes } from './routes/auth-local.js';
+import { twoFactorRoutes } from './routes/two-factor.js';
 import { authOidcRoutes } from './routes/auth-oidc.js';
 import { browserSignInRoutes } from './routes/browser-sign-in.js';
 import { invitationRoutes } from './routes/invitations.js';
@@ -74,6 +75,23 @@ export function identityModule(options: IdentityOptions = {}): ServerModule {
         db: ctx.tenancy.db,
         ...(options.now !== undefined ? { now: () => now().getTime() } : {}),
       }),
+      twoFactor: {
+        limiter: new TenantRateLimiter({
+          name: 'two-factor',
+          capacity: 10,
+          refillPerMs: 10 / 60_000,
+          db: ctx.tenancy.db,
+          ...(options.now !== undefined ? { now: () => now().getTime() } : {}),
+        }),
+        // Ten wrong factors, refilled over an hour: one attempt back every six minutes (spec §3.3).
+        failures: new TenantRateLimiter({
+          name: 'two-factor-failures',
+          capacity: 10,
+          refillPerMs: 10 / 3_600_000,
+          db: ctx.tenancy.db,
+          ...(options.now !== undefined ? { now: () => now().getTime() } : {}),
+        }),
+      },
       providerFor,
       ...(ctx.config.mode === 'hosted'
         ? { oidcOffered: async (scope: TenantScope) => (await ctx.settings.of(scope, 'oidc')) !== undefined }
@@ -122,6 +140,7 @@ export function identityModule(options: IdentityOptions = {}): ServerModule {
       app.decorate('bearerFallbacks', fallbacks);
       app.addHook('onRequest', authenticate(identity, fallbacks));
       authLocalRoutes(identity)(app);
+      twoFactorRoutes(identity)(app);
       authOidcRoutes(identity)(app);
       meRoutes(identity)(app);
       invitationRoutes(identity)(app);

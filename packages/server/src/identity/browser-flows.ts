@@ -25,7 +25,7 @@ import { primaryUrl, tenantUrl, type UrlConfig } from '../tenancy/urls.js';
 export const BROWSER_FLOW_TTL_MS = 10 * 60 * 1000;
 
 /** What a browser token's row is called on the user's device list. */
-const BROWSER_DEVICE_NAME = 'Web browser';
+export const BROWSER_DEVICE_NAME = 'Web browser';
 
 const MAX_REDIRECT_LENGTH = 2048;
 

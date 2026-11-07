@@ -49,13 +49,14 @@ export function renderSuspendedSignInPage(input: {
   readonly serverUrl: string;
   readonly reason: SuspendedReason;
 }): string {
-  return page(
+  return signInFrame(
     input.serverUrl,
     `<p class="message" role="alert">${escapeHtml(SUSPENDED_REASON_TEXT[input.reason])}</p>`,
   );
 }
 
-function page(serverUrl: string, body: string): string {
+/** The sign-in pages' frame: the heading, the server's name and `body`; the second step's page uses it too. */
+export function signInFrame(serverUrl: string, body: string): string {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Sign in · Wirebench Server</title>
 <style>${STYLE}</style>
 </head><body><h1>Sign in</h1><p>Wirebench Server at <code>${escapeHtml(serverUrl)}</code></p>${body}</body></html>`;
@@ -73,7 +74,7 @@ export function sendSuspendedSignInPage(
  * The sign-in page's headers. Not `no-referrer`: under it a browser sends `Origin: null` on the form's own POST,
  * which the login-CSRF check must refuse. `same-origin` still keeps the URL from every other site.
  */
-function signInHeaders(reply: FastifyReply): FastifyReply {
+export function signInHeaders(reply: FastifyReply): FastifyReply {
   return reply
     .header('content-security-policy', SIGN_IN_PAGE_CSP)
     .header('referrer-policy', 'same-origin')
@@ -103,7 +104,7 @@ ${input.redirectTo === '/' ? '' : `<input type="hidden" name="redirect_to" value
     );
   if (!input.local && input.oidc === undefined && input.saml === undefined)
     parts.push('<p>This server offers no way to sign in from a browser. Ask a server admin.</p>');
-  return page(input.serverUrl, parts.join('\n'));
+  return signInFrame(input.serverUrl, parts.join('\n'));
 }
 
 /**
