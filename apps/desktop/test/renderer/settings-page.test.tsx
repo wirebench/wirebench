@@ -89,10 +89,10 @@ describe('Settings as a page', () => {
     expect(currentSection(editor)).toBe('Appearance');
   });
 
-  it('closes with Back to app', async () => {
+  it('closes with Back to workspace', async () => {
     renderInShell(<SettingsPage />);
     useUiStore.getState().openPreferences();
-    fireEvent.click(await screen.findByRole('button', { name: 'Back to app' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Back to workspace' }));
     expect(useUiStore.getState().preferences.open).toBe(false);
   });
 

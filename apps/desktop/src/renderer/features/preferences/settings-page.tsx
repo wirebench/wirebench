@@ -1,9 +1,10 @@
 import { Suspense, lazy, useEffect } from 'react';
 import { signedInServers, useAccountStore } from '../../state/account.js';
 import { useSyncStore } from '../../state/sync.js';
-import { useUiStore } from '../../state/ui.js';
+import { useUiStore, type SettingsArea } from '../../state/ui.js';
 import { settingsServerUrl, useServerSettingsStore } from './server/server-settings-store.js';
 import type { SettingsSectionRequest } from './settings-model.js';
+import type { UserSettingsPageId } from './user-settings-model.js';
 
 /**
  * Loaded on demand: the editor pulls in every section's form (and the shortcuts keymap with
@@ -18,7 +19,7 @@ const PreferencesEditor = lazy(async () => {
  * Settings, as a page in the window rather than a modal over it.
  *
  * While open it takes the place of the workbench (the shell keeps the workbench mounted but
- * hidden, so nothing behind it loses its state), and "Back to app" or Escape hands the window
+ * hidden, so nothing behind it loses its state), and "Back to workspace" or Escape hands the window
  * back. Every route into Settings — the activity bar, ⌘, / Ctrl+,, the command palette, a
  * section-specific link — goes through `useUiStore.openPreferences`.
  */
@@ -35,23 +36,39 @@ export function SettingsPage() {
     if (open && serverUrl !== undefined) void useServerSettingsStore.getState().load(serverUrl);
     if (!open || serverUrl === undefined) useServerSettingsStore.getState().reset();
   }, [open, serverUrl]);
-  // User and Team settings have no page yet; nothing opens them (settings split plan, Tasks 7–8).
-  if (!open || area !== 'app') {
+  if (!open) {
+    return null;
+  }
+  const body = areaBody(area, section);
+  if (body === null) {
     return null;
   }
 
   return (
     <div data-testid="settings-page" className="flex min-h-0 min-w-0 flex-1 bg-surface-base">
-      <Suspense fallback={<p className="p-4 text-sm text-fg-subtle">Loading settings…</p>}>
-        {/* Remounted per section so the editor's own `initialSection` state is re-read: opening
-            Settings from a section-specific route must land on that section even when the page
-            was last left somewhere else. Every preference applies the moment it changes, so
-            there is no draft to lose by leaving. */}
-        <PreferencesEditor
-          key={section ?? 'default'}
-          {...(section === undefined ? {} : { initialSection: section as SettingsSectionRequest })}
-        />
-      </Suspense>
+      <Suspense fallback={<p className="p-4 text-sm text-fg-subtle">Loading settings…</p>}>{body}</Suspense>
     </div>
   );
+}
+
+/**
+ * The open area's page. Remounted per area and section (the key) so a page's own initial state is re-read: opening
+ * Settings from a section-specific route must land on that section even when the page was last left somewhere else.
+ * Every preference applies the moment it changes, so there is no draft to lose by leaving.
+ */
+function areaBody(area: SettingsArea, section: SettingsSectionRequest | UserSettingsPageId | undefined) {
+  switch (area) {
+    case 'app':
+      return (
+        <PreferencesEditor
+          key={`app:${section ?? 'default'}`}
+          // In App settings the section is always a section request (the store's `openPreferences`).
+          {...(section === undefined ? {} : { initialSection: section as SettingsSectionRequest })}
+        />
+      );
+    case 'user':
+    case 'team':
+      // No page yet; nothing opens these areas until User and Team settings land (plan Tasks 7–8).
+      return null;
+  }
 }
