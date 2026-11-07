@@ -136,7 +136,10 @@ describe('AccountService', () => {
       addedAt: '2026-09-24T12:00:00.000Z',
     });
     expect(account.signedOut).toBeUndefined();
-    expect([...secrets.entries.values()]).toEqual([{ value: TOKEN, label: `${TOKEN_LABEL_PREFIX}${URL_A}` }]);
+    // One token per account (switch accounts ruling 4): the label names the person too.
+    expect([...secrets.entries.values()]).toEqual([
+      { value: TOKEN, label: `${TOKEN_LABEL_PREFIX}${URL_A}#${USER.id}` },
+    ]);
     const file = parseYaml(await readFile(join(dir, ACCOUNTS_FILE), 'utf8')) as {
       version: number;
       servers: { tokenRef: string }[];

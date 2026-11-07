@@ -127,6 +127,7 @@ function fakeAccounts(options: { readonly loaded?: boolean } = {}): {
       tokenFor: () => Promise.resolve(state.token),
       markSignedOut: () => undefined,
       list: () => [],
+      active: () => null,
       onChange: (listener) => {
         listeners.add(listener);
         return () => {
