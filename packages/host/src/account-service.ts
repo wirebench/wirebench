@@ -142,7 +142,7 @@ const LOOPBACK_MESSAGES: Readonly<Record<string, string>> = {
 
 export class AccountService {
   private readonly file: string;
-  private accounts: AccountsFile = { version: ACCOUNTS_FILE_VERSION, servers: [] };
+  private accounts: AccountsFile = { version: ACCOUNTS_FILE_VERSION, active: null, servers: [] };
   private pending: LoopbackCallback | undefined;
   /** Set synchronously before the loopback binds, so a second `startOidc` in the same tick sees it. */
   private starting = false;

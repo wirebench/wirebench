@@ -141,7 +141,7 @@ describe('AccountService', () => {
       version: number;
       servers: { tokenRef: string }[];
     };
-    expect(file.version).toBe(1);
+    expect(file.version).toBe(2);
     expect(file.servers[0]?.tokenRef).toMatch(/^sec_/);
     expect(JSON.stringify(file)).not.toContain(TOKEN);
     expect(changed).toHaveBeenCalledWith([expect.objectContaining({ url: URL_A })]);
@@ -308,7 +308,11 @@ describe('AccountService', () => {
     // eslint-disable-next-line @typescript-eslint/unbound-method -- expect() reads the mock fn, never calls it unbound
     expect(client.signOut).not.toHaveBeenCalled(); // already signed out: nothing to revoke
     expect(s.list()).toEqual([]);
-    expect(parseYaml(await readFile(join(dir, ACCOUNTS_FILE), 'utf8'))).toEqual({ version: 1, servers: [] });
+    expect(parseYaml(await readFile(join(dir, ACCOUNTS_FILE), 'utf8'))).toEqual({
+      version: 2,
+      active: null,
+      servers: [],
+    });
   });
 
   it('accepts an invitation the same way local sign-in does, and looks one up', async () => {
