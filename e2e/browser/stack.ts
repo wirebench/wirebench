@@ -43,13 +43,15 @@ export interface Seed {
   readonly password: string;
   readonly teamName: string;
   readonly teamId: string;
-  /** A second team the seeded user is an admin of, beside {@link otherAdminEmail}, so they can leave it. */
+  /** A second team the seeded user is an admin of, beside {@link existingEmail}, so they can leave it. */
   readonly secondTeamName: string;
   readonly secondTeamId: string;
-  /** An account on no team, for *Add people* to add as a member. */
+  /**
+   * An account that is not on the first team, for *Add people* to add as a member. It is also the second team's other
+   * admin (a team always keeps one, so the seeded user may leave): one account, because every account takes one of
+   * the five community seats and creating an invitation needs one free (the migrated stack starts with two taken).
+   */
   readonly existingEmail: string;
-  /** The second team's other admin: a team always keeps one, so the seeded user may leave. */
-  readonly otherAdminEmail: string;
   readonly workspaceName: string;
   readonly projectName: string;
   readonly apiName: string;

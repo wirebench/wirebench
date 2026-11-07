@@ -94,8 +94,8 @@ function migrationsTo0019(): { version: number; name: string; sql: string }[] {
 export interface FixtureSqlOptions {
   /**
    * Disables the fixture's three enabled accounts that are not server admins (`joined`, `viewer`, `editor`), so a
-   * server whose license is invalid has three community seats left: the browser suite seeds its admin and two
-   * plain accounts. The fixture's license is signed with a test key, which an image verifies with the production
+   * server whose license is invalid has three community seats left: the browser suite seeds its admin and one
+   * plain account, and creating an invitation needs a seat free. The fixture's license is signed with a test key, which an image verifies with the production
    * keys only, and its five enabled accounts fill the five community seats: an invitation would be refused
    * `licensing-seat-limit`.
    */

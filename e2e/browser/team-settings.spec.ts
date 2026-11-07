@@ -1,7 +1,7 @@
 /**
  * Team settings and User settings in the browser client (settings split spec §3–§5, §8), against the same
  * stack and seed as `browser-client.spec.ts`: the seeded user is a server admin, an admin of two teams (the
- * second with another admin), and the server also holds an account on no team.
+ * second with another admin, an account that is not on the first team).
  *
  * The steps share one page and one session, in order: each builds on the last (the person added, the
  * invitation made and renewed, the team left). Every page reports its CSP violations and the console its
@@ -166,7 +166,7 @@ test('leaving a team takes you off its People list; a server admin still sees th
   await expect(page.getByText(`Leave ${seed.secondTeamName}?`)).toBeVisible();
   await page.getByTestId('member-remove-confirm-ok').click();
   await expect(settings().getByTestId('member-leave')).toHaveCount(0);
-  await expect(memberRow(seed.otherAdminEmail)).toBeVisible();
+  await expect(memberRow(seed.existingEmail)).toBeVisible();
   await expect(settings().getByTestId('team-switcher')).toContainText(seed.secondTeamName);
   // Back on the first team for the tests after this one.
   await switchTo(seed.teamId, seed.teamName);

@@ -432,8 +432,8 @@ jobs:
       # Fresh: a secrets key made for this run only, which encrypts nothing that outlives `down -v`. Migrated: the
       # fixture's own test key, which its sealed values are under. `--free-seats` disables three fixture accounts: the
       # fixture's test-signed license is invalid under the image's production keys, so the server has the five
-      # community seats, which the fixture's accounts fill, and the suite invites three more (its admin and two
-      # plain accounts).
+      # community seats, which the fixture's accounts fill, and the suite needs three: its admin, one plain
+      # account, and a free seat for the invitation Add people creates.
       - name: Start the stack
         env:
           START: ${{ matrix.start }}

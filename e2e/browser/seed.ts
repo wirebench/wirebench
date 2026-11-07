@@ -9,8 +9,9 @@
  * 3. `POST /teams` makes a team; its creator is its first admin.
  * 4. `POST /teams/:id/workspaces` makes a server workspace in it. The creator, a member, gets the
  *    workspace's admin grant (teams spec §3.2), which is the access the spec needs.
- * 4b. A second team, whose other admin is one of those accounts (so the seeded user may leave it); the other
- *    account is on no team, for *Add people*.
+ * 4b. A second team and one plain account, its other admin (so the seeded user may leave it), which is not on
+ *    the first team, for *Add people*. One account only: each takes a community seat, and creating an
+ *    invitation needs one free.
  * 5. `POST /workspaces/:id/sync/commits` pushes one commit holding the workspace manifest and one
  *    project, written by the engine's own `saveWorkspace`/`saveProject` into a scratch folder, so the
  *    bytes are what the app itself writes. The manifest's id is the server workspace's, which is what
@@ -118,7 +119,6 @@ export async function seedServer(agentEchoUrl: string): Promise<Seed> {
     secondTeamName: `Second team ${stamp}`,
     secondTeamId: '',
     existingEmail: `browser-e2e-existing-${stamp}@example.com`,
-    otherAdminEmail: `browser-e2e-admin-${stamp}@example.com`,
     workspaceName: `Browser workspace ${stamp}`,
     projectName: 'Echo project',
     apiName: 'Echo API',
@@ -138,8 +138,7 @@ export async function seedServer(agentEchoUrl: string): Promise<Seed> {
   const team = await call<{ id: string }>('POST', '/teams', { name: seed.teamName }, token);
   const second = await call<{ id: string }>('POST', '/teams', { name: seed.secondTeamName }, token);
   await plainAccount(seed.existingEmail, 'Existing Person');
-  await plainAccount(seed.otherAdminEmail, 'Other Admin');
-  await call('POST', `/teams/${second.id}/members`, { email: seed.otherAdminEmail, role: 'admin' }, token);
+  await call('POST', `/teams/${second.id}/members`, { email: seed.existingEmail, role: 'admin' }, token);
   const workspace = await call<{ id: string }>(
     'POST',
     `/teams/${team.id}/workspaces`,
