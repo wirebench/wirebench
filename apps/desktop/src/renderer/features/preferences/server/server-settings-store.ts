@@ -18,7 +18,7 @@ import type {
 } from '@shared/wire-base.js';
 import { ipc } from '../../../state/ipc-client.js';
 
-/** The pages of the *Server* group, in the nav's order; `billing` and `delete` are a hosted team's only. */
+/** The pages of the *Server* group, in the nav's order; `billing` and `close-account` are a hosted team's only. */
 export const SERVER_PAGES = [
   'sign-in',
   'provisioning',
@@ -27,11 +27,11 @@ export const SERVER_PAGES = [
   'retention',
   'billing',
   'export',
-  'delete',
+  'close-account',
 ] as const;
 export type ServerPageId = (typeof SERVER_PAGES)[number];
 
-export const HOSTED_ONLY_PAGES: ReadonlySet<ServerPageId> = new Set<ServerPageId>(['billing', 'delete']);
+export const HOSTED_ONLY_PAGES: ReadonlySet<ServerPageId> = new Set<ServerPageId>(['billing', 'close-account']);
 
 /** The refusals that mean the page is not for this caller on this server; any other failure is shown. */
 export const NOT_FOR_YOU: ReadonlySet<string> = new Set([
@@ -253,7 +253,7 @@ export function settingsServerUrl(
   return (match ?? signedIn[0])?.url;
 }
 
-/** The pages the nav lists for `settings`: every page on a hosted team, all but Billing and Delete team self-hosted. */
+/** The pages the nav lists for `settings`: every page on a hosted team, all but Billing and Close this account self-hosted. */
 export function serverPages(settings: ServerSettingsWire | undefined): readonly ServerPageId[] {
   return SERVER_PAGES.filter((page) => isHosted(settings) || !HOSTED_ONLY_PAGES.has(page));
 }

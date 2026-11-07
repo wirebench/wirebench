@@ -44,7 +44,7 @@ describe('account.* commands', () => {
     useUiStore.setState({
       signInDialog: { open: false, url: undefined },
       teamDialog: { open: false, url: undefined },
-      preferences: { open: false, section: undefined },
+      preferences: { open: false, area: 'app', section: undefined },
     });
   });
 
@@ -55,7 +55,7 @@ describe('account.* commands', () => {
     expect(useUiStore.getState().signInDialog).toEqual({ open: true, url: undefined });
   });
 
-  it('account.signOut is gated on a signed-in server; one server signs out, several open Accounts', async () => {
+  it('account.signOut is gated on a signed-in server; one server signs out', async () => {
     const signOut = vi.fn().mockResolvedValue({ ok: true, value: { servers: [] } });
     installWirebenchApi({ account: { signOut } });
     const command = getCommand('account.signOut')!;
@@ -66,9 +66,20 @@ describe('account.* commands', () => {
     expect(command.when?.(context)).toBe(true);
     void command.run(context);
     await vi.waitFor(() => expect(signOut).toHaveBeenCalledWith({ url: 'https://one.test' }));
+  });
+
+  it('sign out with two servers opens Servers you’re signed in to', () => {
     useAccountStore.setState({ servers: [account('https://one.test'), account('https://two.test')] });
+    void getCommand('account.signOut')!.run(context);
+    expect(useUiStore.getState().preferences).toEqual({ open: true, area: 'user', section: 'servers' });
+  });
+
+  it('Account settings opens User settings', () => {
+    const command = getCommand('account.settings')!;
+    expect(command.label).toBe('Account: Account settings');
+    expect(command.category).toBe('Account');
     void command.run(context);
-    expect(useUiStore.getState().preferences).toEqual({ open: true, section: 'accounts' });
+    expect(useUiStore.getState().preferences).toEqual({ open: true, area: 'user', section: undefined });
   });
 
   it('team.manage is gated on a signed-in server and, for a server without the browser client, opens the dialog', async () => {

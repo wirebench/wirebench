@@ -1156,6 +1156,12 @@ export const COMMAND_CATALOG: Readonly<Record<CommandId, CommandCatalogEntry>> =
     label: 'Account: Sign out…',
     category: 'Account',
   },
+  'account.settings': {
+    id: 'account.settings',
+    label: 'Account: Account settings',
+    category: 'Account',
+    aliases: ['profile', 'display name', 'password', 'devices', 'user settings'],
+  },
   'team.manage': {
     id: 'team.manage',
     label: 'Account: Manage team…',

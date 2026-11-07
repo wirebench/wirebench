@@ -44,7 +44,7 @@ export function MembersTab() {
             <li
               key={member.userId}
               data-testid={`member-row-${member.userId}`}
-              className="flex items-center gap-3 py-2"
+              className="flex flex-wrap items-center gap-3 py-2"
             >
               <div className="min-w-0 flex-1">
                 <div className="truncate text-sm text-fg-default">
@@ -78,6 +78,16 @@ export function MembersTab() {
                 >
                   {self ? 'Leave' : 'Remove'}
                 </Button>
+              )}
+              {/* A refusal of this row's change stays on the row (`teams-last-admin` among them). */}
+              {store.rowErrors[member.userId] !== undefined && (
+                <p
+                  role="alert"
+                  data-testid={`member-row-error-${member.userId}`}
+                  className="basis-full text-xs text-status-danger"
+                >
+                  {store.rowErrors[member.userId]}
+                </p>
               )}
             </li>
           );

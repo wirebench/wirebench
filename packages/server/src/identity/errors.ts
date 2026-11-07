@@ -24,6 +24,7 @@ export const flowInvalid = (): WirebenchError =>
   problem('identity-flow-invalid', 'This sign-in could not be completed. Start again from Wirebench.', 400);
 export const passwordTooShort = (): WirebenchError =>
   problem('identity-password-too-short', `Passwords must be at least ${MIN_PASSWORD_LENGTH} characters long.`, 400);
+export const displayNameInvalid = (): WirebenchError => problem('identity-name-invalid', 'Enter a name.', 400);
 export const selfChange = (): WirebenchError =>
   problem('identity-self-change', 'You cannot remove your own admin flag or disable yourself.', 400);
 export const notFound = (what: string): WirebenchError => problem('identity-not-found', `${what} was not found.`, 404);

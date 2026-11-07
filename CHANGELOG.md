@@ -11,6 +11,22 @@ All notable changes to this project are documented here. The format follows
   choose a password (typed twice) and their name, or continue with the team's single sign-on, and lands them signed
   in on the browser app. A password-reset link sets the new password the same way. The page still shows the code
   for the desktop app, which keeps working as before.
+- **User settings.** You, on every server you sign in to, in one place: **Profile** (edit your name, see your email
+  and how you sign in), **Password**, **Servers you're signed in to**, **Signed-in devices** (sign any other device
+  out) and **CI tokens**. Open it with **Account settings…** in the status bar's account menu or **Account: Account
+  settings** in the palette. With several servers signed in, a picker chooses which one the pages show.
+- **Team settings in the browser.** The browser client manages a team on a settings page of its own, in place of
+  the Team dialog: a team switcher, then **This team** (Overview, People, Workspaces, What roles can do) and, for
+  server admins, **Server** (License and seats, Sign-in, Provisioning, Domain, Email, Audit log, Audit forwarding,
+  Retention, Export, and Billing and Close this account on a hosted team). People lists members and open
+  invitations together, with filters and a search. The address names the team and the page, so a reload or a
+  bookmark comes back to it; leaving the page clears it.
+- **Renew an invitation (server).** `POST /api/v1/teams/:teamId/invitations/:id/renew` revokes an open invitation and
+  makes a new link for the same email and role in one transaction, so the old link stops working at once and the
+  person is never left without one. Team settings offers it as **New link** on a waiting invitation.
+- **Edit your name (server).** `PATCH /api/v1/me` changes your own display name (1–120 characters after trimming),
+  recorded in the audit log as `user.updated` with the field's name and never its value. A name your identity
+  provider sets over SCIM is replaced by its next update.
 
 ### Changed
 - **The browser client is always on (server).** Every server serves the app in a browser tab at `/`, with the
@@ -29,11 +45,25 @@ All notable changes to this project are documented here. The format follows
   the variable, since every instance needs the same key. `migrate` and `admin tenancy` read the stored key and never
   make one.
 - **Team management moves to the browser.** The desktop app's **Manage team…** (the palette's *Account: Manage team…*, the
-  status bar's account menu and Settings → Accounts) opens the server's team page in your default browser, on the
+  status bar's account menu and User settings → Servers you're signed in to) opens the server's team page in your default browser, on the
   same server and, when the open workspace is shared there, on its team. Members, workspaces, invitations, access,
   the license, the audit log, provisioning and the domain are managed there. Signing in, choosing a team when you
   share or open a workspace, and sync stay in the desktop. A server from an earlier release without the browser
   client keeps the dialog in the app. `GET /api/v1/meta` lists `browser-client`.
+- **Settings is three areas.** App settings (<kbd>⌘,</kbd> / <kbd>Ctrl+,</kbd>) is now this app on this machine,
+  in four groups: General, Protocols, Network and tools, and This computer. Its search finds App settings only. The
+  Account group moved to User settings, with the **Show sign-in in the status bar** switch, and the Server group
+  moved to Team settings.
+- **Delete team is now Close this account** on a hosted team's Server pages, so it is not mistaken for deleting one
+  team; the banner while it is pending reads *This account is being closed*. Deleting one team stays on its
+  Overview page.
+- **The status bar's account menu** has **Account settings…** (was *Manage accounts…*) and **Signed-in devices…** (was
+  *Devices & tokens…*), both opening User settings. *Account: Sign out…* with several servers signed in opens
+  Servers you're signed in to.
+
+### Removed
+- **Settings → Server in the desktop app.** A server admin manages the server's own settings in Team settings in the
+  browser client; the desktop's **Manage team…** opens it there.
 
 ## [7.0.0] - 2026-11-06
 

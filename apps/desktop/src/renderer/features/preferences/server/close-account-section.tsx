@@ -1,5 +1,5 @@
 /**
- * Server › Delete team (hosted edition spec §22.11): asked with the team's slug typed, held for 14 days while the team
+ * Server › Close this account (hosted edition spec §22.11; settings split ruling 9): asked with the team's slug typed, held for 14 days while the team
  * keeps working, and cancelled until then. The deletion waits while the subscription is still active, so the page
  * says to cancel it with the payment provider first.
  */
@@ -28,16 +28,16 @@ export function DeletionBanner() {
       data-testid="server-deletion-banner"
       className="mb-5 rounded-lg border border-status-danger/40 bg-status-danger/10 px-4 py-3 text-sm"
     >
-      <p className="font-semibold text-status-danger">This team is being deleted</p>
+      <p className="font-semibold text-status-danger">This account is being closed</p>
       <p className="mt-0.5 text-fg-muted">
-        It is deleted on {formatDate(deletingAt)}, in {String(days)} {days === 1 ? 'day' : 'days'}. A server admin can
-        cancel it until then, from Delete team.
+        Everything in it is deleted on {formatDate(deletingAt)}, in {String(days)} {days === 1 ? 'day' : 'days'}. A
+        server admin can cancel it until then, from Close this account.
       </p>
     </div>
   );
 }
 
-export function DeleteTeamSection() {
+export function CloseAccountSection() {
   const url = useServerSettingsStore((s) => s.url) ?? '';
   const billing = useServerSettingsStore((s) => s.billing);
   const deletingAt = useServerSettingsStore((s) => s.billing?.deletion?.deletingAt ?? null);
@@ -56,7 +56,7 @@ export function DeleteTeamSection() {
     return (
       <div data-testid="server-delete">
         <ServerCard
-          title="Delete team"
+          title="Close this account"
           testId="server-delete-card"
           danger
           chip={<Chip tone="danger">{`In ${String(days)} ${days === 1 ? 'day' : 'days'}`}</Chip>}
@@ -83,7 +83,7 @@ export function DeleteTeamSection() {
   return (
     <div data-testid="server-delete">
       <ServerCard
-        title="Delete team"
+        title="Close this account"
         testId="server-delete-card"
         danger
         footer={
@@ -119,7 +119,7 @@ export function DeleteTeamSection() {
       <ConfirmDialog
         open={confirming}
         onOpenChange={setConfirming}
-        title="Delete this team?"
+        title="Close this account?"
         description={`Every server admin is mailed, and ${name} is deleted in 14 days unless someone cancels it.`}
         confirmLabel="Delete in 14 days"
         destructive

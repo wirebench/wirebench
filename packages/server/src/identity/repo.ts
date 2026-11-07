@@ -147,6 +147,10 @@ export async function setServerAdmin(db: TenantQuerier, id: string, serverAdmin:
 }
 
 /** `at: null` re-enables. */
+export async function setDisplayName(db: TenantQuerier, id: string, name: string): Promise<void> {
+  await db.query('update users set display_name = $2 where id = $1', [id, name]);
+}
+
 export async function setDisabled(db: TenantQuerier, id: string, at: Date | null): Promise<void> {
   await db.query('update users set disabled_at = $2 where id = $1', [id, at]);
 }

@@ -396,6 +396,23 @@ export class AccountService {
     }
   }
 
+  /**
+   * The server took a new display name for you (`PATCH /me`): the stored account follows without asking `me`
+   * again. The embedder's account changes in memory only, as it is never stored.
+   */
+  async setDisplayName(url: string, displayName: string): Promise<void> {
+    const origin = normalizeServerUrl(url);
+    if (origin === this.embedded?.origin) {
+      if (this.embedded.displayName === displayName) return;
+      this.embedded.displayName = displayName;
+      this.notify();
+      return;
+    }
+    const account = this.find(origin);
+    if (account === undefined || account.displayName === displayName) return;
+    await this.replace(origin, { ...account, displayName });
+  }
+
   /** {@link refresh} for every signed-in account, in parallel; called once after {@link load}. */
   async refreshAll(): Promise<void> {
     await Promise.all([

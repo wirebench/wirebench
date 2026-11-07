@@ -205,7 +205,7 @@ describe('TeamDialog (teams-access §3.5)', () => {
     await useTeamStore.getState().selectTeam('T2');
     await vi.waitFor(() => expect(screen.queryByRole('tab', { name: 'Audit' })).toBeNull());
     expect(screen.queryByTestId('audit-tab')).toBeNull();
-    expect(useTeamStore.getState().tab).toBe('members');
+    expect(screen.getByRole('tab', { name: 'Members', selected: true })).toBeTruthy();
     await useTeamStore.getState().selectTeam('T1');
     expect(await screen.findByRole('tab', { name: 'Audit' })).not.toBeNull();
   });

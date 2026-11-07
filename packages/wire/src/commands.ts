@@ -216,6 +216,7 @@ export const COMMAND_IDS = [
   'account.signIn',
   'account.pairThisMachine',
   'account.signOut',
+  'account.settings',
   'team.manage',
 ] as const;
 

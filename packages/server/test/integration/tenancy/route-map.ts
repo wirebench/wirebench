@@ -256,6 +256,14 @@ export const ROUTE_MAP: Readonly<Record<string, RouteCase>> = {
     cls: 'refused',
     request: async (ctx) => json(ctx, 'DELETE', api(`/me/devices/${await fresh.token(ctx.a, ctx.a.admin)}`)),
   },
+  'PATCH /api/v1/me': {
+    cls: 'own',
+    // A user of the sender's own, so the admin every other template sends as keeps its name.
+    request: async (ctx) => {
+      const user = await fresh.user(ctx.from.tenant);
+      return json(ctx, 'PATCH', api('/me'), { name: 'Renamed' }, bearer(user));
+    },
+  },
   'POST /api/v1/me/password': {
     cls: 'own',
     // A user of the sender's of their own: a change of password ends their other sessions.
@@ -457,6 +465,11 @@ export const ROUTE_MAP: Readonly<Record<string, RouteCase>> = {
         email: `q-${newId().toLowerCase()}@acme.example`,
         role: 'member',
       }),
+  },
+  'POST /api/v1/teams/:teamId/invitations/:id/renew': {
+    cls: 'refused',
+    request: async (ctx) =>
+      json(ctx, 'POST', api(`/teams/${ctx.a.teamId}/invitations/${await fresh.teamInvitation(ctx.a)}/renew`)),
   },
   'DELETE /api/v1/teams/:teamId/invitations/:id': {
     cls: 'refused',

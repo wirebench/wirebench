@@ -3002,6 +3002,35 @@ export const accountAcceptInvitationRequestSchema = z.object({
   deviceName: z.string().optional(),
 });
 export const accountCancelResponseSchema = z.object({ cancelled: z.boolean() });
+/**
+ * You on one server (settings split spec §4): `GET /me`, plus whether the server signs in with passwords at all
+ * (`GET /meta` `auth.local`), which decides whether the Password page shows.
+ */
+export const accountProfileWireSchema = z.object({
+  user: z.object({ id: z.string(), email: z.string(), displayName: z.string(), serverAdmin: z.boolean() }),
+  methods: z.object({ local: z.boolean(), oidc: z.array(z.object({ issuer: z.string() })) }),
+  localPasswords: z.boolean(),
+});
+export type AccountProfileWire = z.infer<typeof accountProfileWireSchema>;
+export const accountUpdateProfileRequestSchema = z.object({ url: z.string(), name: z.string() });
+/** No `currentPassword` for an account that has never had one (an SSO user setting a first password). */
+export const accountChangePasswordRequestSchema = z.object({
+  url: z.string(),
+  currentPassword: z.string().optional(),
+  newPassword: z.string(),
+});
+export const accountDeviceWireSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  createdAt: z.string(),
+  lastUsedAt: z.string(),
+  /** The device this host signs in as. */
+  current: z.boolean(),
+});
+export type AccountDeviceWire = z.infer<typeof accountDeviceWireSchema>;
+export const accountDevicesResponseSchema = z.object({ devices: z.array(accountDeviceWireSchema) });
+export const accountDeviceRefRequestSchema = z.object({ url: z.string(), id: z.string() });
+export const accountDoneResponseSchema = z.object({ done: z.literal(true) });
 export const accountChangedEventSchema = accountListResponseSchema;
 export type AccountChangedEvent = z.infer<typeof accountChangedEventSchema>;
 

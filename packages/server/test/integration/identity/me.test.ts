@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, expect, it } from 'vitest';
 import * as repo from '../../../src/identity/repo.js';
 import { sweepExpired } from '../../../src/identity/sessions.js';
+import { recordingAudit } from '../../helpers/context.js';
 import { describeDb } from '../../helpers/database.js';
 import { identityHarness, signedInUser, type IdentityHarness } from '../../helpers/identity.js';
 
@@ -107,6 +108,46 @@ describeDb('/me (§3.1)', () => {
     expect(
       (await h.app.inject({ method: 'GET', url: '/api/v1/me/devices', headers: alice.headers })).json(),
     ).toHaveLength(1);
+  });
+
+  const patchMe = (headers: Record<string, string> | undefined, payload: object) =>
+    h.app.inject({ method: 'PATCH', url: '/api/v1/me', ...(headers !== undefined ? { headers } : {}), payload });
+
+  it('PATCH /me trims and stores the name; GET /me shows it', async () => {
+    const alice = await signedInUser(h, { email: 'alice@example.com' });
+    const res = await patchMe(alice.headers, { name: '  Alice Liddell  ' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json<{ user: { displayName: string } }>().user.displayName).toBe('Alice Liddell');
+    const me = await h.app.inject({ method: 'GET', url: '/api/v1/me', headers: alice.headers });
+    expect(me.json()).toEqual(res.json());
+    expect((await repo.findUserById(h.tdb, alice.user.id))?.displayName).toBe('Alice Liddell');
+  });
+
+  it('refuses a blank and a 121-character name with 400', async () => {
+    const alice = await signedInUser(h, { email: 'alice@example.com' });
+    const blank = await patchMe(alice.headers, { name: '   ' });
+    expect(blank.statusCode).toBe(400);
+    expect(blank.json<{ code: string }>().code).toBe('identity-name-invalid');
+    expect((await patchMe(alice.headers, { name: 'a'.repeat(121) })).statusCode).toBe(400);
+    expect((await patchMe(alice.headers, { name: 'a'.repeat(120) })).statusCode).toBe(200);
+  });
+
+  it('records user.updated once, with the field name and no value', async () => {
+    const alice = await signedInUser(h, { email: 'alice@example.com' });
+    const events = recordingAudit(h.hooks);
+    await patchMe(alice.headers, { name: 'Alice Liddell' });
+    expect(events.map((e) => [e.action, e.target, e.details])).toEqual([
+      ['user.updated', { kind: 'user', id: alice.user.id }, { fields: 'displayName', via: 'self' }],
+    ]);
+    expect(JSON.stringify(events)).not.toContain('Liddell');
+    expect((await patchMe(alice.headers, { name: ' Alice Liddell ' })).statusCode).toBe(200);
+    expect(events).toHaveLength(1);
+  });
+
+  it('needs a signed-in user', async () => {
+    const res = await patchMe(undefined, { name: 'Alice' });
+    expect(res.statusCode).toBe(401);
+    expect(res.json<{ code: string }>().code).toBe('identity-unauthenticated');
   });
 
   it('the sweep deletes tokens idle 30 days, older than 180 days, or revoked over a day ago', async () => {

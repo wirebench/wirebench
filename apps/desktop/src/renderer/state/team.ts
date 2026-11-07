@@ -19,8 +19,10 @@ import type {
 } from '@shared/wire-base.js';
 import { showToast } from '../components/toast.js';
 import { ipc } from './ipc-client.js';
-import type { TeamDialogTarget } from './ui.js';
+import { resolveTeamPage, type TeamSettingsPageId } from '../features/team/team-settings-model.js';
+import type { TeamSettingsTarget } from './ui.js';
 
+/** The fallback dialog's tabs; the dialog keeps which one is open itself. */
 export type TeamTab = 'members' | 'workspaces' | 'invitations' | 'license' | 'audit' | 'provisioning' | 'domain';
 
 export interface TeamState {
@@ -34,7 +36,8 @@ export interface TeamState {
   readonly featurePolicy: boolean;
   readonly teams: readonly TeamWire[];
   readonly teamId: string | undefined;
-  readonly tab: TeamTab;
+  /** Team settings' page; `undefined` before the first load, and for a caller with no team and no page asked. */
+  readonly page: TeamSettingsPageId | undefined;
   readonly members: readonly TeamMemberWire[];
   readonly invitations: readonly TeamInvitationWire[];
   /** Every workspace the caller can open on `url`, across teams; {@link teamWorkspaces} narrows it. */
@@ -45,21 +48,33 @@ export interface TeamState {
   readonly lastInvite: TeamInvitationCreatedWire | undefined;
   readonly loading: boolean;
   readonly signedOut: boolean;
+  /** A refusal of a row's last change or removal, by user id; shown on that row instead of a toast. */
+  readonly rowErrors: Readonly<Record<string, string>>;
 }
+
+/** What *Add people* did: added an account, invited an email with no account, or was refused. */
+export type AddPersonResult =
+  | { readonly kind: 'member' }
+  | { readonly kind: 'invited'; readonly invitation: TeamInvitationCreatedWire }
+  | { readonly kind: 'failed'; readonly message: string };
 
 export interface TeamStore extends TeamState {
   /** Loads `url`'s teams; `target` picks the team on this first load (team management in the browser §2.2). */
-  readonly open: (url: string, target?: TeamDialogTarget) => Promise<void>;
+  readonly open: (url: string, target?: TeamSettingsTarget) => Promise<void>;
   readonly reset: () => void;
   readonly refresh: () => Promise<void>;
   readonly selectTeam: (teamId: string) => Promise<void>;
-  readonly setTab: (tab: TeamTab) => void;
+  readonly setPage: (page: TeamSettingsPageId) => void;
   readonly createTeam: (name: string) => Promise<boolean>;
   readonly renameTeam: (name: string) => Promise<boolean>;
   readonly deleteTeam: () => Promise<boolean>;
   readonly addMember: (email: string, role: TeamRoleWire) => Promise<boolean>;
   readonly setMemberRole: (userId: string, role: TeamRoleWire) => Promise<boolean>;
   readonly removeMember: (userId: string) => Promise<boolean>;
+  /** Adds an account as a member, or invites the email when no account has it (spec §3.3). */
+  readonly addPerson: (email: string, role: TeamRoleWire) => Promise<AddPersonResult>;
+  /** A new link for an open invitation; the old one stops working. Sets `lastInvite` to it. */
+  readonly renewInvitation: (invitationId: string) => Promise<boolean>;
   readonly invite: (email: string, role: TeamRoleWire) => Promise<boolean>;
   readonly clearLastInvite: () => void;
   readonly revokeInvitation: (invitationId: string) => Promise<boolean>;
@@ -89,7 +104,7 @@ const INITIAL: TeamState = {
   featurePolicy: false,
   teams: [],
   teamId: undefined,
-  tab: 'members',
+  page: undefined,
   members: [],
   invitations: [],
   workspaces: [],
@@ -97,6 +112,7 @@ const INITIAL: TeamState = {
   lastInvite: undefined,
   loading: false,
   signedOut: false,
+  rowErrors: {},
 };
 
 const SIGNED_OUT = new Set(['identity-unauthenticated', 'account-signed-out']);
@@ -109,9 +125,27 @@ export function teamWorkspaces(state: TeamState): readonly TeamWorkspaceWire[] {
   return state.workspaces.filter((workspace) => workspace.teamId === state.teamId);
 }
 
+/**
+ * The page to show for what this store knows: the team and the caller's roles. Whether the server's settings and
+ * domain reads answered is the page's to add, so here they are assumed (a Server page the address names is kept
+ * until those reads say otherwise). With no team and no page asked, there is none: the empty state.
+ */
+function settledPage(state: TeamState, page: TeamSettingsPageId | undefined): TeamSettingsPageId | undefined {
+  const hasTeam = selectedTeam(state) !== undefined;
+  if (!hasTeam && page === undefined) return undefined;
+  return resolveTeamPage(page, {
+    hasTeam,
+    teamAdmin: selectedTeam(state)?.myRole === 'admin',
+    serverAdmin: state.serverAdmin,
+    settingsAvailable: true,
+    hosted: true,
+    domain: true,
+  });
+}
+
 export const useTeamStore = create<TeamStore>((set, get) => {
   /** The team `open` was asked to show, until the first load after it has used it. */
-  let preferred: TeamDialogTarget | undefined;
+  let preferred: TeamSettingsTarget | undefined;
 
   /** Unwraps an answer; a failure toasts `Could not <what>: …`, or marks the dialog signed out. */
   const run = async <T>(what: string, call: () => Promise<IpcResult<T>>): Promise<T | undefined> => {
@@ -166,6 +200,32 @@ export const useTeamStore = create<TeamStore>((set, get) => {
     return (await write(what, (url) => call(url, teamId))) !== undefined;
   };
 
+  /** A refusal *Add people* shows in its dialog; a signed-out one still flips the page. */
+  const refused = (error: { readonly code: string; readonly message: string }): AddPersonResult => {
+    if (SIGNED_OUT.has(error.code)) set({ signedOut: true });
+    return { kind: 'failed', message: error.message };
+  };
+
+  /** A change to one member's row: its refusal (`teams-last-admin` among them) stays on that row. */
+  const onRow = async (
+    userId: string,
+    call: (url: string, teamId: string) => Promise<IpcResult<unknown>>,
+  ): Promise<boolean> => {
+    const { url, teamId } = get();
+    if (url === undefined || teamId === undefined) return false;
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- destructured only to omit it
+    const { [userId]: dropped, ...others } = get().rowErrors;
+    set({ rowErrors: others });
+    const result = await call(url, teamId);
+    if (!result.ok) {
+      if (SIGNED_OUT.has(result.error.code)) set({ signedOut: true });
+      else set({ rowErrors: { ...get().rowErrors, [userId]: result.error.message } });
+      return false;
+    }
+    await get().refresh();
+    return true;
+  };
+
   const withAccess = async (
     what: string,
     call: (url: string, workspaceId: string) => Promise<IpcResult<unknown>>,
@@ -179,7 +239,7 @@ export const useTeamStore = create<TeamStore>((set, get) => {
     ...INITIAL,
 
     open: async (url, target) => {
-      set({ ...INITIAL, url, loading: true });
+      set({ ...INITIAL, url, loading: true, page: target?.page });
       preferred = target;
       await get().refresh();
     },
@@ -218,11 +278,7 @@ export const useTeamStore = create<TeamStore>((set, get) => {
         workspaces: spaces?.workspaces ?? get().workspaces,
         teamId,
       });
-      // The License tab is a server admin's (licensing §3.8); the Audit tab is also a team admin's, for their team.
-      // The License and Domain tabs are a server admin's (licensing §3.8, hosted edition §23.6).
-      if (!list.serverAdmin && (get().tab === 'license' || get().tab === 'domain')) set({ tab: 'members' });
-      if (!list.serverAdmin && get().tab === 'audit' && selectedTeam(get())?.myRole !== 'admin')
-        set({ tab: 'members' });
+      set({ page: settledPage(get(), get().page) });
       await loadTeam();
       await reloadAccess();
       set({ loading: false });
@@ -230,14 +286,13 @@ export const useTeamStore = create<TeamStore>((set, get) => {
 
     selectTeam: async (teamId) => {
       set({ teamId, members: [], invitations: [], access: undefined });
-      if (get().tab === 'invitations' && selectedTeam(get())?.myRole !== 'admin') set({ tab: 'members' });
-      if (get().tab === 'audit' && !get().serverAdmin && selectedTeam(get())?.myRole !== 'admin')
-        set({ tab: 'members' });
+      // Keeps the page where the new team allows it: an admin-only page falls back for a member.
+      set({ page: settledPage(get(), get().page) });
       await loadTeam();
     },
 
-    setTab: (tab) => {
-      set({ tab, access: undefined });
+    setPage: (page) => {
+      set({ page, access: undefined });
     },
 
     createTeam: async (name) => {
@@ -245,7 +300,8 @@ export const useTeamStore = create<TeamStore>((set, get) => {
       if (url === undefined) return false;
       const value = await run('create the team', () => ipc().team.create({ url, name }));
       if (value === undefined) return false;
-      set({ teamId: value.team.id, tab: 'members' });
+      // Listed at once, so nothing reads a selected team that is not in the list before the reload lands.
+      set({ teams: [...get().teams, value.team], teamId: value.team.id, page: 'people' });
       await get().refresh();
       return true;
     },
@@ -258,10 +314,35 @@ export const useTeamStore = create<TeamStore>((set, get) => {
       withTeam('add the member', (url, teamId) => ipc().team.addMember({ url, teamId, email, role })),
 
     setMemberRole: (userId, role) =>
-      withTeam('change the role', (url, teamId) => ipc().team.setMemberRole({ url, teamId, userId, role })),
+      onRow(userId, (url, teamId) => ipc().team.setMemberRole({ url, teamId, userId, role })),
 
-    removeMember: (userId) =>
-      withTeam('remove the member', (url, teamId) => ipc().team.removeMember({ url, teamId, userId })),
+    removeMember: (userId) => onRow(userId, (url, teamId) => ipc().team.removeMember({ url, teamId, userId })),
+
+    addPerson: async (email, role) => {
+      const { url, teamId } = get();
+      if (url === undefined || teamId === undefined) return { kind: 'failed', message: 'No team is open.' };
+      const added = await ipc().team.addMember({ url, teamId, email, role });
+      if (added.ok) {
+        await get().refresh();
+        return { kind: 'member' };
+      }
+      if (added.error.code !== 'teams-user-unknown') return refused(added.error);
+      const invited = await ipc().team.invite({ url, teamId, email, role });
+      if (!invited.ok) return refused(invited.error);
+      await get().refresh();
+      return { kind: 'invited', invitation: invited.value.invitation };
+    },
+
+    renewInvitation: async (invitationId) => {
+      const teamId = get().teamId;
+      if (teamId === undefined) return false;
+      const value = await write('renew the invitation', (url) =>
+        ipc().team.renewInvitation({ url, teamId, invitationId }),
+      );
+      if (value === undefined) return false;
+      set({ lastInvite: value.invitation });
+      return true;
+    },
 
     invite: async (email, role) => {
       const teamId = get().teamId;
