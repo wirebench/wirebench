@@ -71,13 +71,15 @@ describe('account.* commands', () => {
     expect(useUiStore.getState().preferences).toEqual({ open: true, section: 'accounts' });
   });
 
-  it('team.manage is gated on a signed-in server and opens the teams dialog', () => {
+  it('team.manage is gated on a signed-in server and, for a server without the browser client, opens the dialog', async () => {
     const command = getCommand('team.manage')!;
+    expect(command.label).toBe('Account: Manage team…');
     expect(command.when?.(context)).toBe(false);
     useAccountStore.setState({ servers: [account('https://wb.test')] });
     expect(command.when?.(context)).toBe(true);
     void command.run(context);
-    expect(useUiStore.getState().teamDialog).toEqual({ open: true, url: undefined });
+    // The stub's account.probe fails: the dialog opens in the window (team management in the browser, ruling 4).
+    await vi.waitFor(() => expect(useUiStore.getState().teamDialog).toEqual({ open: true, url: 'https://wb.test' }));
   });
 
   it('workspace.openTeamWorkspace is gated on a signed-in server and opens its dialog', () => {

@@ -263,7 +263,7 @@ export function ServerShareForm({ workspaceName, onShared }: ServerShareFormProp
         </p>
       ) : targets.items.length === 0 ? (
         <p data-testid="share-existing-empty" className="mt-3 text-sm text-fg-subtle">
-          This team has no empty workspace you can edit. A team admin can create one in Manage teams.
+          This team has no empty workspace you can edit. A team admin can create one in Manage team.
         </p>
       ) : (
         <>

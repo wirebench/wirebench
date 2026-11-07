@@ -1,6 +1,6 @@
 /**
  * Server › Provisioning (hosted edition spec §22.13; saml-scim spec §3.7): the SCIM base URL and its tokens. A new
- * token is shown once, with Copy; then only its name remains. The groups and their teams stay in *Manage teams…*.
+ * token is shown once, with Copy; then only its name remains. The groups and their teams stay in *Manage team…*.
  */
 import { useEffect, useState } from 'react';
 import { Button } from '../../../components/button.js';

@@ -6,6 +6,21 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- **Accept an invitation in the browser.** With the browser client on, an invitation link's page lets the invitee
+  choose a password (typed twice) and their name, or continue with the team's single sign-on, and lands them signed
+  in on the browser app. A password-reset link sets the new password the same way. The page still shows the code
+  for the desktop app, which keeps working as before.
+
+### Changed
+- **Team management moves to the browser.** On a server with the browser client on
+  (`WIREBENCH_SERVER_BROWSER_CLIENT`), the desktop app's **Manage team…** (the palette's *Account: Manage team…*, the
+  status bar's account menu and Settings → Accounts) opens the server's team page in your default browser, on the
+  same server and, when the open workspace is shared there, on its team. Members, workspaces, invitations, access,
+  the license, the audit log, provisioning and the domain are managed there. Signing in, choosing a team when you
+  share or open a workspace, and sync stay in the desktop. A server without the browser client keeps the dialog in
+  the app. `GET /api/v1/meta` lists `browser-client` while it is on.
+
 ## [7.0.0] - 2026-11-06
 
 ### Added

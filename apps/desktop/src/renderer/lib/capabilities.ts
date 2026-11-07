@@ -4,8 +4,8 @@ export type { Capability };
 
 /**
  * Whether the connected host can do `capability` (hosted edition spec §3.1): what the preload or the
- * browser bootstrap put in `window.wirebench.env.capabilities`. The one way the renderer asks; nothing
- * compares `env.host`. A feature that needs a capability is not offered without it, and the host refuses
+ * browser bootstrap put in `window.wirebench.env.capabilities`. The one way the renderer asks what a host can
+ * do; only {@link isBrowserTab} reads `env.host`. A feature that needs a capability is not offered without it, and the host refuses
  * the channel anyway (`host-capability-missing`), so this decides what is shown, never what is allowed.
  *
  * No list at all (a renderer test's stub, a preload older than the field) means the desktop: every
@@ -40,4 +40,14 @@ export function tabSignOut(): (() => void) | undefined {
  */
 export function hasAgent(): boolean {
   return (globalThis as { wirebench?: { env?: { agent?: unknown } } }).wirebench?.env?.agent !== undefined;
+}
+
+/**
+ * Whether this window is the browser client (`env.host === 'browser'`), not the desktop app. The one reader of
+ * `host`: everything else asks {@link hasCapability}. It is about which *app* is running, not what the host can do,
+ * because team management is the browser client's (team management in the browser §1, ruling 2). No `env` (a
+ * renderer test's stub) is the desktop.
+ */
+export function isBrowserTab(): boolean {
+  return (globalThis as { wirebench?: { env?: { host?: string } } }).wirebench?.env?.host === 'browser';
 }

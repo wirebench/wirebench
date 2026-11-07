@@ -3,7 +3,8 @@
  * workspace, sends to a service on the server's network, finds that a loopback address needs this
  * machine, pairs the headless `wirebench agent` running beside it (global setup starts it, unpaired) and
  * sends to this machine's `127.0.0.1` through it, sees in History which host sent each exchange, shows no
- * SSH area and no file-manager reveal, and signs out to the sign-in page.
+ * SSH area and no file-manager reveal, opens the Team dialog from the desktop's team link, and signs out
+ * to the sign-in page.
  *
  * The steps share one page and one session, in order: each builds on the last, and the sign-in
  * endpoints are rate-limited per address. Every page the flow loads reports its CSP violations and the
@@ -88,6 +89,17 @@ test('a tab without a session is sent to sign in, and a local password signs it 
     await expect(page.getByTestId(testId)).toHaveCount(0);
   }
   await expect(page.getByText('Project folders you opened before')).toHaveCount(0);
+});
+
+test('the team deep link the desktop opens shows the Team dialog on the tab’s server', async () => {
+  await page.goto('/?panel=team');
+  const dialog = page.getByTestId('team-dialog');
+  await expect(dialog).toBeVisible({ timeout: 60_000 });
+  await expect(dialog.getByTestId('team-name')).toHaveValue(seed.teamName);
+  // Taken out of the address bar, so a reload does not open it again.
+  await expect(page).toHaveURL(/\/$/);
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
 });
 
 test('opens the seeded server workspace', async () => {

@@ -61,7 +61,7 @@ test.describe('audit log (audit-log spec §3.6)', () => {
     });
     const page = launched.window;
     await signIn(page, server.url, ROOT);
-    await runCommand(page, 'Account: Manage teams');
+    await runCommand(page, 'Account: Manage team');
     const dialog = page.getByTestId('team-dialog');
     await expect(dialog).toBeVisible({ timeout: 20_000 });
     await dialog.getByRole('tab', { name: 'Audit' }).click();

@@ -240,6 +240,11 @@ Accounts, then:
    the code from an invitation link (an admin sends it) and lets you choose your display name and
    password.
 
+With the browser client on, the invitation link's page also lets you join in the browser: type a password twice
+(and your name, if you like), or continue with the team's single sign-on, and you land signed in on the browser
+app. A password-reset link sets the new password the same way. The page always shows the code for the desktop app
+too.
+
 Once signed in, the status bar shows your email. The session is a device token the server issued to
 this installation: it lives in the OS keychain (`secrets.json` names it under `wirebench-server:<url>`,
 the value is never in a file) and expires after 30 days without use, or 180 days at most. The
@@ -257,8 +262,14 @@ is made.
 ## Teams and roles
 
 On Wirebench Server, every shared workspace belongs to a team, and what you can do in it depends on your role.
-Open **Account: Manage teams…** from the palette, the status bar's account menu, or **Manage teams…** beside a
+Open **Account: Manage team…** from the palette, the status bar's account menu, or **Manage team…** beside a
 signed-in server under Settings → Accounts.
+
+Team management happens in the server's browser client. In the desktop app, **Manage team…** opens the server's
+team page in your default browser (you sign in there the first time), on the team of the open
+workspace when it is shared to that server. A server whose operator has not turned the browser client on
+(`WIREBENCH_SERVER_BROWSER_CLIENT`) keeps the dialog in the app. Signing in, choosing a team when you share or open a
+workspace, and sync stay in the desktop app.
 
 - **Teams.** A server admin creates a team and adds its first admin. Team admins add people who already have an
   account, or invite someone by email. The invitation link is shown once, with **Copy**, and whoever accepts it
@@ -290,7 +301,7 @@ the team, then either:
 
 - **A new workspace** — named after yours unless you change it, with the team's **default role**: *No
   access*, *Viewer* (the default) or *Editor*. You become its admin. The name must be free in that team.
-- **An existing empty workspace** — one a team admin created under *Manage teams* that nobody has shared
+- **An existing empty workspace** — one a team admin created under *Manage team* that nobody has shared
   into yet, and that you can edit. Your local workspace takes that workspace's name and id, so everyone
   ends up on the same one.
 
@@ -333,7 +344,7 @@ the Sign in dialog for that server; once you sign in again, sync resumes by itse
 tries again.
 
 **Stop sharing and share again.** **Stop sharing…** makes the workspace local again and keeps the server
-copy for your team; a team admin deletes it under *Manage teams*. Sharing the same workspace again later
+copy for your team; a team admin deletes it under *Manage team*. Sharing the same workspace again later
 reconnects to that copy: as an editor, Wirebench merges your files with the server's (identical files
 merge cleanly, different ones go to the resolver) and pushes. As a viewer, you are asked to remove your
 local copy and open the server's with *Open a team workspace…*.

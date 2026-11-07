@@ -72,7 +72,7 @@ test.describe('SAML sign-in and the Provisioning tab', () => {
     await expect(page.getByTestId('status-bar-account')).toContainText(ROOT.email);
     expect(server.requests.some((r) => r.method === 'POST' && r.path === '/api/v1/auth/saml/complete')).toBe(true);
 
-    await runCommand(page, 'Account: Manage teams');
+    await runCommand(page, 'Account: Manage team');
     const dialog = page.getByTestId('team-dialog');
     await expect(dialog).toBeVisible({ timeout: 20_000 });
     await dialog.getByRole('tab', { name: 'Provisioning' }).click();

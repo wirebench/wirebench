@@ -42,7 +42,7 @@ import { tenantStopped } from '../tenancy/directory.js';
 import { TENANT_SUSPENDED } from '../tenancy/resolve.js';
 import { tenantUrl } from '../tenancy/urls.js';
 import { isServedChannel } from './allowlist.js';
-import { browserClientRoutes } from './browser-client.js';
+import { BROWSER_CLIENT_CAPABILITY, browserClientRoutes } from './browser-client.js';
 import { HOST_CLOSE, HOST_DRAINING_REASON, HOST_LIMITS } from './errors.js';
 import { loadHostRuntime, loadHostSocketLoop, type HostSecretEvent } from './host-runtime.js';
 import { injectSend } from './inject-send.js';
@@ -138,6 +138,8 @@ export function hostModule(options: HostModuleOptions = {}): ServerModule {
     async register(app: FastifyInstance, ctx: ServerContext): Promise<void> {
       const { config } = ctx;
       if (!config.browserClient) return;
+      // Team management in the browser §2.1: the desktop opens the team page here only when this is listed.
+      ctx.meta.addCapability(BROWSER_CLIENT_CAPABILITY);
       const createServerHost = await loadHostRuntime({
         browserClient: true,
         ...(options.bundle !== undefined ? { bundle: options.bundle } : {}),

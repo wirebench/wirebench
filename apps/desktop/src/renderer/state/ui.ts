@@ -36,6 +36,12 @@ function moveSidebarTo(draft: Draft<UiSnapshot>, view: SidebarView): void {
 }
 
 /** A selected node in the explorer tree, read by the request inspectors and explorer actions. */
+/** Which team the Team dialog opens on (team management in the browser §2.2): a team id, else a workspace's team. */
+export interface TeamDialogTarget {
+  readonly teamId?: string;
+  readonly workspaceId?: string;
+}
+
 export interface Selection {
   readonly kind: string;
   readonly id: string;
@@ -195,8 +201,11 @@ export interface UiStore extends UiSnapshot {
   readonly signInDialog: { readonly open: boolean; readonly url: string | undefined };
   /** *Pair this machine…* (desktop only): a server's pairing code makes this app an agent for its tabs. */
   readonly pairMachineDialogOpen: boolean;
-  /** *Manage teams…* (teams-access §3.5); `url` picks the server, or the first signed-in one. */
-  readonly teamDialog: { readonly open: boolean; readonly url: string | undefined };
+  /**
+   * The Team dialog (teams-access §3.5); `url` picks the server, or the first signed-in one. `target` is the team to
+   * open on, from a deep link or the open workspace (team management in the browser §2.2).
+   */
+  readonly teamDialog: { readonly open: boolean; readonly url: string | undefined; readonly target?: TeamDialogTarget };
   /** The project id the Move to Workspace dialog is open for, or `null` when it is closed. */
   readonly moveProjectDialog: string | null;
   /**
@@ -241,7 +250,7 @@ export interface UiStore extends UiSnapshot {
   readonly openSignInDialog: (url?: string) => void;
   readonly setSignInDialogOpen: (open: boolean) => void;
   readonly setPairMachineDialogOpen: (open: boolean) => void;
-  readonly openTeamDialog: (url?: string) => void;
+  readonly openTeamDialog: (url?: string, target?: TeamDialogTarget) => void;
   readonly setTeamDialogOpen: (open: boolean) => void;
   readonly setMoveProjectDialog: (projectId: string | null) => void;
   readonly setSecretTokenDialog: (target: SecretTokenDialogTarget | null) => void;
@@ -492,11 +501,12 @@ export const useUiStore = create<UiStore>((set, get) => {
     setPairMachineDialogOpen: (open) => {
       set({ pairMachineDialogOpen: open });
     },
-    openTeamDialog: (url) => {
-      set({ teamDialog: { open: true, url } });
+    openTeamDialog: (url, target) => {
+      set({ teamDialog: { open: true, url, ...(target !== undefined ? { target } : {}) } });
     },
     setTeamDialogOpen: (open) => {
-      set({ teamDialog: { open, url: open ? get().teamDialog.url : undefined } });
+      const { url, target } = get().teamDialog;
+      set({ teamDialog: open ? { open, url, ...(target !== undefined ? { target } : {}) } : { open, url: undefined } });
     },
     setMoveProjectDialog: (projectId) => {
       set({ moveProjectDialog: projectId });

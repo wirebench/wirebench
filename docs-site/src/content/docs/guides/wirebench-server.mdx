@@ -203,6 +203,13 @@ from the console the same way, or from the app by a server admin. The server sen
 send it however your team already talks. `admin list-invitations` and
 `admin revoke-invitation <id>` help an operator who cannot sign in yet.
 
+With the browser client on (`WIREBENCH_SERVER_BROWSER_CLIENT`), the invitation link's page also lets the invitee join
+in the browser: they type a password twice, and their name if they like, or continue with the server's OIDC or SAML
+sign-in, and land signed in on the browser app. The form posts only from the page itself (its `Origin` is checked),
+counts against the same rate limit as the app's accept, and is the same accept: the invitation is used once whichever
+way it is taken. A password-reset link sets the new password the same way. With the browser client off the page only
+shows the code for the app.
+
 ## Sign-in
 
 - **Local accounts** (email and password) are on unless `WIREBENCH_SERVER_LOCAL_AUTH` is `false`.
@@ -223,7 +230,7 @@ send it however your team already talks. `admin list-invitations` and
 
 ## Teams and workspaces
 
-A server admin creates teams, with **New team…** in the app's **Account: Manage teams…** dialog, and
+A server admin creates teams, with **New team…** in the **Account: Manage team…** dialog, and
 becomes the first admin of each. Team admins do the rest:
 
 - Add people who already have an account, invite new ones, and change or remove roles. A team keeps at
@@ -237,6 +244,11 @@ becomes the first admin of each. Team admins do the rest:
 | viewer | yes           | yes           | no   | no            | no     |
 | editor | yes           | yes           | yes  | no            | no     |
 | admin  | yes           | yes           | yes  | yes           | yes    |
+
+The dialog lives in the browser client. With it on, the desktop app's **Manage team…** opens `<public URL>/?panel=team`
+in the default browser, on the team of the open workspace when it is shared to this server; `GET /api/v1/meta` lists
+`browser-client` so the app can tell. On a server with the browser client off, the app keeps the dialog in its own
+window.
 
 Team admins and server admins are admins of every workspace of their teams. To anyone without a role, a
 workspace does not exist. Deleting a workspace moves its repository under `<data dir>/tmp/`; nothing is
@@ -442,7 +454,7 @@ whole app, and the custom name becomes the team's primary: links in invitations 
 name at a time. A self-hosted server has no use for this: it sets its own public URL with
 `WIREBENCH_SERVER_PUBLIC_URL`, and the routes answer `404` there.
 
-In the desktop app or the browser client, open **Account: Manage teams** and the **Domain** tab. The tab shows only to
+In the desktop app or the browser client, open **Account: Manage team** and the **Domain** tab. The tab shows only to
 server admins of a hosted team whose edition includes custom domains. Enter the name and choose **Claim**. The tab then
 shows two DNS records to create at your DNS provider, each with a **Copy** button:
 

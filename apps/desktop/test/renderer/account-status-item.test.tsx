@@ -81,14 +81,16 @@ describe('AccountStatusItem', () => {
     expect(useUiStore.getState().preferences).toEqual({ open: true, section: 'accounts' });
   });
 
-  it('the menu offers Manage teams…', async () => {
+  it('the menu offers Manage team…', async () => {
     useAccountStore.setState({ servers: [account('https://wb.test')] });
     render(<AccountStatusItem />);
     const item = screen.getByTestId('status-bar-account');
     fireEvent.pointerDown(item, { button: 0, ctrlKey: false });
     fireEvent.click(item);
-    fireEvent.click(await screen.findByTestId('account-manage-teams'));
-    expect(useUiStore.getState().teamDialog).toEqual({ open: true, url: undefined });
+    const entry = await screen.findByTestId('account-manage-teams');
+    expect(entry.textContent).toBe('Manage team…');
+    fireEvent.click(entry);
+    await vi.waitFor(() => expect(useUiStore.getState().teamDialog).toEqual({ open: true, url: 'https://wb.test' }));
   });
 
   it('the menu offers Devices & tokens…, which opens that Preferences section', async () => {

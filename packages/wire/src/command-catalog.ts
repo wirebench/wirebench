@@ -1158,7 +1158,7 @@ export const COMMAND_CATALOG: Readonly<Record<CommandId, CommandCatalogEntry>> =
   },
   'team.manage': {
     id: 'team.manage',
-    label: 'Account: Manage teams…',
+    label: 'Account: Manage team…',
     category: 'Account',
   },
 };

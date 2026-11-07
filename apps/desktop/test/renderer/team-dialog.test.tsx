@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { TeamDialog } from '../../src/renderer/features/team/team-dialog.js';
 import { useAccountStore } from '../../src/renderer/state/account.js';
 import { useTeamStore } from '../../src/renderer/state/team.js';
@@ -64,6 +64,38 @@ describe('TeamDialog (teams-access §3.5)', () => {
   });
   afterEach(() => {
     cleanup();
+  });
+
+  it('opens on the team a deep link or the open workspace names (team management in the browser §2.2)', async () => {
+    const workspace = (id: string, teamId: string) => ({
+      id,
+      name: id,
+      teamId,
+      teamName: teamId,
+      defaultRole: 'viewer' as const,
+      myRole: 'viewer' as const,
+      source: 'default' as const,
+      createdAt: '2026-09-25T10:00:00.000Z',
+      recordDesktopActivity: false,
+    });
+    install('member', {
+      list: ok({ teams: [team('member', 'T1', 'One'), team('member', 'T2', 'Two')], serverAdmin: false }),
+      listWorkspaces: ok({ workspaces: [workspace('W1', 'T1'), workspace('W2', 'T2')] }),
+    });
+    useUiStore.setState({ teamDialog: { open: true, url: URL_, target: { workspaceId: 'W2' } } });
+    const { unmount } = render(<TeamDialog />);
+    await waitFor(() => expect(useTeamStore.getState().teamId).toBe('T2'));
+    unmount();
+    useTeamStore.getState().reset();
+    useUiStore.setState({ teamDialog: { open: true, url: URL_, target: { teamId: 'T2' } } });
+    const second = render(<TeamDialog />);
+    await waitFor(() => expect(useTeamStore.getState().teamId).toBe('T2'));
+    second.unmount();
+    useTeamStore.getState().reset();
+    // An id the server does not know falls back to the first team, as the dialog always did.
+    useUiStore.setState({ teamDialog: { open: true, url: URL_, target: { teamId: 'nope' } } });
+    render(<TeamDialog />);
+    await waitFor(() => expect(useTeamStore.getState().teamId).toBe('T1'));
   });
 
   it('a member sees the team read-only: no role selects, no add, no invitations tab, Leave on their own row', async () => {

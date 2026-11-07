@@ -19,7 +19,8 @@ import { INPUT_CLASS, SELECT_CLASS } from './roles.js';
 import { WorkspacesTab } from './workspaces-tab.js';
 
 /**
- * *Manage teams…* (teams-access §3.5): a server's teams on the left, the chosen team on the right.
+ * *Manage team…* (teams-access §3.5): a server's teams on the left, the chosen team on the right. It is the
+ * browser client's (team management in the browser §1); the desktop opens it only for a server without one.
  * A control the caller may not use is hidden or read-only rather than failing on click; the server
  * checks again regardless.
  */
@@ -36,12 +37,13 @@ export function TeamDialog() {
   const [name, setName] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(false);
 
+  const target = useUiStore((state) => state.teamDialog.target);
   const url = requestedUrl ?? servers[0]?.url;
 
   useEffect(() => {
-    if (open && url !== undefined) void useTeamStore.getState().open(url);
+    if (open && url !== undefined) void useTeamStore.getState().open(url, target);
     if (!open) useTeamStore.getState().reset();
-  }, [open, url]);
+  }, [open, url, target]);
 
   // Spec §23.6: the Domain tab is a hosted server's, with the feature. Only the server's answer to the read says so.
   const domainShown = useDomainStore((s) => s.available && s.url === url);

@@ -32,7 +32,7 @@ async function signIn(page: Page, url: string, user: FakeUser): Promise<void> {
 }
 
 async function openTeams(page: Page): Promise<Locator> {
-  await runCommand(page, 'Account: Manage teams');
+  await runCommand(page, 'Account: Manage team');
   const dialog = page.getByTestId('team-dialog');
   await expect(dialog).toBeVisible({ timeout: 20_000 });
   return dialog;
