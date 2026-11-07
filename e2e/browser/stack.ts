@@ -42,6 +42,14 @@ export interface Seed {
   readonly email: string;
   readonly password: string;
   readonly teamName: string;
+  readonly teamId: string;
+  /** A second team the seeded user is an admin of, beside {@link otherAdminEmail}, so they can leave it. */
+  readonly secondTeamName: string;
+  readonly secondTeamId: string;
+  /** An account on no team, for *Add people* to add as a member. */
+  readonly existingEmail: string;
+  /** The second team's other admin: a team always keeps one, so the seeded user may leave. */
+  readonly otherAdminEmail: string;
   readonly workspaceName: string;
   readonly projectName: string;
   readonly apiName: string;
