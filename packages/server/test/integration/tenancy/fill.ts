@@ -577,6 +577,12 @@ export async function fill(t: TwoTenants, tenant: Tenant): Promise<Filled> {
     tenant.scope.tenantId,
   ]);
 
+  // ---- 0026's profile photo, by hand: a few bytes stand for the image, which no check reads here.
+  await tenant.tdb.query(
+    "insert into user_images (user_id, kind, content_type, data, sha256, updated_at) values ($1, 'photo', 'image/webp', $2, $3, $4)",
+    [browser.user.id, Buffer.from(`photo of ${slug}`), `sha-${slug}`, at],
+  );
+
   // ---- the audit log: forward one recorded event (no sink is configured), so the queue holds a row too
   // Named by tenant: the negative run's schema has the policy off.
   const event = (

@@ -97,6 +97,11 @@ describeDb('scoped tables outside a tenant unit (hosted spec §19.4, plan Task 1
     );
     // 0024's claim.
     await tdb.query("insert into custom_domains (name, token) values ('app.customer.test', 'token-0024')");
+    // 0026's image.
+    await tdb.query(
+      "insert into user_images (user_id, kind, content_type, data, sha256) values ($1, 'photo', 'image/webp', '\\x00', 'sha')",
+      [admin!.id],
+    );
   });
   afterAll(async () => {
     await app.close();

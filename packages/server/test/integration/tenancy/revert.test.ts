@@ -467,7 +467,7 @@ describeDb('admin tenancy revert on the frozen 0019 fixture (spec §19.10, plan 
   it('refuses a database past 0021, naming 0022, changing nothing (slice 5 Task 1)', async () => {
     await db.migrate(await allMigrations(BUILTIN_MODULES));
     const at = await db.owner.query<{ v: number }>('select max(version)::int as v from schema_migrations');
-    expect(at.rows[0]!.v).toBe(25);
+    expect(at.rows[0]!.v).toBe(26);
     const error = await revert().catch((caught: unknown) => caught);
     expect(error).toMatchObject({ code: 'tenancy-revert-too-new' });
     expect((error as Error).message).toContain('0022');
