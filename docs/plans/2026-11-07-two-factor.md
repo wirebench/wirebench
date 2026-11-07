@@ -57,8 +57,18 @@ split (#858: User settings → Password, Team settings → Server → Sign-in).
    not overwrite each other's entry in the app.
 8. **The users list gains `twoFactor: boolean`** (`usersResponseSchema`), for the People badge and the Sign-in
    page's count (spec §6), so neither needs a new route.
-9. **The second step's per-user rate-limit key** has the existing `<tenant>:user:<id>` shape (as `callerKey`),
-   from the challenge's user: the request has no caller yet.
+9. **The second step's rate limits** are a limiter of their own, `two-factor` (spec §3.3), 10 a minute per address
+   and per user, with the per-user key in the existing `<tenant>:user:<id>` shape (as `callerKey`) from the
+   challenge's user, since the request has no caller yet. The lockout is a second limiter,
+   `two-factor-failures` (capacity 10, refilled over 15 minutes), peeked before an attempt and taken only on a
+   failure, as the agent module's failed-pairing limit is.
+10. **Self-hosted, the required switch is an environment variable,** `WIREBENCH_SERVER_REQUIRE_TWO_FACTOR`
+    (default `false`): a self-hosted server answers every settings section read-only from its environment
+    (settings split), so the `twoFactor` section reads `{ required }` from it there and is writable only on a
+    hosted tenant.
+11. **The two-step queries live in `identity/two-factor/repo.ts`,** not `identity/repo.ts`, so the username
+    sign-in work on `repo.ts` merges cleanly. The challenge row has `purpose` (`sign-in`, `setup` or
+    `register`) in place of `setup boolean`, so a passkey registration challenge uses the same table.
 
 ## Tasks
 
@@ -99,9 +109,9 @@ Files:
 - `packages/server/migrations/identity/0026_two-factor.sql`: the four tables of spec §7, `tenant_id` first in
   each key with the setting default, `references users … on delete cascade` through `(tenant_id, user_id)` as
   0021 shapes them, and `select tenant_scope(…)` for each. `identity_two_factor_challenges`: `id`, `user_id`,
-  `secret_hash unique`, `setup boolean`, `device_name`, `token_kind`, `webauthn_challenge`, `attempts int`,
+  `secret_hash unique`, `purpose` (ruling 11), `device_name`, `token_kind`, `webauthn_challenge`, `attempts int`,
   `flow_id unique`, `code_challenge`, `loopback_port`, `grant_hash`, `created_at`, `expires_at` (ruling 4).
-- `packages/server/src/identity/repo.ts`: `totpOf`, `upsertPendingTotp`, `confirmTotp`, `setTotpLastStep`
+- `packages/server/src/identity/two-factor/repo.ts` (ruling 11): `totpOf`, `upsertPendingTotp`, `confirmTotp`, `setTotpLastStep`
   (`update … where last_step < $step`, answering whether it moved: the replay guard under concurrency),
   `deleteTotp`; `passkeysOf`, `passkeyByCredentialId`, `insertPasskey`, `renamePasskey`, `deletePasskey`,
   `setPasskeyCounter`; `replaceRecoveryCodes`, `useRecoveryCode` (`update … where used_at is null returning`),
@@ -145,7 +155,7 @@ Files:
   `twoFactorChallengeResponseSchema` (`{ twoFactor: { challenge, methods, setup } }`),
   `localSignInResponseSchema = z.union([signInResponseSchema, twoFactorChallengeResponseSchema])`,
   `twoFactorVerifyRequestSchema` (`{ challenge, method: 'totp' | 'recovery', code }`).
-- `packages/core/src/server-api/audit.ts`: the seven actions of spec §7.
+- `packages/core/src/server-api/audit.ts`: the eight actions of spec §7.
 - `packages/server/src/identity/errors.ts`: `twoFactorInvalid`, `twoFactorExpired`, `twoFactorRequired`,
   `passkeyFailed`.
 - `packages/server/src/identity/two-factor/gate.ts`:
@@ -159,10 +169,10 @@ Files:
     sign: { readonly deviceName: string; readonly kind: repo.TokenKind },
   ): Promise<{ readonly challenge: undefined } | { readonly challenge: TwoFactorChallenge }>;
 
-  /** The challenge for `secret`, or `twoFactorExpired()`; charges the address and user buckets. */
+  /** The challenge for `secret`, or `twoFactorExpired()`; charges the `two-factor` buckets, checks the lockout. */
   export async function presentedChallenge(env, request, secret): Promise<ChallengeRow>;
 
-  /** A wrong answer: attempts + 1, the challenge dropped at five, `auth.second_factor_failed`. */
+  /** A wrong answer: attempts + 1, the challenge dropped at five, the lockout charged, `auth.second_factor_failed`. */
   export async function failedAttempt(env, scope, source, row, method, reason): Promise<never>;
 
   /** Takes the challenge and issues the session with `auth.signed_in` and `secondFactor`, in one unit. */
@@ -187,7 +197,9 @@ Tests — `packages/server/test/integration/identity/two-factor-sign-in.test.ts`
 - `it('a code is not accepted twice, even on a new challenge')`.
 - `it('a recovery code works once')`.
 - `it('an expired challenge is refused')` (clock injected).
-- `it('the second step charges the address and user buckets')`.
+- `it('the second step charges its own buckets, not the password step\'s')`.
+- `it('ten wrong factors lock the second step for the person, with the usual 429, and audit it once')`.
+- `it('every wrong factor answers the same problem, whatever the method or reason')`.
 - `it('records auth.second_factor_failed without the code, and auth.signed_in with secondFactor')`.
 - `it('the required switch answers a setup challenge to a person without methods')`.
 - `it('the browser form sets the challenge cookie and the code form finishes the session')`.
