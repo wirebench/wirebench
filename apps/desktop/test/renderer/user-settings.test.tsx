@@ -26,7 +26,16 @@ const account = (url: string, displayName = 'Ada'): AccountWire => ({
 });
 
 const profile = (url: string, overrides: Partial<AccountProfileWire> = {}): AccountProfileWire => ({
-  user: { id: 'u1', email: `ada@${new URL(url).host}`, displayName: `Ada ${new URL(url).host}`, serverAdmin: false },
+  user: {
+    id: 'u1',
+    email: `ada@${new URL(url).host}`,
+    displayName: `Ada ${new URL(url).host}`,
+    serverAdmin: false,
+    username: null,
+    about: '',
+    photo: null,
+    cover: null,
+  },
   methods: { local: true, oidc: [{ issuer: 'https://idp.test' }] },
   localPasswords: true,
   ...overrides,

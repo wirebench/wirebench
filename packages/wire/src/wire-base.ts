@@ -2939,6 +2939,12 @@ export type UnsavedRestoreNoticeWire = z.infer<typeof unsavedRestoreNoticeSchema
 /** Payload for `workspace.flushDrafts`: main is about to close; stash drafts now. */
 export const workspaceFlushDraftsEventSchema = z.object({});
 
+/** User profile spec §6.2: a stored image, named by its version (a sha256 prefix), so a new one reads as new. */
+export const accountImageRefWireSchema = z.object({ version: z.string() });
+export type AccountImageRefWire = z.infer<typeof accountImageRefWireSchema>;
+export const accountImageKindWireSchema = z.enum(['photo', 'cover']);
+export type AccountImageKindWire = z.infer<typeof accountImageKindWireSchema>;
+
 /**
  * A known server and who this installation is on it (identity spec §4.3), as the renderer sees
  * it: the secret-store ref and the token itself never cross the bridge.
@@ -2952,6 +2958,12 @@ export const accountWireSchema = z.object({
   /** True once the server stopped accepting the token (sign-out, revocation, expiry). */
   signedOut: z.boolean(),
   addedAt: z.string(),
+  /**
+   * User profile spec §7: kept with the account so the account menu shows `@username` and the photo without a
+   * call. This host always sets both (`null` when none); optional only so older fixtures and callers still read.
+   */
+  username: z.string().nullable().optional(),
+  photo: accountImageRefWireSchema.nullable().optional(),
 });
 export type AccountWire = z.infer<typeof accountWireSchema>;
 
@@ -2979,9 +2991,10 @@ export type ServerMetaWire = z.infer<typeof serverMetaWireSchema>;
 export const accountUrlRequestSchema = z.object({ url: z.string() });
 export const accountProbeResponseSchema = z.object({ url: z.string(), meta: serverMetaWireSchema });
 export type AccountProbeResponse = z.infer<typeof accountProbeResponseSchema>;
+/** User profile spec §5: `identifier` is what the person typed, an email or a username. */
 export const accountSignInLocalRequestSchema = z.object({
   url: z.string(),
-  email: z.string(),
+  identifier: z.string(),
   password: z.string(),
   deviceName: z.string().optional(),
 });
@@ -3007,12 +3020,57 @@ export const accountCancelResponseSchema = z.object({ cancelled: z.boolean() });
  * (`GET /meta` `auth.local`), which decides whether the Password page shows.
  */
 export const accountProfileWireSchema = z.object({
-  user: z.object({ id: z.string(), email: z.string(), displayName: z.string(), serverAdmin: z.boolean() }),
+  user: z.object({
+    id: z.string(),
+    email: z.string(),
+    displayName: z.string(),
+    serverAdmin: z.boolean(),
+    // User profile spec §2; main fills `null` and `''` for a server that predates profiles.
+    username: z.string().nullable(),
+    about: z.string(),
+    photo: accountImageRefWireSchema.nullable(),
+    cover: accountImageRefWireSchema.nullable(),
+  }),
   methods: z.object({ local: z.boolean(), oidc: z.array(z.object({ issuer: z.string() })) }),
   localPasswords: z.boolean(),
 });
 export type AccountProfileWire = z.infer<typeof accountProfileWireSchema>;
-export const accountUpdateProfileRequestSchema = z.object({ url: z.string(), name: z.string() });
+/** Any of the three; `username: null` clears it. The server refuses a request that changes nothing. */
+export const accountUpdateProfileRequestSchema = z.object({
+  url: z.string(),
+  name: z.string().optional(),
+  username: z.string().nullable().optional(),
+  about: z.string().optional(),
+});
+/** `account.image`: one person's photo or cover, by the version their profile or member row names. */
+export const accountImageRequestSchema = z.object({
+  url: z.string(),
+  userId: z.string(),
+  kind: accountImageKindWireSchema,
+  version: z.string(),
+});
+/** A `data:image/webp;base64,…` URL: the renderer never loads a server URL itself (desktop CSP `img-src 'self' data:`). */
+export const accountImageResponseSchema = z.object({ dataUrl: z.string() });
+/** `account.setImage`: the WebP the app cropped and encoded, base64; the server checks it again. */
+export const accountSetImageRequestSchema = z.object({
+  url: z.string(),
+  kind: accountImageKindWireSchema,
+  data: z.string(),
+});
+export const accountSetImageResponseSchema = accountImageRefWireSchema;
+export const accountRemoveImageRequestSchema = z.object({ url: z.string(), kind: accountImageKindWireSchema });
+/** `account.person`: the profile card (user profile spec §4); a stranger answers the server's 404. */
+export const accountPersonRequestSchema = z.object({ url: z.string(), userId: z.string() });
+export const accountPersonWireSchema = z.object({
+  id: z.string(),
+  displayName: z.string(),
+  email: z.string(),
+  username: z.string().nullable(),
+  about: z.string(),
+  photo: accountImageRefWireSchema.nullable(),
+  cover: accountImageRefWireSchema.nullable(),
+});
+export type AccountPersonWire = z.infer<typeof accountPersonWireSchema>;
 /** No `currentPassword` for an account that has never had one (an SSO user setting a first password). */
 export const accountChangePasswordRequestSchema = z.object({
   url: z.string(),
@@ -3063,6 +3121,9 @@ export const teamMemberWireSchema = z.object({
   role: teamRoleWireSchema,
   disabled: z.boolean(),
   addedAt: z.string(),
+  // User profile spec §4: `@username` and the photo on People rows; absent from a server that predates profiles.
+  username: z.string().nullable().optional(),
+  photo: accountImageRefWireSchema.nullable().optional(),
 });
 export type TeamMemberWire = z.infer<typeof teamMemberWireSchema>;
 export const teamInvitationWireSchema = z.object({

@@ -103,7 +103,7 @@ export function SignInDialog() {
     if (busy || email.trim().length === 0 || password.length === 0) return;
     setBusy(true);
     setError(undefined);
-    const result = await ipc().account.signInLocal({ url, email: email.trim(), password });
+    const result = await ipc().account.signInLocal({ url, identifier: email.trim(), password });
     setBusy(false);
     if (!result.ok) {
       failed(result.error);

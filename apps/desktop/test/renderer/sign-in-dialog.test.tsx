@@ -111,7 +111,7 @@ describe('SignInDialog', () => {
     expect((await screen.findByTestId('sign-in-error')).textContent).toBe('Wrong email or password.');
     expect(signInLocal).toHaveBeenCalledWith({
       url: 'https://wb.test',
-      email: 'alice@example.com',
+      identifier: 'alice@example.com',
       password: 'wrong-password!',
     });
 
