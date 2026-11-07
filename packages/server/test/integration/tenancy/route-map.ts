@@ -20,7 +20,9 @@ import { mintSecret, newId, pkceChallenge } from '../../../src/identity/tokens.j
 import { sealTotpSecret } from '../../../src/identity/two-factor/keys.js';
 import * as twoFactorRepo from '../../../src/identity/two-factor/repo.js';
 import { newTotpSecret, stepAt, totpAt } from '../../../src/identity/two-factor/totp.js';
+import type { SignedInUser } from '../../helpers/identity.js';
 import { license } from '../../helpers/licensing.js';
+import { SoftAuthenticator } from '../../helpers/soft-authenticator.js';
 import {
   bearer,
   cookie,
@@ -157,6 +159,64 @@ async function twoFactorChallenge(ctx: Ctx, kind: 'device' | 'browser'): Promise
     expiresAt: new Date(now.getTime() + 5 * 60_000),
   });
   return { secret, code: totpAt(totp, stepAt(now.getTime())) };
+}
+
+/**
+ * A software passkey for `tenant`'s relying party: its primary URL (spec §3.5), which is its live custom name while it
+ * has one. The custom-domain templates claim and drop that name during the sweep, so it is read when the template is.
+ */
+async function softKeyOf(tenant: Ctx['from']['tenant']): Promise<SoftAuthenticator> {
+  const live = await tenant.tdb.query<{ host: string }>(
+    'select host from tenant_hosts where live order by host limit 1',
+  );
+  const host = live.rows[0]?.host ?? tenant.host;
+  return new SoftAuthenticator(host, `https://${host}`);
+}
+
+/** A passkey of `owner`'s in `tenant`, written through the repository, with the software key that signs for it. */
+async function withPasskey(ctx: Ctx, tenant: Ctx['from']['tenant'], owner: SignedInUser) {
+  const key = await softKeyOf(tenant);
+  const id = newId();
+  await twoFactorRepo.insertPasskey(tenant.tdb, {
+    id,
+    userId: owner.user.id,
+    credentialId: key.credentialId,
+    publicKey: key.publicKey,
+    counter: 0,
+    transports: ['internal'],
+    name: 'probe',
+    at: ctx.w.t.h.clock.now,
+  });
+  return { id, key };
+}
+
+/** A's passkey, of a fresh user of A's; sent by that user on A's host, by a fresh user of the sender's elsewhere. */
+async function foreignPasskey(ctx: Ctx): Promise<{ id: string; sender: SignedInUser }> {
+  const owner = await fresh.user(ctx.a.tenant);
+  const { id } = await withPasskey(ctx, ctx.a.tenant, owner);
+  return { id, sender: ctx.from.tenant.slug === ctx.a.tenant.slug ? owner : await fresh.user(ctx.from.tenant) };
+}
+
+/** A sign-in challenge of a fresh user of A's with a passkey, its WebAuthn challenge asked, and the key's answer. */
+async function passkeyChallenge(ctx: Ctx): Promise<{ secret: string; response: Record<string, unknown> }> {
+  const tenant = ctx.a.tenant;
+  const now = ctx.w.t.h.clock.now;
+  const user = await fresh.user(tenant);
+  const { key } = await withPasskey(ctx, tenant, user);
+  const { secret, hash } = mintSecret();
+  const webauthnChallenge = mintSecret().secret;
+  await twoFactorRepo.insertChallenge(tenant.tdb, {
+    id: newId(),
+    userId: user.user.id,
+    secretHash: hash,
+    purpose: 'sign-in',
+    deviceName: 'probe',
+    tokenKind: 'device',
+    webauthnChallenge,
+    at: now,
+    expiresAt: new Date(now.getTime() + 5 * 60_000),
+  });
+  return { secret, response: key.get({ challenge: webauthnChallenge }) };
 }
 
 /**
@@ -315,6 +375,71 @@ export const ROUTE_MAP: Readonly<Record<string, RouteCase>> = {
       return json(ctx, 'DELETE', api('/me/two-factor/totp'), { password: PASSWORD }, bearer(user));
     },
   },
+  'POST /api/v1/me/two-factor/passkeys/options': {
+    cls: 'own',
+    request: async (ctx) =>
+      json(
+        ctx,
+        'POST',
+        api('/me/two-factor/passkeys/options'),
+        { password: PASSWORD },
+        bearer(await fresh.user(ctx.from.tenant)),
+      ),
+  },
+  'POST /api/v1/me/two-factor/passkeys': {
+    cls: 'own',
+    request: async (ctx) => {
+      const tenant = ctx.from.tenant;
+      const now = ctx.w.t.h.clock.now;
+      const user = await fresh.user(tenant);
+      // The relying party as the server names it right now; a suspended tenant's routes refuse, so there the
+      // registration is written through the repository instead.
+      const asked = await tenant.call<{ challenge: string; rp: { id: string } }>(
+        user,
+        'POST',
+        '/me/two-factor/passkeys/options',
+        { password: PASSWORD },
+      );
+      let challenge: string;
+      let key: SoftAuthenticator;
+      if (asked.status === 200) {
+        challenge = asked.body.challenge;
+        key = new SoftAuthenticator(asked.body.rp.id, `https://${asked.body.rp.id}`);
+      } else {
+        challenge = mintSecret().secret;
+        await twoFactorRepo.replaceRegisterChallenge(tenant.tdb, {
+          id: newId(),
+          userId: user.user.id,
+          secretHash: mintSecret().hash,
+          webauthnChallenge: challenge,
+          at: now,
+          expiresAt: new Date(now.getTime() + 5 * 60_000),
+        });
+        key = await softKeyOf(tenant);
+      }
+      return json(
+        ctx,
+        'POST',
+        api('/me/two-factor/passkeys'),
+        { name: 'probe', response: key.create({ challenge }) },
+        bearer(user),
+      );
+    },
+  },
+  'PATCH /api/v1/me/two-factor/passkeys/:id': {
+    cls: 'refused',
+    request: async (ctx) => {
+      const { id, sender } = await foreignPasskey(ctx);
+      return json(ctx, 'PATCH', api(`/me/two-factor/passkeys/${id}`), { name: 'renamed' }, bearer(sender));
+    },
+  },
+  'DELETE /api/v1/me/two-factor/passkeys/:id': {
+    cls: 'refused',
+    request: async (ctx) => {
+      const { id, sender } = await foreignPasskey(ctx);
+      return json(ctx, 'DELETE', api(`/me/two-factor/passkeys/${id}`), { password: PASSWORD }, bearer(sender));
+    },
+  },
   'POST /api/v1/me/two-factor/recovery-codes': {
     cls: 'own',
     request: async (ctx) => {
@@ -372,6 +497,22 @@ export const ROUTE_MAP: Readonly<Record<string, RouteCase>> = {
     request: async (ctx) => {
       const { secret, code } = await twoFactorChallenge(ctx, 'device');
       return json(ctx, 'POST', api('/auth/two-factor/verify'), { challenge: secret, method: 'totp', code }, {});
+    },
+  },
+  'POST /api/v1/auth/two-factor/passkey/options': {
+    cls: 'refused',
+    statuses: [401],
+    request: async (ctx) => {
+      const { secret } = await passkeyChallenge(ctx);
+      return json(ctx, 'POST', api('/auth/two-factor/passkey/options'), { challenge: secret }, {});
+    },
+  },
+  'POST /api/v1/auth/two-factor/passkey/verify': {
+    cls: 'refused',
+    statuses: [401],
+    request: async (ctx) => {
+      const { secret, response } = await passkeyChallenge(ctx);
+      return json(ctx, 'POST', api('/auth/two-factor/passkey/verify'), { challenge: secret, response }, {});
     },
   },
   'POST /api/v1/auth/sign-out': {

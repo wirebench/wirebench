@@ -4,6 +4,14 @@
  * `POST /me/two-factor/totp` and its confirm only. An admin's reset is `DELETE /users/:id/two-factor`.
  */
 import {
+  identityIdParamsSchema,
+  MAX_PASSKEYS,
+  passkeyAddRequestSchema,
+  passkeyAddResponseSchema,
+  passkeyRenameRequestSchema,
+  webauthnJsonSchema,
+  type PasskeyAddRequest,
+  type PasskeyRenameRequest,
   recoveryCodesResponseSchema,
   reauthRequestSchema,
   totpConfirmRequestSchema,
@@ -24,7 +32,10 @@ import { jsonSchema } from '../../schema.js';
 import { primaryUrl } from '../../tenancy/urls.js';
 import type { IdentityEnv } from '../env.js';
 import {
+  displayNameInvalid,
   notFound,
+  passkeyFailed,
+  passkeyLimit,
   twoFactorExists,
   twoFactorExpired,
   twoFactorInvalid,
@@ -46,6 +57,8 @@ import {
 } from '../two-factor/enrol.js';
 import { charge, personKey } from '../two-factor/gate.js';
 import { openTotpSecret, sealTotpSecret } from '../two-factor/keys.js';
+import { registrationOptions, verifyNewPasskey } from '../two-factor/passkeys.js';
+import { newId } from '../tokens.js';
 import * as twoFactorRepo from '../two-factor/repo.js';
 import { twoFactorRequired } from '../two-factor/required.js';
 import { base32, newTotpSecret, otpauthUri, verifyTotp } from '../two-factor/totp.js';
@@ -205,6 +218,116 @@ export const meTwoFactorRoutes =
           });
           return { recoveryCodes };
         });
+      },
+    );
+
+    // Passkeys (spec §5.2): the creation options after the password, then the browser's answer with a name.
+    app.post(
+      '/me/two-factor/passkeys/options',
+      {
+        preHandler: requireUser,
+        schema: {
+          body: jsonSchema(reauthRequestSchema, { io: 'input' }),
+          response: { 200: jsonSchema(webauthnJsonSchema) },
+        },
+      },
+      async (request) => {
+        const subject = await subjectOf(env, request);
+        const scope = request.tenant;
+        const db = env.ctx.tenancy.db(scope);
+        const credential = await credentialFor(env, db, subject.userId);
+        await reauthenticate(env, scope, subject, credential, (request.body as ReauthRequest).password);
+        if ((await twoFactorRepo.passkeysOf(db, subject.userId)).length >= MAX_PASSKEYS)
+          throw passkeyLimit(MAX_PASSKEYS);
+        const user = await repo.findUserById(db, subject.userId);
+        if (user === undefined) throw notFound('User');
+        return registrationOptions(env, scope, request, user);
+      },
+    );
+
+    app.post(
+      '/me/two-factor/passkeys',
+      {
+        preHandler: requireUser,
+        schema: {
+          body: jsonSchema(passkeyAddRequestSchema, { io: 'input' }),
+          response: { 201: jsonSchema(passkeyAddResponseSchema) },
+        },
+      },
+      async (request, reply) => {
+        const subject = await subjectOf(env, request);
+        const scope = request.tenant;
+        const db = env.ctx.tenancy.db(scope);
+        await credentialFor(env, db, subject.userId);
+        const body = request.body as PasskeyAddRequest;
+        // The options took the password moments ago; this answer is bound to them by their WebAuthn challenge.
+        const verified = await verifyNewPasskey(env, scope, request, subject.userId, body.response);
+        const id = newId();
+        const at = env.now();
+        const event = selfEvent(auditSource(request), subject);
+        const recoveryCodes = await db.transaction(async (tx) => {
+          const methods = await twoFactorRepo.methodsOf(tx, subject.userId);
+          if (methods.passkeys.length >= MAX_PASSKEYS) throw passkeyLimit(MAX_PASSKEYS);
+          if (methods.passkeys.some((passkey) => passkey.credentialId.equals(verified.credentialId)))
+            throw passkeyFailed();
+          await twoFactorRepo.insertPasskey(tx, {
+            id,
+            userId: subject.userId,
+            ...verified,
+            name: body.name.trim() || 'Passkey',
+            at,
+          });
+          return methodAdded(env, scope, tx, event, 'passkey', twoFactorRepo.hasSecondFactor(methods), id);
+        });
+        return reply.code(201).send({
+          passkey: { id, name: body.name.trim() || 'Passkey', createdAt: at.toISOString(), lastUsedAt: null },
+          ...(recoveryCodes !== undefined ? { recoveryCodes } : {}),
+        });
+      },
+    );
+
+    // A new name needs no password: it changes nothing about how anyone signs in.
+    app.patch(
+      '/me/two-factor/passkeys/:id',
+      {
+        preHandler: requireUser,
+        schema: {
+          params: jsonSchema(identityIdParamsSchema, { io: 'input' }),
+          body: jsonSchema(passkeyRenameRequestSchema, { io: 'input' }),
+        },
+      },
+      async (request, reply) => {
+        const { id } = request.params as { id: string };
+        const name = (request.body as PasskeyRenameRequest).name.trim();
+        if (name === '') throw displayNameInvalid();
+        const db = env.ctx.tenancy.db(request.tenant);
+        if (!(await twoFactorRepo.renamePasskey(db, request.caller!.id, id, name))) throw notFound('Passkey');
+        return reply.code(204).send();
+      },
+    );
+
+    app.delete(
+      '/me/two-factor/passkeys/:id',
+      {
+        preHandler: requireUser,
+        schema: {
+          params: jsonSchema(identityIdParamsSchema, { io: 'input' }),
+          body: jsonSchema(reauthRequestSchema, { io: 'input' }),
+        },
+      },
+      async (request, reply) => {
+        const { id } = request.params as { id: string };
+        const subject = await subjectOf(env, request);
+        const scope = request.tenant;
+        const db = env.ctx.tenancy.db(scope);
+        const credential = await credentialFor(env, db, subject.userId);
+        await reauthenticate(env, scope, subject, credential, (request.body as ReauthRequest).password);
+        const event = selfEvent(auditSource(request), subject);
+        await db.transaction(async (tx) => {
+          if (!(await twoFactorRepo.deletePasskey(tx, subject.userId, id))) throw notFound('Passkey');
+          await methodRemoved(env, scope, tx, event, 'passkey', id);
+        });
+        return reply.code(204).send();
       },
     );
   };

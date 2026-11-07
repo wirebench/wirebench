@@ -60,6 +60,8 @@ export const twoFactorSetupExpired = (): WirebenchError =>
   );
 export const twoFactorOff = (): WirebenchError =>
   problem('identity-two-factor-off', 'Two-step sign-in is off. Set up a method first.', 409);
+export const passkeyLimit = (max: number): WirebenchError =>
+  problem('identity-passkey-limit', `You can add up to ${max} passkeys. Remove one first.`, 409);
 export const passkeyFailed = (): WirebenchError =>
   problem('identity-passkey-failed', 'The passkey could not be used. Try again or use another method.', 401);
 export const oidcFailed = (): WirebenchError =>

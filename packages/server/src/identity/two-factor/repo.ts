@@ -360,8 +360,40 @@ export async function takeChallenge(db: TenantQuerier, id: string): Promise<bool
   return ((await db.query('delete from identity_two_factor_challenges where id = $1', [id])).rowCount ?? 0) === 1;
 }
 
-export async function setChallengeWebauthn(db: TenantQuerier, id: string, challenge: string): Promise<void> {
+/** The WebAuthn challenge a passkey step was asked with; `null` drops it, so each one is answered once. */
+export async function setChallengeWebauthn(db: TenantQuerier, id: string, challenge: string | null): Promise<void> {
   await db.query('update identity_two_factor_challenges set webauthn_challenge = $2 where id = $1', [id, challenge]);
+}
+
+/**
+ * A passkey registration's WebAuthn challenge (spec §5.2), one live per person: a new one replaces the last. Its secret
+ * is never answered, since the signed-in person finishes it by session.
+ */
+export async function replaceRegisterChallenge(
+  db: TenantQuerier,
+  input: {
+    readonly id: string;
+    readonly userId: string;
+    readonly secretHash: string;
+    readonly webauthnChallenge: string;
+    readonly at: Date;
+    readonly expiresAt: Date;
+  },
+): Promise<void> {
+  await db.query("delete from identity_two_factor_challenges where user_id = $1 and purpose = 'register'", [
+    input.userId,
+  ]);
+  await insertChallenge(db, { ...input, purpose: 'register', deviceName: null, tokenKind: null });
+}
+
+/** Takes the person's live registration challenge, answering its WebAuthn challenge; `undefined` when none. */
+export async function takeRegisterChallenge(db: TenantQuerier, userId: string, now: Date): Promise<string | undefined> {
+  const rows = await db.query<{ challenge: string | null }>(
+    `delete from identity_two_factor_challenges where user_id = $1 and purpose = 'register' and expires_at > $2
+     returning webauthn_challenge as challenge`,
+    [userId, now],
+  );
+  return rows.rows[0]?.challenge ?? undefined;
 }
 
 /** Starts the desktop's passkey hand-off on the challenge (plan ruling 4); `false` when one was started already. */

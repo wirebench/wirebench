@@ -113,6 +113,29 @@ export type TotpConfirmResponse = z.infer<typeof totpConfirmResponseSchema>;
 export const twoFactorSetupSignInResponseSchema = signInResponseSchema.extend({ recoveryCodes: z.array(z.string()) });
 export type TwoFactorSetupSignInResponse = z.infer<typeof twoFactorSetupSignInResponseSchema>;
 
+/** A WebAuthn ceremony's options or a browser's answer to them, as `@simplewebauthn` shapes them; checked there. */
+export const webauthnJsonSchema = z.record(z.string(), z.unknown());
+export const MAX_PASSKEY_NAME_LENGTH = 80;
+/** At most this many passkeys per person (plan Task 7). */
+export const MAX_PASSKEYS = 10;
+export const passkeyNameSchema = z.string().min(1).max(MAX_PASSKEY_NAME_LENGTH);
+export const passkeyChallengeRequestSchema = z.object({ challenge: z.string().regex(SECRET_PATTERN) });
+export type PasskeyChallengeRequest = z.infer<typeof passkeyChallengeRequestSchema>;
+export const passkeyVerifyRequestSchema = z.object({
+  challenge: z.string().regex(SECRET_PATTERN),
+  response: webauthnJsonSchema,
+});
+export type PasskeyVerifyRequest = z.infer<typeof passkeyVerifyRequestSchema>;
+export const passkeyAddRequestSchema = z.object({ name: passkeyNameSchema, response: webauthnJsonSchema });
+export type PasskeyAddRequest = z.infer<typeof passkeyAddRequestSchema>;
+export const passkeyAddResponseSchema = z.object({
+  passkey: passkeySummarySchema,
+  recoveryCodes: z.array(z.string()).optional(),
+});
+export type PasskeyAddResponse = z.infer<typeof passkeyAddResponseSchema>;
+export const passkeyRenameRequestSchema = z.object({ name: passkeyNameSchema });
+export type PasskeyRenameRequest = z.infer<typeof passkeyRenameRequestSchema>;
+
 export const localSignInRequestSchema = z.object({
   email: emailSchema,
   password: passwordSchema,

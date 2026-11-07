@@ -75,7 +75,8 @@
   "pnpm": {
     "overrides": {
       "dompurify": "3.4.15",
-      "cpu-features": "-"
+      "cpu-features": "-",
+      "@peculiar/asn1-schema": "2.11.1"
     },
     "neverBuiltDependencies": [
       "ssh2",
