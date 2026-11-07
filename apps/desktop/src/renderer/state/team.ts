@@ -48,7 +48,15 @@ export interface TeamState {
   readonly lastInvite: TeamInvitationCreatedWire | undefined;
   readonly loading: boolean;
   readonly signedOut: boolean;
+  /** A refusal of a row's last change or removal, by user id; shown on that row instead of a toast. */
+  readonly rowErrors: Readonly<Record<string, string>>;
 }
+
+/** What *Add people* did: added an account, invited an email with no account, or was refused. */
+export type AddPersonResult =
+  | { readonly kind: 'member' }
+  | { readonly kind: 'invited'; readonly invitation: TeamInvitationCreatedWire }
+  | { readonly kind: 'failed'; readonly message: string };
 
 export interface TeamStore extends TeamState {
   /** Loads `url`'s teams; `target` picks the team on this first load (team management in the browser §2.2). */
@@ -63,6 +71,10 @@ export interface TeamStore extends TeamState {
   readonly addMember: (email: string, role: TeamRoleWire) => Promise<boolean>;
   readonly setMemberRole: (userId: string, role: TeamRoleWire) => Promise<boolean>;
   readonly removeMember: (userId: string) => Promise<boolean>;
+  /** Adds an account as a member, or invites the email when no account has it (spec §3.3). */
+  readonly addPerson: (email: string, role: TeamRoleWire) => Promise<AddPersonResult>;
+  /** A new link for an open invitation; the old one stops working. Sets `lastInvite` to it. */
+  readonly renewInvitation: (invitationId: string) => Promise<boolean>;
   readonly invite: (email: string, role: TeamRoleWire) => Promise<boolean>;
   readonly clearLastInvite: () => void;
   readonly revokeInvitation: (invitationId: string) => Promise<boolean>;
@@ -100,6 +112,7 @@ const INITIAL: TeamState = {
   lastInvite: undefined,
   loading: false,
   signedOut: false,
+  rowErrors: {},
 };
 
 const SIGNED_OUT = new Set(['identity-unauthenticated', 'account-signed-out']);
@@ -185,6 +198,32 @@ export const useTeamStore = create<TeamStore>((set, get) => {
     const teamId = get().teamId;
     if (teamId === undefined) return false;
     return (await write(what, (url) => call(url, teamId))) !== undefined;
+  };
+
+  /** A refusal *Add people* shows in its dialog; a signed-out one still flips the page. */
+  const refused = (error: { readonly code: string; readonly message: string }): AddPersonResult => {
+    if (SIGNED_OUT.has(error.code)) set({ signedOut: true });
+    return { kind: 'failed', message: error.message };
+  };
+
+  /** A change to one member's row: its refusal (`teams-last-admin` among them) stays on that row. */
+  const onRow = async (
+    userId: string,
+    call: (url: string, teamId: string) => Promise<IpcResult<unknown>>,
+  ): Promise<boolean> => {
+    const { url, teamId } = get();
+    if (url === undefined || teamId === undefined) return false;
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- destructured only to omit it
+    const { [userId]: dropped, ...others } = get().rowErrors;
+    set({ rowErrors: others });
+    const result = await call(url, teamId);
+    if (!result.ok) {
+      if (SIGNED_OUT.has(result.error.code)) set({ signedOut: true });
+      else set({ rowErrors: { ...get().rowErrors, [userId]: result.error.message } });
+      return false;
+    }
+    await get().refresh();
+    return true;
   };
 
   const withAccess = async (
@@ -275,10 +314,35 @@ export const useTeamStore = create<TeamStore>((set, get) => {
       withTeam('add the member', (url, teamId) => ipc().team.addMember({ url, teamId, email, role })),
 
     setMemberRole: (userId, role) =>
-      withTeam('change the role', (url, teamId) => ipc().team.setMemberRole({ url, teamId, userId, role })),
+      onRow(userId, (url, teamId) => ipc().team.setMemberRole({ url, teamId, userId, role })),
 
-    removeMember: (userId) =>
-      withTeam('remove the member', (url, teamId) => ipc().team.removeMember({ url, teamId, userId })),
+    removeMember: (userId) => onRow(userId, (url, teamId) => ipc().team.removeMember({ url, teamId, userId })),
+
+    addPerson: async (email, role) => {
+      const { url, teamId } = get();
+      if (url === undefined || teamId === undefined) return { kind: 'failed', message: 'No team is open.' };
+      const added = await ipc().team.addMember({ url, teamId, email, role });
+      if (added.ok) {
+        await get().refresh();
+        return { kind: 'member' };
+      }
+      if (added.error.code !== 'teams-user-unknown') return refused(added.error);
+      const invited = await ipc().team.invite({ url, teamId, email, role });
+      if (!invited.ok) return refused(invited.error);
+      await get().refresh();
+      return { kind: 'invited', invitation: invited.value.invitation };
+    },
+
+    renewInvitation: async (invitationId) => {
+      const teamId = get().teamId;
+      if (teamId === undefined) return false;
+      const value = await write('renew the invitation', (url) =>
+        ipc().team.renewInvitation({ url, teamId, invitationId }),
+      );
+      if (value === undefined) return false;
+      set({ lastInvite: value.invitation });
+      return true;
+    },
 
     invite: async (email, role) => {
       const teamId = get().teamId;

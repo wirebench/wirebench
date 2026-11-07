@@ -89,7 +89,7 @@ describe('Team settings (settings split spec §3, §5)', () => {
     show({ teamId: 'T2' });
     await waitFor(() => expect(screen.getByTestId('team-switcher').textContent).toContain('Support'));
     await waitFor(() => expect(current()).toBe('People'));
-    expect(screen.getByTestId('members-tab')).toBeTruthy();
+    expect(screen.getByTestId('people-page')).toBeTruthy();
     expect(window.location.search).toBe('?panel=team&team=T2&page=people');
   });
 

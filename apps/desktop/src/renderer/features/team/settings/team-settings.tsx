@@ -41,10 +41,8 @@ import {
 } from '../../preferences/settings-shell.js';
 import { AuditTab } from '../audit-tab.js';
 import { DomainTab } from '../domain-tab.js';
-import { InvitationsTab } from '../invitations-tab.js';
 import { LicenseBanner } from '../license-banner.js';
 import { LicenseTab } from '../license-tab.js';
-import { MembersTab } from '../members-tab.js';
 import { ProvisioningTab } from '../provisioning-tab.js';
 import { INPUT_CLASS } from '../roles.js';
 import {
@@ -55,6 +53,7 @@ import {
   type TeamSettingsPageId,
 } from '../team-settings-model.js';
 import { WorkspacesTab } from '../workspaces-tab.js';
+import { PeoplePage } from './people-page.js';
 import { NewTeamDialog, TeamSwitcher } from './team-switcher.js';
 import { clearTeamAddress, useTeamAddress } from './use-team-address.js';
 
@@ -162,7 +161,6 @@ function OverviewPage() {
 function PageBody({
   page,
   url,
-  facts,
 }: {
   readonly page: TeamSettingsPageId;
   readonly url: string;
@@ -174,12 +172,7 @@ function PageBody({
     case 'overview':
       return <OverviewPage />;
     case 'people':
-      return (
-        <div className="flex flex-col gap-6">
-          <MembersTab />
-          {facts.teamAdmin && <InvitationsTab />}
-        </div>
-      );
+      return <PeoplePage />;
     case 'workspaces':
       return <WorkspacesTab />;
     case 'roles':
