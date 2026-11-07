@@ -13,8 +13,11 @@ All notable changes to this project are documented here. The format follows
   for the desktop app, which keeps working as before.
 - **User settings.** You, on every server you sign in to, in one place: **Profile** (edit your name, see your email
   and how you sign in), **Password**, **Servers you're signed in to**, **Signed-in devices** (sign any other device
-  out) and **CI tokens**. Open it with **Account settings…** in the status bar's account menu or **Account: Account
-  settings** in the palette. With several servers signed in, a picker chooses which one the pages show.
+  out) and **CI tokens**. Open it with **Account settings…** in the account menu at the top right or **Account:
+  Account settings** in the palette. The account menu (your email, Account settings, Signed-in devices, Manage team,
+  Sign out) moved from the status bar to the title bar's top right. With several servers signed in, a picker
+  chooses which one the pages show. Team settings' Workspaces page shows each workspace as a card: its name, your
+  role, Access… and Delete, then labelled rows for default access, recording and features.
 - **Team settings in the browser.** The browser client manages a team on a settings page of its own, in place of
   the Team dialog: a team switcher, then **This team** (Overview, People, Workspaces, What roles can do) and, for
   server admins, **Server** (License and seats, Sign-in, Provisioning, Domain, Email, Audit log, Audit forwarding,

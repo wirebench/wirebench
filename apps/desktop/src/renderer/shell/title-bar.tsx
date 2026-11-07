@@ -4,6 +4,7 @@ import { formatKeybinding, shortcutFor } from '../lib/keybindings.js';
 import { TERMINAL_PALETTE_CHORD, useTerminalFocused } from '../lib/terminal-focus.js';
 import { IconButton } from '../components/icon-button.js';
 import { useUiStore } from '../state/ui.js';
+import { AccountStatusItem } from '../features/account/account-status-item.js';
 import { EnvSwitcher } from '../features/environments/env-switcher.js';
 import { WorkspaceSwitcher } from '../features/workspace/switcher.js';
 
@@ -79,6 +80,8 @@ export function TitleBar({ platform, workspaceName, dirty = false, onOpenPalette
         >
           {theme === 'light' ? <Moon size={15} aria-hidden="true" /> : <Sun size={15} aria-hidden="true" />}
         </IconButton>
+        {/* Last, at the far right: who you are signed in as, and the menu for your account. */}
+        <AccountStatusItem />
       </div>
     </header>
   );
