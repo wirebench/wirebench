@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { Button } from '../../components/button.js';
-import { signedInServers, useAccountStore } from '../../state/account.js';
+import { hostOf, useActiveAccount } from '../../state/account.js';
 import { ipc } from '../../state/ipc-client.js';
 import type { ShareToServerRequest } from '../../state/workspace.js';
 import type { DefaultRoleWire, TeamWire, TeamWorkspaceWire } from '@shared/wire-base.js';
@@ -35,15 +35,15 @@ export interface ServerShareFormProps {
 }
 
 /**
- * *Share this workspace… → Wirebench Server* (server-sync §3.4): the server (when several are signed
- * in) and the team, then either a new server workspace — its name and the team's default role,
+ * *Share this workspace… → Wirebench Server* (server-sync §3.4): as the active account, on its server (switch
+ * accounts spec §4: the account menu switches, so there is no server to choose here), the team, then either a new server workspace — its name and the team's default role,
  * *Viewer* unless changed (O3) — or an existing empty one the caller can edit (O1), whose name and id
  * the local workspace then takes. Main does everything else. A refusal stays in the form, since
  * choosing again is the answer to most of them.
  */
 export function ServerShareForm({ workspaceName, onShared }: ServerShareFormProps) {
-  const servers = signedInServers(useAccountStore((state) => state.servers));
-  const [url, setUrl] = useState(servers[0]?.url);
+  const current = useActiveAccount();
+  const url = current?.url;
   const [teams, setTeams] = useState<Loaded<TeamWire>>({ state: 'loading' });
   const [teamId, setTeamId] = useState<string | undefined>(undefined);
   const [into, setInto] = useState<Into>('new');
@@ -134,27 +134,10 @@ export function ServerShareForm({ workspaceName, onShared }: ServerShareFormProp
 
   return (
     <>
-      {servers.length > 1 && (
-        <>
-          <label className={LABEL_CLASS} htmlFor="share-server">
-            Server
-          </label>
-          <select
-            id="share-server"
-            data-testid="share-server"
-            value={url}
-            onChange={(event) => {
-              setUrl(event.target.value);
-            }}
-            className={FIELD_CLASS}
-          >
-            {servers.map((server) => (
-              <option key={server.url} value={server.url}>
-                {server.url}
-              </option>
-            ))}
-          </select>
-        </>
+      {current !== undefined && (
+        <p data-testid="share-server-as" className="mt-3 text-xs text-fg-subtle">
+          Shares as {current.email} on {hostOf(current.url)}. Switch accounts in the account menu to share elsewhere.
+        </p>
       )}
 
       <label className={LABEL_CLASS} htmlFor="share-team">

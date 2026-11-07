@@ -3,7 +3,7 @@ import * as Dialog from '@radix-ui/react-dialog';
 import { Button } from '../../components/button.js';
 import { ConfirmDialog } from '../../components/confirm-dialog.js';
 import { Tabs, type TabItem } from '../../components/tabs.js';
-import { signedInServers, useAccountStore } from '../../state/account.js';
+import { signedInServers, useAccountStore, useActiveAccount } from '../../state/account.js';
 import { selectedTeam, teamWorkspaces, useTeamStore, type TeamTab } from '../../state/team.js';
 import { useUiStore } from '../../state/ui.js';
 import { InvitationsTab } from './invitations-tab.js';
@@ -29,6 +29,8 @@ export function TeamDialog() {
   const requestedUrl = useUiStore((state) => state.teamDialog.url);
   const setOpen = useUiStore((state) => state.setTeamDialogOpen);
   const servers = signedInServers(useAccountStore((state) => state.servers));
+  // Unless asked for a server, the active account's (switch accounts spec §4).
+  const activeUrl = useActiveAccount()?.url;
   const store = useTeamStore();
   const license = useLicenseStore((s) => s.state);
   const team = selectedTeam(store);
@@ -40,7 +42,7 @@ export function TeamDialog() {
   const [storeTab, setStoreTab] = useState<TeamTab>('members');
 
   const target = useUiStore((state) => state.teamDialog.target);
-  const url = requestedUrl ?? servers[0]?.url;
+  const url = requestedUrl ?? activeUrl;
 
   // Load while open and reset on close. The store is shared with Team settings, so a closed dialog leaves it alone.
   useEffect(() => {

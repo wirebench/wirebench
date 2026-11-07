@@ -73,7 +73,7 @@ describe('Team settings (settings split spec §3, §5)', () => {
   let push: MockInstance<History['pushState']>;
   beforeEach(() => {
     useTeamStore.getState().reset();
-    useAccountStore.setState({ servers: [account], loaded: true });
+    useAccountStore.setState({ servers: [account], active: null, loaded: true });
     window.history.replaceState(null, '', '/');
     push = vi.spyOn(window.history, 'pushState');
   });
@@ -91,6 +91,16 @@ describe('Team settings (settings split spec §3, §5)', () => {
     await waitFor(() => expect(current()).toBe('People'));
     expect(screen.getByTestId('people-page')).toBeTruthy();
     expect(window.location.search).toBe('?panel=team&team=T2&page=people');
+  });
+
+  it('opens on the active account’s server when no server is asked for (switch accounts spec §4)', async () => {
+    const { team: calls } = install(TEAMS) as unknown as { team: { list: ReturnType<typeof vi.fn> } };
+    useAccountStore.setState({
+      servers: [account, { ...account, url: 'https://second.test', userId: 'u-second' }],
+      active: { url: 'https://second.test', userId: 'u-second' },
+    });
+    show();
+    await waitFor(() => expect(calls.list).toHaveBeenCalledWith({ url: 'https://second.test' }));
   });
 
   it('an unknown team falls back to the first', async () => {

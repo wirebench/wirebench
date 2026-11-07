@@ -8,6 +8,7 @@ vi.mock('../../src/renderer/components/toast.js', () => ({ showToast }));
 const { otherAccounts, signedInServers, signInErrorMessage, subscribeToAccounts, useAccountStore } =
   await import('../../src/renderer/state/account.js');
 const { useUiStore } = await import('../../src/renderer/state/ui.js');
+const { useWorkspaceStore } = await import('../../src/renderer/state/workspace.js');
 
 const account = (patch: Partial<AccountWire> = {}): AccountWire => ({
   url: 'https://wb.test',
@@ -162,6 +163,38 @@ describe('account store', () => {
       expect(setActive).toHaveBeenCalledWith({ account: { url: 'https://wb.test', userId: 'u2' } });
       expect(useAccountStore.getState().active).toEqual({ url: 'https://wb.test', userId: 'u2' });
       expect(showToast).toHaveBeenCalledWith('Now signed in as Tess on wb.test.');
+    });
+
+    it('says an open workspace of the previous account’s server keeps syncing as that account (spec ruling 4)', async () => {
+      const setActive = vi.fn().mockResolvedValue({
+        ok: true,
+        value: {
+          servers: [
+            { ...work, active: false },
+            { ...test, active: true },
+          ],
+          active: { url: 'https://wb.test', userId: 'u2' },
+        },
+      });
+      installWirebenchApi({ account: { setActive } });
+      useAccountStore.setState({ servers: [work, test], active: ACTIVE });
+      useWorkspaceStore.setState({
+        workspace: {
+          share: {
+            kind: 'server',
+            managed: true,
+            server: { url: 'https://wb.test/', workspaceId: 'W', recording: false },
+          },
+        } as never,
+      });
+      try {
+        await useAccountStore.getState().setActive({ url: 'https://wb.test', userId: 'u2' });
+        expect(showToast).toHaveBeenCalledWith(
+          'The open workspace keeps syncing as Alice, the account it was opened with.',
+        );
+      } finally {
+        useWorkspaceStore.setState({ workspace: null });
+      }
     });
 
     it('a refused switch is toasted and leaves the active account', async () => {

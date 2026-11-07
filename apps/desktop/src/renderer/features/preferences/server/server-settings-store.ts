@@ -232,27 +232,6 @@ export const useServerSettingsStore = create<ServerSettingsStore>((set, get) => 
   };
 });
 
-/**
- * The server the *Server* group is about, among the signed-in ones: the open workspace's, when it is shared on one of
- * them; otherwise the first signed in. The page manages one server at a time, so with two signed in and no linked
- * workspace the first is shown, as the Accounts list orders them.
- */
-export function settingsServerUrl(
-  signedIn: readonly { readonly url: string }[],
-  linked: string | undefined,
-): string | undefined {
-  const origin = (url: string): string | undefined => {
-    try {
-      return new URL(url).origin;
-    } catch {
-      return undefined;
-    }
-  };
-  const wanted = linked === undefined ? undefined : origin(linked);
-  const match = wanted === undefined ? undefined : signedIn.find((server) => origin(server.url) === wanted);
-  return (match ?? signedIn[0])?.url;
-}
-
 /** The pages the nav lists for `settings`: every page on a hosted team, all but Billing and Close this account self-hosted. */
 export function serverPages(settings: ServerSettingsWire | undefined): readonly ServerPageId[] {
   return SERVER_PAGES.filter((page) => isHosted(settings) || !HOSTED_ONLY_PAGES.has(page));

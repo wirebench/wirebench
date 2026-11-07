@@ -25,7 +25,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { Button } from '../../../components/button.js';
-import { signedInServers, useAccountStore } from '../../../state/account.js';
+import { useActiveAccount } from '../../../state/account.js';
 import { useDomainStore } from '../../../state/domain.js';
 import { useLicenseStore } from '../../../state/license.js';
 import { selectedTeam, teamWorkspaces, useTeamStore } from '../../../state/team.js';
@@ -143,8 +143,9 @@ function Page({
 }
 
 export function TeamSettings({ target }: { readonly target: TeamSettingsTarget }) {
-  const servers = signedInServers(useAccountStore((state) => state.servers));
-  const url = target.url ?? servers[0]?.url;
+  // Unless asked for a server, the active account's (switch accounts spec §4).
+  const activeUrl = useActiveAccount()?.url;
+  const url = target.url ?? activeUrl;
   const store = useTeamStore();
   const team = selectedTeam(store);
   const license = useLicenseStore((s) => s.state);

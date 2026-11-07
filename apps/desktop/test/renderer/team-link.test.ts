@@ -54,7 +54,7 @@ describe('team links (team management in the browser §2)', () => {
   let open: MockInstance<Window['open']>;
   beforeEach(() => {
     useUiStore.setState({ teamDialog: { open: false, url: undefined } });
-    useAccountStore.setState({ servers: [account('https://wb.test')], loaded: true });
+    useAccountStore.setState({ servers: [account('https://wb.test')], active: null, loaded: true });
     useWorkspaceStore.setState({ workspace: null });
     open = vi.spyOn(window, 'open').mockReturnValue(null);
   });
@@ -175,14 +175,21 @@ describe('team links (team management in the browser §2)', () => {
     expect(useUiStore.getState().teamDialog.open).toBe(false);
   });
 
-  it('carries the open workspace when it is shared to that server, and picks that server first', async () => {
+  it('opens on the active account’s server, carrying the open workspace when it is shared there', async () => {
     const probe = vi.fn().mockResolvedValue(meta(['browser-client']));
     installWirebenchApi({ account: { probe } });
-    useAccountStore.setState({ servers: [account('https://one.test'), account('https://two.test')] });
+    useAccountStore.setState({
+      servers: [account('https://one.test'), account('https://two.test')],
+      active: { url: 'https://one.test', userId: account('https://one.test').userId },
+    });
     useWorkspaceStore.setState({ workspace: sharedWorkspace('https://two.test', 'W2') });
+    // The workspace is on another server than the active account's: Manage team… follows the account.
     await manageTeam();
-    expect(probe).toHaveBeenCalledWith({ url: 'https://two.test' });
-    expect(open).toHaveBeenCalledWith('https://two.test/?panel=team&workspace=W2', '_blank', 'noopener');
+    expect(probe).toHaveBeenCalledWith({ url: 'https://one.test' });
+    expect(open).toHaveBeenLastCalledWith('https://one.test/?panel=team', '_blank', 'noopener');
+    useAccountStore.setState({ active: { url: 'https://two.test', userId: account('https://two.test').userId } });
+    await manageTeam();
+    expect(open).toHaveBeenLastCalledWith('https://two.test/?panel=team&workspace=W2', '_blank', 'noopener');
     // Asked about the other server, the workspace is not that server's: no workspace in the link.
     await manageTeam('https://one.test');
     expect(open).toHaveBeenLastCalledWith('https://one.test/?panel=team', '_blank', 'noopener');

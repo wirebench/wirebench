@@ -98,6 +98,21 @@ export function otherAccounts(
     .map(({ account }) => account);
 }
 
+/**
+ * Who you are on `url`: the active account when it is on that server, else that server's first signed-in one. Team
+ * pages use it to tell your own row apart.
+ */
+export function accountOnServer(
+  servers: readonly AccountWire[],
+  active: AccountRefWire | null,
+  url: string | undefined,
+): AccountWire | undefined {
+  if (url === undefined) return undefined;
+  const current = activeAccount(servers, active);
+  if (current?.url === url) return current;
+  return servers.find((server) => server.url === url && !server.signedOut) ?? servers.find((s) => s.url === url);
+}
+
 /** Whether the accounts are on more than one server, when the menu names each one's host. */
 export function serversDiffer(servers: readonly AccountWire[]): boolean {
   return new Set(servers.map((server) => server.url)).size > 1;

@@ -6,7 +6,7 @@
  * Team settings on it.
  */
 import { isBrowserTab } from '../../lib/capabilities.js';
-import { signedInServers, useAccountStore } from '../../state/account.js';
+import { activeAccount, useAccountStore } from '../../state/account.js';
 import { ipc } from '../../state/ipc-client.js';
 import { useUiStore, type TeamDialogTarget } from '../../state/ui.js';
 import { useWorkspaceStore } from '../../state/workspace.js';
@@ -116,17 +116,14 @@ function sameServer(a: string, b: string): boolean {
 }
 
 /**
- * The server *Manage team…* is about: the one asked for; else the open workspace's, when it is shared to a
- * signed-in server; else the first signed-in server.
+ * The server *Manage team…* is about: the one asked for, else the active account's (switch accounts spec §4). The
+ * open workspace's team is carried when it is shared to that server.
  */
 function chooseServer(url: string | undefined): { url: string; target?: TeamDialogTarget } | undefined {
-  const signedIn = signedInServers(useAccountStore.getState().servers);
+  const { servers, active } = useAccountStore.getState();
   const share = useWorkspaceStore.getState().workspace?.share;
   const shared = share?.kind === 'server' ? share.server : undefined;
-  const chosen =
-    url ??
-    (shared !== undefined ? signedIn.find((server) => sameServer(server.url, shared.url))?.url : undefined) ??
-    signedIn[0]?.url;
+  const chosen = url ?? activeAccount(servers, active)?.url;
   if (chosen === undefined) return undefined;
   return shared !== undefined && sameServer(shared.url, chosen)
     ? { url: chosen, target: { workspaceId: shared.workspaceId } }
