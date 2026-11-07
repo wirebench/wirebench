@@ -163,7 +163,7 @@ export const SETTINGS_NAV: readonly SettingsNavGroup[] = [
     ],
   },
   {
-    title: 'Requests',
+    title: 'Protocols',
     sections: [
       { id: 'http', label: 'HTTP', subtitle: 'Defaults for every HTTP send.', keys: stored('http'), searchable: true },
       {
@@ -184,7 +184,7 @@ export const SETTINGS_NAV: readonly SettingsNavGroup[] = [
     ],
   },
   {
-    title: 'Network',
+    title: 'Network and tools',
     sections: [
       {
         id: 'proxy',
@@ -200,11 +200,6 @@ export const SETTINGS_NAV: readonly SettingsNavGroup[] = [
         keys: stored('ssl'),
         searchable: true,
       },
-    ],
-  },
-  {
-    title: 'Workspace',
-    sections: [
       {
         id: 'git',
         label: 'Git',
@@ -251,15 +246,8 @@ export const SETTINGS_NAV: readonly SettingsNavGroup[] = [
     ],
   },
   {
-    title: 'Account',
+    title: 'This computer',
     sections: [
-      {
-        id: 'accounts',
-        label: 'Accounts',
-        subtitle: 'Servers you are signed in to.',
-        keys: stored('accounts'),
-        searchable: true,
-      },
       {
         id: 'this-machine',
         label: 'This machine',
@@ -277,6 +265,19 @@ export const SETTINGS_NAV: readonly SettingsNavGroup[] = [
         searchable: false,
         keywords: ['agent', 'pair', 'localhost', 'browser', 'system'],
         capability: 'machine-agent',
+      },
+    ],
+  },
+  // Leaves for User settings once it has these pages (settings split plan, Task 12).
+  {
+    title: 'Account',
+    sections: [
+      {
+        id: 'accounts',
+        label: 'Accounts',
+        subtitle: 'Servers you are signed in to.',
+        keys: stored('accounts'),
+        searchable: true,
       },
       {
         id: 'tokens',

@@ -12,9 +12,11 @@ import type {
 } from '@wirebench/wire/wire-base';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import {
+  serverPages,
   settingsServerUrl,
   useServerSettingsStore,
 } from '../../src/renderer/features/preferences/server/server-settings-store.js';
+import { ServerPage } from '../../src/renderer/features/preferences/server/server-page.js';
 import { SignInSection } from '../../src/renderer/features/preferences/server/sign-in-section.js';
 import { ProvisioningSection } from '../../src/renderer/features/preferences/server/provisioning-section.js';
 import { AuditForwardingSection } from '../../src/renderer/features/preferences/server/audit-forwarding-section.js';
@@ -554,6 +556,20 @@ describe('Export', () => {
     const link = await screen.findByTestId('server-export-download');
     expect(link.tagName).toBe('A');
     expect(link.getAttribute('href')).toBe(`${URL_}/api/v1/tenant/exports/e1/file`);
+  });
+});
+
+describe('Close this account (ruling 9)', () => {
+  it('is the page id close-account, a hosted team’s only, named so it is not mistaken for deleting a team', () => {
+    expect(serverPages(view())).toContain('close-account');
+    expect(serverPages(view())).not.toContain('delete');
+    expect(serverPages(environment())).not.toContain('close-account');
+    installWirebenchApi();
+    loaded(view(), BILLING);
+    render(<ServerPage page="close-account" />);
+    const page = screen.getByTestId('server-page-close-account');
+    expect(page.querySelector('h1')?.textContent).toBe('Close this account');
+    expect(page.textContent).toContain('Close Acme Ltd’s account and delete everything in it.');
   });
 });
 

@@ -44,7 +44,7 @@ describe('PreferencesEditor', () => {
   it('lists every section', () => {
     render(<PreferencesEditor />);
     const nav = screen.getByRole('navigation', { name: 'Settings sections' });
-    for (const group of ['General', 'Requests', 'Network', 'Workspace', 'Account']) {
+    for (const group of ['General', 'Protocols', 'Network and tools', 'Account']) {
       expect(within(nav).getByRole('heading', { name: group })).toBeTruthy();
     }
     for (const label of [
@@ -762,7 +762,7 @@ describe('PreferencesEditor — search', () => {
       within(results)
         .getAllByTestId('setting-crumb')
         .map((crumb) => crumb.textContent),
-    ).toContain('Requests › HTTP');
+    ).toContain('Protocols › HTTP');
     // Everything else is filtered out, and no section is marked current while searching.
     expect(within(results).queryByLabelText('User-Agent')).toBeNull();
     expect(screen.queryByRole('button', { current: 'page' })).toBeNull();
@@ -784,14 +784,14 @@ describe('PreferencesEditor — search', () => {
         within(results)
           .getAllByTestId('setting-crumb')
           .map((crumb) => crumb.textContent),
-      ).toContain('Workspace › SSH');
+      ).toContain('Network and tools › SSH');
     }
   });
 
   it('matches hints, group titles and section names too', () => {
     render(<PreferencesEditor />);
     search('keychain');
-    expect(screen.getByText('Network › Proxy')).toBeTruthy();
+    expect(screen.getByText('Network and tools › Proxy')).toBeTruthy();
 
     search('generated requests');
     expect(screen.getByLabelText('Sample values')).toBeTruthy();
@@ -828,7 +828,9 @@ describe('PreferencesEditor — search', () => {
       .map((crumb) => crumb.textContent);
     expect(crumbs.length).toBeGreaterThan(0);
     // The app lock under Secrets guards SSH secrets, so it matches too.
-    expect(new Set(crumbs)).toEqual(new Set(['Workspace › Terminal', 'Workspace › SSH', 'Workspace › Secrets']));
+    expect(new Set(crumbs)).toEqual(
+      new Set(['Network and tools › Terminal', 'Network and tools › SSH', 'Network and tools › Secrets']),
+    );
   });
 
   it('says so when nothing matches', () => {
@@ -967,7 +969,7 @@ describe('PreferencesEditor — the Server group (hosted edition spec §22.13)',
       'Retention',
       'Billing',
       'Export',
-      'Delete team',
+      'Close this account',
     ]);
     fireEvent.click(screen.getByTestId('settings-nav-server-sign-in'));
     expect(screen.getByTestId('server-page-sign-in')).toBeTruthy();
@@ -977,7 +979,7 @@ describe('PreferencesEditor — the Server group (hosted edition spec §22.13)',
     expect(screen.queryByTestId('server-page-sign-in')).toBeNull();
   });
 
-  it('has no Billing or Delete team on a self-hosted server, and names it by its host', () => {
+  it('has no Billing or Close this account on a self-hosted server, and names it by its host', () => {
     useServerSettingsStore.setState({
       url: 'https://wirebench.corp.example',
       available: true,
@@ -988,7 +990,7 @@ describe('PreferencesEditor — the Server group (hosted edition spec §22.13)',
     const group = screen.getByTestId('settings-nav-server');
     expect(group.querySelector('h2')?.textContent).toBe('Server · wirebench.corp.example');
     expect(screen.queryByTestId('settings-nav-server-billing')).toBeNull();
-    expect(screen.queryByTestId('settings-nav-server-delete')).toBeNull();
+    expect(screen.queryByTestId('settings-nav-server-close-account')).toBeNull();
     expect(screen.getByTestId('settings-nav-server-export')).toBeTruthy();
   });
 });
