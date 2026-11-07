@@ -13,6 +13,7 @@ import {
   MIN_ZOOM,
   clampOffset,
   cropRect,
+  stripWebpMetadata,
   type CropKind,
   type Offset,
   type Size,
@@ -50,7 +51,8 @@ function toBlob(canvas: HTMLCanvasElement): Promise<Blob | null> {
 }
 
 async function blobToBase64(blob: Blob): Promise<string> {
-  const bytes = new Uint8Array(await blob.arrayBuffer());
+  // The browser's encoder may add a colour profile; the server takes no metadata chunks, so they go here.
+  const bytes = stripWebpMetadata(new Uint8Array(await blob.arrayBuffer()));
   let binary = '';
   const chunk = 0x8000;
   for (let index = 0; index < bytes.length; index += chunk) {
