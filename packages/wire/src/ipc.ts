@@ -150,6 +150,18 @@ import {
   accountProbeResponseSchema,
   accountResponseSchema,
   accountSignInLocalRequestSchema,
+  accountSignInLocalResponseSchema,
+  accountTwoFactorVerifyRequestSchema,
+  accountTotpSetupWireSchema,
+  accountTwoFactorCodeRequestSchema,
+  accountTwoFactorSetupDoneSchema,
+  accountTwoFactorStatusWireSchema,
+  accountPasswordRequestSchema,
+  accountTotpConfirmRequestSchema,
+  accountTotpConfirmResponseSchema,
+  accountRecoveryCodesWireSchema,
+  accountPasskeyRenameRequestSchema,
+  accountPasskeyRemoveRequestSchema,
   accountStartOidcRequestSchema,
   accountUrlRequestSchema,
   apiCancelImportRequestSchema,
@@ -671,7 +683,29 @@ export const channels = {
   account: {
     list: defineChannel('account.list', z.undefined(), accountListResponseSchema),
     probe: defineChannel('account.probe', accountUrlRequestSchema, accountProbeResponseSchema),
-    signInLocal: defineChannel('account.signInLocal', accountSignInLocalRequestSchema, accountResponseSchema),
+    /** The account, or the second step for a person with two-step sign-in (spec §4.2); main keeps its challenge. */
+    signInLocal: defineChannel(
+      'account.signInLocal',
+      accountSignInLocalRequestSchema,
+      accountSignInLocalResponseSchema,
+    ),
+    /** The pending second step with an authenticator or recovery code. */
+    verifyTwoFactor: defineChannel(
+      'account.verifyTwoFactor',
+      accountTwoFactorVerifyRequestSchema,
+      accountResponseSchema,
+    ),
+    /** The pending second step with a passkey, in the system browser; `cancelSignIn` ends it early. */
+    startTwoFactorPasskey: defineChannel('account.startTwoFactorPasskey', z.undefined(), accountResponseSchema),
+    /** Drops the pending second step (the dialog's Back or close). */
+    cancelTwoFactor: defineChannel('account.cancelTwoFactor', z.undefined(), accountDoneResponseSchema),
+    /** The required setup at sign-in (spec §4.3): an authenticator for the pending setup step, then its confirm. */
+    twoFactorSetupStart: defineChannel('account.twoFactorSetupStart', z.undefined(), accountTotpSetupWireSchema),
+    twoFactorSetupConfirm: defineChannel(
+      'account.twoFactorSetupConfirm',
+      accountTwoFactorCodeRequestSchema,
+      accountTwoFactorSetupDoneSchema,
+    ),
     /** Resolves when the browser hand-off has completed; `cancelSignIn` ends it early. */
     startOidc: defineChannel('account.startOidc', accountStartOidcRequestSchema, accountResponseSchema),
     /** The SAML hand-off (saml-scim spec §3.7): the same request and loopback as OIDC. */
@@ -701,6 +735,26 @@ export const channels = {
     ),
     devices: defineChannel('account.devices', accountUrlRequestSchema, accountDevicesResponseSchema),
     signOutDevice: defineChannel('account.signOutDevice', accountDeviceRefRequestSchema, accountDoneResponseSchema),
+    /** User settings → Password, two-step sign-in (spec §5). Every change but a rename takes the password. */
+    twoFactorStatus: defineChannel(
+      'account.twoFactorStatus',
+      accountUrlRequestSchema,
+      accountTwoFactorStatusWireSchema,
+    ),
+    setUpTotp: defineChannel('account.setUpTotp', accountPasswordRequestSchema, accountTotpSetupWireSchema),
+    confirmTotp: defineChannel(
+      'account.confirmTotp',
+      accountTotpConfirmRequestSchema,
+      accountTotpConfirmResponseSchema,
+    ),
+    removeTotp: defineChannel('account.removeTotp', accountPasswordRequestSchema, accountDoneResponseSchema),
+    regenerateRecoveryCodes: defineChannel(
+      'account.regenerateRecoveryCodes',
+      accountPasswordRequestSchema,
+      accountRecoveryCodesWireSchema,
+    ),
+    renamePasskey: defineChannel('account.renamePasskey', accountPasskeyRenameRequestSchema, accountDoneResponseSchema),
+    removePasskey: defineChannel('account.removePasskey', accountPasskeyRemoveRequestSchema, accountDoneResponseSchema),
   },
   /**
    * Teams on Wirebench Server (teams-access §3.5). Every request names the server by `url`; main

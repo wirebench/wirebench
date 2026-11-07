@@ -97,7 +97,7 @@ describe('ServerClient', () => {
       password: 'p'.repeat(12),
       device: { name: 'Mac' },
     });
-    expect(ok.token).toBe(TOKEN);
+    expect(ok).toEqual({ token: TOKEN, user: USER });
     expect(sent[0]).toMatchObject({ method: 'POST', url: 'https://wb.test/api/v1/auth/local/sign-in' });
     expect(sent[0]?.headers['content-type']).toBe('application/json');
     expect(JSON.parse(new TextDecoder().decode(sent[0]?.body))).toEqual({

@@ -123,6 +123,12 @@ export const REFUSED_CHANNELS: Readonly<Record<string, string>> = {
   'account.cancelSignIn': 'cancels a desktop loopback sign-in',
   'account.lookupInvitation': 'part of accepting an invitation, which the server page does',
   'account.acceptInvitation': 'signs in through an invitation, which the server page does',
+  // The second step of a sign-in is the server's own page too (two-step sign-in spec §4.1).
+  'account.verifyTwoFactor': 'the second step of a desktop sign-in',
+  'account.startTwoFactorPasskey': 'starts a desktop loopback passkey hand-off',
+  'account.cancelTwoFactor': 'the second step of a desktop sign-in',
+  'account.twoFactorSetupStart': 'the required setup of a desktop sign-in',
+  'account.twoFactorSetupConfirm': 'the required setup of a desktop sign-in',
   // A desktop's process, windows and menu.
   'app.checkForUpdates': 'updates are the desktop app’s',
   'app.newWindow': 'opens a desktop window',

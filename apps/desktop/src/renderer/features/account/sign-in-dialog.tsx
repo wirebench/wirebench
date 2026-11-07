@@ -109,6 +109,10 @@ export function SignInDialog() {
       failed(result.error);
       return;
     }
+    if ('twoFactor' in result.value) {
+      setError('This account uses two-step sign-in, which this dialog cannot finish yet.');
+      return;
+    }
     finished(result.value.account);
   };
 
