@@ -29,6 +29,35 @@ export function roleWithSource(role: WorkspaceRoleWire, source: RoleSourceWire):
   return `${ROLE_LABELS[role]} (${SOURCE_LABELS[source]})`;
 }
 
+/** What a workspace role lets its holder do (settings split ruling 15); *Manage people* is a team role. */
+export const WORKSPACE_ABILITIES = ['read', 'send', 'edit', 'share', 'manage-workspace'] as const;
+export type WorkspaceAbility = (typeof WORKSPACE_ABILITIES)[number];
+
+/** The least workspace role that may do each (ruling 15): the server's route guards, restated. */
+export const ABILITY_MIN_ROLE: Readonly<Record<WorkspaceAbility, WorkspaceRoleWire>> = {
+  read: 'viewer',
+  send: 'viewer',
+  edit: 'editor',
+  share: 'admin',
+  'manage-workspace': 'admin',
+};
+
+export const ABILITY_LABELS: Readonly<Record<WorkspaceAbility, string>> = {
+  read: 'Open the workspace and read its requests',
+  send: 'Send requests',
+  edit: 'Change requests and sync them, CI tokens, catch URLs',
+  share: 'Give people access',
+  'manage-workspace': 'Rename, set the default role, delete',
+};
+
+const RANK: Readonly<Record<WorkspaceRoleWire, number>> = { viewer: 1, editor: 2, admin: 3 };
+
+/** Whether `role` may do `ability`; no role (or `none`) may do nothing. */
+export function roleCan(role: WorkspaceRoleWire | 'none' | undefined, ability: WorkspaceAbility): boolean {
+  if (role === undefined || role === 'none') return false;
+  return RANK[role] >= RANK[ABILITY_MIN_ROLE[ability]];
+}
+
 export const SELECT_CLASS =
   'h-row min-w-0 rounded-md border border-hairline-strong bg-surface-raised px-2 text-sm text-fg-default focus:outline-none focus:ring-1 focus:ring-accent disabled:opacity-60';
 export const INPUT_CLASS =
