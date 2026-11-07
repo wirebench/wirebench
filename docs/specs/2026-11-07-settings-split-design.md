@@ -2,7 +2,7 @@
 
 Date: 2026-11-07 · Status: approved by the owner (decisions 1–6 below are final) · Amends:
 `docs/specs/2026-11-06-team-management-in-browser-design.md` §2 (the Team dialog becomes a page) and the
-Settings page of #396 (its Account and Server groups move out) · Plan: to follow
+Settings page of #396 (its Account and Server groups move out) · Plan: `docs/plans/2026-11-07-settings-split.md`
 
 ## 1. Owner decisions
 
