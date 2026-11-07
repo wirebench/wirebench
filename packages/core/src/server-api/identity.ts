@@ -24,19 +24,100 @@ export const passwordSchema = z.string().min(1).max(MAX_PASSWORD_LENGTH);
 export const deviceSchema = z.object({ name: z.string().min(1).max(MAX_DEVICE_NAME_LENGTH) });
 export const identityIdSchema = z.string().min(1).max(64);
 
+/**
+ * User profile spec §2: a username is 3–30 characters from `a–z 0–9 . _ -`, starting with a letter or digit. Typed
+ * in any case and compared lower-case; ASCII only, so no look-alike letters (§9). It never holds `@`, which is how
+ * sign-in tells it from an email (§5).
+ */
+export const USERNAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{2,29}$/;
+export const MIN_USERNAME_LENGTH = 3;
+export const MAX_USERNAME_LENGTH = 30;
+/** Names that could pass for staff or a route (§2); compared lower-case. */
+export const RESERVED_USERNAMES: readonly string[] = Object.freeze([
+  'admin',
+  'administrator',
+  'root',
+  'system',
+  'support',
+  'wirebench',
+  'me',
+  'api',
+]);
+export const MAX_ABOUT_LENGTH = 500;
+
+/** Whether `value` is a username a person may take: the pattern, and not a reserved name. */
+export function isValidUsername(value: string): boolean {
+  return USERNAME_PATTERN.test(value) && !RESERVED_USERNAMES.includes(value.toLowerCase());
+}
+
+export const usernameSchema = z.string().min(MIN_USERNAME_LENGTH).max(MAX_USERNAME_LENGTH).regex(USERNAME_PATTERN);
+/** The about text as sent; the handler trims it and drops control characters before the length check (§9). */
+export const aboutSchema = z.string().max(MAX_ABOUT_LENGTH * 2);
+
+export const IMAGE_KINDS = ['photo', 'cover'] as const;
+export const imageKindSchema = z.enum(IMAGE_KINDS);
+export type ImageKind = z.infer<typeof imageKindSchema>;
+/** §2: what the app uploads, which the server checks again (§9). */
+export const IMAGE_LIMITS: Readonly<Record<ImageKind, { width: number; height: number; maxBytes: number }>> =
+  Object.freeze({
+    photo: { width: 256, height: 256, maxBytes: 512 * 1024 },
+    cover: { width: 1500, height: 500, maxBytes: 2 * 1024 * 1024 },
+  });
+/** A stored image, named by its version (the first 16 hex characters of its sha256) so a URL busts caches. */
+export const imageRefSchema = z.object({ version: z.string().regex(/^[0-9a-f]{16}$/) });
+export type ImageRef = z.infer<typeof imageRefSchema>;
+
+/**
+ * The profile fields are optional on the wire so a newer client still reads an older server's answers: a missing
+ * field means none is set.
+ */
 export const serverUserSchema = z.object({
   id: z.string(),
   email: z.string(),
   displayName: z.string(),
   serverAdmin: z.boolean(),
+  username: z.string().nullable().optional(),
+  about: z.string().optional(),
+  photo: imageRefSchema.nullable().optional(),
+  cover: imageRefSchema.nullable().optional(),
 });
 export type ServerUser = z.infer<typeof serverUserSchema>;
+
+/** `PUT /me/images/:kind`: the WebP the app made, base64. */
+export const imageUploadRequestSchema = z.object({
+  contentType: z.literal('image/webp'),
+  // 4/3 of the largest cap, rounded up, plus padding.
+  data: z
+    .string()
+    .min(1)
+    .max(Math.ceil((IMAGE_LIMITS.cover.maxBytes * 4) / 3) + 4),
+});
+export type ImageUploadRequest = z.infer<typeof imageUploadRequestSchema>;
+export const imageParamsSchema = z.object({ kind: imageKindSchema });
+export const userImageParamsSchema = z.object({ id: z.string().min(1).max(64), kind: imageKindSchema });
+
+/** `GET /users/:id/profile`: what a team mate sees on the profile card (§4). */
+export const userProfileSchema = z.object({
+  id: z.string(),
+  displayName: z.string(),
+  email: z.string(),
+  username: z.string().nullable(),
+  about: z.string(),
+  photo: imageRefSchema.nullable(),
+  cover: imageRefSchema.nullable(),
+});
+export type UserProfile = z.infer<typeof userProfileSchema>;
 
 export const signInResponseSchema = z.object({ token: z.string().regex(DEVICE_TOKEN_PATTERN), user: serverUserSchema });
 export type SignInResponse = z.infer<typeof signInResponseSchema>;
 
+/**
+ * User profile spec §5: `identifier` is an email or a username; `email` stays for desktops older than usernames.
+ * Exactly one of the two: the handler refuses both or neither, since JSON Schema here cannot say "one of".
+ */
 export const localSignInRequestSchema = z.object({
-  email: emailSchema,
+  identifier: z.string().min(1).max(254).optional(),
+  email: emailSchema.optional(),
   password: passwordSchema,
   device: deviceSchema,
 });
@@ -79,8 +160,19 @@ export const passwordChangeRequestSchema = z.object({
 });
 export type PasswordChangeRequest = z.infer<typeof passwordChangeRequestSchema>;
 
-/** `PATCH /me`: the caller's own display name, trimmed by the server (the accept form's limit). */
-export const meUpdateRequestSchema = z.object({ name: z.string().min(1).max(MAX_DISPLAY_NAME_LENGTH) });
+/**
+ * `PATCH /me`: any of the caller's own name (trimmed by the server, the accept form's limit), username (`null`
+ * clears it) and about text. The handler refuses an empty body.
+ */
+export const meUpdateRequestSchema = z.object({
+  name: z.string().min(1).max(MAX_DISPLAY_NAME_LENGTH).optional(),
+  username: z
+    .string()
+    .max(MAX_USERNAME_LENGTH * 2)
+    .nullable()
+    .optional(),
+  about: aboutSchema.optional(),
+});
 export type MeUpdateRequest = z.infer<typeof meUpdateRequestSchema>;
 
 export const deviceSummarySchema = z.object({
@@ -135,6 +227,8 @@ export const userSummarySchema = z.object({
   serverAdmin: z.boolean(),
   disabledAt: z.string().optional(),
   methods: signInMethodsSchema,
+  username: z.string().nullable().optional(),
+  photo: imageRefSchema.nullable().optional(),
 });
 export const usersResponseSchema = z.array(userSummarySchema);
 export type UserSummary = z.infer<typeof userSummarySchema>;

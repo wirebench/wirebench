@@ -86,7 +86,8 @@ export const authLocalRoutes =
         if (!env.settings.local) throw methodDisabled();
         const body = request.body as LocalSignInRequest;
         const source = auditSource(request);
-        const checked = await checkLocalCredentials(env, request.tenant, source, body.email, body.password);
+        // User profile task 5 turns this into the identifier rule; until then an absent email fails like a wrong one.
+        const checked = await checkLocalCredentials(env, request.tenant, source, body.email ?? '', body.password);
         if (!checked.ok) throw checked.error;
         return reply.code(201).send(await signIn(env, request.tenant, checked.user, 'local', body.device.name, source));
       },

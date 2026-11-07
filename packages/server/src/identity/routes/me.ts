@@ -54,7 +54,8 @@ export const meRoutes =
       },
       async (request) => {
         const caller = request.caller!;
-        const name = (request.body as MeUpdateRequest).name.trim();
+        // User profile task 4 widens this to username and about; until then a body without a name is refused.
+        const name = (request.body as MeUpdateRequest).name?.trim() ?? '';
         if (name === '') throw displayNameInvalid();
         return env.ctx.tenancy.db(request.tenant).transaction(async (tx) => {
           const user = await repo.findUserById(tx, caller.id);
