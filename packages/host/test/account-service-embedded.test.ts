@@ -204,71 +204,36 @@ describe('AccountService with an embedded account', () => {
   });
 });
 
-describe('AccountService with an embedded account — the other accounts the browser holds', () => {
+describe('AccountService with an embedded account — switching', () => {
   let dir: string;
   beforeEach(async () => {
-    dir = await mkdtemp(join(tmpdir(), 'wb-accounts-remembered-'));
+    dir = await mkdtemp(join(tmpdir(), 'wb-accounts-switch-'));
   });
   afterEach(() => rm(dir, { recursive: true, force: true }));
 
-  const BOB = { userId: '01J8Z0000000000000000000BB', displayName: 'Bob', email: 'bob@example.com' };
-  const withRemembered = (rememberedAccounts: ReturnType<typeof vi.fn>) => {
-    const mocks = {
-      me: vi.fn().mockResolvedValue({ user: USER, methods: { local: true, oidc: false } }),
-      rememberedAccounts,
-    };
+  it('keeps the embedder’s account active and leaves every other person on its server to the browser', async () => {
     const s = new AccountService({
       userDataDir: dir,
-      client: mocks as unknown as ServerClient,
+      client: {
+        me: vi.fn().mockResolvedValue({ user: USER, methods: { local: true, oidc: false } }),
+      } as unknown as ServerClient,
       secrets: fakeSecrets(),
       openExternal: () => Promise.resolve(),
       embedded: { url: URL_A, credential: () => TOKEN_1 },
     });
-    return { s, mocks };
-  };
-
-  it('keeps the embedder’s account active and lists the others from GET /me/accounts, never itself', async () => {
-    const { s, mocks } = withRemembered(
-      vi.fn().mockResolvedValue([
-        { ...BOB, username: 'bob', photo: { version: '0123456789abcdef' } },
-        { userId: USER.id, displayName: USER.displayName, email: USER.email, username: null, photo: null },
-      ]),
-    );
     await s.load();
-    const changed = vi.fn();
-    s.onChange(changed);
     await s.refreshAll();
-    expect(mocks.rememberedAccounts).toHaveBeenCalledWith(URL_A, TOKEN_1);
     expect(s.active()).toEqual({ url: URL_A, userId: USER.id });
-    expect(s.remembered()).toEqual([{ url: URL_A, ...BOB, username: 'bob', photo: { version: '0123456789abcdef' } }]);
-    expect(changed).toHaveBeenCalled();
-    // The embedder's account is active already; another the browser holds is the browser's to switch to.
+    // Only the embedder's account is listed: the others the browser holds are the page's to read.
+    expect(s.list().map((account) => account.userId)).toEqual([USER.id]);
     await expect(s.setActive({ url: URL_A, userId: USER.id })).resolves.toEqual({ url: URL_A, userId: USER.id });
-    await expect(s.setActive({ url: URL_A, userId: BOB.userId })).rejects.toMatchObject({
+    await expect(s.setActive({ url: URL_A, userId: 'bob' })).rejects.toMatchObject({
       code: ACCOUNT_SWITCH_IN_BROWSER,
-      details: { userId: BOB.userId },
+      details: { userId: 'bob' },
     });
-    await expect(s.setActive({ url: URL_A, userId: 'stranger' })).rejects.toMatchObject({
+    await expect(s.setActive({ url: 'https://elsewhere.test', userId: 'bob' })).rejects.toMatchObject({
       code: 'account-unknown-server',
     });
-    // A remembered account has no token in this host.
-    await expect(s.tokenFor({ url: URL_A, userId: BOB.userId })).resolves.toBeUndefined();
-  });
-
-  it('a server without the route (404), or any failure, lists none and keeps the last list', async () => {
-    const missing = vi
-      .fn()
-      .mockRejectedValue(new WirebenchError('server-bad-response', '404', { details: { status: 404 } }));
-    const { s } = withRemembered(missing);
-    await s.load();
-    await s.refreshAll();
-    expect(s.remembered()).toEqual([]);
-
-    missing.mockResolvedValueOnce([BOB]);
-    await s.refreshRemembered();
-    expect(s.remembered().map((row) => row.userId)).toEqual([BOB.userId]);
-    missing.mockRejectedValueOnce(new Error('offline'));
-    await s.refreshRemembered();
-    expect(s.remembered().map((row) => row.userId)).toEqual([BOB.userId]);
+    await expect(s.tokenFor({ url: URL_A, userId: 'bob' })).resolves.toBeUndefined();
   });
 });

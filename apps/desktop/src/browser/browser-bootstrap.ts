@@ -25,7 +25,7 @@
  * §18.3), after the first hello: `env.agent` carries its status and the pairing calls, and the API's
  * `invoke` sends every `agent.*` channel over that socket and everything else to the server.
  */
-import { buildApi, type Invoke, type WirebenchApi } from '../preload/build-api.js';
+import { buildApi, type Invoke, type RememberedAccount, type WirebenchApi } from '../preload/build-api.js';
 import { createAgentConnection, type FetchAnswer } from './agent-connection.js';
 import { createSocketTransport, hostSocketUrl, type Hello, type SocketLike } from './socket-transport.js';
 
@@ -52,6 +52,37 @@ export const SIGN_OUT_PATH = '/sign-out';
 export const SIGN_OUT_ALL_PATH = '/sign-out?all=1';
 /** Makes another account this browser holds the active one (switch accounts spec §5.2). */
 export const SWITCH_ACCOUNT_PATH = '/sign-in/switch';
+
+/** The other accounts the browser holds (switch accounts spec §5.5): cookie callers only. */
+export const REMEMBERED_ACCOUNTS_PATH = '/api/v1/me/accounts';
+
+/**
+ * The rows of a `GET /me/accounts` answer that look like people; anything else (an older server's `404` body, a
+ * malformed row) is left out. A missing `username` or `photo` reads as none.
+ */
+export function rememberedAccountsOf(body: unknown): RememberedAccount[] {
+  const rows: unknown = Array.isArray(body) ? body : (body as { accounts?: unknown } | null)?.accounts;
+  if (!Array.isArray(rows)) return [];
+  const out: RememberedAccount[] = [];
+  for (const row of rows as unknown[]) {
+    if (typeof row !== 'object' || row === null) continue;
+    const r = row as Record<string, unknown>;
+    if (typeof r['userId'] !== 'string' || typeof r['displayName'] !== 'string' || typeof r['email'] !== 'string')
+      continue;
+    const photo = r['photo'] as { version?: unknown } | null | undefined;
+    out.push({
+      userId: r['userId'],
+      displayName: r['displayName'],
+      email: r['email'],
+      username: typeof r['username'] === 'string' ? r['username'] : null,
+      photo:
+        photo !== null && typeof photo === 'object' && typeof photo.version === 'string'
+          ? { version: photo.version }
+          : null,
+    });
+  }
+  return out;
+}
 
 /** Where the tab is: path, query and hash, as `redirect_to` carries it. */
 function herePath(location: { readonly pathname: string; readonly search: string; readonly hash: string }): string {
@@ -345,6 +376,18 @@ export async function startBrowserClient(deps: BootstrapDeps): Promise<void> {
     deps.location.assign(addAccountUrl(deps.location));
   };
 
+  // Same-origin, with the page's cookie: the route answers cookie callers only. Never cached, as a switch elsewhere
+  // in this browser changes it.
+  const rememberedAccounts = async (): Promise<readonly RememberedAccount[]> => {
+    try {
+      const answer = await deps.fetch(REMEMBERED_ACCOUNTS_PATH, { credentials: 'same-origin', cache: 'no-store' });
+      if (answer.status !== 200) return [];
+      return rememberedAccountsOf(await answer.json());
+    } catch {
+      return [];
+    }
+  };
+
   const hello = await transport.ready;
   // Pairings are the server's to list, so they are read once it answers; with none, no agent socket opens.
   void agent.refresh();
@@ -363,6 +406,7 @@ export async function startBrowserClient(deps: BootstrapDeps): Promise<void> {
       signOutAll,
       switchAccount,
       addAccount,
+      rememberedAccounts,
       onOsThemeChanged: os.onChanged,
       agent: agent.env,
     },

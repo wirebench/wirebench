@@ -52,6 +52,8 @@ interface Server {
   pairings: { id: string; port: number; agentId?: string; createdAt?: string }[];
   nonces: number;
   failNonce: boolean;
+  /** `GET /me/accounts`' body; unset answers 403. */
+  accounts?: unknown;
 }
 
 function serverFetch(meStatus: number, server: Server): BootstrapDeps['fetch'] {
@@ -62,6 +64,10 @@ function serverFetch(meStatus: number, server: Server): BootstrapDeps['fetch'] {
       server.nonces += 1;
       const pairingId = (JSON.parse(init.body as string) as { pairingId: string }).pairingId;
       return Promise.resolve(answer(200, { nonce: `nonce-${pairingId}-${String(server.nonces)}`, expiresAt: '' }));
+    }
+    if (url === '/api/v1/me/accounts') {
+      if (server.accounts === undefined) return Promise.resolve(answer(403));
+      return Promise.resolve(answer(200, server.accounts));
     }
     if (url === '/api/v1/agent/pairing-codes') return Promise.resolve(answer(201, { code: 'ABC234', expiresAt: 'x' }));
     if (url.startsWith('/api/v1/agent/pairings/') && init.method === 'DELETE') {
@@ -150,7 +156,8 @@ describe('startBrowserClient', () => {
 
     expect(h.mountRenderer).toHaveBeenCalledTimes(1);
     const api = h.target.wirebench;
-    const { signOut, signOutAll, switchAccount, addAccount, onOsThemeChanged, agent, ...env } = api?.env ?? {};
+    const { signOut, signOutAll, switchAccount, addAccount, rememberedAccounts, onOsThemeChanged, agent, ...env } =
+      api?.env ?? {};
     expect(agent?.status()).toBe('none');
     expect(typeof onOsThemeChanged).toBe('function');
     expect(env).toEqual({
@@ -159,7 +166,8 @@ describe('startBrowserClient', () => {
       host: 'browser',
       capabilities: ['send:public', 'send:private'],
     });
-    for (const action of [signOut, signOutAll, switchAccount, addAccount]) expect(typeof action).toBe('function');
+    for (const action of [signOut, signOutAll, switchAccount, addAccount, rememberedAccounts])
+      expect(typeof action).toBe('function');
     expect(api?.pathForFile(new File(['x'], 'x.txt'))).toBe('');
   });
 
@@ -244,6 +252,38 @@ describe('startBrowserClient', () => {
       expect(form.method).toBe('post');
       expect(form.getAttribute('action')).toBe('/sign-out?all=1');
       expect(fieldsOf(form)).toEqual({});
+    });
+
+    it('reads the other accounts the browser holds with the page cookie, leaving out rows that are not people', async () => {
+      const bob = {
+        userId: 'u-bob',
+        displayName: 'Bob',
+        email: 'bob@example.com',
+        username: 'bob',
+        photo: { version: 'v1' },
+      };
+      const h = start(200, FakeSocket.create, {
+        pairings: [],
+        nonces: 0,
+        failNonce: false,
+        accounts: [bob, { userId: 'u-cy', displayName: 'Cy', email: 'cy@example.com' }, { userId: 3 }, null],
+      });
+      FakeSocket.last().hello();
+      await h.started;
+      await expect(h.target.wirebench!.env.rememberedAccounts!()).resolves.toEqual([
+        bob,
+        { userId: 'u-cy', displayName: 'Cy', email: 'cy@example.com', username: null, photo: null },
+      ]);
+      expect(h.fetch).toHaveBeenCalledWith('/api/v1/me/accounts', { credentials: 'same-origin', cache: 'no-store' });
+    });
+
+    it('reads none when the server refuses or cannot be reached', async () => {
+      const h = start();
+      FakeSocket.last().hello();
+      await h.started;
+      await expect(h.target.wirebench!.env.rememberedAccounts!()).resolves.toEqual([]);
+      h.fetch.mockRejectedValueOnce(new Error('offline'));
+      await expect(h.target.wirebench!.env.rememberedAccounts!()).resolves.toEqual([]);
     });
 
     it('adds an account by navigating to the sign-in page in add mode, coming back here', async () => {

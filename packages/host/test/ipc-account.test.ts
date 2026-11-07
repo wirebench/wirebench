@@ -1,7 +1,6 @@
 // @vitest-environment node
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ServerAccount } from '@wirebench/engine';
-import type { RememberedAccount } from '../src/account-service.js';
 import { tableInto } from './helpers/ipc-table.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
@@ -38,8 +37,6 @@ function fakeService() {
     list: vi.fn(() => [ACCOUNT]),
     active: vi.fn((): { url: string; userId: string } | null => ACTIVE),
     setActive: vi.fn().mockResolvedValue(ACTIVE),
-    remembered: vi.fn((): RememberedAccount[] => []),
-    refreshRemembered: vi.fn().mockResolvedValue(undefined),
     probe: vi.fn().mockResolvedValue({
       url: 'https://wb.test',
       meta: {
@@ -419,45 +416,5 @@ describe('account.* channels — switching accounts', () => {
     const refused = await invoke('account.devices', {});
     expect(refused.ok).toBe(false);
     expect(d.client.listDevices).toHaveBeenCalledTimes(1);
-  });
-
-  it('lists the other accounts the browser holds as remembered rows, asked for afresh', async () => {
-    const accounts = fakeService();
-    accounts.remembered.mockReturnValue([
-      {
-        url: 'https://wb.test',
-        userId: 'u2',
-        email: 'bob@example.com',
-        displayName: 'Bob',
-        username: 'bob',
-        photo: null,
-      },
-    ]);
-    registerAccountChannels(table, deps(accounts));
-    const result = await invoke('account.list', undefined);
-    expect(accounts.refreshRemembered).toHaveBeenCalledTimes(1);
-    expect(result).toEqual({
-      ok: true,
-      value: {
-        active: ACTIVE,
-        servers: [
-          toAccountWire(ACCOUNT, ACTIVE),
-          {
-            url: 'https://wb.test',
-            userId: 'u2',
-            email: 'bob@example.com',
-            displayName: 'Bob',
-            deviceName: 'Web browser',
-            signedOut: false,
-            addedAt: '',
-            username: 'bob',
-            photo: null,
-            active: false,
-            lastActiveAt: null,
-            remembered: true,
-          },
-        ],
-      },
-    });
   });
 });

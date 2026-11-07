@@ -2976,8 +2976,9 @@ export const accountWireSchema = z.object({
   /** When it was last made active (ruling 2), for the *Switch accounts* order; `null` when never. */
   lastActiveAt: z.string().nullable().optional(),
   /**
-   * Inside a server only (ruling 6): another account this browser holds, listed from the server. It has no
-   * token here: `account.setActive` on it answers `account-switch-in-browser`, and the browser switches.
+   * In a browser tab only (ruling 6): another account this browser holds. The host never lists one — only the page's
+   * cookie may read `GET /me/accounts` — so the renderer adds these rows from `env.rememberedAccounts`. It has no
+   * token in the host: `account.setActive` on it answers `account-switch-in-browser`, and the browser switches.
    */
   remembered: z.boolean().optional(),
 });

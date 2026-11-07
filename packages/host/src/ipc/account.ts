@@ -6,12 +6,7 @@
 import { WirebenchError, type AccountRef, type MeResponse, type ServerAccount } from '@wirebench/engine';
 import { channels } from '@wirebench/wire/ipc';
 import type { AccountListResponse, AccountProfileWire, AccountWire } from '@wirebench/wire/wire-base';
-import {
-  profileFieldsOf,
-  type AccountService,
-  type AccountTarget,
-  type RememberedAccount,
-} from '../account-service.js';
+import { profileFieldsOf, type AccountService, type AccountTarget } from '../account-service.js';
 import { normalizeServerUrl, type ServerClient } from '../server-client.js';
 import { withToken } from '../server-token.js';
 import { registerHandler, type HandlerTable } from './register.js';
@@ -22,8 +17,6 @@ export interface AccountChannelDeps {
     | 'list'
     | 'active'
     | 'setActive'
-    | 'remembered'
-    | 'refreshRemembered'
     | 'probe'
     | 'signInLocal'
     | 'startOidc'
@@ -72,34 +65,13 @@ export function toAccountWire(account: ServerAccount, active: AccountRef | null 
   };
 }
 
-/** Another account the browser holds (switch accounts ruling 6): signed in, never active here. */
-export function toRememberedWire(account: RememberedAccount): AccountWire {
-  return {
-    url: account.url,
-    userId: account.userId,
-    email: account.email,
-    displayName: account.displayName,
-    deviceName: 'Web browser',
-    signedOut: false,
-    addedAt: '',
-    username: account.username,
-    photo: account.photo,
-    active: false,
-    lastActiveAt: null,
-    remembered: true,
-  };
-}
-
 /** Every account and the active one: `account.list`, the answer to a sign-out or a switch, and `account.changed`. */
 export function accountList(
-  accounts: Pick<AccountService, 'list' | 'active' | 'remembered'>,
+  accounts: Pick<AccountService, 'list' | 'active'>,
 ): AccountListResponse & { active: AccountRef | null } {
   const active = accounts.active();
   return {
-    servers: [
-      ...accounts.list().map((account) => toAccountWire(account, active)),
-      ...accounts.remembered().map(toRememberedWire),
-    ],
+    servers: accounts.list().map((account) => toAccountWire(account, active)),
     active,
   };
 }
@@ -140,11 +112,9 @@ function toProfileWire(me: MeResponse, localPasswords: boolean): AccountProfileW
 export function registerAccountChannels(table: HandlerTable, deps: AccountChannelDeps): void {
   const servers = (): AccountListResponse => accountList(deps.accounts);
 
-  registerHandler(table, channels.account.list, async () => {
-    // Inside a server, the other accounts the browser holds are asked for afresh: the menu is about to show them.
-    await deps.accounts.refreshRemembered();
-    return servers();
-  });
+  // Inside a server, the other accounts the browser holds are not listed here: only the page's cookie can ask for
+  // them (`env.rememberedAccounts`), and one host may serve the same person in several browsers.
+  registerHandler(table, channels.account.list, () => Promise.resolve(servers()));
   registerHandler(table, channels.account.active, () => Promise.resolve(deps.accounts.active()));
   registerHandler(table, channels.account.setActive, async (request) => {
     await deps.accounts.setActive(request.account);

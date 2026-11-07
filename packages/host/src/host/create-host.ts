@@ -1610,7 +1610,7 @@ export async function createHost(platform: HostPlatform, embedder: HostOptions =
     registryOf: (entityId) => workspaceService.hostOfEntity(entityId).runContextFor(entityId)?.registry,
     environmentsOf: (projectId) => workspaceService.hostOfEntity(projectId).sendEnvironments().environments,
   });
-  // Every account and the active one (switch accounts spec §6), the remembered browser accounts included.
+  // Every account and the active one (switch accounts spec §6).
   accountService.onChange(() => broadcast(events.account.changed, accountList(accountService)));
   // Signing in to a window's workspace's server sends what its audit outbox kept while signed out.
   accountService.onChange((servers) => {

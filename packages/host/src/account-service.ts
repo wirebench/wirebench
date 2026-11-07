@@ -51,18 +51,6 @@ export type AccountTarget = string | AccountRef;
  */
 export const ACCOUNT_SWITCH_IN_BROWSER = 'account-switch-in-browser';
 
-/**
- * Another account this browser is signed in as on the embedder's server (switch accounts spec §5.5): a person,
- * never a token. Listed beside the embedder's account; only the browser can switch to it.
- */
-export interface RememberedAccount {
-  readonly url: string;
-  readonly userId: string;
-  readonly email: string;
-  readonly displayName: string;
-  readonly username: string | null;
-  readonly photo: ImageRef | null;
-}
 /** As the OAuth2 request flow: five minutes for the browser. */
 export const SIGN_IN_TIMEOUT_MS = 5 * 60 * 1000;
 
@@ -108,8 +96,6 @@ interface EmbeddedAccount {
   tokenRef: string;
   /** The credential the ref was made for; kept in memory only. */
   token: string | undefined;
-  /** The other accounts the browser holds, as the server last listed them (`GET /me/accounts`). */
-  remembered: readonly RememberedAccount[];
 }
 
 /**
@@ -209,8 +195,6 @@ const LOOPBACK_MESSAGES: Readonly<Record<string, string>> = {
 export class AccountService {
   private readonly file: string;
   private accounts: AccountsFile = { version: ACCOUNTS_FILE_VERSION, active: null, servers: [] };
-  /** The `GET /me/accounts` call in flight, shared by callers that ask at once. */
-  private rememberedRefresh: Promise<void> | undefined;
   private pending: LoopbackCallback | undefined;
   /** Set synchronously before the loopback binds, so a second `startOidc` in the same tick sees it. */
   private starting = false;
@@ -247,7 +231,6 @@ export class AccountService {
         photo: null,
         tokenRef: freshTokenRef(),
         token: deps.embedded.credential(),
-        remembered: [],
       };
     }
   }
@@ -313,35 +296,16 @@ export class AccountService {
     const embedded = this.embedded;
     if (embedded !== undefined && ref.url === embedded.origin) {
       if (ref.userId === embedded.userId) return ref;
-      if (embedded.remembered.some((account) => account.userId === ref.userId))
-        throw new WirebenchError(ACCOUNT_SWITCH_IN_BROWSER, 'Switch to this account in the browser', {
-          details: { userId: ref.userId },
-        });
-      throw new WirebenchError('account-unknown-server', `No account for ${ref.url}`);
+      // Which other people the browser holds only the page knows (it reads `GET /me/accounts` with its cookie).
+      throw new WirebenchError(ACCOUNT_SWITCH_IN_BROWSER, 'Switch to this account in the browser', {
+        details: { userId: ref.userId },
+      });
     }
     const account = this.find(ref);
     if (account === undefined) throw new WirebenchError('account-unknown-server', `No account for ${ref.url}`);
     if (account.signedOut === true) throw new WirebenchError('account-signed-out', `Sign in to ${ref.url} first.`);
     await this.write(ref, { ...account, lastActiveAt: this.nowIso() }, ref);
     return ref;
-  }
-
-  /** Inside a server: the other accounts the browser holds, as last listed; none on the desktop. */
-  remembered(): readonly RememberedAccount[] {
-    return this.embedded?.remembered ?? [];
-  }
-
-  /**
-   * Asks the embedder's server which other accounts the browser holds (`GET /me/accounts`). A server without the
-   * route (`404`), or any failure, leaves the last list; nothing to ask on the desktop. Listeners hear a change.
-   */
-  async refreshRemembered(): Promise<void> {
-    const embedded = this.embedded;
-    if (embedded === undefined) return;
-    this.rememberedRefresh ??= this.fetchRemembered(embedded).finally(() => {
-      this.rememberedRefresh = undefined;
-    });
-    await this.rememberedRefresh;
   }
 
   onChange(listener: (servers: readonly ServerAccount[]) => void): () => void {
@@ -678,37 +642,6 @@ export class AccountService {
       }
     }
     if (changed) this.notify();
-    await this.refreshRemembered();
-  }
-
-  /** {@link refreshRemembered}'s call: the embedder's account itself is never listed among them. */
-  private async fetchRemembered(embedded: EmbeddedAccount): Promise<void> {
-    const token = embedded.credential();
-    let next: RememberedAccount[] = [];
-    if (token !== undefined) {
-      try {
-        const rows = await this.deps.client.rememberedAccounts(embedded.origin, token);
-        next = rows
-          .filter((row) => row.userId !== embedded.userId)
-          .map((row) => ({
-            url: embedded.origin,
-            userId: row.userId,
-            email: row.email,
-            displayName: row.displayName,
-            username: row.username ?? null,
-            photo: row.photo === null || row.photo === undefined ? null : { version: row.photo.version },
-          }));
-      } catch {
-        // No such route on this server (`404`), offline, or refused: the list stays as it was.
-        return;
-      }
-    }
-    const same =
-      next.length === embedded.remembered.length &&
-      next.every((row, index) => JSON.stringify(row) === JSON.stringify(embedded.remembered[index]));
-    if (same) return;
-    embedded.remembered = next;
-    this.notify();
   }
 
   /** `origin`, unless it is the embedder's account, which only the embedder may sign in or out. */
