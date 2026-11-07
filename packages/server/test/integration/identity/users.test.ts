@@ -27,6 +27,8 @@ describeDb('users and password resets (§3.1)', () => {
         email: 'bob@example.com',
         displayName: 'bob',
         serverAdmin: false,
+        username: null,
+        photo: null,
         disabledAt: h.clock.now.toISOString(),
         methods: { local: false, oidc: [] },
       },
@@ -35,6 +37,8 @@ describeDb('users and password resets (§3.1)', () => {
         email: 'root@example.com',
         displayName: 'root',
         serverAdmin: true,
+        username: null,
+        photo: null,
         methods: { local: true, oidc: [] },
       },
     ]);

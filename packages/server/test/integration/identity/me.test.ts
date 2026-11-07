@@ -25,7 +25,16 @@ describeDb('/me (§3.1)', () => {
     });
     const res = await h.app.inject({ method: 'GET', url: '/api/v1/me', headers: alice.headers });
     expect(res.json()).toEqual({
-      user: { id: alice.user.id, email: 'alice@example.com', displayName: 'alice', serverAdmin: true },
+      user: {
+        id: alice.user.id,
+        email: 'alice@example.com',
+        displayName: 'alice',
+        serverAdmin: true,
+        username: null,
+        about: '',
+        photo: null,
+        cover: null,
+      },
       methods: { local: true, oidc: [{ issuer: 'https://idp.test' }] },
     });
   });

@@ -50,6 +50,7 @@ import {
 import { describeDb, testDatabase, type TestDatabase } from '../../helpers/database.js';
 import { mkTempDir, removeTempDir } from '../../helpers/git.js';
 import { browserUser, hostHarness, openHost, PUBLIC_URL, storedCookie } from '../../helpers/host.js';
+import { addProfileSchema, dropProfileSchema } from '../../helpers/profile-schema.js';
 import type { SignedInUser } from '../../helpers/identity.js';
 import { freePort } from '../../helpers/net.js';
 import { canSymlink } from '../../helpers/symlink.js';
@@ -315,6 +316,8 @@ describeDb('admin tenancy revert on the frozen 0019 fixture (spec §19.10, plan 
   });
 
   it('the old derivation opens blobs a real host wrote after done: a new user, a new secret, a new jar', async () => {
+    // Today's server reads 0026's columns; the revert needs the schema at 0021, so they go again before it.
+    await addProfileSchema(db.owner);
     const h = await hostHarness({ db, dataDir, env: { WIREBENCH_SERVER_SECRETS_KEY: fixture.keys.secretsKey } });
     let bob: SignedInUser;
     try {
@@ -389,6 +392,7 @@ describeDb('admin tenancy revert on the frozen 0019 fixture (spec §19.10, plan 
       bobHost.close();
     } finally {
       await h.close();
+      await dropProfileSchema(db.owner);
     }
     // The fixture's database still holds what the host wrote; the revert goes back from there.
     expect((await revert()).outcome).toBe('reverted');
