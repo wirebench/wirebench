@@ -58,7 +58,7 @@ import { BehaviourSection } from './sections/behaviour-section.js';
 import { FeaturesSection } from './sections/features-section.js';
 import { PluginsSection } from './sections/plugins-section.js';
 import { UpdatesSection } from './sections/updates-section.js';
-import { AccountsSection } from './sections/accounts-section.js';
+import { AccountsSection } from './user/servers-page.js';
 import { SecretsSection } from './sections/secrets-section.js';
 import { MocksSection } from './sections/mocks-section.js';
 import { SshSection } from './sections/ssh-section.js';

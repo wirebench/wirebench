@@ -24,7 +24,7 @@ import { EmailSection, smtpUrl } from '../../src/renderer/features/preferences/s
 import { RetentionSection } from '../../src/renderer/features/preferences/server/retention-section.js';
 import { BillingSection, formatDate } from '../../src/renderer/features/preferences/server/billing-section.js';
 import { ExportSection, exportFailureText } from '../../src/renderer/features/preferences/server/export-section.js';
-import { DeleteTeamSection } from '../../src/renderer/features/preferences/server/delete-team-section.js';
+import { CloseAccountSection } from '../../src/renderer/features/preferences/server/close-account-section.js';
 import { useProvisioningStore } from '../../src/renderer/state/provisioning.js';
 
 const URL_ = 'https://acme.app.test';
@@ -573,7 +573,7 @@ describe('Close this account (ruling 9)', () => {
   });
 });
 
-describe('Delete team', () => {
+describe('Close this account', () => {
   it('asks for the deletion with the slug typed, after a confirmation', async () => {
     const deletion = {
       requestedAt: '2026-11-05T09:00:00.000Z',
@@ -585,7 +585,7 @@ describe('Delete team', () => {
       tenantBilling: { get: vi.fn().mockResolvedValue(ok({ ...BILLING, deletion })) },
     });
     loaded(view(), BILLING);
-    render(<DeleteTeamSection />);
+    render(<CloseAccountSection />);
     expect(screen.getByTestId('server-delete').textContent).toContain('Type acme-team to confirm');
     expect(screen.getByTestId('server-delete').textContent).toContain('secret of Acme Ltd is removed');
     expect(screen.getByTestId('server-delete-request')).toHaveProperty('disabled', true);
@@ -612,7 +612,7 @@ describe('Delete team', () => {
         deletingAt: new Date(Date.now() + 3 * 86_400_000).toISOString(),
       },
     });
-    render(<DeleteTeamSection />);
+    render(<CloseAccountSection />);
     expect(screen.getByTestId('server-delete-card').textContent).toContain('In 3 days');
     fireEvent.click(screen.getByTestId('server-delete-cancel'));
     await vi.waitFor(() => expect(cancel).toHaveBeenCalledWith({ url: URL_ }));

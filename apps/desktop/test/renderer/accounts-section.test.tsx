@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { AccountsSection } from '../../src/renderer/features/preferences/sections/accounts-section.js';
+import { AccountsSection } from '../../src/renderer/features/preferences/user/servers-page.js';
 import { useAccountStore } from '../../src/renderer/state/account.js';
 import { DEFAULT_PREFERENCES_WIRE } from '../../src/renderer/state/preferences-defaults.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';

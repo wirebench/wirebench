@@ -30,8 +30,7 @@ import { useDomainStore } from '../../../state/domain.js';
 import { useLicenseStore } from '../../../state/license.js';
 import { selectedTeam, teamWorkspaces, useTeamStore } from '../../../state/team.js';
 import { useUiStore, type TeamSettingsTarget } from '../../../state/ui.js';
-import { ServerPage } from '../../preferences/server/server-page.js';
-import { isHosted, useServerSettingsStore, type ServerPageId } from '../../preferences/server/server-settings-store.js';
+import { isHosted, useServerSettingsStore } from '../../preferences/server/server-settings-store.js';
 import {
   SettingsNavGroup,
   SettingsNavItem,
@@ -39,10 +38,7 @@ import {
   SettingsShell,
 } from '../../preferences/settings-shell.js';
 import { AuditTab } from '../audit-tab.js';
-import { DomainTab } from '../domain-tab.js';
 import { LicenseBanner } from '../license-banner.js';
-import { LicenseTab } from '../license-tab.js';
-import { ProvisioningTab } from '../provisioning-tab.js';
 import {
   TEAM_PAGE_LABELS,
   resolveTeamPage,
@@ -54,6 +50,7 @@ import { WorkspacesTab } from '../workspaces-tab.js';
 import { OverviewPage } from './overview-page.js';
 import { PeoplePage } from './people-page.js';
 import { RolesPage } from './roles-page.js';
+import { isServerGroupPage, ServerGroupPage } from './server-pages.js';
 import { NewTeamDialog, TeamSwitcher } from './team-switcher.js';
 import { clearTeamAddress, useTeamAddress } from './use-team-address.js';
 
@@ -75,26 +72,12 @@ const ICONS: Readonly<Record<TeamSettingsPageId, LucideIcon>> = {
   'close-account': Trash2,
 };
 
-/** The pages Settings → Server drew before they moved here; each still draws its own header. */
-const SERVER_SECTION_PAGES: ReadonlySet<TeamSettingsPageId> = new Set<ServerPageId>([
-  'sign-in',
-  'email',
-  'audit-forwarding',
-  'retention',
-  'export',
-  'billing',
-  'close-account',
-]);
-
 const SUBTITLES: Readonly<Partial<Record<TeamSettingsPageId, string>>> = {
   overview: 'The team’s name, and deleting it.',
   people: 'Everyone on the team, and the invitations still open.',
   workspaces: 'The team’s workspaces and who can open them.',
   roles: 'What Viewer, Editor and Admin may do in a workspace.',
   audit: 'What happened, who did it and when.',
-  license: 'This server’s license and its seats.',
-  provisioning: 'How an identity provider creates people and puts them on teams.',
-  domain: 'The address the team’s server answers on.',
 };
 
 function PageBody({
@@ -124,18 +107,12 @@ function PageBody({
           workspaces={teamWorkspaces(store).map((workspace) => ({ id: workspace.id, name: workspace.name }))}
         />
       );
-    case 'license':
-      return <LicenseTab url={url} />;
-    case 'provisioning':
-      return <ProvisioningTab url={url} teams={store.teams.map((item) => ({ id: item.id, name: item.name }))} />;
-    case 'domain':
-      return <DomainTab url={url} />;
     default:
       return null;
   }
 }
 
-/** A page: the Server pages that moved here bring their own header; the rest get one here. */
+/** A page: a server admin's Server pages are `ServerGroupPage`'s (the This team Audit log is a team admin's). */
 function Page({
   page,
   url,
@@ -145,16 +122,16 @@ function Page({
   readonly url: string;
   readonly facts: TeamNavFacts;
 }) {
-  if (SERVER_SECTION_PAGES.has(page)) return <ServerPage page={page as ServerPageId} />;
-  if (page === 'provisioning' && facts.settingsAvailable) {
-    // SCIM first, then the groups (ruling 7).
+  const store = useTeamStore();
+  if (facts.serverAdmin && isServerGroupPage(page)) {
     return (
-      <>
-        <ServerPage page="provisioning" />
-        <div className="mt-6">
-          <PageBody page={page} url={url} facts={facts} />
-        </div>
-      </>
+      <ServerGroupPage
+        page={page}
+        url={url}
+        settingsAvailable={facts.settingsAvailable}
+        teams={store.teams.map((item) => ({ id: item.id, name: item.name }))}
+        workspaces={teamWorkspaces(store).map((workspace) => ({ id: workspace.id, name: workspace.name }))}
+      />
     );
   }
   return (

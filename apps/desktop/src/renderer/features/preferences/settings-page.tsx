@@ -10,6 +10,12 @@ import type { UserSettingsPageId } from './user-settings-model.js';
  * Loaded on demand: the editor pulls in every section's form (and the shortcuts keymap with
  * them), which is a lot of code for a page most sessions never open.
  */
+const PreferencesEditor = lazy(async () => {
+  const module = await import('./preferences-editor.js');
+  return { default: module.PreferencesEditor };
+});
+
+/** Team settings (the browser client's), loaded on demand like the App settings editor. */
 const TeamSettings = lazy(async () => {
   const module = await import('../team/settings/team-settings.js');
   return { default: module.TeamSettings };
@@ -17,9 +23,10 @@ const TeamSettings = lazy(async () => {
 
 const NO_TARGET: TeamSettingsTarget = {};
 
-const PreferencesEditor = lazy(async () => {
-  const module = await import('./preferences-editor.js');
-  return { default: module.PreferencesEditor };
+/** User settings, loaded on demand like the App settings editor. */
+const UserSettings = lazy(async () => {
+  const module = await import('./user/user-settings.js');
+  return { default: module.UserSettings };
 });
 
 /**
@@ -80,11 +87,16 @@ function areaBody(
           {...(section === undefined ? {} : { initialSection: section as SettingsSectionRequest })}
         />
       );
+    case 'user':
+      return (
+        <UserSettings
+          key={`user:${section ?? 'default'}`}
+          // In User settings the section is always a user page (the store's `openUserSettings`).
+          {...(section === undefined ? {} : { initialPage: section as UserSettingsPageId })}
+        />
+      );
     case 'team':
       // Remounted per server, so another server's *Manage team…* loads that server.
       return <TeamSettings key={`team:${team?.url ?? ''}`} target={team ?? NO_TARGET} />;
-    case 'user':
-      // No page yet; nothing opens User settings until it lands (plan Task 7).
-      return null;
   }
 }
