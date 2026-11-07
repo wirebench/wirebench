@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { UserRound } from 'lucide-react';
+import { PersonAvatar } from '../../components/person-avatar.js';
 import { tabSignOut } from '../../lib/capabilities.js';
 import { signedInServers, useAccountStore } from '../../state/account.js';
 import { usePreferencesStore } from '../../state/preferences.js';
@@ -86,7 +87,14 @@ export function AccountStatusItem() {
             aria-label={`Account: ${label}`}
             className="flex items-center gap-1 rounded-sm px-1 hover:bg-surface-hover hover:text-fg-default"
           >
-            <UserRound size={12} aria-hidden="true" />
+            <PersonAvatar
+              url={first.url}
+              userId={first.userId}
+              name={first.displayName}
+              photo={first.photo ?? null}
+              size="xs"
+              testId="status-bar-account-avatar"
+            />
             {label}
           </button>
         </DropdownMenu.Trigger>
@@ -98,6 +106,23 @@ export function AccountStatusItem() {
             data-testid="status-bar-account-menu"
             className="z-dropdown min-w-48 rounded-md border border-hairline bg-surface-raised p-1 shadow-lg"
           >
+            <div data-testid="account-menu-header" className="flex items-center gap-2 px-2 py-1.5">
+              <PersonAvatar
+                url={first.url}
+                userId={first.userId}
+                name={first.displayName}
+                photo={first.photo ?? null}
+                size="md"
+                testId="account-menu-avatar"
+              />
+              <div className="min-w-0">
+                <div className="truncate text-sm text-fg-default">{first.displayName}</div>
+                <div className="truncate text-xs text-fg-subtle">
+                  {first.username ? `@${first.username} · ${first.email}` : first.email}
+                </div>
+              </div>
+            </div>
+            <DropdownMenu.Separator className="my-1 h-px bg-hairline" />
             {endTab !== undefined ? (
               // A browser tab: the server holds its account, so the tab signs its session out.
               <DropdownMenu.Item
