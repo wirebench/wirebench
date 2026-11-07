@@ -53,9 +53,9 @@ describe('AccountsSection', () => {
     const update = vi.fn();
     render(<AccountsSection preferences={DEFAULT_PREFERENCES_WIRE} update={update} />);
     fireEvent.click(screen.getByTestId('account-row-sign-out'));
-    await vi.waitFor(() => expect(signOut).toHaveBeenCalledWith({ url: 'https://one.test' }));
+    await vi.waitFor(() => expect(signOut).toHaveBeenCalledWith({ account: { url: 'https://one.test', userId: 'u' } }));
     fireEvent.click(screen.getByTestId('account-row-remove'));
-    await vi.waitFor(() => expect(remove).toHaveBeenCalledWith({ url: 'https://one.test' }));
+    await vi.waitFor(() => expect(remove).toHaveBeenCalledWith({ account: { url: 'https://one.test', userId: 'u' } }));
     fireEvent.click(screen.getByTestId('accounts-show-in-status-bar'));
     expect(update).toHaveBeenCalledWith({ accounts: { showInStatusBar: false } });
   });

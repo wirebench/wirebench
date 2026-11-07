@@ -63,7 +63,7 @@ test.describe('server accounts', () => {
     await expect(page.getByTestId('status-bar-account')).toContainText(ALICE.email, { timeout: 20_000 });
 
     await page.getByTestId('status-bar-account').click();
-    await page.getByTestId(`account-sign-out-${new URL(server.url).host}`).click();
+    await page.getByTestId('account-sign-out').click();
     await expect(page.getByTestId('status-bar-account')).toContainText('Sign in', { timeout: 20_000 });
     expect(server.signOuts).toEqual([server.tokens[0]]);
   });

@@ -5,7 +5,7 @@ import { installWirebenchApi } from '../mocks/wirebench-api.js';
 const showToast = vi.hoisted(() => vi.fn());
 vi.mock('../../src/renderer/components/toast.js', () => ({ showToast }));
 
-const { signedInServers, signInErrorMessage, subscribeToAccounts, useAccountStore } =
+const { otherAccounts, signedInServers, signInErrorMessage, subscribeToAccounts, useAccountStore } =
   await import('../../src/renderer/state/account.js');
 const { useUiStore } = await import('../../src/renderer/state/ui.js');
 
@@ -22,7 +22,7 @@ const account = (patch: Partial<AccountWire> = {}): AccountWire => ({
 
 describe('account store', () => {
   beforeEach(() => {
-    useAccountStore.setState({ servers: [], loaded: false });
+    useAccountStore.setState({ servers: [], active: null, loaded: false });
     showToast.mockReset();
   });
   afterEach(() => {
@@ -59,6 +59,7 @@ describe('account store', () => {
     installWirebenchApi({ account: { signOut } });
     useAccountStore.getState().applyChanged([account()]);
     expect(await useAccountStore.getState().signOut('https://wb.test')).toBe(true);
+    expect(signOut).toHaveBeenCalledWith({ account: { url: 'https://wb.test', userId: 'u1' } });
     // The event main broadcasts arrives after the reply; still no surprise toast.
     useAccountStore.getState().applyChanged([account({ signedOut: true })]);
     expect(showToast).toHaveBeenCalledTimes(1);
@@ -107,6 +108,110 @@ describe('account store', () => {
     expect(useAccountStore.getState().servers).toHaveLength(1);
     off();
     expect(handlers.has('account.changed')).toBe(false);
+  });
+
+  describe('switch accounts (spec §2–§5)', () => {
+    const work = account({ userId: 'u1', active: true, lastActiveAt: '2026-11-07T10:00:00.000Z' });
+    const test = account({ userId: 'u2', email: 'test@example.com', displayName: 'Tess', active: false });
+    const ACTIVE = { url: 'https://wb.test', userId: 'u1' };
+
+    /** A browser tab's env: the bootstrap's account actions. */
+    const browserEnv = (api: object, extra: Record<string, unknown>) => {
+      Object.defineProperty(api, 'env', {
+        configurable: true,
+        value: { e2e: false, osTheme: 'dark', host: 'browser', capabilities: ['send:public'], ...extra },
+      });
+    };
+
+    it('keeps two accounts on one server apart and knows the active one', async () => {
+      const list = vi.fn().mockResolvedValue({ ok: true, value: { servers: [work, test], active: ACTIVE } });
+      installWirebenchApi({ account: { list } });
+      await useAccountStore.getState().load();
+      expect(useAccountStore.getState().active).toEqual(ACTIVE);
+      expect(signedInServers(useAccountStore.getState().servers)).toHaveLength(2);
+      // One signed out on the same server is toasted for that account only.
+      useAccountStore.getState().applyChanged([work, { ...test, signedOut: true }], ACTIVE);
+      expect(showToast).toHaveBeenCalledTimes(1);
+      expect(useAccountStore.getState().servers.map((row) => [row.userId, row.signedOut])).toEqual([
+        ['u1', false],
+        ['u2', true],
+      ]);
+    });
+
+    it('orders the other accounts signed in first, most recently active first, never the active one', () => {
+      const older = account({ userId: 'old', lastActiveAt: '2026-11-01T00:00:00.000Z' });
+      const newer = account({ userId: 'new', url: 'https://two.test', lastActiveAt: '2026-11-06T00:00:00.000Z' });
+      const gone = account({ userId: 'gone', signedOut: true, lastActiveAt: '2026-11-07T00:00:00.000Z' });
+      expect(otherAccounts([gone, older, work, newer], work).map((row) => row.userId)).toEqual(['new', 'old', 'gone']);
+    });
+
+    it('on the desktop, setActive calls account.setActive and toasts who you are now', async () => {
+      const setActive = vi.fn().mockResolvedValue({
+        ok: true,
+        value: {
+          servers: [
+            { ...work, active: false },
+            { ...test, active: true },
+          ],
+          active: { url: 'https://wb.test', userId: 'u2' },
+        },
+      });
+      installWirebenchApi({ account: { setActive } });
+      useAccountStore.setState({ servers: [work, test], active: ACTIVE });
+      expect(await useAccountStore.getState().setActive({ url: 'https://wb.test', userId: 'u2' })).toBe(true);
+      expect(setActive).toHaveBeenCalledWith({ account: { url: 'https://wb.test', userId: 'u2' } });
+      expect(useAccountStore.getState().active).toEqual({ url: 'https://wb.test', userId: 'u2' });
+      expect(showToast).toHaveBeenCalledWith('Now signed in as Tess on wb.test.');
+    });
+
+    it('a refused switch is toasted and leaves the active account', async () => {
+      const setActive = vi.fn().mockResolvedValue({ ok: false, error: { code: 'account-signed-out', message: 'no' } });
+      installWirebenchApi({ account: { setActive } });
+      useAccountStore.setState({ servers: [work, test], active: ACTIVE });
+      expect(await useAccountStore.getState().setActive({ url: 'https://wb.test', userId: 'u2' })).toBe(false);
+      expect(useAccountStore.getState().active).toEqual(ACTIVE);
+      expect(showToast).toHaveBeenCalledWith('Could not switch accounts: no');
+    });
+
+    it('in a browser tab, lists the browser’s other accounts from env and switches to one with env.switchAccount', async () => {
+      const list = vi.fn().mockResolvedValue({ ok: true, value: { servers: [work], active: ACTIVE } });
+      const setActive = vi.fn();
+      const api = installWirebenchApi({ account: { list, setActive } });
+      const switchAccount = vi.fn();
+      const rememberedAccounts = vi.fn().mockResolvedValue([
+        { userId: 'u2', displayName: 'Tess', email: 'test@example.com', username: null, photo: null },
+        // The tab's own account is never listed twice.
+        { userId: 'u1', displayName: 'Alice', email: 'alice@example.com', username: null, photo: null },
+      ]);
+      browserEnv(api, { switchAccount, rememberedAccounts, signOut: vi.fn() });
+      await useAccountStore.getState().load();
+      const rows = useAccountStore.getState().servers;
+      expect(rows.map((row) => [row.userId, row.remembered === true])).toEqual([
+        ['u1', false],
+        ['u2', true],
+      ]);
+      expect(rows[1]).toMatchObject({ url: 'https://wb.test', email: 'test@example.com', signedOut: false });
+      // An account.changed from the host keeps the remembered rows.
+      useAccountStore.getState().applyChanged([work], ACTIVE);
+      expect(useAccountStore.getState().servers).toHaveLength(2);
+
+      expect(await useAccountStore.getState().setActive({ url: 'https://wb.test', userId: 'u2' })).toBe(true);
+      expect(switchAccount).toHaveBeenCalledWith('u2');
+      expect(setActive).not.toHaveBeenCalled();
+    });
+
+    it('in a browser tab, a host answering account-switch-in-browser hands the switch to the browser', async () => {
+      const setActive = vi
+        .fn()
+        .mockResolvedValue({ ok: false, error: { code: 'account-switch-in-browser', message: 'browser' } });
+      const api = installWirebenchApi({ account: { setActive } });
+      const switchAccount = vi.fn();
+      browserEnv(api, { switchAccount });
+      useAccountStore.setState({ servers: [work, test], active: ACTIVE });
+      expect(await useAccountStore.getState().setActive({ url: 'https://wb.test', userId: 'u2' })).toBe(true);
+      expect(switchAccount).toHaveBeenCalledWith('u2');
+      expect(showToast).not.toHaveBeenCalled();
+    });
   });
 
   it('maps the codes a sign-in can fail with to copy, and falls back to the message', () => {
