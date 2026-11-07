@@ -1,4 +1,5 @@
-import { useMemo, useEffect, useState } from 'react';
+import { useMemo, useEffect, useState, type ReactNode } from 'react';
+import { FolderKanban, Plus } from 'lucide-react';
 import { Button } from '../../components/button.js';
 import { ConfirmDialog } from '../../components/confirm-dialog.js';
 import { useTeamStore } from '../../state/team.js';
@@ -13,11 +14,36 @@ const defaultOptions = DEFAULT_ROLES.map((role) => (
   </option>
 ));
 
+/** One labelled setting in a workspace card: the label and its hint on the left, the control on the right. */
+function SettingRow({
+  label,
+  hint,
+  children,
+}: {
+  readonly label: string;
+  readonly hint: string;
+  readonly children: ReactNode;
+}) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 py-2.5">
+      <div className="min-w-0 flex-1 basis-56">
+        <div className="text-sm text-fg-default">{label}</div>
+        <div className="text-xs text-fg-subtle">{hint}</div>
+      </div>
+      <div className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-1">{children}</div>
+    </div>
+  );
+}
+
 interface WorkspaceRowProps {
   readonly workspace: TeamWorkspaceWire;
   readonly onDelete: () => void;
 }
 
+/**
+ * One workspace as a card: its name (editable by its admins), your role in it, Access… and Delete in the header;
+ * below, for its admins, who may open it by default, what is recorded and which features are off.
+ */
 function WorkspaceRow({ workspace, onDelete }: WorkspaceRowProps) {
   const updateWorkspace = useTeamStore((state) => state.updateWorkspace);
   const openAccess = useTeamStore((state) => state.openAccess);
@@ -29,6 +55,7 @@ function WorkspaceRow({ workspace, onDelete }: WorkspaceRowProps) {
   const isAdmin = roleCan(workspace.myRole, 'manage-workspace');
   const canShare = roleCan(workspace.myRole, 'share');
   const offCount = workspace.disabledFeatures?.length ?? 0;
+  const offText = offCount === 1 ? '1 feature off by policy' : `${String(offCount)} features off by policy`;
 
   useEffect(() => {
     setName(workspace.name);
@@ -40,120 +67,171 @@ function WorkspaceRow({ workspace, onDelete }: WorkspaceRowProps) {
     }
   };
 
+  const notes: ReactNode[] = [];
+  if (desktopActivity && workspace.recordDesktopActivity) {
+    notes.push(
+      <span key="desktop" data-testid={`workspace-recorded-${workspace.id}`}>
+        Desktop activity is recorded
+      </span>,
+    );
+  }
+  if (sessionLogs && workspace.recordSessionLogs === true) {
+    notes.push(
+      <span key="ssh" data-testid={`workspace-recorded-ssh-${workspace.id}`}>
+        SSH sessions are recorded
+      </span>,
+    );
+  }
+  if (offCount > 0) {
+    notes.push(
+      <span key="features" data-testid={`workspace-features-off-${workspace.id}`}>
+        {offText}
+      </span>,
+    );
+  }
+
   return (
-    <li data-testid={`workspace-row-${workspace.id}`} className="flex flex-wrap items-center gap-3 py-2">
-      <div className="min-w-0 flex-1">
-        <input
-          data-testid={`workspace-name-${workspace.id}`}
-          aria-label="Workspace name"
-          readOnly={!isAdmin}
-          className={`${INPUT_CLASS} w-full`}
-          value={name}
-          onChange={(event) => {
-            setName(event.target.value);
-          }}
-          onBlur={submitRename}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') submitRename();
-          }}
-        />
-        <div data-testid={`workspace-role-${workspace.id}`} className="truncate px-2 text-xs text-fg-subtle">
-          {roleWithSource(workspace.myRole, workspace.source)}
-        </div>
-      </div>
-      {isAdmin ? (
-        <>
-          {desktopActivity && (
-            <label className="flex items-center gap-1 text-xs text-fg-muted whitespace-nowrap">
-              <input
-                type="checkbox"
-                data-testid={`workspace-record-${workspace.id}`}
-                checked={workspace.recordDesktopActivity}
-                onChange={(event) => {
-                  void updateWorkspace(workspace.id, { recordDesktopActivity: event.target.checked });
-                }}
-              />
-              Record desktop activity
-            </label>
-          )}
-          {sessionLogs && (
-            <label className="flex items-center gap-1 text-xs text-fg-muted whitespace-nowrap">
-              <input
-                type="checkbox"
-                data-testid={`workspace-record-ssh-${workspace.id}`}
-                checked={workspace.recordSessionLogs === true}
-                onChange={(event) => {
-                  void updateWorkspace(workspace.id, { recordSessionLogs: event.target.checked });
-                }}
-              />
-              Record SSH sessions
-            </label>
-          )}
-          {featurePolicy && (
-            <Button
-              data-testid={`workspace-features-${workspace.id}`}
-              onClick={() => {
-                setPolicyOpen((open) => !open);
-              }}
-            >
-              {offCount === 0 ? 'Features' : `Features (${offCount} off)`}
-            </Button>
-          )}
-          <select
-            data-testid={`workspace-default-${workspace.id}`}
-            aria-label={`Default role in ${workspace.name}`}
-            className={SELECT_CLASS}
-            value={workspace.defaultRole}
+    <li data-testid={`workspace-row-${workspace.id}`} className="rounded-lg border border-hairline bg-surface-raised">
+      <div className="flex items-center gap-3 px-4 py-3">
+        <span
+          aria-hidden="true"
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-accent-muted text-fg-default"
+        >
+          <FolderKanban size={15} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <input
+            data-testid={`workspace-name-${workspace.id}`}
+            aria-label="Workspace name"
+            readOnly={!isAdmin}
+            title={isAdmin ? 'Rename' : undefined}
+            className={`${INPUT_CLASS} -ml-2 w-full max-w-sm font-medium ${
+              isAdmin ? 'border-transparent bg-transparent hover:border-hairline-strong focus:bg-surface-base' : ''
+            }`}
+            value={name}
             onChange={(event) => {
-              void updateWorkspace(workspace.id, { defaultRole: event.target.value as DefaultRoleWire });
+              setName(event.target.value);
+            }}
+            onBlur={submitRename}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') submitRename();
+            }}
+          />
+          <div className="truncate text-xs text-fg-subtle">
+            Your role:{' '}
+            <span data-testid={`workspace-role-${workspace.id}`}>
+              {roleWithSource(workspace.myRole, workspace.source)}
+            </span>
+          </div>
+        </div>
+        {canShare && (
+          <Button
+            data-testid={`workspace-access-${workspace.id}`}
+            onClick={() => {
+              void openAccess(workspace.id);
             }}
           >
-            {defaultOptions}
-          </select>
-          {canShare && (
-            <Button
-              data-testid={`workspace-access-${workspace.id}`}
-              onClick={() => {
-                void openAccess(workspace.id);
-              }}
-            >
-              Access…
-            </Button>
-          )}
-          <Button variant="ghost" data-testid={`workspace-delete-${workspace.id}`} onClick={onDelete}>
+            Access…
+          </Button>
+        )}
+        {isAdmin && (
+          <Button
+            variant="ghost"
+            data-testid={`workspace-delete-${workspace.id}`}
+            className="text-status-danger"
+            onClick={onDelete}
+          >
             Delete
           </Button>
-        </>
+        )}
+      </div>
+
+      {isAdmin ? (
+        <div className="divide-y divide-hairline border-t border-hairline px-4">
+          <SettingRow label="Default access" hint="What a team member without a grant of their own can do.">
+            <select
+              data-testid={`workspace-default-${workspace.id}`}
+              aria-label={`Default role in ${workspace.name}`}
+              className={SELECT_CLASS}
+              value={workspace.defaultRole}
+              onChange={(event) => {
+                void updateWorkspace(workspace.id, { defaultRole: event.target.value as DefaultRoleWire });
+              }}
+            >
+              {defaultOptions}
+            </select>
+          </SettingRow>
+          {(desktopActivity || sessionLogs) && (
+            <SettingRow label="Recording" hint="What the server keeps about the work done in this workspace.">
+              {desktopActivity && (
+                <label className="flex items-center gap-1.5 text-sm whitespace-nowrap text-fg-muted">
+                  <input
+                    type="checkbox"
+                    data-testid={`workspace-record-${workspace.id}`}
+                    aria-label="Record desktop activity"
+                    checked={workspace.recordDesktopActivity}
+                    onChange={(event) => {
+                      void updateWorkspace(workspace.id, { recordDesktopActivity: event.target.checked });
+                    }}
+                  />
+                  Desktop activity
+                </label>
+              )}
+              {sessionLogs && (
+                <label className="flex items-center gap-1.5 text-sm whitespace-nowrap text-fg-muted">
+                  <input
+                    type="checkbox"
+                    data-testid={`workspace-record-ssh-${workspace.id}`}
+                    aria-label="Record SSH sessions"
+                    checked={workspace.recordSessionLogs === true}
+                    onChange={(event) => {
+                      void updateWorkspace(workspace.id, { recordSessionLogs: event.target.checked });
+                    }}
+                  />
+                  SSH sessions
+                </label>
+              )}
+            </SettingRow>
+          )}
+          {featurePolicy && (
+            <div>
+              <SettingRow
+                label="Features"
+                hint={offCount === 0 ? 'Nothing is switched off for this workspace.' : offText}
+              >
+                <Button
+                  data-testid={`workspace-features-${workspace.id}`}
+                  aria-expanded={policyOpen}
+                  onClick={() => {
+                    setPolicyOpen((open) => !open);
+                  }}
+                >
+                  {offCount === 0 ? 'Features' : `Features (${String(offCount)} off)`}
+                </Button>
+              </SettingRow>
+              {policyOpen && (
+                <div className="pb-3">
+                  <FeaturePolicyEditor
+                    workspace={workspace}
+                    onSave={(disabledFeatures) => {
+                      setPolicyOpen(false);
+                      void updateWorkspace(workspace.id, { disabledFeatures });
+                    }}
+                    onCancel={() => {
+                      setPolicyOpen(false);
+                    }}
+                  />
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       ) : (
-        <>
-          {desktopActivity && workspace.recordDesktopActivity && (
-            <span data-testid={`workspace-recorded-${workspace.id}`} className="text-xs text-fg-subtle">
-              Desktop activity is recorded
-            </span>
-          )}
-          {sessionLogs && workspace.recordSessionLogs === true && (
-            <span data-testid={`workspace-recorded-ssh-${workspace.id}`} className="text-xs text-fg-subtle">
-              SSH sessions are recorded
-            </span>
-          )}
-          {offCount > 0 && (
-            <span data-testid={`workspace-features-off-${workspace.id}`} className="text-xs text-fg-subtle">
-              {offCount === 1 ? '1 feature off by policy' : `${offCount} features off by policy`}
-            </span>
-          )}
-        </>
-      )}
-      {policyOpen && isAdmin && (
-        <FeaturePolicyEditor
-          workspace={workspace}
-          onSave={(disabledFeatures) => {
-            setPolicyOpen(false);
-            void updateWorkspace(workspace.id, { disabledFeatures });
-          }}
-          onCancel={() => {
-            setPolicyOpen(false);
-          }}
-        />
+        notes.length > 0 && (
+          <div className="flex flex-wrap gap-x-4 gap-y-1 border-t border-hairline px-4 py-2 text-xs text-fg-subtle">
+            {notes}
+          </div>
+        )
       )}
     </li>
   );
@@ -191,7 +269,7 @@ function FeaturePolicyEditor({
   return (
     <div
       data-testid={`workspace-policy-${workspace.id}`}
-      className="basis-full rounded-md border border-hairline bg-surface-raised p-3 text-sm"
+      className="rounded-md border border-hairline bg-surface-base p-3 text-sm"
     >
       <p className="mb-2 text-xs text-fg-subtle">
         Off for everyone in this workspace. A policy only switches features off; what it leaves alone stays each
@@ -244,8 +322,8 @@ function FeaturePolicyEditor({
 }
 
 /**
- * The Workspaces tab (teams-access §3.5): the team's workspaces the caller can see, each with the
- * caller's role and its source. Admins of a workspace manage it here; any member can create one.
+ * The Workspaces page (teams-access §3.5): the team's workspaces the caller can see, one card each with the
+ * caller's role and its source. Admins of a workspace manage it in its card; any member can create one.
  * *Access…* swaps the list for {@link AccessPanel}.
  */
 export function WorkspacesTab() {
@@ -277,25 +355,9 @@ export function WorkspacesTab() {
 
   return (
     <div data-testid="workspaces-tab" className="flex flex-col gap-3">
-      {workspaces.length === 0 ? (
-        <p className="text-sm text-fg-subtle">No workspaces you can open in this team yet.</p>
-      ) : (
-        <ul className="divide-y divide-hairline">
-          {workspaces.map((workspace) => (
-            <WorkspaceRow
-              key={workspace.id}
-              workspace={workspace}
-              onDelete={() => {
-                setDeleting(workspace);
-              }}
-            />
-          ))}
-        </ul>
-      )}
-
       {creating ? (
         <form
-          className="flex items-center gap-2"
+          className="flex flex-wrap items-center gap-2 rounded-lg border border-hairline bg-surface-raised p-3"
           onSubmit={(event) => {
             event.preventDefault();
             void submitNew();
@@ -306,7 +368,7 @@ export function WorkspacesTab() {
             aria-label="Workspace name"
             placeholder="Workspace name"
             autoFocus
-            className={`${INPUT_CLASS} flex-1`}
+            className={`${INPUT_CLASS} min-w-40 flex-1`}
             value={name}
             onChange={(event) => {
               setName(event.target.value);
@@ -336,16 +398,34 @@ export function WorkspacesTab() {
           </Button>
         </form>
       ) : (
-        <div>
+        <div className="flex justify-end">
           <Button
+            variant="primary"
             data-testid="workspace-new"
             onClick={() => {
               setCreating(true);
             }}
           >
+            <Plus size={14} aria-hidden="true" />
             New workspace…
           </Button>
         </div>
+      )}
+
+      {workspaces.length === 0 ? (
+        <p className="py-6 text-center text-sm text-fg-subtle">No workspaces you can open in this team yet.</p>
+      ) : (
+        <ul className="flex flex-col gap-3">
+          {workspaces.map((workspace) => (
+            <WorkspaceRow
+              key={workspace.id}
+              workspace={workspace}
+              onDelete={() => {
+                setDeleting(workspace);
+              }}
+            />
+          ))}
+        </ul>
       )}
 
       <ConfirmDialog

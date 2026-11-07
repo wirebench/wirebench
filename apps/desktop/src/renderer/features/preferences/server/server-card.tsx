@@ -208,33 +208,33 @@ export function EnvironmentCard({
       testId={testId}
       chip={<Chip testId={`${testId}-state`}>{set ? 'Set by the server’s environment' : 'Not set'}</Chip>}
     >
-      <div className="grid grid-cols-[180px_minmax(0,1fr)_minmax(0,1fr)] items-center gap-x-4 gap-y-2.5 text-sm">
-        <span />
-        <span className="text-xs text-fg-faint">Value</span>
-        <span className="text-xs text-fg-faint">Variable</span>
+      <ul className="-my-2 divide-y divide-hairline text-sm">
         {rows.map((row) => (
           <EnvironmentRowView key={row.variable} row={row} />
         ))}
-      </div>
+      </ul>
     </ServerCard>
   );
 }
 
+/** One row: the label with the variable that sets it under it, in full, and the value on the right. */
 function EnvironmentRowView({ row }: { readonly row: EnvironmentRow }) {
   return (
-    <>
-      <span className="text-fg-subtle">{row.label}</span>
-      {row.value === undefined ? (
-        <span className="text-fg-faint">Not set</span>
-      ) : row.secret === true ? (
-        <span>
+    <li className="flex items-center gap-4 py-2">
+      <div className="min-w-0 flex-1">
+        <div className="text-fg-default">{row.label}</div>
+        <code className="font-mono text-2xs break-all text-fg-faint">{row.variable}</code>
+      </div>
+      <div className="flex max-w-[50%] min-w-0 justify-end text-right">
+        {row.value === undefined ? (
+          <span className="text-fg-faint">Not set</span>
+        ) : row.secret === true ? (
           <Chip>Set</Chip>
-        </span>
-      ) : (
-        <code className="min-w-0 truncate font-mono text-xs text-fg-default">{row.value}</code>
-      )}
-      <code className="min-w-0 truncate font-mono text-xs text-fg-subtle">{row.variable}</code>
-    </>
+        ) : (
+          <code className="font-mono text-xs break-all text-fg-default">{row.value}</code>
+        )}
+      </div>
+    </li>
   );
 }
 
