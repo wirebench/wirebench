@@ -70,6 +70,7 @@ import {
   type ScimTokenSummary,
   type LicenseState,
   meResponseSchema,
+  devicesResponseSchema,
   metaResponseSchema,
   oidcStartResponseSchema,
   SERVER_API_VERSION,
@@ -104,6 +105,8 @@ import {
   type InvitationLookupResponse,
   type LocalSignInRequest,
   type MeResponse,
+  type DeviceSummary,
+  type PasswordChangeRequest,
   type MetaResponse,
   type MemberAddRequest,
   type OidcCompleteRequest,
@@ -279,6 +282,26 @@ export class ServerClient {
     return this.call(url, { method: 'POST', path: '/api/v1/invitations/accept', body, schema: signInResponseSchema });
   }
 
+  // ---- you on the server (settings split spec §4) ------------------------------------------
+
+  /** `PATCH /me`; answers what `GET /me` answers. */
+  updateMe(url: string, token: string, name: string): Promise<MeResponse> {
+    return this.call(url, { method: 'PATCH', path: '/api/v1/me', token, body: { name }, schema: meResponseSchema });
+  }
+
+  /** The passwords go in the body only; a refusal is the server's code and message, which never quote them. */
+  async changePassword(url: string, token: string, body: PasswordChangeRequest): Promise<void> {
+    await this.call<unknown>(url, { method: 'POST', path: '/api/v1/me/password', token, body });
+  }
+
+  listDevices(url: string, token: string): Promise<DeviceSummary[]> {
+    return this.call(url, { method: 'GET', path: '/api/v1/me/devices', token, schema: devicesResponseSchema });
+  }
+
+  async revokeDevice(url: string, token: string, id: string): Promise<void> {
+    await this.call<unknown>(url, { method: 'DELETE', path: `/api/v1/me/devices/${encodeURIComponent(id)}`, token });
+  }
+
   // ---- teams-access (spec §3.2, §5.2): one method per route ----------------------------------
 
   listTeams(url: string, token: string): Promise<Team[]> {
@@ -363,6 +386,21 @@ export class ServerClient {
       method: 'DELETE',
       path: `${teamPath(teamId)}/invitations/${encodeURIComponent(invitationId)}`,
       token,
+    });
+  }
+
+  /** A new link for the same email and role; the old one is refused from then on. */
+  renewTeamInvitation(
+    url: string,
+    token: string,
+    teamId: string,
+    invitationId: string,
+  ): Promise<TeamInvitationCreated> {
+    return this.call(url, {
+      method: 'POST',
+      path: `${teamPath(teamId)}/invitations/${encodeURIComponent(invitationId)}/renew`,
+      token,
+      schema: teamInvitationCreatedSchema,
     });
   }
 

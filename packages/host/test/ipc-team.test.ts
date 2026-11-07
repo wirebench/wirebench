@@ -39,6 +39,15 @@ const WORKSPACE = {
   recordDesktopActivity: false,
 };
 
+const INVITATION_ID = '01J8ZC5Q0V7R3T9XK2M4N6P8QD';
+const RENEWED = {
+  id: '01J8ZC5Q0V7R3T9XK2M4N6P8QE',
+  email: 'new@b.co',
+  role: 'member',
+  url: 'https://wb.test/invite#secret-2',
+  expiresAt: '2026-11-14T10:00:00.000Z',
+};
+
 // A default parameter also fires on an explicit `undefined` argument, so `fakes(undefined)`
 // below (simulating a signed-out account) would otherwise silently fall back to TOKEN; rest
 // args distinguish "call omitted the argument" from "call passed undefined".
@@ -58,6 +67,7 @@ function fakes(...args: [] | [string | undefined]) {
     listTeamInvitations: vi.fn().mockResolvedValue([]),
     inviteToTeam: vi.fn(),
     revokeTeamInvitation: vi.fn().mockResolvedValue(undefined),
+    renewTeamInvitation: vi.fn().mockResolvedValue(RENEWED),
     listWorkspaces: vi.fn().mockResolvedValue([WORKSPACE]),
     createWorkspace: vi.fn().mockResolvedValue(WORKSPACE),
     updateWorkspace: vi.fn().mockResolvedValue(WORKSPACE),
@@ -161,5 +171,14 @@ describe('team.* channels (teams-access §3.5, §5.2)', () => {
       await invoke('team.setAccess', { url: 'https://wb.test', workspaceId: WS_ID, userId: USER_ID, role: 'editor' }),
     ).toEqual({ ok: true, value: { done: true } });
     expect(f.client.setAccess).toHaveBeenCalledWith('https://wb.test', TOKEN, WS_ID, USER_ID, 'editor');
+  });
+
+  it('team.renewInvitation posts to …/renew and answers the new link', async () => {
+    const f = fakes();
+    registerTeamChannels(table, f);
+    expect(
+      await invoke('team.renewInvitation', { url: 'https://wb.test', teamId: TEAM_ID, invitationId: INVITATION_ID }),
+    ).toEqual({ ok: true, value: { invitation: RENEWED } });
+    expect(f.client.renewTeamInvitation).toHaveBeenCalledWith('https://wb.test', TOKEN, TEAM_ID, INVITATION_ID);
   });
 });

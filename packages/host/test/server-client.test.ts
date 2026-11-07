@@ -586,3 +586,67 @@ describe('ServerClient — scheduled runs (scheduled-runs §3.7)', () => {
     await expect(c.listSchedules(SERVER, TOKEN, WS)).rejects.toMatchObject({ code: 'server-bad-response' });
   });
 });
+
+describe('ServerClient — renew and your own account (settings split §6)', () => {
+  const TEAM_ID = '01J8ZC5Q0V7R3T9XK2M4N6P8QA';
+  const INVITATION_ID = '01J8ZC5Q0V7R3T9XK2M4N6P8QD';
+  const METHODS = { local: true, oidc: [] };
+  const DEVICE = { id: 'd1', name: 'Mac', createdAt: 'x', lastUsedAt: 'y', current: false };
+  const body = (request: HttpRequest | undefined): unknown =>
+    request?.body === undefined ? undefined : JSON.parse(new TextDecoder().decode(request.body));
+
+  it('renewTeamInvitation posts to …/renew and parses the new link', async () => {
+    const created = {
+      id: 'i2',
+      email: 'n@b.co',
+      role: 'member',
+      url: 'https://wb.test/invite#s',
+      expiresAt: '2026-11-14T10:00:00.000Z',
+    };
+    const { client: c, sent } = client(exchange(201, created));
+    expect(await c.renewTeamInvitation('https://wb.test', TOKEN, TEAM_ID, INVITATION_ID)).toEqual(created);
+    expect(sent[0]).toMatchObject({
+      method: 'POST',
+      url: `https://wb.test/api/v1/teams/${TEAM_ID}/invitations/${INVITATION_ID}/renew`,
+    });
+    expect(sent[0]?.headers['authorization']).toBe(`Bearer ${TOKEN}`);
+  });
+
+  it('updateMe patches /me with the name; changePassword, listDevices and revokeDevice reach /me/*', async () => {
+    const { client: c, sent } = client(
+      exchange(200, { user: { ...USER, displayName: 'B' }, methods: METHODS }),
+      exchange(204, ''),
+      exchange(200, [DEVICE]),
+      exchange(204, ''),
+    );
+    expect(await c.updateMe('https://wb.test', TOKEN, 'B')).toEqual({
+      user: { ...USER, displayName: 'B' },
+      methods: METHODS,
+    });
+    await c.changePassword('https://wb.test', TOKEN, { currentPassword: 'old-password-1', newPassword: 'new-pass-2' });
+    expect(await c.listDevices('https://wb.test', TOKEN)).toEqual([DEVICE]);
+    await c.revokeDevice('https://wb.test', TOKEN, 'd/1');
+    expect(sent.map((r) => `${r.method} ${r.url}`)).toEqual([
+      'PATCH https://wb.test/api/v1/me',
+      'POST https://wb.test/api/v1/me/password',
+      'GET https://wb.test/api/v1/me/devices',
+      'DELETE https://wb.test/api/v1/me/devices/d%2F1',
+    ]);
+    expect(body(sent[0])).toEqual({ name: 'B' });
+    expect(body(sent[1])).toEqual({ currentPassword: 'old-password-1', newPassword: 'new-pass-2' });
+  });
+
+  it('a refused password change keeps the server’s code and never quotes the password', async () => {
+    const { client: c } = client(
+      exchange(401, { code: 'identity-invalid-credentials', message: 'Wrong email or password' }),
+    );
+    const failure: unknown = await c
+      .changePassword('https://wb.test', TOKEN, { currentPassword: 'old-password-1', newPassword: 'new-pass-2' })
+      .then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+    expect(failure).toMatchObject({ code: 'identity-invalid-credentials' });
+    expect((failure as Error).message).not.toContain('old-password-1');
+  });
+});
