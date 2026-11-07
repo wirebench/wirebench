@@ -27,6 +27,7 @@ describeDb('/me (§3.1)', () => {
     expect(res.json()).toEqual({
       user: { id: alice.user.id, email: 'alice@example.com', displayName: 'alice', serverAdmin: true },
       methods: { local: true, oidc: [{ issuer: 'https://idp.test' }] },
+      twoFactor: false,
     });
   });
 

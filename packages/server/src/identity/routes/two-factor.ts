@@ -25,7 +25,7 @@ export const twoFactorRoutes =
       async (request, reply) => {
         if (!env.settings.local) throw methodDisabled();
         const body = request.body as TwoFactorVerifyRequest;
-        const row = await presentedChallenge(env, request, body.challenge, 'device');
+        const row = await presentedChallenge(env, request, body.challenge, { purpose: 'sign-in', kind: 'device' });
         const signed = await verifyCode(env, request.tenant, auditSource(request), row, body.method, body.code);
         return reply.code(201).send(signed);
       },

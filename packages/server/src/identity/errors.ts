@@ -50,6 +50,16 @@ export const twoFactorExpired = (): WirebenchError =>
   problem('identity-two-factor-expired', 'This sign-in has expired. Sign in again.', 401);
 export const twoFactorRequired = (): WirebenchError =>
   problem('identity-two-factor-required', 'This server requires two-step sign-in.', 403);
+export const twoFactorExists = (): WirebenchError =>
+  problem('identity-two-factor-exists', 'An authenticator app is already set up. Remove it first.', 409);
+export const twoFactorSetupExpired = (): WirebenchError =>
+  problem(
+    'identity-two-factor-setup-expired',
+    'This setup has expired. Start setting up the authenticator again.',
+    409,
+  );
+export const twoFactorOff = (): WirebenchError =>
+  problem('identity-two-factor-off', 'Two-step sign-in is off. Set up a method first.', 409);
 export const passkeyFailed = (): WirebenchError =>
   problem('identity-passkey-failed', 'The passkey could not be used. Try again or use another method.', 401);
 export const oidcFailed = (): WirebenchError =>

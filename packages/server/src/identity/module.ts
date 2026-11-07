@@ -14,6 +14,7 @@ import { authenticate, type BearerFallback } from './guard.js';
 import { discoverOidc, type OidcProvider, type OidcSettings } from './oidc.js';
 import { TenantRateLimiter } from './rate-limit.js';
 import { authLocalRoutes } from './routes/auth-local.js';
+import { meTwoFactorRoutes } from './routes/me-two-factor.js';
 import { twoFactorRoutes } from './routes/two-factor.js';
 import { authOidcRoutes } from './routes/auth-oidc.js';
 import { browserSignInRoutes } from './routes/browser-sign-in.js';
@@ -143,6 +144,7 @@ export function identityModule(options: IdentityOptions = {}): ServerModule {
       twoFactorRoutes(identity)(app);
       authOidcRoutes(identity)(app);
       meRoutes(identity)(app);
+      meTwoFactorRoutes(identity)(app);
       invitationRoutes(identity)(app);
       userRoutes(identity)(app);
       // Spec §22.12: a tenant's settings, for its server admins; behind identity's guard, as the user routes are.

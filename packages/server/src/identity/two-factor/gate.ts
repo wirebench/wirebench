@@ -76,21 +76,26 @@ export async function twoFactorGate(
 /** The per-person key of the second step's buckets (plan ruling 9): the challenge's user, keyed as `callerKey` is. */
 export const personKey = (scope: TenantScope, userId: string): string => `${scope.tenantId}:user:${userId}`;
 
+/** What a route accepts: a sign-in challenge finished as `kind`, or a setup challenge (spec §4.3) from either client. */
+export type ExpectedChallenge =
+  { readonly purpose: 'sign-in'; readonly kind: repo.TokenKind } | { readonly purpose: 'setup' };
+
 /**
- * The live challenge `secret` names, for a sign-in finished as `kind`, after the second step's limits (spec §3.3):
- * the address's bucket first, so a scan for secrets is held back too, then the person's, then the lockout. Anything
- * else answers `identity-two-factor-expired`, the one thing the person must act on (start again).
+ * The live challenge `secret` names, of the `expected` purpose, after the second step's limits (spec §3.3): the
+ * address's bucket first, so a scan for secrets is held back too, then the person's, then the lockout. Anything else
+ * answers `identity-two-factor-expired`, the one thing the person must act on (start again).
  */
 export async function presentedChallenge(
   env: GateEnv,
   request: Pick<FastifyRequest, 'tenant' | 'ip' | 'body' | 'caller'>,
   secret: string,
-  kind: repo.TokenKind,
+  expected: ExpectedChallenge,
 ): Promise<twoFactorRepo.ChallengeRow> {
   const scope = request.tenant;
   await charge(env, scope, ipKey(request));
   const row = await twoFactorRepo.challengeBySecretHash(env.ctx.tenancy.db(scope), hashSecret(secret), env.now());
-  if (row?.purpose !== 'sign-in' || row.tokenKind !== kind) throw twoFactorExpired();
+  if (row?.purpose !== expected.purpose || (expected.purpose === 'sign-in' && row.tokenKind !== expected.kind))
+    throw twoFactorExpired();
   const person = personKey(scope, row.userId);
   await charge(env, scope, person);
   const lock = await env.twoFactor.failures.peek(scope, person);
@@ -98,7 +103,8 @@ export async function presentedChallenge(
   return row;
 }
 
-async function charge(env: Pick<IdentityEnv, 'twoFactor'>, scope: TenantScope, key: string): Promise<void> {
+/** Takes one attempt from the second step's bucket `key`, or answers its 429. */
+export async function charge(env: Pick<IdentityEnv, 'twoFactor'>, scope: TenantScope, key: string): Promise<void> {
   const decision = await env.twoFactor.limiter.take(scope, key);
   if (!decision.allowed) throw rateLimited(decision.retryAfterSeconds);
 }

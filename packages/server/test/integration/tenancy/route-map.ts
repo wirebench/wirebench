@@ -159,6 +159,20 @@ async function twoFactorChallenge(ctx: Ctx, kind: 'device' | 'browser'): Promise
   return { secret, code: totpAt(totp, stepAt(now.getTime())) };
 }
 
+/**
+ * A fresh user of `tenant`'s with an authenticator, confirmed or still pending, and the code it shows now; through
+ * the repository, so a template on a suspended tenant can still build it.
+ */
+async function withTotp(ctx: Ctx, tenant: Ctx['from']['tenant'], confirmed: boolean) {
+  const now = ctx.w.t.h.clock.now;
+  const user = await fresh.user(tenant);
+  const totp = newTotpSecret();
+  const dataKey = await ctx.w.t.h.ctx.tenancy.dataKey(tenant.scope);
+  await twoFactorRepo.upsertPendingTotp(tenant.tdb, user.user.id, sealTotpSecret(dataKey, user.user.id, totp), now);
+  if (confirmed) await twoFactorRepo.confirmTotp(tenant.tdb, user.user.id, stepAt(now.getTime()) - 2, now);
+  return { user, code: totpAt(totp, stepAt(now.getTime())) };
+}
+
 /** An agent-signed request of `pairingId`, by `key`, on the tenant `ctx.from` is (the path is the server's). */
 function signedAgent(
   ctx: Ctx,
@@ -281,6 +295,33 @@ export const ROUTE_MAP: Readonly<Record<string, RouteCase>> = {
 
   // ---- identity: the caller's own
   'GET /api/v1/me': { cls: 'own', request: (ctx) => json(ctx, 'GET', api('/me')) },
+  'GET /api/v1/me/two-factor': { cls: 'own', request: (ctx) => json(ctx, 'GET', api('/me/two-factor')) },
+  'POST /api/v1/me/two-factor/totp': {
+    cls: 'own',
+    request: async (ctx) =>
+      json(ctx, 'POST', api('/me/two-factor/totp'), { password: PASSWORD }, bearer(await fresh.user(ctx.from.tenant))),
+  },
+  'POST /api/v1/me/two-factor/totp/confirm': {
+    cls: 'own',
+    request: async (ctx) => {
+      const { user, code } = await withTotp(ctx, ctx.from.tenant, false);
+      return json(ctx, 'POST', api('/me/two-factor/totp/confirm'), { code }, bearer(user));
+    },
+  },
+  'DELETE /api/v1/me/two-factor/totp': {
+    cls: 'own',
+    request: async (ctx) => {
+      const { user } = await withTotp(ctx, ctx.from.tenant, true);
+      return json(ctx, 'DELETE', api('/me/two-factor/totp'), { password: PASSWORD }, bearer(user));
+    },
+  },
+  'POST /api/v1/me/two-factor/recovery-codes': {
+    cls: 'own',
+    request: async (ctx) => {
+      const { user } = await withTotp(ctx, ctx.from.tenant, true);
+      return json(ctx, 'POST', api('/me/two-factor/recovery-codes'), { password: PASSWORD }, bearer(user));
+    },
+  },
   'GET /api/v1/me/devices': { cls: 'own', request: (ctx) => json(ctx, 'GET', api('/me/devices')) },
   'DELETE /api/v1/me/devices/:id': {
     cls: 'refused',
@@ -458,6 +499,11 @@ export const ROUTE_MAP: Readonly<Record<string, RouteCase>> = {
   'PATCH /api/v1/users/:id': {
     cls: 'refused',
     request: (ctx) => json(ctx, 'PATCH', api(`/users/${ctx.a.member.user.id}`), { disabled: false }),
+  },
+  // A fresh user of A's: the reset ends their sessions, which the member's other templates need.
+  'DELETE /api/v1/users/:id/two-factor': {
+    cls: 'refused',
+    request: async (ctx) => json(ctx, 'DELETE', api(`/users/${(await fresh.user(ctx.a.tenant)).user.id}/two-factor`)),
   },
   'POST /api/v1/users/:id/password-reset': {
     cls: 'refused',

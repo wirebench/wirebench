@@ -62,7 +62,7 @@ export const browserTwoFactorRoutes =
       // Until the challenge is found, the page offers what any person with two-step sign-in may have.
       let methods: readonly TwoFactorMethod[] = ['totp', 'recovery'];
       try {
-        const row = await presentedChallenge(env, request, secret, 'browser');
+        const row = await presentedChallenge(env, request, secret, { purpose: 'sign-in', kind: 'browser' });
         methods = methodList(await twoFactorRepo.methodsOf(env.ctx.tenancy.db(request.tenant), row.userId));
         const signed = await verifyCode(env, request.tenant, source, row, method, field(request.body, 'code') ?? '');
         await endPresentedSession(env, request, source);

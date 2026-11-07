@@ -29,6 +29,7 @@ describeDb('users and password resets (§3.1)', () => {
         serverAdmin: false,
         disabledAt: h.clock.now.toISOString(),
         methods: { local: false, oidc: [] },
+        twoFactor: false,
       },
       {
         id: admin.user.id,
@@ -36,6 +37,7 @@ describeDb('users and password resets (§3.1)', () => {
         displayName: 'root',
         serverAdmin: true,
         methods: { local: true, oidc: [] },
+        twoFactor: false,
       },
     ]);
   });
