@@ -8,7 +8,7 @@
  * source needs a build first (its `.js` specifiers name files that only a build writes). The migrations are read
  * from their files, as the image's runner reads them, and checked against the ones the fixture recorded.
  *
- *   node packages/server/test/fixtures/tenancy/volume.ts [--free-seat] -- -f e2e/browser/compose.yaml
+ *   node packages/server/test/fixtures/tenancy/volume.ts [--free-seats] -- -f e2e/browser/compose.yaml
  *
  * Everything after `--` is passed to `docker compose`. The `db` service must be up; the server must not have
  * started on the volume yet.
@@ -93,11 +93,13 @@ function migrationsTo0019(): { version: number; name: string; sql: string }[] {
 
 export interface FixtureSqlOptions {
   /**
-   * Disables the account `joined`, so a server whose license is invalid has a community seat left. The fixture's
-   * license is signed with a test key, which an image verifies with the production keys only, and its five enabled
-   * accounts fill the five community seats: an invitation would be refused `licensing-seat-limit`.
+   * Disables the fixture's three enabled accounts that are not server admins (`joined`, `viewer`, `editor`), so a
+   * server whose license is invalid has three community seats left: the browser suite seeds its admin and two
+   * plain accounts. The fixture's license is signed with a test key, which an image verifies with the production
+   * keys only, and its five enabled accounts fill the five community seats: an invitation would be refused
+   * `licensing-seat-limit`.
    */
-  readonly freeSeat?: boolean;
+  readonly freeSeats?: boolean;
 }
 
 /**
@@ -111,10 +113,9 @@ export function fixtureSql(options: FixtureSqlOptions = {}): string {
       `${m.sql}\n;\ninsert into schema_migrations (version, name) values (${String(m.version)}, '${m.name}');\n`,
   );
   parts.push('delete from server_identity;\n', readFileSync(join(HERE, 'seed-0019.sql'), 'utf8'));
-  if (options.freeSeat === true) {
-    parts.push(
-      `update users set disabled_at = '2026-09-24 12:00:00+00' where id = '${fixture.users['joined']!}';\n`,
-    );
+  if (options.freeSeats === true) {
+    const ids = (['joined', 'viewer', 'editor'] as const).map((name) => `'${fixture.users[name]!}'`).join(', ');
+    parts.push(`update users set disabled_at = '2026-09-24 12:00:00+00' where id in (${ids});\n`);
   }
   return parts.join('\n');
 }
@@ -213,10 +214,10 @@ if (process.argv[1] !== undefined && fileURLToPath(import.meta.url) === process.
   const dash = args.indexOf('--');
   const own = dash === -1 ? args : args.slice(0, dash);
   const compose = dash === -1 ? [] : args.slice(dash + 1);
-  const unknown = own.filter((arg) => arg !== '--free-seat');
+  const unknown = own.filter((arg) => arg !== '--free-seats');
   if (unknown.length > 0 || compose.length === 0) {
-    process.stderr.write('usage: node volume.ts [--free-seat] -- <docker compose arguments>\n');
+    process.stderr.write('usage: node volume.ts [--free-seats] -- <docker compose arguments>\n');
     process.exit(2);
   }
-  loadIntoCompose(compose, { freeSeat: own.includes('--free-seat') });
+  loadIntoCompose(compose, { freeSeats: own.includes('--free-seats') });
 }
