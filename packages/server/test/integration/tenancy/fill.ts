@@ -577,6 +577,27 @@ export async function fill(t: TwoTenants, tenant: Tenant): Promise<Filled> {
     tenant.scope.tenantId,
   ]);
 
+  // ---- 0026's tables (two-step sign-in spec §7): a row each by hand, each carrying the slug.
+  await tenant.tdb.query('insert into identity_totp (user_id, sealed_secret, confirmed_at) values ($1, $2, $3)', [
+    browser.user.id,
+    Buffer.from(`totp-${slug}`),
+    at,
+  ]);
+  await tenant.tdb.query(
+    `insert into identity_passkeys (id, user_id, credential_id, public_key, name, created_at)
+     values ($1, $2, $3, $4, $5, $6)`,
+    [note(randomUUID()), browser.user.id, Buffer.from(`credential-${slug}`), Buffer.from('key'), `passkey-${slug}`, at],
+  );
+  await tenant.tdb.query('insert into identity_recovery_codes (user_id, code_hash) values ($1, $2)', [
+    browser.user.id,
+    `code-${slug}`,
+  ]);
+  await tenant.tdb.query(
+    `insert into identity_two_factor_challenges (id, user_id, secret_hash, purpose, device_name, token_kind, expires_at)
+     values ($1, $2, $3, 'sign-in', 'device', 'device', greatest($4::timestamptz, now()) + interval '1 day')`,
+    [note(randomUUID()), browser.user.id, `challenge-${slug}`, at],
+  );
+
   // ---- the audit log: forward one recorded event (no sink is configured), so the queue holds a row too
   // Named by tenant: the negative run's schema has the policy off.
   const event = (

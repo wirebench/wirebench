@@ -6,6 +6,7 @@ import type { TenantQuerier } from '../tenancy/tenant-db.js';
 import type { IdentityEnv } from './env.js';
 import * as repo from './repo.js';
 import { mintToken, newId } from './tokens.js';
+import * as twoFactorRepo from './two-factor/repo.js';
 
 export const emailLower = (email: string): string => email.trim().toLowerCase();
 
@@ -64,6 +65,8 @@ export async function signIn(
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+/** How long an authenticator secret waits for its first code (two-step sign-in spec §5.1). */
+export const PENDING_TOTP_MS = 10 * 60 * 1000;
 
 export const SWEEP_JOB = 'identity-sweep';
 
@@ -84,6 +87,9 @@ export async function sweepExpired(env: Pick<IdentityEnv, 'ctx' | 'settings' | '
       });
       await repo.deleteExpiredFlows(tx, new Date(now));
       await repo.deleteExpiredBrowserFlows(tx, new Date(now));
+      // Two-step sign-in (spec §3.2, §5.1): ended challenges, and authenticator secrets nobody confirmed in time.
+      await twoFactorRepo.deleteExpiredChallenges(tx, new Date(now));
+      await twoFactorRepo.deleteStalePendingTotp(tx, new Date(now - PENDING_TOTP_MS));
     },
     env.ctx.log,
   );
