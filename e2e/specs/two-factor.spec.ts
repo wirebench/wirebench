@@ -64,7 +64,7 @@ test.describe('two-step sign-in in the desktop', () => {
     await dialog.getByTestId('two-factor-code').fill(ALICE.twoFactorCode);
     await dialog.getByTestId('two-factor-verify').click();
     await expect(dialog).toBeHidden({ timeout: 20_000 });
-    await expect(page.getByTestId('status-bar-account')).toContainText(ALICE.email);
+    await expect(page.getByTestId('status-bar-account')).toHaveAttribute('title', ALICE.email);
     expect(server.tokens).toHaveLength(1);
   });
 

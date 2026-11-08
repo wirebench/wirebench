@@ -50,7 +50,7 @@ test.describe('server accounts', () => {
     await dialog.getByTestId('sign-in-password').fill(ALICE.password);
     await dialog.getByTestId('sign-in-submit').click();
     await expect(dialog).toBeHidden({ timeout: 20_000 });
-    await expect(page.getByTestId('status-bar-account')).toContainText(ALICE.email);
+    await expect(page.getByTestId('status-bar-account')).toHaveAttribute('title', ALICE.email);
 
     // The file names a ref, never the token.
     const accounts = readFileSync(join(userDataDir, 'accounts.yaml'), 'utf8');
@@ -60,7 +60,7 @@ test.describe('server accounts', () => {
     await launched.close();
     launched = await launchApp({ userDataDir, keepUserDataDir: true });
     page = launched.window;
-    await expect(page.getByTestId('status-bar-account')).toContainText(ALICE.email, { timeout: 20_000 });
+    await expect(page.getByTestId('status-bar-account')).toHaveAttribute('title', ALICE.email, { timeout: 20_000 });
 
     await page.getByTestId('status-bar-account').click();
     await page.getByTestId('account-sign-out').click();
@@ -86,7 +86,7 @@ test.describe('server accounts', () => {
     await dialog.getByTestId('sign-in-confirm-password').fill('a password of length');
     await dialog.getByTestId('sign-in-accept').click();
     await expect(dialog).toBeHidden({ timeout: 20_000 });
-    await expect(page.getByTestId('status-bar-account')).toContainText('bob@example.com');
+    await expect(page.getByTestId('status-bar-account')).toHaveAttribute('title', 'bob@example.com');
     expect(server.tokens).toHaveLength(1);
   });
 

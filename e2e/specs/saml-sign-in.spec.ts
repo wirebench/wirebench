@@ -69,7 +69,7 @@ test.describe('SAML sign-in and the Provisioning tab', () => {
     await expect(signIn.getByTestId('sign-in-saml')).toHaveText('Continue with Contoso');
     await signIn.getByTestId('sign-in-saml').click();
     await expect(signIn).toBeHidden({ timeout: 20_000 });
-    await expect(page.getByTestId('status-bar-account')).toContainText(ROOT.email);
+    await expect(page.getByTestId('status-bar-account')).toHaveAttribute('title', ROOT.email);
     expect(server.requests.some((r) => r.method === 'POST' && r.path === '/api/v1/auth/saml/complete')).toBe(true);
 
     await runCommand(page, 'Account: Manage team');

@@ -58,7 +58,7 @@ describe('AccountStatusItem', () => {
       servers: [account('https://wb.test', false, { displayName: 'Alice', username: 'alice' })],
     });
     render(<AccountStatusItem />);
-    expect(screen.getByTestId('status-bar-account').textContent).toContain('a@wb.test');
+    expect(screen.getByTestId('status-bar-account').getAttribute('title')).toBe('a@wb.test');
     const menu = await openMenu();
     const header = screen.getByTestId('account-menu-header');
     expect(header.textContent).toContain('Alice');
@@ -72,16 +72,16 @@ describe('AccountStatusItem', () => {
       'account-menu-header',
       'account-view-profile',
       'account-settings',
+      'account-manage-teams',
       'account-sign-out',
       'account-add',
     ]);
     expect(menu.textContent).toContain('Switch accounts');
-    // Manage team…, Account settings… and Signed-in devices… left the menu.
-    for (const gone of ['account-manage', 'account-devices', 'account-manage-teams'])
-      expect(screen.queryByTestId(gone)).toBeNull();
+    // Account settings… and Signed-in devices… left the menu.
+    for (const gone of ['account-manage', 'account-devices']) expect(screen.queryByTestId(gone)).toBeNull();
   });
 
-  it('View profile opens User settings on Profile, Settings on its default page', async () => {
+  it('View profile opens User settings on Profile, App settings on its default page', async () => {
     useAccountStore.setState({ servers: [account('https://wb.test')] });
     render(<AccountStatusItem />);
     await openMenu();
@@ -90,7 +90,7 @@ describe('AccountStatusItem', () => {
     useUiStore.setState({ preferences: { open: false, area: 'app', section: undefined } });
     await openMenu();
     fireEvent.click(await screen.findByTestId('account-settings'));
-    expect(useUiStore.getState().preferences).toEqual({ open: true, area: 'user', section: undefined });
+    expect(useUiStore.getState().preferences).toEqual({ open: true, area: 'app', section: undefined });
   });
 
   it('Sign out signs the active account out, by account', async () => {
@@ -101,7 +101,7 @@ describe('AccountStatusItem', () => {
       active: { url: 'https://two.test', userId: 'v' },
     });
     render(<AccountStatusItem />);
-    expect(screen.getByTestId('status-bar-account').textContent).toContain('a@two.test');
+    expect(screen.getByTestId('status-bar-account').getAttribute('title')).toBe('a@two.test');
     await openMenu();
     fireEvent.click(screen.getByTestId('account-sign-out'));
     await vi.waitFor(() => expect(signOut).toHaveBeenCalledWith({ account: { url: 'https://two.test', userId: 'v' } }));
@@ -147,7 +147,7 @@ describe('AccountStatusItem', () => {
     await vi.waitFor(() =>
       expect(setActive).toHaveBeenCalledWith({ account: { url: 'https://two.test', userId: 'u2' } }),
     );
-    await vi.waitFor(() => expect(screen.getByTestId('status-bar-account').textContent).toContain('a@two.test'));
+    await vi.waitFor(() => expect(screen.getByTestId('status-bar-account').getAttribute('title')).toBe('a@two.test'));
   });
 
   it('a signed-out account shows dimmed with Sign in, which opens the dialog on its server', async () => {
