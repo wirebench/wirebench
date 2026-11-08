@@ -10,8 +10,8 @@
  * 4. `POST /teams/:id/workspaces` makes a server workspace in it. The creator, a member, gets the
  *    workspace's admin grant (teams spec §3.2), which is the access the spec needs.
  * 4b. A second team and one plain account, its other admin (so the seeded user may leave it), which is not on
- *    the first team, for *Add people*. One account only: each takes a community seat, and creating an
- *    invitation needs one free.
+ *    the first team, for *Add people*, and whose password the switch-accounts spec signs in with. One account
+ *    only: each takes a community seat, and creating an invitation needs one free.
  * 5. `POST /workspaces/:id/sync/commits` pushes one commit holding the workspace manifest and one
  *    project, written by the engine's own `saveWorkspace`/`saveProject` into a scratch folder, so the
  *    bytes are what the app itself writes. The manifest's id is the server workspace's, which is what
@@ -81,12 +81,12 @@ function invite(email: string, { serverAdmin = true }: { readonly serverAdmin?: 
   return link[1];
 }
 
-/** A plain account (not a server admin), signed up with a password nobody needs again. */
-async function plainAccount(email: string, displayName: string): Promise<void> {
+/** A plain account (not a server admin), signed up with `password`, a test value made by the seed. */
+async function plainAccount(email: string, displayName: string, password: string): Promise<void> {
   await call('POST', '/invitations/accept', {
     secret: invite(email, { serverAdmin: false }),
     displayName,
-    password: randomBytes(18).toString('base64url'),
+    password,
     device: { name: 'browser e2e seed' },
   });
 }
@@ -119,6 +119,8 @@ export async function seedServer(agentEchoUrl: string): Promise<Seed> {
     secondTeamName: `Second team ${stamp}`,
     secondTeamId: '',
     existingEmail: `browser-e2e-existing-${stamp}@example.com`,
+    // Signed in as a second account in one browser by the switch-accounts spec; it never leaves this run either.
+    existingPassword: randomBytes(18).toString('base64url'),
     workspaceName: `Browser workspace ${stamp}`,
     projectName: 'Echo project',
     apiName: 'Echo API',
@@ -137,7 +139,7 @@ export async function seedServer(agentEchoUrl: string): Promise<Seed> {
   });
   const team = await call<{ id: string }>('POST', '/teams', { name: seed.teamName }, token);
   const second = await call<{ id: string }>('POST', '/teams', { name: seed.secondTeamName }, token);
-  await plainAccount(seed.existingEmail, 'Existing Person');
+  await plainAccount(seed.existingEmail, 'Existing Person', seed.existingPassword);
   await call('POST', `/teams/${second.id}/members`, { email: seed.existingEmail, role: 'admin' }, token);
   const workspace = await call<{ id: string }>(
     'POST',

@@ -16,6 +16,7 @@
 import { agentRedeemMessage, agentRequestMessage, LIVE_PATH, TERMINAL_SHARE_PATH } from '@wirebench/engine';
 import type { InjectOptions, LightMyRequestResponse } from 'fastify';
 import { claim, removeClaim } from '../../../src/custom-domains/repo.js';
+import { accountsCookieName, addedCookieName, sessionCookieName } from '../../../src/identity/cookies.js';
 import { mintSecret, newId, pkceChallenge } from '../../../src/identity/tokens.js';
 import { license } from '../../helpers/licensing.js';
 import { webpFor } from '../../helpers/webp.js';
@@ -253,6 +254,23 @@ export const ROUTE_MAP: Readonly<Record<string, RouteCase>> = {
   // ---- identity: the caller's own
   'GET /api/v1/me': { cls: 'own', request: (ctx) => json(ctx, 'GET', api('/me')) },
   'GET /api/v1/me/devices': { cls: 'own', request: (ctx) => json(ctx, 'GET', api('/me/devices')) },
+  'GET /api/v1/me/accounts': {
+    cls: 'own',
+    // A browser of the sender's own that also presents a session of A's: B's host lists no one, since A's token is
+    // unknown in B (switch accounts spec §8).
+    request: async (ctx) => {
+      const active = await fresh.user(ctx.from.tenant, 'browser');
+      const remembered = await fresh.user(ctx.a.tenant, 'browser');
+      const origin = ctx.from.tenant.origin;
+      return {
+        method: 'GET',
+        url: api('/me/accounts'),
+        headers: {
+          cookie: `${sessionCookieName(origin)}=${active.token}; ${accountsCookieName(origin)}=${remembered.token}`,
+        },
+      };
+    },
+  },
   'DELETE /api/v1/me/devices/:id': {
     cls: 'refused',
     request: async (ctx) => json(ctx, 'DELETE', api(`/me/devices/${await fresh.token(ctx.a, ctx.a.admin)}`)),
@@ -347,6 +365,40 @@ export const ROUTE_MAP: Readonly<Record<string, RouteCase>> = {
       headers: { origin: ctx.from.tenant.origin, 'content-type': 'application/x-www-form-urlencoded' },
       payload: new URLSearchParams({ email: ctx.a.admin.user.email, password: PASSWORD }).toString(),
     }),
+  },
+  'GET /sign-in/added': {
+    cls: 'refused',
+    // A SAML add's handed-over session of A's: adopted on A's host, unknown on B's, which sets no session.
+    refused: (res) => !String(res.headers['set-cookie'] ?? '').includes('wb_session='),
+    request: async (ctx) => {
+      const added = await fresh.user(ctx.a.tenant, 'browser');
+      return {
+        method: 'GET',
+        url: '/sign-in/added',
+        headers: { cookie: `${addedCookieName(ctx.from.tenant.origin)}=${added.token}` },
+      };
+    },
+  },
+  'POST /sign-in/switch': {
+    cls: 'refused',
+    // Switching to a session of A's: on A's host it swaps the session cookie; on B's, A's token is unknown and the
+    // browser is sent to sign in with no session set.
+    refused: (res) => !String(res.headers['set-cookie'] ?? '').includes('wb_session='),
+    request: async (ctx) => {
+      const active = await fresh.user(ctx.from.tenant, 'browser');
+      const remembered = await fresh.user(ctx.a.tenant, 'browser');
+      const origin = ctx.from.tenant.origin;
+      return {
+        method: 'POST',
+        url: '/sign-in/switch',
+        headers: {
+          cookie: `${sessionCookieName(origin)}=${active.token}; ${accountsCookieName(origin)}=${remembered.token}`,
+          origin,
+          'content-type': 'application/x-www-form-urlencoded',
+        },
+        payload: new URLSearchParams({ user: remembered.user.id }).toString(),
+      };
+    },
   },
   'POST /sign-out': {
     cls: 'own',

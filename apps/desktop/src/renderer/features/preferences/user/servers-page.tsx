@@ -1,6 +1,6 @@
 import { useCallback, useMemo } from 'react';
 import { Button } from '../../../components/button.js';
-import { hasCapability, tabSignOut } from '../../../lib/capabilities.js';
+import { hasCapability, tabSignOut, tabSignOutAll } from '../../../lib/capabilities.js';
 import {
   BooleanSetting,
   SettingsGroup,
@@ -9,7 +9,7 @@ import {
   type SettingsRowsController,
 } from '../../../components/settings-grid.js';
 import { isLockedByPolicy, usePreferencesStore } from '../../../state/preferences.js';
-import { signedInServers, useAccountStore } from '../../../state/account.js';
+import { accountKey, useActiveAccount, useAccountStore } from '../../../state/account.js';
 import { useUiStore } from '../../../state/ui.js';
 import { LicenseBanner } from '../../team/license-banner.js';
 import { manageTeam } from '../../team/team-link.js';
@@ -30,15 +30,23 @@ function hostOf(url: string): string {
  * actions per row. The list itself is not a preference — it lives in `accounts.yaml` in main and
  * arrives through the account store — only the status bar toggle is.
  *
- * Without `accounts` (a browser tab, whose one account the server holds) it shows only the session's
- * row, signed out through `env.signOut`; adding, removing and signing in to servers is the desktop's.
+ * Without `accounts` (a browser tab, whose accounts the server holds) it shows only the active account's row, signed
+ * out through `env.signOut`, and *Sign out of all accounts in this browser* (`env.signOutAll`, switch accounts spec
+ * §5.4); adding, removing and signing in to servers is the desktop's. Two accounts may share a server, so a row and
+ * its actions are about one account.
  */
 export function AccountsSection({ preferences, update }: SectionProps) {
   const known = useAccountStore((state) => state.servers);
   const manage = hasCapability('accounts');
   const endTab = tabSignOut();
-  const session = signedInServers(known)[0] ?? known[0];
-  const servers = manage ? known : session === undefined ? [] : [session];
+  const endAll = tabSignOutAll();
+  const session = useActiveAccount() ?? known.find((server) => server.remembered !== true);
+  // The browser's other accounts are the account menu's to switch to; this page lists the desktop's accounts.
+  const servers = manage
+    ? known.filter((server) => server.remembered !== true)
+    : session === undefined
+      ? []
+      : [session];
   const signOut = useAccountStore((state) => state.signOut);
   const remove = useAccountStore((state) => state.remove);
   const openSignInDialog = useUiStore((state) => state.openSignInDialog);
@@ -60,7 +68,7 @@ export function AccountsSection({ preferences, update }: SectionProps) {
             <ul className="divide-y divide-hairline">
               {servers.map((server) => (
                 <li
-                  key={server.url}
+                  key={accountKey(server)}
                   data-testid={`account-row-${hostOf(server.url)}`}
                   className="flex items-center gap-3 py-2"
                 >
@@ -98,7 +106,7 @@ export function AccountsSection({ preferences, update }: SectionProps) {
                           data-testid="account-row-sign-out"
                           onClick={() => {
                             // A tab ends its own session; `account.signOut` is the desktop's.
-                            if (manage) void signOut(server.url);
+                            if (manage) void signOut({ url: server.url, userId: server.userId });
                             else endTab?.();
                           }}
                         >
@@ -112,7 +120,7 @@ export function AccountsSection({ preferences, update }: SectionProps) {
                       variant="ghost"
                       data-testid="account-row-remove"
                       onClick={() => {
-                        void remove(server.url);
+                        void remove({ url: server.url, userId: server.userId });
                       }}
                     >
                       Remove
@@ -121,6 +129,18 @@ export function AccountsSection({ preferences, update }: SectionProps) {
                 </li>
               ))}
             </ul>
+          )}
+          {!manage && endAll !== undefined && (
+            <div className="mt-2">
+              <Button
+                data-testid="accounts-sign-out-all"
+                onClick={() => {
+                  endAll();
+                }}
+              >
+                Sign out of all accounts in this browser
+              </Button>
+            </div>
           )}
           {manage && (
             <div className="mt-2">

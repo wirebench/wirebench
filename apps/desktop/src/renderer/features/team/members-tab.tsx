@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Button } from '../../components/button.js';
 import { ConfirmDialog } from '../../components/confirm-dialog.js';
 import { PersonAvatar } from '../../components/person-avatar.js';
-import { useAccountStore } from '../../state/account.js';
+import { accountOnServer, useAccountStore } from '../../state/account.js';
 import { selectedTeam, useTeamStore } from '../../state/team.js';
 import type { TeamMemberWire, TeamRoleWire } from '@shared/wire-base.js';
 import { InviteDialog } from './invite-dialog.js';
@@ -12,7 +12,7 @@ import { INPUT_CLASS, ROLE_LABELS, SELECT_CLASS, TEAM_ROLES } from './roles.js';
 export function MembersTab() {
   const store = useTeamStore();
   const team = selectedTeam(store);
-  const myId = useAccountStore((state) => state.servers.find((server) => server.url === store.url)?.userId);
+  const myId = useAccountStore((s) => accountOnServer(s.servers, s.active, store.url)?.userId);
   const [adding, setAdding] = useState(false);
   const [email, setEmail] = useState('');
   const [role, setRole] = useState<TeamRoleWire>('member');

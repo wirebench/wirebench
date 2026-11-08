@@ -185,6 +185,20 @@ export const deviceSummarySchema = z.object({
 export const devicesResponseSchema = z.array(deviceSummarySchema);
 export type DeviceSummary = z.infer<typeof deviceSummarySchema>;
 
+/**
+ * `GET /me/accounts` (switch accounts spec §5.5): the other people this browser is signed in as, most recently active
+ * first, from its remembered sessions. People, never tokens. Only a browser session may ask.
+ */
+export const rememberedAccountSchema = z.object({
+  userId: z.string(),
+  displayName: z.string(),
+  email: z.string(),
+  username: z.string().nullable(),
+  photo: imageRefSchema.nullable(),
+});
+export type RememberedAccount = z.infer<typeof rememberedAccountSchema>;
+export const rememberedAccountsResponseSchema = z.array(rememberedAccountSchema);
+
 export const invitationCreateRequestSchema = z.object({ email: emailSchema, serverAdmin: z.boolean().optional() });
 export type InvitationCreateRequest = z.infer<typeof invitationCreateRequestSchema>;
 export const invitationCreatedSchema = z.object({

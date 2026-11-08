@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MAX_DISPLAY_NAME_LENGTH as ENGINE_MAX_NAME, MIN_PASSWORD_LENGTH as ENGINE_MIN } from '@wirebench/engine';
 import type { AccountDeviceWire, AccountProfileWire, AccountWire } from '@wirebench/wire/wire-base';
 import { UserSettings } from '../../src/renderer/features/preferences/user/user-settings.js';
@@ -77,7 +77,7 @@ function api(overrides: Record<string, unknown> = {}) {
 }
 
 beforeEach(() => {
-  useAccountStore.setState({ servers: [account(ONE)], loaded: true });
+  useAccountStore.setState({ servers: [account(ONE)], active: null, loaded: true });
   usePreferencesStore.setState({ preferences: DEFAULT_PREFERENCES_WIRE, loaded: true });
   useUserSettingsStore.getState().reset();
 });
@@ -247,22 +247,36 @@ describe('User settings (settings split spec §4)', () => {
     });
   });
 
-  it('with two servers signed in, the picker changes which server Profile reads', async () => {
-    useAccountStore.setState({ servers: [account(ONE), account(TWO)], loaded: true });
+  it('shows the active account, with no server picker, and reads afresh when the active one changes', async () => {
+    useAccountStore.setState({
+      servers: [account(ONE), account(TWO)],
+      active: { url: TWO, userId: account(TWO).userId },
+      loaded: true,
+    });
+    const calls = api();
+    render(<UserSettings />);
+    await screen.findByDisplayValue('Ada two.test');
+    expect(calls.profile).toHaveBeenLastCalledWith({ url: TWO });
+    expect(screen.queryByTestId('user-settings-server')).toBeNull();
+    act(() => {
+      useAccountStore.setState({ active: { url: ONE, userId: account(ONE).userId } });
+    });
+    await screen.findByDisplayValue('Ada one.test');
+    expect(calls.profile).toHaveBeenLastCalledWith({ url: ONE });
+  });
+
+  it('two accounts on one server: switching between them reads the profile again', async () => {
+    const work = account(ONE);
+    const other = { ...account(ONE), userId: 'other' };
+    useAccountStore.setState({ servers: [work, other], active: { url: ONE, userId: work.userId }, loaded: true });
     const calls = api();
     render(<UserSettings />);
     await screen.findByDisplayValue('Ada one.test');
-    const picker = screen.getByTestId<HTMLSelectElement>('user-settings-server');
-    fireEvent.change(picker, { target: { value: TWO } });
-    await screen.findByDisplayValue('Ada two.test');
-    expect(calls.profile).toHaveBeenLastCalledWith({ url: TWO });
-  });
-
-  it('shows no picker with one server signed in', async () => {
-    api();
-    render(<UserSettings />);
-    await screen.findByDisplayValue('Ada one.test');
-    expect(screen.queryByTestId('user-settings-server')).toBeNull();
+    expect(calls.profile).toHaveBeenCalledTimes(1);
+    act(() => {
+      useAccountStore.setState({ active: { url: ONE, userId: 'other' } });
+    });
+    await waitFor(() => expect(calls.profile).toHaveBeenCalledTimes(2));
   });
 
   it('Servers you’re signed in to is the Accounts list, with the status bar switch', async () => {

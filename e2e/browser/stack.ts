@@ -52,6 +52,11 @@ export interface Seed {
    * the five community seats and creating an invitation needs one free (the migrated stack starts with two taken).
    */
   readonly existingEmail: string;
+  /**
+   * {@link existingEmail}'s password, a test value made by the seed: `switch-accounts.spec.ts` signs it in as a second
+   * account in the same browser.
+   */
+  readonly existingPassword: string;
   readonly workspaceName: string;
   readonly projectName: string;
   readonly apiName: string;

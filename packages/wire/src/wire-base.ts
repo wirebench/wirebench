@@ -2945,9 +2945,13 @@ export type AccountImageRefWire = z.infer<typeof accountImageRefWireSchema>;
 export const accountImageKindWireSchema = z.enum(['photo', 'cover']);
 export type AccountImageKindWire = z.infer<typeof accountImageKindWireSchema>;
 
+/** One account: a person (`userId`) on a server (`url`) (switch accounts spec §2, ruling 1). */
+export const accountRefWireSchema = z.object({ url: z.string(), userId: z.string() });
+export type AccountRefWire = z.infer<typeof accountRefWireSchema>;
+
 /**
- * A known server and who this installation is on it (identity spec §4.3), as the renderer sees
- * it: the secret-store ref and the token itself never cross the bridge.
+ * An account and who this installation is on its server (identity spec §4.3, switch accounts spec §2), as the
+ * renderer sees it: the secret-store ref and the token itself never cross the bridge. Two may share a server.
  */
 export const accountWireSchema = z.object({
   url: z.string(),
@@ -2964,10 +2968,30 @@ export const accountWireSchema = z.object({
    */
   username: z.string().nullable().optional(),
   photo: accountImageRefWireSchema.nullable().optional(),
+  /**
+   * Switch accounts spec §2: the active account, which drives the account menu, User settings and the team
+   * surfaces. This host always sets it; optional only so older fixtures still read.
+   */
+  active: z.boolean().optional(),
+  /** When it was last made active (ruling 2), for the *Switch accounts* order; `null` when never. */
+  lastActiveAt: z.string().nullable().optional(),
+  /**
+   * In a browser tab only (ruling 6): another account this browser holds. The host never lists one — only the page's
+   * cookie may read `GET /me/accounts` — so the renderer adds these rows from `env.rememberedAccounts`. It has no
+   * token in the host: `account.setActive` on it answers `account-switch-in-browser`, and the browser switches.
+   */
+  remembered: z.boolean().optional(),
 });
 export type AccountWire = z.infer<typeof accountWireSchema>;
 
-export const accountListResponseSchema = z.object({ servers: z.array(accountWireSchema) });
+/**
+ * Every account, and the active one (`null` when none is signed in). This host always sets `active`; optional
+ * only so older fixtures still read.
+ */
+export const accountListResponseSchema = z.object({
+  servers: z.array(accountWireSchema),
+  active: accountRefWireSchema.nullable().optional(),
+});
 export type AccountListResponse = z.infer<typeof accountListResponseSchema>;
 
 /** `GET /api/v1/meta`, as far as the Sign in dialog needs it. */
@@ -2989,6 +3013,22 @@ export const serverMetaWireSchema = z.object({
 export type ServerMetaWire = z.infer<typeof serverMetaWireSchema>;
 
 export const accountUrlRequestSchema = z.object({ url: z.string() });
+
+/**
+ * Which account an `account.*` call is for (switch accounts ruling 1): `account`. A `url` alone is still read
+ * for one release and stands for that server's active account, else its most recently active signed-in one.
+ */
+const accountScope = { account: accountRefWireSchema.optional(), url: z.string().optional() };
+const namesAccount = (request: { readonly account?: unknown; readonly url?: unknown }): boolean =>
+  request.account !== undefined || request.url !== undefined;
+const NAMES_ACCOUNT = { message: 'Name the account' };
+/** `account.signOut`, `remove`, `profile` and `devices`: just the account. */
+export const accountScopedRequestSchema = z.object(accountScope).refine(namesAccount, NAMES_ACCOUNT);
+export type AccountScopedRequest = z.infer<typeof accountScopedRequestSchema>;
+/** `account.setActive`: makes a signed-in account the active one. */
+export const accountSetActiveRequestSchema = z.object({ account: accountRefWireSchema });
+/** `account.active`: the active account, `null` when none is signed in. */
+export const accountActiveResponseSchema = accountRefWireSchema.nullable();
 export const accountProbeResponseSchema = z.object({ url: z.string(), meta: serverMetaWireSchema });
 export type AccountProbeResponse = z.infer<typeof accountProbeResponseSchema>;
 /** User profile spec §5: `identifier` is what the person typed, an email or a username. */
@@ -3036,31 +3076,39 @@ export const accountProfileWireSchema = z.object({
 });
 export type AccountProfileWire = z.infer<typeof accountProfileWireSchema>;
 /** Any of the three; `username: null` clears it. The server refuses a request that changes nothing. */
-export const accountUpdateProfileRequestSchema = z.object({
-  url: z.string(),
-  name: z.string().optional(),
-  username: z.string().nullable().optional(),
-  about: z.string().optional(),
-});
+export const accountUpdateProfileRequestSchema = z
+  .object({
+    ...accountScope,
+    name: z.string().optional(),
+    username: z.string().nullable().optional(),
+    about: z.string().optional(),
+  })
+  .refine(namesAccount, NAMES_ACCOUNT);
 /** `account.image`: one person's photo or cover, by the version their profile or member row names. */
-export const accountImageRequestSchema = z.object({
-  url: z.string(),
-  userId: z.string(),
-  kind: accountImageKindWireSchema,
-  version: z.string(),
-});
+export const accountImageRequestSchema = z
+  .object({
+    ...accountScope,
+    /** Whose image: anyone the account may see, not the account itself. */
+    userId: z.string(),
+    kind: accountImageKindWireSchema,
+    version: z.string(),
+  })
+  .refine(namesAccount, NAMES_ACCOUNT);
 /** A `data:image/webp;base64,…` URL: the renderer never loads a server URL itself (desktop CSP `img-src 'self' data:`). */
 export const accountImageResponseSchema = z.object({ dataUrl: z.string() });
 /** `account.setImage`: the WebP the app cropped and encoded, base64; the server checks it again. */
-export const accountSetImageRequestSchema = z.object({
-  url: z.string(),
-  kind: accountImageKindWireSchema,
-  data: z.string(),
-});
+export const accountSetImageRequestSchema = z
+  .object({ ...accountScope, kind: accountImageKindWireSchema, data: z.string() })
+  .refine(namesAccount, NAMES_ACCOUNT);
 export const accountSetImageResponseSchema = accountImageRefWireSchema;
-export const accountRemoveImageRequestSchema = z.object({ url: z.string(), kind: accountImageKindWireSchema });
+export const accountRemoveImageRequestSchema = z
+  .object({ ...accountScope, kind: accountImageKindWireSchema })
+  .refine(namesAccount, NAMES_ACCOUNT);
 /** `account.person`: the profile card (user profile spec §4); a stranger answers the server's 404. */
-export const accountPersonRequestSchema = z.object({ url: z.string(), userId: z.string() });
+/** `userId` is the person whose card it is, seen as `account`. */
+export const accountPersonRequestSchema = z
+  .object({ ...accountScope, userId: z.string() })
+  .refine(namesAccount, NAMES_ACCOUNT);
 export const accountPersonWireSchema = z.object({
   id: z.string(),
   displayName: z.string(),
@@ -3072,11 +3120,9 @@ export const accountPersonWireSchema = z.object({
 });
 export type AccountPersonWire = z.infer<typeof accountPersonWireSchema>;
 /** No `currentPassword` for an account that has never had one (an SSO user setting a first password). */
-export const accountChangePasswordRequestSchema = z.object({
-  url: z.string(),
-  currentPassword: z.string().optional(),
-  newPassword: z.string(),
-});
+export const accountChangePasswordRequestSchema = z
+  .object({ ...accountScope, currentPassword: z.string().optional(), newPassword: z.string() })
+  .refine(namesAccount, NAMES_ACCOUNT);
 export const accountDeviceWireSchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -3087,8 +3133,11 @@ export const accountDeviceWireSchema = z.object({
 });
 export type AccountDeviceWire = z.infer<typeof accountDeviceWireSchema>;
 export const accountDevicesResponseSchema = z.object({ devices: z.array(accountDeviceWireSchema) });
-export const accountDeviceRefRequestSchema = z.object({ url: z.string(), id: z.string() });
+export const accountDeviceRefRequestSchema = z
+  .object({ ...accountScope, id: z.string() })
+  .refine(namesAccount, NAMES_ACCOUNT);
 export const accountDoneResponseSchema = z.object({ done: z.literal(true) });
+/** Every account and the active one (switch accounts spec §6), whenever either changes. */
 export const accountChangedEventSchema = accountListResponseSchema;
 export type AccountChangedEvent = z.infer<typeof accountChangedEventSchema>;
 

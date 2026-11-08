@@ -134,7 +134,7 @@ describe('ShareDialog → Wirebench Server (server-sync §3.4)', () => {
   beforeEach(() => {
     installWirebenchApi();
     useWorkspaceStore.setState({ workspace: workspaceWire() });
-    useAccountStore.setState({ servers: [account(SERVER)], loaded: true });
+    useAccountStore.setState({ servers: [account(SERVER)], active: null, loaded: true });
     useUiStore.setState({ shareDialogOpen: false, signInDialog: { open: false, url: undefined } });
   });
   afterEach(() => {
@@ -159,6 +159,22 @@ describe('ShareDialog → Wirebench Server (server-sync §3.4)', () => {
 
     expect(useUiStore.getState().signInDialog.open).toBe(true);
     expect(useUiStore.getState().shareDialogOpen).toBe(false);
+  });
+
+  it('shares as the active account, with no server to choose', async () => {
+    const OTHER = 'https://other.test';
+    const list = ok({ teams: [TEAM], serverAdmin: false });
+    installWirebenchApi({ team: { list } });
+    useAccountStore.setState({
+      servers: [account(SERVER), { ...account(OTHER), userId: 'u-other', email: 'me@other.test' }],
+      active: { url: OTHER, userId: 'u-other' },
+      loaded: true,
+    });
+    await openShareDialog();
+    await userEvent.click(screen.getByTestId('share-kind-server'));
+    expect(screen.queryByTestId('share-server')).toBeNull();
+    expect(screen.getByTestId('share-server-as').textContent).toContain('me@other.test on other.test');
+    await waitFor(() => expect(list).toHaveBeenCalledWith({ url: OTHER }));
   });
 
   it('shares into a new server workspace named after this one, Viewer by default of three roles', async () => {

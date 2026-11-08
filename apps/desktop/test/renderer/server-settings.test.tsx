@@ -13,7 +13,6 @@ import type {
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import {
   serverPages,
-  settingsServerUrl,
   useServerSettingsStore,
 } from '../../src/renderer/features/preferences/server/server-settings-store.js';
 import { ServerPage } from '../../src/renderer/features/preferences/server/server-page.js';
@@ -156,21 +155,6 @@ describe('the store', () => {
     await useServerSettingsStore.getState().load(URL_);
     expect(useServerSettingsStore.getState().available).toBe(true);
     expect(billing).not.toHaveBeenCalled();
-  });
-});
-
-describe('settingsServerUrl', () => {
-  const servers = [{ url: 'https://first.example' }, { url: 'https://team.example' }];
-
-  it('follows the open workspace’s server when it is one of the signed-in ones', () => {
-    expect(settingsServerUrl(servers, 'https://team.example')).toBe('https://team.example');
-    expect(settingsServerUrl(servers, 'https://team.example/')).toBe('https://team.example');
-  });
-
-  it('keeps the first otherwise', () => {
-    expect(settingsServerUrl(servers, undefined)).toBe('https://first.example');
-    expect(settingsServerUrl(servers, 'https://elsewhere.example')).toBe('https://first.example');
-    expect(settingsServerUrl([], 'https://team.example')).toBeUndefined();
   });
 });
 

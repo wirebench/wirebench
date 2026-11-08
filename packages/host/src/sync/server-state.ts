@@ -68,6 +68,11 @@ export interface ServerStateDoc {
   /** Local display only; the server attributes commits to the signed-in user (§3.1). */
   readonly identity?: { readonly name: string; readonly email: string };
   readonly lastSyncAt?: string;
+  /**
+   * Who on the server this copy syncs as (switch accounts ruling 5): it keeps that account when the active one
+   * changes. Absent in a state from before accounts could share a server; the first sync records it.
+   */
+  readonly userId?: string;
 }
 
 export interface PendingCommitRecord {
@@ -117,6 +122,7 @@ const stateDocSchema = z.object({
   disabledFeatures: z.array(z.string()).optional(),
   identity: z.object({ name: z.string().min(1), email: z.string().min(1) }).optional(),
   lastSyncAt: z.string().optional(),
+  userId: z.string().min(1).optional(),
 });
 const treeFileSchema = z.object({ encoding: syncEncodingSchema, content: z.string() });
 const treeFileRecordSchema = z.record(z.string(), treeFileSchema);
@@ -259,6 +265,7 @@ function toDoc(parsed: z.infer<typeof stateDocSchema>): ServerStateDoc {
       ? { identity: { name: parsed.identity.name, email: parsed.identity.email } }
       : {}),
     ...(parsed.lastSyncAt !== undefined ? { lastSyncAt: parsed.lastSyncAt } : {}),
+    ...(parsed.userId !== undefined ? { userId: parsed.userId } : {}),
   };
 }
 

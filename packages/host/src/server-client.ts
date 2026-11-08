@@ -141,7 +141,7 @@ import {
   type TlsOptions,
   type WorkspaceRole,
 } from '@wirebench/engine';
-import type { z } from 'zod';
+import { z } from 'zod';
 import {
   auditPageWireSchema,
   serverSettingsWireSchema,

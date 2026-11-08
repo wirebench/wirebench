@@ -10,13 +10,34 @@
 import { timingSafeEqual } from 'node:crypto';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { DEVICE_TOKEN_PATTERN } from '@wirebench/engine';
-import { announce, recordAudit, type AuditSource, type ServerContext } from '../context.js';
-import { clearFlowCookie, flowCookie, sessionToken, setFlowCookie, setSessionCookie } from './cookies.js';
+import type { AuditSource, ServerContext } from '../context.js';
+import {
+  ADD_ACCOUNT_FLOW_SUFFIX,
+  addedToken,
+  clearAddedCookie,
+  clearFlowCookie,
+  flowCookie,
+  MAX_REMEMBERED_SESSIONS,
+  sessionToken,
+  setAddedCookie,
+  setFlowCookie,
+  setSessionCookie,
+} from './cookies.js';
 import { identitySettings } from './env.js';
 import { emailUnverified, notInvited, userDisabled } from './errors.js';
 import * as repo from './repo.js';
 import type { UserRow } from './repo.js';
+import {
+  liveBrowserSession,
+  presentedSessions,
+  remainingSeconds,
+  revokeSession,
+  writeRemembered,
+  type BrowserSession,
+  type PresentedSessions,
+} from './remembered.js';
 import { signIn } from './sessions.js';
+import { sendSignInPage } from './sign-in-page.js';
 import { hashSecret, hashToken, mintSecret, newId } from './tokens.js';
 import type { TenantQuerier } from '../tenancy/tenant-db.js';
 import { primaryUrl, tenantUrl, type UrlConfig } from '../tenancy/urls.js';
@@ -40,6 +61,8 @@ export interface BrowserFlow {
   readonly codeVerifier: string | null;
   readonly redirectTo: string;
   readonly expiresAt: Date;
+  /** Started from *Add an account* (switch accounts spec §5.3): finishing it keeps the session the browser holds. */
+  readonly addAccount: boolean;
 }
 
 interface FlowEnv {
@@ -79,6 +102,7 @@ export async function startBrowserFlow(
     readonly redirectTo: string;
     readonly nonce?: string;
     readonly codeVerifier?: string;
+    readonly addAccount?: boolean;
   },
 ): Promise<string> {
   const now = env.now();
@@ -98,7 +122,13 @@ export async function startBrowserFlow(
         now,
       ],
     );
-  setFlowCookie(reply, tenantUrl(env.ctx.config, request), state.secret, input.provider === 'saml');
+  setFlowCookie(
+    reply,
+    tenantUrl(env.ctx.config, request),
+    state.secret,
+    input.provider === 'saml',
+    input.addAccount === true,
+  );
   return state.secret;
 }
 
@@ -133,6 +163,7 @@ async function claim(
   db: TenantQuerier,
   provider: BrowserFlowProvider,
   stateHash: string,
+  addAccount: boolean,
 ): Promise<BrowserFlow | undefined> {
   const result = await db.query<{
     id: string;
@@ -154,6 +185,7 @@ async function claim(
     codeVerifier: row.code_verifier,
     redirectTo: row.redirect_to,
     expiresAt: new Date(row.expires_at),
+    addAccount,
   };
 }
 
@@ -170,11 +202,13 @@ export async function takeBrowserFlow(
   state: string,
 ): Promise<BrowserFlow | undefined> {
   const url = tenantUrl(env.ctx.config, request);
-  const cookie = flowCookie(request, url);
+  const value = flowCookie(request, url);
+  const addAccount = value?.endsWith(ADD_ACCOUNT_FLOW_SUFFIX) === true;
+  const cookie = addAccount ? value.slice(0, -ADD_ACCOUNT_FLOW_SUFFIX.length) : value;
   // Left alone on a mismatch, so a cross-site request carrying some other state cannot end a flow in progress.
   if (state === '' || cookie === undefined || !sameText(cookie, state)) return undefined;
   clearFlowCookie(reply, url);
-  const flow = await claim(env.ctx.tenancy.db(request.tenant), provider, hashSecret(state));
+  const flow = await claim(env.ctx.tenancy.db(request.tenant), provider, hashSecret(state), addAccount);
   if (flow === undefined || flow.expiresAt.getTime() <= env.now().getTime()) return undefined;
   return flow;
 }
@@ -188,30 +222,43 @@ export async function takeBrowserFlow(
 export async function endPresentedSession(env: FlowEnv, request: FastifyRequest, source: AuditSource): Promise<void> {
   const token = sessionToken(request, tenantUrl(env.ctx.config, request));
   if (token === undefined || !DEVICE_TOKEN_PATTERN.test(token)) return;
-  const db = env.ctx.tenancy.db(request.tenant);
-  const found = await repo.tokenByHash(db, hashToken(token));
+  const found = await repo.tokenByHash(env.ctx.tenancy.db(request.tenant), hashToken(token));
   if (found === undefined || found.token.kind !== 'browser' || found.token.revokedAt !== null) return;
-  const tokenId = found.token.id;
-  await db.transaction(async (tx) => {
-    await repo.revokeToken(tx, tokenId, env.now());
-    await recordAudit(env.ctx.hooks, tx, {
-      ...source,
-      // The browser presenting the cookie is that session's holder, as the API sign-out's caller is.
-      actor:
-        source.actor.kind === 'anonymous'
-          ? { kind: 'user', userId: found.user.id, email: found.user.email, tokenId }
-          : source.actor,
-      action: 'auth.signed_out',
-      target: { kind: 'user', id: found.user.id },
-      details: { tokenId },
-    });
-  });
-  announce(env.ctx.hooks.sessionEnded, { tenantId: request.tenant.tenantId, tokenId }, request.log);
+  await revokeSession(env, request, { tokenId: found.token.id, user: found.user }, source);
 }
+
+/** What *Add an account* says when the browser already holds five (switch accounts spec §5.3). */
+export const ACCOUNTS_FULL_MESSAGE = 'This browser already holds five accounts. Sign one out first.';
+
+/**
+ * How a browser sign-in treats the sessions the browser already holds (switch accounts spec §5.3). `replace`, every
+ * sign-in's mode before accounts could be added, ends the active session; `add` keeps it, remembered in front of the
+ * others. In either mode a remembered session of the person signing in is ended and replaced by the new one.
+ */
+export type BrowserSignInMode = 'replace' | 'add';
+
+/** Which presented sessions a sign-in as `userId` keeps (remembered, in order) and which it ends. */
+function arrange(
+  presented: PresentedSessions,
+  userId: string,
+  mode: BrowserSignInMode,
+): { readonly keep: readonly BrowserSession[]; readonly end: readonly BrowserSession[]; readonly endActive: boolean } {
+  const keep: BrowserSession[] = [];
+  const end: BrowserSession[] = [];
+  const keepActive = mode === 'add' && presented.active !== undefined && presented.active.user.id !== userId;
+  if (keepActive) keep.push(presented.active);
+  for (const session of presented.remembered) (session.user.id === userId ? end : keep).push(session);
+  return { keep, end, endActive: !keepActive };
+}
+
+const sendAccountsFull = (env: FlowEnv, reply: FastifyReply, redirectTo: string): Promise<FastifyReply> =>
+  sendSignInPage(reply, env.ctx, { status: 409, message: ACCOUNTS_FULL_MESSAGE, redirectTo, add: true, full: true });
 
 /**
  * Mints a browser token with its `auth.signed_in` event, sets the session cookie and sends the browser
- * on. A session the browser already held, for this person or another, is ended first.
+ * on. In `replace` mode a session the browser already held, for this person or another, is ended first; in `add`
+ * mode it moves into the remembered cookie instead, unless it is this person's. An `add` that would leave the
+ * browser more than five accounts answers the refusal page and signs no one in.
  */
 export async function finishBrowserSignIn(
   env: FlowEnv,
@@ -221,12 +268,89 @@ export async function finishBrowserSignIn(
   method: 'local' | 'oidc' | 'saml',
   source: AuditSource,
   redirectTo: string,
+  mode: BrowserSignInMode = 'replace',
 ): Promise<FastifyReply> {
   const config = env.ctx.config;
   const url = tenantUrl(config, request);
-  await endPresentedSession(env, request, source);
+  const presented = await presentedSessions(env, request);
+  const { keep, end, endActive } = arrange(presented, user.id, mode);
+  if (keep.length > MAX_REMEMBERED_SESSIONS) return sendAccountsFull(env, reply, redirectTo);
+  // `replace`, or an `add` by the person already active: the presented session ends, as before accounts.
+  if (endActive) await endPresentedSession(env, request, source);
+  for (const session of end) await revokeSession(env, request, session, source);
   const { token } = await signIn(env, request.tenant, user, method, BROWSER_DEVICE_NAME, source, 'browser');
   setSessionCookie(reply, url, token, Math.floor(identitySettings(config).tokenMaxMs / 1000));
+  if (presented.presented || keep.length > 0) writeRemembered(env, request, reply, keep);
+  return reply
+    .code(303)
+    .header('location', safeRedirectPath(redirectTo, url))
+    .header('cache-control', 'no-store')
+    .send();
+}
+
+/** Where a SAML *Add an account* lands from its ACS, to see the browser's sessions (see `addedCookieName`). */
+export const ADDED_PATH = '/sign-in/added';
+
+/**
+ * The SAML ACS's half of *Add an account*: mints the session with its `auth.signed_in` event, hands it over in the
+ * added cookie, and redirects to {@link ADDED_PATH}, where {@link adoptAddedSession} arranges it among the others.
+ */
+export async function handOffAddedSignIn(
+  env: FlowEnv,
+  request: FastifyRequest,
+  reply: FastifyReply,
+  user: UserRow,
+  source: AuditSource,
+  redirectTo: string,
+): Promise<FastifyReply> {
+  const url = tenantUrl(env.ctx.config, request);
+  const { token } = await signIn(env, request.tenant, user, 'saml', BROWSER_DEVICE_NAME, source, 'browser');
+  setAddedCookie(reply, url, token);
+  const onward = safeRedirectPath(redirectTo, url);
+  return reply
+    .code(303)
+    .header('location', onward === '/' ? ADDED_PATH : `${ADDED_PATH}?redirect_to=${encodeURIComponent(onward)}`)
+    .header('cache-control', 'no-store')
+    .send();
+}
+
+/**
+ * `GET /sign-in/added`: the handed-over session becomes active and the one the browser held moves into the remembered
+ * cookie, as {@link finishBrowserSignIn} does in `add` mode. Without a live handed-over session (none, expired, already
+ * used) it answers the sign-in page. Past five accounts the new session is ended again and the refusal answered. A
+ * cross-site page can send a browser here, but only a cookie this server set a moment ago makes it do anything.
+ */
+export async function adoptAddedSession(
+  env: FlowEnv,
+  request: FastifyRequest,
+  reply: FastifyReply,
+  source: AuditSource,
+  redirectTo: string,
+): Promise<FastifyReply> {
+  const url = tenantUrl(env.ctx.config, request);
+  const token = addedToken(request, url);
+  if (token !== undefined) clearAddedCookie(reply, url);
+  const added =
+    token === undefined
+      ? undefined
+      : await liveBrowserSession(
+          env.ctx.tenancy.db(request.tenant),
+          identitySettings(env.ctx.config),
+          env.now(),
+          token,
+        );
+  if (added === undefined)
+    return sendSignInPage(reply, env.ctx, { status: 400, message: FLOW_EXPIRED_MESSAGE, redirectTo });
+  const presented = await presentedSessions(env, request);
+  const { keep, end, endActive } = arrange(presented, added.user.id, 'add');
+  if (keep.length > MAX_REMEMBERED_SESSIONS) {
+    await revokeSession(env, request, added, source);
+    return sendAccountsFull(env, reply, redirectTo);
+  }
+  if (endActive) await endPresentedSession(env, request, source);
+  for (const session of end) await revokeSession(env, request, session, source);
+  setSessionCookie(reply, url, added.token, remainingSeconds(env, added));
+  if (presented.presented || keep.length > 0) writeRemembered(env, request, reply, keep);
   return reply
     .code(303)
     .header('location', safeRedirectPath(redirectTo, url))

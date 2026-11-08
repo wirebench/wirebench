@@ -150,7 +150,11 @@ afterEach(async () => {
 /** A client that joined `server` at its head: the tree and the base are that snapshot. */
 async function joined(
   server: StubServer,
-  options: { readonly token?: string | null; readonly live?: ServerBackendDeps['live'] } = {},
+  options: {
+    readonly token?: string | null;
+    readonly live?: ServerBackendDeps['live'];
+    readonly accounts?: ServerBackendDeps['accounts'];
+  } = {},
 ) {
   const root = await mkdtemp(join(tmpdir(), 'wb-server-backend-'));
   roots.push(root);
@@ -171,7 +175,7 @@ async function joined(
   ): ServerBackend =>
     new ServerBackend({
       client: server.client,
-      accounts,
+      accounts: options.accounts ?? accounts,
       url: SERVER,
       workspaceId: WS_ID,
       tree,
@@ -1007,5 +1011,60 @@ describe('the import graph (O4)', () => {
       'live-client.ts',
     ])
       expect(names).toContain(name);
+  });
+});
+
+describe('ServerBackend — the account a copy syncs as (switch accounts ruling 5)', () => {
+  const account = (userId: string) => ({
+    url: SERVER,
+    userId,
+    email: `${userId}@example.com`,
+    displayName: userId,
+    deviceName: 'Mac',
+    tokenRef: `sec_${'0'.repeat(26)}`,
+    addedAt: NOW.toISOString(),
+  });
+  const accountsPicking = (picked: () => ReturnType<typeof account> | undefined) => ({
+    tokenFor: vi.fn<(target: unknown) => Promise<string | undefined>>(() => Promise.resolve(TOKEN)),
+    markSignedOut: vi.fn<(target: unknown) => void>(() => undefined),
+    accountFor: vi.fn(picked),
+  });
+
+  it('a state from before records the account the URL stands for at the first sync, and keeps it after a switch', async () => {
+    let active = 'alice';
+    const accounts = accountsPicking(() => account(active));
+    const f = await joined(seeded(), { accounts });
+    expect((await f.state.read()).userId).toBeUndefined();
+
+    await f.backend.fetch();
+    expect(accounts.tokenFor).toHaveBeenLastCalledWith({ url: SERVER, userId: 'alice' });
+    expect((await f.state.read()).userId).toBe('alice');
+
+    // The active account changes; this copy, and a restart of it, still sync as Alice.
+    active = 'bob';
+    await f.backend.fetch();
+    expect(accounts.tokenFor).toHaveBeenLastCalledWith({ url: SERVER, userId: 'alice' });
+    accounts.accountFor.mockClear();
+    await f.reopen().fetch();
+    expect(accounts.tokenFor).toHaveBeenLastCalledWith({ url: SERVER, userId: 'alice' });
+    expect(accounts.accountFor).not.toHaveBeenCalled();
+  });
+
+  it('a recorded account is used as it is, signed out or not: a rejected token signs that account out', async () => {
+    const accounts = accountsPicking(() => account('bob'));
+    const f = await joined(seeded(), { accounts });
+    await f.state.update({ userId: 'alice' });
+    f.server.client.syncHead.mockRejectedValueOnce(problem('identity-unauthenticated', 401));
+    await expect(f.backend.fetch()).rejects.toMatchObject({ code: 'sync-signed-out' });
+    expect(accounts.markSignedOut).toHaveBeenCalledWith({ url: SERVER, userId: 'alice' });
+    expect(accounts.accountFor).not.toHaveBeenCalled();
+  });
+
+  it('with no account on the server yet nothing is recorded, and the call goes by URL', async () => {
+    const accounts = accountsPicking(() => undefined);
+    const f = await joined(seeded(), { accounts });
+    await f.backend.fetch();
+    expect(accounts.tokenFor).toHaveBeenLastCalledWith(SERVER);
+    expect((await f.state.read()).userId).toBeUndefined();
   });
 });
