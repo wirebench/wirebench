@@ -55,7 +55,8 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 - **The account button shows only your photo (desktop and browser).** The top right of the title bar no longer shows
-  the email and arrow beside the photo; hover it to see the email, and click it for the account menu as before.
+  the email and arrow beside the photo; hover it to see the email. Its menu holds **View profile**, **App settings**
+  and **Manage team…** again (Manage team had left it when Switch accounts came in).
 - **The browser client is always on (server).** Every server serves the app in a browser tab at `/`, with the
   `/sign-in` page, cookie sessions, `/api/v1/host`, the invitation page's browser form and local-agent pairing.
   `WIREBENCH_SERVER_BROWSER_CLIENT` is removed: a server that still sets it starts as usual and logs once that the

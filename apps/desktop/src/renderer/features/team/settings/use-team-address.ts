@@ -19,6 +19,9 @@ export function useTeamAddress(teamId: string | undefined, page: TeamSettingsPag
     if (page === undefined) return;
     replaceSearch(teamSettingsSearch(window.location.search, { teamId, page }));
   }, [teamId, page]);
+  // Leaving Team settings any other way than *Back* (App settings or View profile from the account menu, the
+  // palette) takes its address with it, so a reload does not land back in Team settings.
+  useEffect(() => clearTeamAddress, []);
 }
 
 /** Takes Team settings' parameters out of the address, for *Back to workspace*. */

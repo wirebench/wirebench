@@ -72,16 +72,16 @@ describe('AccountStatusItem', () => {
       'account-menu-header',
       'account-view-profile',
       'account-settings',
+      'account-manage-teams',
       'account-sign-out',
       'account-add',
     ]);
     expect(menu.textContent).toContain('Switch accounts');
-    // Manage team…, Account settings… and Signed-in devices… left the menu.
-    for (const gone of ['account-manage', 'account-devices', 'account-manage-teams'])
-      expect(screen.queryByTestId(gone)).toBeNull();
+    // Account settings… and Signed-in devices… left the menu.
+    for (const gone of ['account-manage', 'account-devices']) expect(screen.queryByTestId(gone)).toBeNull();
   });
 
-  it('View profile opens User settings on Profile, Settings on its default page', async () => {
+  it('View profile opens User settings on Profile, App settings on its default page', async () => {
     useAccountStore.setState({ servers: [account('https://wb.test')] });
     render(<AccountStatusItem />);
     await openMenu();
@@ -90,7 +90,7 @@ describe('AccountStatusItem', () => {
     useUiStore.setState({ preferences: { open: false, area: 'app', section: undefined } });
     await openMenu();
     fireEvent.click(await screen.findByTestId('account-settings'));
-    expect(useUiStore.getState().preferences).toEqual({ open: true, area: 'user', section: undefined });
+    expect(useUiStore.getState().preferences).toEqual({ open: true, area: 'app', section: undefined });
   });
 
   it('Sign out signs the active account out, by account', async () => {

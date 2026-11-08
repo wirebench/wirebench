@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
-import { CircleUser, LogOut, Settings, UserPlus, UserRound } from 'lucide-react';
+import { CircleUser, LogOut, Settings, UserPlus, UserRound, Users } from 'lucide-react';
 import type { AccountWire } from '@shared/wire-base.js';
 import { PersonAvatar } from '../../components/person-avatar.js';
 import { tabAddAccount, tabSignOut } from '../../lib/capabilities.js';
 import { activeAccount, hostOf, otherAccounts, serversDiffer, useAccountStore } from '../../state/account.js';
 import { usePreferencesStore } from '../../state/preferences.js';
+import { manageTeam } from '../team/team-link.js';
 import { useUiStore } from '../../state/ui.js';
 
 const ITEM_CLASS =
@@ -20,10 +21,10 @@ function handleOf(account: AccountWire): string {
  * The account menu at the top right of the title bar (identity spec §3.8, switch accounts spec §3). Hidden until an
  * account is known and while `accounts.showInStatusBar` is off (the setting keeps its stored name). With none signed
  * in it shows *Sign in*, which reopens the dialog on the last server. Signed in, the trigger is the active account's
- * photo alone (the email is its tooltip), and the menu holds, in order (plan ruling 10): a header (photo, name, `@username · email`, and the
- * host when your accounts are on more than one server), *View profile*, *Settings*, *Sign out* of the active account,
- * then *Switch accounts* — every other account, most recently active first, signed-out desktop ones dimmed with
- * *Sign in* — and *Add account*. *Manage team…* and the other User settings pages are in Settings and the palette.
+ * photo alone (the email is its tooltip), and the menu holds, in order: a header (photo, name, `@username · email`,
+ * and the host when your accounts are on more than one server), *View profile* (User settings), *App settings*,
+ * *Manage team…* for the active account's server, *Sign out* of the active account, then *Switch accounts* — every
+ * other account, most recently active first, signed-out desktop ones dimmed with *Sign in* — and *Add account*.
  */
 export function AccountStatusItem() {
   const servers = useAccountStore((state) => state.servers);
@@ -31,6 +32,7 @@ export function AccountStatusItem() {
   const show = usePreferencesStore((state) => state.preferences.accounts.showInStatusBar);
   const openSignInDialog = useUiStore((state) => state.openSignInDialog);
   const openUserSettings = useUiStore((state) => state.openUserSettings);
+  const openPreferences = useUiStore((state) => state.openPreferences);
   const signOut = useAccountStore((state) => state.signOut);
   const setActive = useAccountStore((state) => state.setActive);
   const [open, setOpen] = useState(false);
@@ -126,11 +128,21 @@ export function AccountStatusItem() {
             data-testid="account-settings"
             className={ITEM_CLASS}
             onSelect={() => {
-              openUserSettings();
+              openPreferences();
             }}
           >
             <Settings size={14} aria-hidden="true" className="text-fg-subtle" />
-            Settings
+            App settings
+          </DropdownMenu.Item>
+          <DropdownMenu.Item
+            data-testid="account-manage-teams"
+            className={ITEM_CLASS}
+            onSelect={() => {
+              void manageTeam(current.url);
+            }}
+          >
+            <Users size={14} aria-hidden="true" className="text-fg-subtle" />
+            Manage team…
           </DropdownMenu.Item>
           <DropdownMenu.Item
             data-testid="account-sign-out"
