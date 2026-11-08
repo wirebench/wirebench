@@ -117,6 +117,8 @@ test('opens the seeded server workspace', async () => {
   await expect(dialog).toBeHidden({ timeout: 60_000 });
   await expect(page.getByTestId('activity-bar')).toBeVisible();
   await expect(projectRow()).toBeVisible();
+  // The title bar says whose workspace it is: the team before the workspace's name.
+  await expect(page.getByTestId('workspace-switcher-team')).toHaveText(seed.teamName);
 });
 
 test('a reload reopens the workspace the tab had open (#879)', async () => {

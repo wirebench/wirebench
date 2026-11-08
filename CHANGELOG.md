@@ -103,6 +103,9 @@ All notable changes to this project are documented here. The format follows
 - **The browser client reports the app's version (#875)**, in the status bar and in its requests' `User-Agent`,
   rather than the server package's.
 - **Closing a browser tab no longer logs "There is no window to do this in" on the server (#876).**
+- **The title bar names a team workspace's team.** It reads *Platform / Payments*, and the workspace menu shows each
+  team workspace's team beside its name, so you always know whose workspace you are in. In a browser tab, a workspace
+  held by another tab is now refused as "open in another tab" rather than "another window".
 
 ## [7.0.0] - 2026-11-06
 
