@@ -2351,6 +2351,7 @@ export class WorkspaceService implements ProjectRouter {
       ready: this.startup,
       close: () => this.close(),
       open: (id, options) => this.openWorkspace(id, options ?? {}),
+      startEmpty: this.deps.machineFiles === false,
       ...(server !== undefined
         ? { server: { client: server.client, accounts: server.accounts, state: this.state } }
         : {}),
