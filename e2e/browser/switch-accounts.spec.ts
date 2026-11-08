@@ -58,7 +58,7 @@ async function fillSignIn(email: string, password: string): Promise<void> {
 
 /** The account menu's trigger names the active account. */
 async function expectActive(email: string): Promise<void> {
-  await expect(page.getByTestId('status-bar-account')).toContainText(email, { timeout: 60_000 });
+  await expect(page.getByTestId('status-bar-account')).toHaveAttribute('title', email, { timeout: 60_000 });
 }
 
 async function openMenu(): Promise<void> {

@@ -58,7 +58,7 @@ describe('AccountStatusItem', () => {
       servers: [account('https://wb.test', false, { displayName: 'Alice', username: 'alice' })],
     });
     render(<AccountStatusItem />);
-    expect(screen.getByTestId('status-bar-account').textContent).toContain('a@wb.test');
+    expect(screen.getByTestId('status-bar-account').getAttribute('title')).toBe('a@wb.test');
     const menu = await openMenu();
     const header = screen.getByTestId('account-menu-header');
     expect(header.textContent).toContain('Alice');
@@ -101,7 +101,7 @@ describe('AccountStatusItem', () => {
       active: { url: 'https://two.test', userId: 'v' },
     });
     render(<AccountStatusItem />);
-    expect(screen.getByTestId('status-bar-account').textContent).toContain('a@two.test');
+    expect(screen.getByTestId('status-bar-account').getAttribute('title')).toBe('a@two.test');
     await openMenu();
     fireEvent.click(screen.getByTestId('account-sign-out'));
     await vi.waitFor(() => expect(signOut).toHaveBeenCalledWith({ account: { url: 'https://two.test', userId: 'v' } }));
@@ -147,7 +147,7 @@ describe('AccountStatusItem', () => {
     await vi.waitFor(() =>
       expect(setActive).toHaveBeenCalledWith({ account: { url: 'https://two.test', userId: 'u2' } }),
     );
-    await vi.waitFor(() => expect(screen.getByTestId('status-bar-account').textContent).toContain('a@two.test'));
+    await vi.waitFor(() => expect(screen.getByTestId('status-bar-account').getAttribute('title')).toBe('a@two.test'));
   });
 
   it('a signed-out account shows dimmed with Sign in, which opens the dialog on its server', async () => {
