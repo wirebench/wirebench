@@ -20,6 +20,9 @@ import { HOST_CLOSE as SERVER_CLOSE, HOST_LIMITS as SERVER_LIMITS } from '../src
 import type { CreateServerHost, RunSharedHostSocket, ServerHost } from '../src/host/host-runtime.js';
 import { createServerPlatform } from '../src/host/server-platform.js';
 
+/** How long a new tab waits for another of the user's sockets to close before it counts as a second tab. */
+const RELOAD_GRACE_MS = 1500;
+
 export const createServerHost: CreateServerHost = async (input) => {
   const platform: HostPlatform = createServerPlatform(input);
   const options: HostOptions = {
@@ -30,13 +33,38 @@ export const createServerHost: CreateServerHost = async (input) => {
     ...(input.sendGate !== undefined ? { sendGate: input.sendGate } : {}),
   };
   const host = await createHost(platform, options);
+  /** The sockets attached and not yet closing, and the quit paths of those that are. */
+  const live = new Set<number>();
+  const closing = new Set<Promise<void>>();
   const serverHost: ServerHost = {
     capabilities: [...platform.capabilities],
     osTheme: platform.app.osTheme(),
     channels: () => [...host.handlers.keys()],
-    attach: (caller) => host.attach(caller),
+    attach: (caller) => {
+      live.add(caller.id);
+      // A reload closes the old socket as the new one opens: its quit path saves and releases the workspace,
+      // so the reopen waits for it. A second tab beside an open one starts at the picker (#879).
+      host.attach(caller, {
+        reopenLast: true,
+        reopenWhen: async () => {
+          // The old socket's close can reach the server after the new socket: give it a moment to arrive.
+          const deadline = Date.now() + RELOAD_GRACE_MS;
+          while (live.size > 1 && Date.now() < deadline) {
+            await new Promise((resolve) => setTimeout(resolve, 50));
+          }
+          await Promise.allSettled([...closing]);
+          return live.size === 1 && live.has(caller.id);
+        },
+      });
+    },
     serve: (caller, frame, allowed) => serveCall(host, caller, frame, allowed),
-    detach: (callerId) => host.detach(callerId),
+    detach: (callerId) => {
+      live.delete(callerId);
+      const done = host.detach(callerId);
+      closing.add(done);
+      void done.finally(() => closing.delete(done)).catch(() => undefined);
+      return done;
+    },
     dispose: () => host.shutdown(),
   };
   return serverHost;

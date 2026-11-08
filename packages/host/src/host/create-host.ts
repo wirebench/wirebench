@@ -212,6 +212,12 @@ export interface Host {
 export interface AttachOptions {
   /** Reopen the last workspace, as the launch's first window does; otherwise open at the picker. */
   readonly reopenLast?: boolean;
+  /**
+   * With `reopenLast`, asked once the preferences are loaded: the reopen happens only when it answers true.
+   * The server's browser tabs use it to wait for a reloaded tab's old socket to close first, and to leave a
+   * second tab at the picker rather than refuse it the workspace the first one holds (#879).
+   */
+  readonly reopenWhen?: () => Promise<boolean>;
 }
 
 /** What the embedder does with the windows its callers live in. */
@@ -2026,7 +2032,11 @@ export async function createHost(platform: HostPlatform, embedder: HostOptions =
       // an error the app dies of: the picker shows `lastError()`. `workspace.snapshot`/`list` wait on
       // it, so the renderer's first answer is already the reopened workspace (or the picker with its
       // error), never a flash of both.
+      const when = attachOptions.reopenWhen;
       scope.ready = preferencesService.ready().then(async () => {
+        if (when !== undefined && !(await when().catch(() => false))) {
+          return;
+        }
         await scope.workspace.openLast().catch(() => null);
       });
     }
