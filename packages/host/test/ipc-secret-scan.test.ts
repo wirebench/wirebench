@@ -212,4 +212,27 @@ describe('secretScan channels', () => {
 
     expect(releaseOwner).not.toHaveBeenCalled();
   });
+
+  it('releases through the sessions of the hold, even once no window is current (#876)', async () => {
+    const releaseOwner = vi.fn();
+    let windowGone = false;
+    // As the host's per-window proxy: a member read with no current window throws.
+    const sessions = {
+      session: () => ({}) as SecretScanSession,
+      hold: () => 'hold-1',
+      release: () => undefined,
+      get releaseOwner() {
+        if (windowGone) throw new Error('There is no window to do this in.');
+        return releaseOwner;
+      },
+    };
+    registerSecretScanChannels(table, sessions);
+    const sender = fakeSender(8);
+    await invoke('secretScan.hold', { projectIds: ['p1'] }, sender);
+
+    windowGone = true;
+    expect(() => sender.emit('destroyed')).not.toThrow();
+
+    expect(releaseOwner).toHaveBeenCalledWith(8);
+  });
 });
