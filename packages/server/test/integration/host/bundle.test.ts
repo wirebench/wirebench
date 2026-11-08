@@ -6,7 +6,7 @@
  * regression fails here rather than in production. `global-setup.ts` builds the bundle first.
  */
 import { execFile } from 'node:child_process';
-import { existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -16,6 +16,12 @@ import { HOST_CLOSE, HOST_LIMITS } from '../../../src/host/errors.js';
 
 const run = promisify(execFile);
 const bundle = fileURLToPath(new URL('../../../dist/host/bundle.js', import.meta.url));
+/** The desktop app's version: the one the bundle answers `app.version` with, whatever the server says (#875). */
+const APP_VERSION = (
+  JSON.parse(readFileSync(new URL('../../../../../apps/desktop/package.json', import.meta.url), 'utf8')) as {
+    version: string;
+  }
+).version;
 const dataDir = mkdtempSync(join(tmpdir(), 'wirebench-host-bundle-'));
 const USER = '01JB3Z9K7Q4ZJ6X1V8W2M5N0PA';
 const TENANT_ID = '00000000-0000-4000-8000-000000000001';
@@ -108,7 +114,7 @@ describe('the host bundle', () => {
     expect(report.version).toEqual({
       id: 7,
       ok: true,
-      value: { version: '9.9.9-bundle-test', electron: process.versions.node, node: process.versions.node },
+      value: { version: APP_VERSION, electron: process.versions.node, node: process.versions.node },
     });
     expect(report.fsOpen).toMatchObject({ id: 8, ok: false, error: { code: 'host-capability-missing' } });
     expect(report.areas.value).toMatchObject({ localTerminal: false, serial: false });

@@ -23,8 +23,13 @@ import { createServerPlatform } from '../src/host/server-platform.js';
 /** How long a new tab waits for another of the user's sockets to close before it counts as a second tab. */
 const RELOAD_GRACE_MS = 1500;
 
+/** The desktop app's version, stamped in by `scripts/bundle-host.mjs` (#875). */
+declare const __WIREBENCH_APP_VERSION__: string | undefined;
+
 export const createServerHost: CreateServerHost = async (input) => {
-  const platform: HostPlatform = createServerPlatform(input);
+  // The tab is the desktop's renderer: it shows and sends the app's version, not the server's.
+  const appVersion = typeof __WIREBENCH_APP_VERSION__ === 'string' ? __WIREBENCH_APP_VERSION__ : input.appVersion;
+  const platform: HostPlatform = createServerPlatform({ ...input, appVersion });
   const options: HostOptions = {
     // Sends from here go out from the server: History says so, and browser sends are routed (§18.4).
     sendOrigin: 'server',

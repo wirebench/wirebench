@@ -20,6 +20,13 @@ import { build } from 'esbuild';
 
 const serverDir = join(import.meta.dirname, '..');
 const manifest = JSON.parse(readFileSync(join(serverDir, 'package.json'), 'utf8'));
+/**
+ * The app the browser client is: the desktop's renderer, built from the same commit. Its version is what the tab
+ * shows and sends as its User-Agent, as the desktop of that release does (#875); the server keeps its own.
+ */
+const appVersion = JSON.parse(
+  readFileSync(join(serverDir, '..', '..', 'apps', 'desktop', 'package.json'), 'utf8'),
+).version;
 const outfile = process.argv[2] === undefined ? join(serverDir, 'dist', 'host', 'bundle.js') : resolve(process.argv[2]);
 
 const NATIVE = ['@lydell/node-pty', '@serialport/*', 'node-hid', 'kerberos', 'cpu-features', '*.node'];
@@ -50,6 +57,7 @@ await build({
   // CommonJS packages bundled into an ES module still `require` Node's built-ins and read `__dirname`
   // (ssh2's Windows agent path).
   banner: { js: BANNER },
+  define: { __WIREBENCH_APP_VERSION__: JSON.stringify(appVersion) },
   // Stack traces map back to file and line; the sources themselves stay out of the image.
   sourcemap: 'linked',
   sourcesContent: false,
