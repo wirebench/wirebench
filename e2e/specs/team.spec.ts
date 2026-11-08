@@ -194,7 +194,11 @@ test.describe('teams and workspace roles', () => {
     await signIn(page, server.url, ALICE);
 
     await runCommand(page, 'Account: Manage team');
-    await expect.poll(opened, { timeout: 20_000 }).toEqual([`${server.url}/?panel=team`]);
+    // On the title bar's active team: the account's one team, by its id.
+    await expect.poll(opened, { timeout: 20_000 }).toHaveLength(1);
+    const [link] = await opened();
+    expect(link?.startsWith(`${server.url}/?panel=team&team=`)).toBe(true);
+    expect(link).toMatch(/[?&]team=[^&]+$/);
     await expect(page.getByTestId('team-dialog')).toHaveCount(0);
   });
 });
