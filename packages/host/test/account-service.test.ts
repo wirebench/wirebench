@@ -11,6 +11,7 @@ import type { ServerClient } from '../src/server-client.js';
 
 const URL_A = 'https://wb.test';
 const USER = { id: '01J8Z0000000000000000000AB', email: 'alice@example.com', displayName: 'Alice', serverAdmin: true };
+const PHOTO = '0123456789abcdef';
 const TOKEN = `wbs_${'A'.repeat(43)}`;
 const META = {
   name: 'wirebench-server',
@@ -119,10 +120,10 @@ describe('AccountService', () => {
     const changed = vi.fn();
     const s = service(client, secrets);
     s.onChange(changed);
-    const account = await s.signInLocal({ url: URL_A, email: 'alice@example.com', password: 'pw'.repeat(6) });
+    const account = await s.signInLocal({ url: URL_A, identifier: 'alice@example.com', password: 'pw'.repeat(6) });
     // eslint-disable-next-line @typescript-eslint/unbound-method -- expect() reads the mock fn, never calls it unbound
     expect(client.signInLocal).toHaveBeenCalledWith(URL_A, {
-      email: 'alice@example.com',
+      identifier: 'alice@example.com',
       password: 'pw'.repeat(6),
       device: { name: 'test-host' },
     });
@@ -150,8 +151,13 @@ describe('AccountService', () => {
   it('a second sign-in to the same server replaces the entry and the old secret', async () => {
     const secrets = fakeSecrets();
     const s = service(fakeClient(), secrets);
-    await s.signInLocal({ url: URL_A, email: 'alice@example.com', password: 'pw'.repeat(6), deviceName: 'first' });
-    await s.signInLocal({ url: URL_A, email: 'alice@example.com', password: 'pw'.repeat(6), deviceName: 'second' });
+    await s.signInLocal({ url: URL_A, identifier: 'alice@example.com', password: 'pw'.repeat(6), deviceName: 'first' });
+    await s.signInLocal({
+      url: URL_A,
+      identifier: 'alice@example.com',
+      password: 'pw'.repeat(6),
+      deviceName: 'second',
+    });
     expect(s.list()).toHaveLength(1);
     expect(s.list()[0]?.deviceName).toBe('second');
     expect(secrets.entries.size).toBe(1);
@@ -160,7 +166,7 @@ describe('AccountService', () => {
   it('serialises accounts.yaml writes: an un-awaited markSignedOut before remove does not resurrect the account on reload', async () => {
     const client = fakeClient();
     const s = service(client);
-    await s.signInLocal({ url: URL_A, email: 'alice@example.com', password: 'pw'.repeat(6) });
+    await s.signInLocal({ url: URL_A, identifier: 'alice@example.com', password: 'pw'.repeat(6) });
     s.markSignedOut(URL_A); // fire-and-forget write
     await s.remove(URL_A); // a second write, which must land on disk after the first
     const reloaded = service();
@@ -282,7 +288,7 @@ describe('AccountService', () => {
     const client = fakeClient({ signOut: vi.fn().mockRejectedValue(new WirebenchError('server-unreachable', 'down')) });
     const secrets = fakeSecrets();
     const s = service(client, secrets);
-    await s.signInLocal({ url: URL_A, email: 'alice@example.com', password: 'pw'.repeat(6) });
+    await s.signInLocal({ url: URL_A, identifier: 'alice@example.com', password: 'pw'.repeat(6) });
     await s.signOut(URL_A);
     // eslint-disable-next-line @typescript-eslint/unbound-method -- expect() reads the mock fn, never calls it unbound
     expect(client.signOut).toHaveBeenCalledWith(URL_A, TOKEN);
@@ -295,7 +301,7 @@ describe('AccountService', () => {
   it('remove revokes when signed in and drops the entry; markSignedOut flags an account the server no longer knows', async () => {
     const client = fakeClient();
     const s = service(client);
-    await s.signInLocal({ url: URL_A, email: 'alice@example.com', password: 'pw'.repeat(6) });
+    await s.signInLocal({ url: URL_A, identifier: 'alice@example.com', password: 'pw'.repeat(6) });
     s.markSignedOut(URL_A);
     expect(s.list()[0]?.signedOut).toBe(true);
     await s.remove(URL_A);
@@ -329,7 +335,7 @@ describe('AccountService', () => {
     const client = fakeClient();
     const secrets = fakeSecrets();
     const s = service(client, secrets);
-    await s.signInLocal({ url: URL_A, email: 'alice@example.com', password: 'pw'.repeat(6) });
+    await s.signInLocal({ url: URL_A, identifier: 'alice@example.com', password: 'pw'.repeat(6) });
 
     (client.me as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
       user: { ...USER, displayName: 'Alice L.' },
@@ -355,26 +361,49 @@ describe('AccountService', () => {
     expect(client.me).toHaveBeenCalledTimes(3);
   });
 
-  it('setDisplayName stores the new name and tells the listeners; an unknown server or the same name changes nothing', async () => {
+  it('setProfile stores the name, username and photo and tells the listeners; an unknown server or no change does nothing', async () => {
     const s = service();
-    await s.signInLocal({ url: URL_A, email: 'alice@example.com', password: 'pw'.repeat(6) });
+    await s.signInLocal({ url: URL_A, identifier: 'alice@example.com', password: 'pw'.repeat(6) });
     const changed = vi.fn();
     s.onChange(changed);
-    await s.setDisplayName('https://WB.test/x', 'Alice B');
-    expect(s.list()[0]?.displayName).toBe('Alice B');
+    await s.setProfile('https://WB.test/x', { displayName: 'Alice B', username: 'alice', photo: { version: PHOTO } });
+    expect(s.list()[0]).toMatchObject({ displayName: 'Alice B', username: 'alice', photo: { version: PHOTO } });
     expect(changed).toHaveBeenCalledTimes(1);
-    const file = parseYaml(await readFile(join(dir, ACCOUNTS_FILE), 'utf8')) as { servers: { displayName: string }[] };
-    expect(file.servers[0]?.displayName).toBe('Alice B');
-    await s.setDisplayName(URL_A, 'Alice B');
-    await s.setDisplayName('https://other.test', 'X');
+    type Stored = { servers: { displayName: string; username?: string; photo?: { version: string } }[] };
+    const file = parseYaml(await readFile(join(dir, ACCOUNTS_FILE), 'utf8')) as Stored;
+    expect(file.servers[0]).toMatchObject({ displayName: 'Alice B', username: 'alice', photo: { version: PHOTO } });
+    await s.setProfile(URL_A, { displayName: 'Alice B', photo: { version: PHOTO } });
+    await s.setProfile('https://other.test', { displayName: 'X' });
     expect(changed).toHaveBeenCalledTimes(1);
+    // Cleared fields leave the file rather than being written as null.
+    await s.setProfile(URL_A, { username: null, photo: null });
+    expect(changed).toHaveBeenCalledTimes(2);
+    const cleared = (parseYaml(await readFile(join(dir, ACCOUNTS_FILE), 'utf8')) as Stored).servers[0]!;
+    expect(cleared.displayName).toBe('Alice B');
+    expect('username' in cleared || 'photo' in cleared).toBe(false);
+  });
+
+  it('sign-in and refresh take the username and photo from the server’s answer', async () => {
+    const client = fakeClient();
+    (client.signInLocal as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      token: TOKEN,
+      user: { ...USER, username: 'alice', photo: { version: PHOTO } },
+    });
+    const s = service(client);
+    const account = await s.signInLocal({ url: URL_A, identifier: 'alice', password: 'pw'.repeat(6) });
+    expect(account).toMatchObject({ username: 'alice', photo: { version: PHOTO } });
+    // A server older than profiles has neither: the account follows it.
+    (client.me as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ user: USER, methods: { local: true, oidc: [] } });
+    await s.refresh(URL_A);
+    expect(s.list()[0]?.username).toBeUndefined();
+    expect(s.list()[0]?.photo).toBeUndefined();
   });
 
   it('refresh changes nothing when reading the token from the keychain fails', async () => {
     const client = fakeClient();
     const secrets = fakeSecrets();
     const s = service(client, secrets);
-    await s.signInLocal({ url: URL_A, email: 'alice@example.com', password: 'pw'.repeat(6) });
+    await s.signInLocal({ url: URL_A, identifier: 'alice@example.com', password: 'pw'.repeat(6) });
     secrets.get.mockRejectedValueOnce(new Error('keychain locked'));
     await s.refresh(URL_A);
     expect(s.list()[0]?.signedOut).toBeUndefined();

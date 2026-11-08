@@ -20,7 +20,7 @@ import {
 import { clearSessionCookie } from '../cookies.js';
 import { requireProvider, type IdentityEnv } from '../env.js';
 import { methodDisabled, originRefused } from '../errors.js';
-import { chargeKeys, emailKey, ipKey, rateLimit } from '../rate-limit.js';
+import { chargeKeys, identifierKey, ipKey, rateLimit } from '../rate-limit.js';
 import { sendSignInPage } from '../sign-in-page.js';
 import { mintSecret, pkceChallenge } from '../tokens.js';
 import { checkLocalCredentials } from './auth-local.js';
@@ -65,7 +65,7 @@ export const browserSignInRoutes =
         if (request.headers.origin !== url) throw originRefused();
         const redirectTo = safeRedirectPath(field(request.body, 'redirect_to'), url);
         // The same buckets as the desktop's route, so the two together get no more attempts.
-        const retryAfter = await chargeKeys(env.limiter, request.tenant, [ipKey(request), emailKey(request)]);
+        const retryAfter = await chargeKeys(env.limiter, request.tenant, [ipKey(request), identifierKey(request)]);
         if (retryAfter > 0) {
           reply.header('retry-after', String(retryAfter));
           return sendSignInPage(reply, env.ctx, {
@@ -74,12 +74,17 @@ export const browserSignInRoutes =
             redirectTo,
           });
         }
-        const email = field(request.body, 'email');
+        // `email` is what a page cached before usernames posts (ruling 8).
+        const identifier = field(request.body, 'identifier') ?? field(request.body, 'email');
         const password = field(request.body, 'password');
-        if (email === undefined || password === undefined)
-          return sendSignInPage(reply, env.ctx, { status: 400, message: 'Enter your email and password.', redirectTo });
+        if (identifier === undefined || password === undefined)
+          return sendSignInPage(reply, env.ctx, {
+            status: 400,
+            message: 'Enter your email or username and your password.',
+            redirectTo,
+          });
         const source = auditSource(request);
-        const checked = await checkLocalCredentials(env, request.tenant, source, email, password);
+        const checked = await checkLocalCredentials(env, request.tenant, source, identifier, password);
         if (!checked.ok)
           return sendSignInPage(reply, env.ctx, {
             status: toProblem(checked.error).status,

@@ -110,7 +110,9 @@ describe('account store', () => {
   });
 
   it('maps the codes a sign-in can fail with to copy, and falls back to the message', () => {
-    expect(signInErrorMessage({ code: 'identity-invalid-credentials', message: 'x' })).toBe('Wrong email or password.');
+    expect(signInErrorMessage({ code: 'identity-invalid-credentials', message: 'x' })).toBe(
+      'Wrong email, username or password.',
+    );
     expect(signInErrorMessage({ code: 'server-not-wirebench', message: 'x' })).toBe(
       'That address is not a Wirebench Server.',
     );

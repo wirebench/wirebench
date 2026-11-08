@@ -2,6 +2,8 @@ import {
   devicesResponseSchema,
   identityIdParamsSchema,
   meResponseSchema,
+  isValidUsername,
+  MAX_ABOUT_LENGTH,
   meUpdateRequestSchema,
   MIN_PASSWORD_LENGTH,
   passwordChangeRequestSchema,
@@ -10,21 +12,38 @@ import {
 } from '@wirebench/engine';
 import type { FastifyInstance } from 'fastify';
 import { announce, auditSource, recordAudit } from '../../context.js';
+import { isUsernameTaken } from '../../db/errors.js';
 import { jsonSchema } from '../../schema.js';
 import type { IdentityEnv } from '../env.js';
 import {
+  aboutInvalid,
   displayNameInvalid,
   invalidCredentials,
   methodDisabled,
   notFound,
   passwordTooShort,
   unauthenticated,
+  updateEmpty,
+  usernameInvalid,
+  usernameTaken,
 } from '../errors.js';
 import { isTokenExpired, requireUser } from '../guard.js';
 import { hashPassword, verifyPassword } from '../passwords.js';
+import { profileLimit } from '../profile-limit.js';
 import * as repo from '../repo.js';
 import { publicUser } from '../sessions.js';
 import * as twoFactorRepo from '../two-factor/repo.js';
+
+/**
+ * The about text as stored (ruling 13): line breaks folded to `\n`, every other control character dropped, then
+ * trimmed. It is shown as text everywhere, so nothing else is changed.
+ */
+export function cleanAbout(text: string): string {
+  return text
+    .replace(/\r\n?/g, '\n')
+    .replace(/[^\P{Cc}\n]/gu, '')
+    .trim();
+}
 
 export const meRoutes =
   (env: IdentityEnv) =>
@@ -48,7 +67,7 @@ export const meRoutes =
     app.patch(
       '/me',
       {
-        preHandler: requireUser,
+        preHandler: [requireUser, profileLimit(env, 'changes')],
         schema: {
           body: jsonSchema(meUpdateRequestSchema, { io: 'input' }),
           response: { 200: jsonSchema(meResponseSchema) },
@@ -56,25 +75,50 @@ export const meRoutes =
       },
       async (request) => {
         const caller = request.caller!;
-        const name = (request.body as MeUpdateRequest).name.trim();
+        const body = request.body as MeUpdateRequest;
+        if (body.name === undefined && body.username === undefined && body.about === undefined) throw updateEmpty();
+        const name = body.name === undefined ? undefined : body.name.trim();
         if (name === '') throw displayNameInvalid();
+        // `null` clears the username, and so does an empty one: the body's schema may hand a JSON null over as ''.
+        // Spec §2: typed in any case, stored lower-case, so `@Ada` and `@ada` are one name everywhere it shows.
+        const username = body.username === undefined ? undefined : (body.username ?? '').trim().toLowerCase() || null;
+        if (typeof username === 'string' && !isValidUsername(username)) throw usernameInvalid(username);
+        const about = body.about === undefined ? undefined : cleanAbout(body.about);
+        if (about !== undefined && about.length > MAX_ABOUT_LENGTH) throw aboutInvalid();
         return env.ctx.tenancy.db(request.tenant).transaction(async (tx) => {
           const user = await repo.findUserById(tx, caller.id);
           if (user === undefined) throw unauthenticated();
-          // An unchanged name is no change: nothing written, nothing audited.
-          if (user.displayName !== name) {
-            await repo.setDisplayName(tx, user.id, name);
-            // As SCIM records it (settings split ruling 3): the field, never the value.
+          // Only what differs is written and named (ruling 5): an unchanged field is no change.
+          const changes: { displayName?: string; username?: string | null; about?: string } = {};
+          if (name !== undefined && name !== user.displayName) changes.displayName = name;
+          if (username !== undefined && username?.toLowerCase() !== user.username?.toLowerCase()) {
+            if (username !== null) {
+              const holder = await repo.findUserByUsername(tx, username.toLowerCase());
+              if (holder !== undefined && holder.id !== user.id) throw usernameTaken();
+            }
+            changes.username = username;
+          }
+          if (about !== undefined && about !== user.about) changes.about = about;
+          const fields = Object.keys(changes);
+          if (fields.length > 0) {
+            try {
+              await repo.setProfile(tx, user.id, changes);
+            } catch (error) {
+              // Two people claiming one free name at once: the second meets the unique key.
+              if (isUsernameTaken(error)) throw usernameTaken();
+              throw error;
+            }
+            // The names of what changed, never the values (spec §9).
             await recordAudit(env.ctx.hooks, tx, {
               ...auditSource(request),
               action: 'user.updated',
               target: { kind: 'user', id: user.id },
-              details: { fields: 'displayName', via: 'self' },
+              details: { fields, via: 'self' },
             });
           }
           const methods = (await repo.signInMethodsOf(tx, [user.id])).get(user.id)!;
           const twoFactor = (await twoFactorRepo.twoFactorUsers(tx, [user.id])).has(user.id);
-          return { user: publicUser({ ...user, displayName: name }), methods, twoFactor };
+          return { user: publicUser({ ...user, ...changes }), methods, twoFactor };
         });
       },
     );

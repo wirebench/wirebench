@@ -67,7 +67,7 @@ describeDb('the sign-in page and local form sign-in (hosted spec §17.2)', () =>
       // form's login-CSRF check refuses, so no one could sign in.
       expect(res.headers['referrer-policy']).toBe('same-origin');
       expect(res.body).toContain('action="/sign-in/local"');
-      expect(res.body).toContain('name="email"');
+      expect(res.body).toContain('name="identifier"');
       expect(res.body).toContain('name="password"');
       expect(res.body).not.toContain('/sign-in/oidc');
       expect(res.body).not.toContain('/sign-in/saml');
@@ -201,7 +201,7 @@ describeDb('the sign-in page and local form sign-in (hosted spec §17.2)', () =>
       expect(wrong.statusCode).toBe(401);
       expect(unknown.statusCode).toBe(401);
       expect(wrong.body).toBe(unknown.body);
-      expect(wrong.body).toContain('The email or password is not right.');
+      expect(wrong.body).toContain('The email, username or password is not right.');
       expect(wrong.headers['content-security-policy']).toBe(CSP);
       expect(wrong.headers['referrer-policy']).toBe('same-origin');
       expect(sessionFrom(wrong)).toBeUndefined();

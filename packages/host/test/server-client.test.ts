@@ -93,7 +93,7 @@ describe('ServerClient', () => {
       exchange(401, { code: 'identity-invalid-credentials', message: 'nope' }),
     );
     const ok = await c.signInLocal('https://wb.test', {
-      email: 'a@b.co',
+      identifier: 'alice',
       password: 'p'.repeat(12),
       device: { name: 'Mac' },
     });
@@ -101,12 +101,12 @@ describe('ServerClient', () => {
     expect(sent[0]).toMatchObject({ method: 'POST', url: 'https://wb.test/api/v1/auth/local/sign-in' });
     expect(sent[0]?.headers['content-type']).toBe('application/json');
     expect(JSON.parse(new TextDecoder().decode(sent[0]?.body))).toEqual({
-      email: 'a@b.co',
+      identifier: 'alice',
       password: 'p'.repeat(12),
       device: { name: 'Mac' },
     });
     await expect(
-      c.signInLocal('https://wb.test', { email: 'a@b.co', password: 'x'.repeat(12), device: { name: 'Mac' } }),
+      c.signInLocal('https://wb.test', { identifier: 'a@b.co', password: 'x'.repeat(12), device: { name: 'Mac' } }),
     ).rejects.toMatchObject({ code: 'identity-invalid-credentials', message: 'nope', details: { status: 401 } });
   });
 
@@ -619,7 +619,7 @@ describe('ServerClient — renew and your own account (settings split §6)', () 
       exchange(200, [DEVICE]),
       exchange(204, ''),
     );
-    expect(await c.updateMe('https://wb.test', TOKEN, 'B')).toEqual({
+    expect(await c.updateMe('https://wb.test', TOKEN, { name: 'B' })).toEqual({
       user: { ...USER, displayName: 'B' },
       methods: METHODS,
     });
@@ -648,5 +648,121 @@ describe('ServerClient — renew and your own account (settings split §6)', () 
       );
     expect(failure).toMatchObject({ code: 'identity-invalid-credentials' });
     expect((failure as Error).message).not.toContain('old-password-1');
+  });
+});
+
+describe('ServerClient — user profile (user profile spec §6.2)', () => {
+  const USER_ID = '01J8ZC5Q0V7R3T9XK2M4N6P8QB';
+  const VERSION = '0123456789abcdef';
+  const body = (request: HttpRequest | undefined): unknown =>
+    request?.body === undefined ? undefined : JSON.parse(new TextDecoder().decode(request.body));
+  /** The smallest thing that reads as a WebP: `RIFF`, a size, `WEBP`, then whatever follows. */
+  const webp = (extra = 4): Uint8Array =>
+    new Uint8Array([
+      ...new TextEncoder().encode('RIFF'),
+      0,
+      0,
+      0,
+      0,
+      ...new TextEncoder().encode('WEBP'),
+      ...new Uint8Array(extra),
+    ]);
+  const bytes = (
+    status: number,
+    data: Uint8Array,
+    headers: Record<string, string> = { 'content-type': 'image/webp' },
+    truncated = false,
+  ): HttpExchange =>
+    ({
+      request: { url: '', method: 'GET', headers: {} },
+      status,
+      statusText: '',
+      headers,
+      rawHeaders: [],
+      body: data,
+      rawBody: data,
+      truncated,
+    }) as unknown as HttpExchange;
+
+  it('updateMe sends only the given fields, null clearing the username', async () => {
+    const { client: c, sent } = client(
+      exchange(200, { user: { ...USER, username: null }, methods: { local: true, oidc: [] } }),
+    );
+    await c.updateMe('https://wb.test', TOKEN, { username: null, about: 'Hi' });
+    expect(body(sent[0])).toEqual({ username: null, about: 'Hi' });
+  });
+
+  it('putImage sends the WebP as JSON and parses the version; deleteImage takes 204; profile reads the card', async () => {
+    const profile = {
+      id: USER_ID,
+      displayName: 'B',
+      email: 'b@b.co',
+      username: 'bee',
+      about: '',
+      photo: { version: VERSION },
+      cover: null,
+    };
+    const { client: c, sent } = client(exchange(200, { version: VERSION }), exchange(204, ''), exchange(200, profile));
+    expect(await c.putImage('https://wb.test', TOKEN, 'photo', 'UklGRg==')).toEqual({ version: VERSION });
+    await c.deleteImage('https://wb.test', TOKEN, 'cover');
+    expect(await c.profile('https://wb.test', TOKEN, USER_ID)).toEqual(profile);
+    expect(sent.map((r) => `${r.method} ${r.url}`)).toEqual([
+      'PUT https://wb.test/api/v1/me/images/photo',
+      'DELETE https://wb.test/api/v1/me/images/cover',
+      `GET https://wb.test/api/v1/users/${USER_ID}/profile`,
+    ]);
+    expect(body(sent[0])).toEqual({ contentType: 'image/webp', data: 'UklGRg==' });
+    expect(sent.map((r) => r.headers['authorization'])).toEqual(Array(3).fill(`Bearer ${TOKEN}`));
+  });
+
+  it('putImage keeps the server’s refusal code', async () => {
+    const { client: c } = client(exchange(413, { code: 'identity-image-too-large', message: 'Too large' }));
+    await expect(c.putImage('https://wb.test', TOKEN, 'cover', 'AAAA')).rejects.toMatchObject({
+      code: 'identity-image-too-large',
+      details: { status: 413 },
+    });
+  });
+
+  it('image answers a data: URL of the WebP bytes, asking within the cover’s byte cap', async () => {
+    const data = webp();
+    const { client: c, sent } = client(bytes(200, data, { 'content-type': 'image/webp; charset=binary' }));
+    expect(await c.image('https://wb.test', TOKEN, USER_ID, 'photo')).toBe(
+      `data:image/webp;base64,${Buffer.from(data).toString('base64')}`,
+    );
+    expect(sent[0]).toMatchObject({
+      method: 'GET',
+      url: `https://wb.test/api/v1/users/${USER_ID}/images/photo`,
+      followRedirects: false,
+      maxSizeBytes: 2 * 1024 * 1024 + 1,
+      tls: { ca: ['pem'] },
+    });
+    expect(sent[0]?.headers).toMatchObject({ accept: 'image/webp', authorization: `Bearer ${TOKEN}` });
+  });
+
+  it('image refuses anything but a whole WebP, and passes a 404 through as the server’s problem', async () => {
+    const answers = [
+      bytes(200, webp(), { 'content-type': 'image/png' }),
+      bytes(200, webp(), { 'content-type': 'text/html' }),
+      bytes(200, new TextEncoder().encode('<svg onload=alert(1)>'), { 'content-type': 'image/webp' }),
+      bytes(200, webp(), { 'content-type': 'image/webp' }, true),
+    ];
+    for (const answer of answers) {
+      await expect(client(answer).client.image('https://wb.test', TOKEN, USER_ID, 'cover')).rejects.toMatchObject({
+        code: 'server-bad-response',
+      });
+    }
+    await expect(
+      client(exchange(404, { code: 'identity-image-not-found', message: 'No image' })).client.image(
+        'https://wb.test',
+        TOKEN,
+        USER_ID,
+        'photo',
+      ),
+    ).rejects.toMatchObject({ code: 'identity-image-not-found', details: { status: 404 } });
+    await expect(
+      client(new Error('ECONNRESET')).client.image('https://wb.test', TOKEN, USER_ID, 'photo'),
+    ).rejects.toMatchObject({
+      code: 'server-unreachable',
+    });
   });
 });

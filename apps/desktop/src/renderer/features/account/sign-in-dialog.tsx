@@ -38,7 +38,8 @@ export function SignInDialog() {
   const [step, setStep] = useState<Step>('server');
   const [url, setUrl] = useState('');
   const [meta, setMeta] = useState<ServerMetaWire | undefined>(undefined);
-  const [email, setEmail] = useState('');
+  /** What the person typed to sign in with: an email or a username (user profile spec §5). */
+  const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [code, setCode] = useState('');
   const [invitedEmail, setInvitedEmail] = useState('');
@@ -64,7 +65,7 @@ export function SignInDialog() {
       setStep('server');
       setUrl(initialUrl ?? '');
       setMeta(undefined);
-      setEmail('');
+      setIdentifier('');
       setInvitedEmail('');
       setDisplayName('');
       setError(undefined);
@@ -111,10 +112,10 @@ export function SignInDialog() {
   };
 
   const signInLocal = async (): Promise<void> => {
-    if (busy || email.trim().length === 0 || password.length === 0) return;
+    if (busy || identifier.trim().length === 0 || password.length === 0) return;
     setBusy(true);
     setError(undefined);
-    const result = await ipc().account.signInLocal({ url, email: email.trim(), password });
+    const result = await ipc().account.signInLocal({ url, identifier: identifier.trim(), password });
     setBusy(false);
     if (!result.ok) {
       failed(result.error);
@@ -248,15 +249,18 @@ export function SignInDialog() {
               {meta.auth.local && (
                 <>
                   <label className={LABEL_CLASS} htmlFor="sign-in-email">
-                    Email
+                    Email or username
                   </label>
                   <input
                     id="sign-in-email"
                     data-testid="sign-in-email"
+                    type="text"
                     autoFocus
                     autoComplete="username"
-                    value={email}
-                    onChange={(event) => setEmail(event.target.value)}
+                    autoCapitalize="none"
+                    spellCheck={false}
+                    value={identifier}
+                    onChange={(event) => setIdentifier(event.target.value)}
                     className={INPUT_CLASS}
                   />
                   <label className={LABEL_CLASS} htmlFor="sign-in-password">
@@ -276,7 +280,7 @@ export function SignInDialog() {
                     <Button
                       variant="primary"
                       data-testid="sign-in-submit"
-                      disabled={busy || email.trim().length === 0 || password.length === 0}
+                      disabled={busy || identifier.trim().length === 0 || password.length === 0}
                       onClick={() => void signInLocal()}
                     >
                       {busy ? 'Signing in…' : 'Sign in'}

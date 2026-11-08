@@ -1,6 +1,6 @@
 import type { FastifyRequest } from 'fastify';
 import { describe, expect, it } from 'vitest';
-import { RateLimiter, callerKey, emailKey, ipKey } from '../../../src/identity/rate-limit.js';
+import { RateLimiter, callerKey, identifierKey, ipKey } from '../../../src/identity/rate-limit.js';
 import { scopeOf } from '../../../src/tenancy/scope.js';
 
 // The in-memory limiter is the entry's (pre-tenant); the tenant limiters' suites run against the table in
@@ -58,8 +58,16 @@ describe('the sign-in limiter keys (hosted edition spec §19.8 guard 5)', () => 
 
   it('lead with the tenant id, so the same address, email or user in two tenants are two keys', () => {
     expect(ipKey(request(ONE))).toBe(`${ONE.tenantId}:ip:203.0.113.7`);
-    expect(emailKey(request(ONE))).toBe(`${ONE.tenantId}:email:ada@example.com`);
+    expect(identifierKey(request(ONE))).toBe(`${ONE.tenantId}:email:ada@example.com`);
     expect(callerKey(request(ONE))).toBe(`${ONE.tenantId}:user:01JB3Z9K7Q4ZJ6X1V8W2M5N0AA`);
-    for (const key of [ipKey, emailKey, callerKey]) expect(key(request(ONE))).not.toBe(key(request(TWO)));
+    for (const key of [ipKey, identifierKey, callerKey]) expect(key(request(ONE))).not.toBe(key(request(TWO)));
+  });
+
+  it('keys a sign-in by its identifier, lower-cased, an email and a username apart (user profile spec §5)', () => {
+    const withBody = (body: object) => ({ tenant: ONE, body }) as unknown as FastifyRequest;
+    expect(identifierKey(withBody({ identifier: ' Ada.L ' }))).toBe(`${ONE.tenantId}:username:ada.l`);
+    expect(identifierKey(withBody({ identifier: 'Ada@Example.com' }))).toBe(`${ONE.tenantId}:email:ada@example.com`);
+    expect(identifierKey(withBody({ identifier: 'ada', email: 'x@example.com' }))).toBe(`${ONE.tenantId}:username:ada`);
+    expect(identifierKey(withBody({}))).toBeUndefined();
   });
 });

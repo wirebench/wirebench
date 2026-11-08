@@ -17,6 +17,7 @@ import { notFound, selfChange } from '../errors.js';
 import { requireServerAdmin } from '../guard.js';
 import { createPasswordReset } from '../invitations.js';
 import * as repo from '../repo.js';
+import { imageRef } from '../sessions.js';
 import * as twoFactorRepo from '../two-factor/repo.js';
 import { setUserDisabled } from '../user-state.js';
 
@@ -29,6 +30,8 @@ async function summaries(db: TenantQuerier, users: readonly repo.UserRow[]): Pro
     email: user.email,
     displayName: user.displayName,
     serverAdmin: user.serverAdmin,
+    username: user.username,
+    photo: imageRef(user.photo),
     ...(user.disabledAt !== null ? { disabledAt: user.disabledAt } : {}),
     // Spread into a plain mutable array: repo.SignInMethods.oidc is `readonly`, but the wire
     // schema's inferred UserSummary.oidc is not, so this array is copied rather than aliased.

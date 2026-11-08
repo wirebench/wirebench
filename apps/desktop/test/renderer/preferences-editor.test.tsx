@@ -945,6 +945,6 @@ describe('PreferencesEditor — what moved out (settings split spec §2)', () =>
     expect(within(nav).queryByRole('heading', { name: 'Account' })).toBeNull();
     // The status-bar switch went with Accounts (ruling 14): App settings search no longer finds it.
     fireEvent.change(screen.getByPlaceholderText('Search settings'), { target: { value: 'status bar' } });
-    expect(screen.queryByText('Show sign-in in the status bar')).toBeNull();
+    expect(screen.queryByText('Show your account at the top right')).toBeNull();
   });
 });

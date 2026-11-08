@@ -46,7 +46,7 @@ test.describe('server accounts', () => {
     await dialog.getByTestId('sign-in-email').fill(ALICE.email);
     await dialog.getByTestId('sign-in-password').fill('wrong password here');
     await dialog.getByTestId('sign-in-submit').click();
-    await expect(dialog.getByTestId('sign-in-error')).toHaveText('Wrong email or password.');
+    await expect(dialog.getByTestId('sign-in-error')).toHaveText('Wrong email, username or password.');
     await dialog.getByTestId('sign-in-password').fill(ALICE.password);
     await dialog.getByTestId('sign-in-submit').click();
     await expect(dialog).toBeHidden({ timeout: 20_000 });

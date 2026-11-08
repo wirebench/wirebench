@@ -15,9 +15,11 @@ import {
   pkce,
   WirebenchError,
   type AccountsFile,
+  type ImageRef,
   type InvitationLookupResponse,
   type MetaResponse,
   type ServerAccount,
+  type ServerUser,
   type SignInResponse,
   type TotpSetupResponse,
   type TwoFactorMethod,
@@ -87,6 +89,8 @@ interface EmbeddedAccount {
   userId: string;
   email: string;
   displayName: string;
+  username: string | null;
+  photo: ImageRef | null;
   /**
    * A `sec_` ref no store holds, renewed whenever the credential changes: `LiveClients` reconnects on a
    * new ref, as it does after a desktop sign-in.
@@ -94,6 +98,40 @@ interface EmbeddedAccount {
   tokenRef: string;
   /** The credential the ref was made for; kept in memory only. */
   token: string | undefined;
+}
+
+/**
+ * What the account keeps of your profile (user profile spec §7): enough for the account menu. `null` is none set;
+ * a field left out is not changed.
+ */
+export interface AccountProfileFields {
+  readonly displayName?: string;
+  readonly username?: string | null;
+  readonly photo?: ImageRef | null;
+}
+
+/** The profile fields of a `/me` or sign-in answer; a server that predates profiles has neither, so none. */
+export function profileFieldsOf(user: ServerUser): Required<AccountProfileFields> {
+  return { displayName: user.displayName, username: user.username ?? null, photo: user.photo ?? null };
+}
+
+/** `account` with `fields` applied, or `undefined` when nothing differs. Absent stands for `null` in the file. */
+function withProfile(account: ServerAccount, fields: AccountProfileFields): ServerAccount | undefined {
+  const displayName = fields.displayName ?? account.displayName;
+  const username = fields.username === undefined ? (account.username ?? null) : fields.username;
+  const photo = fields.photo === undefined ? (account.photo ?? null) : fields.photo;
+  if (
+    displayName === account.displayName &&
+    username === (account.username ?? null) &&
+    photo?.version === account.photo?.version
+  )
+    return undefined;
+  const next: { -readonly [K in keyof ServerAccount]: ServerAccount[K] } = { ...account, displayName };
+  delete next.username;
+  delete next.photo;
+  if (username !== null) next.username = username;
+  if (photo !== null) next.photo = { version: photo.version };
+  return next;
 }
 
 function freshTokenRef(): string {
@@ -167,6 +205,8 @@ export class AccountService {
         userId: '',
         email: '',
         displayName: '',
+        username: null,
+        photo: null,
         tokenRef: freshTokenRef(),
         token: deps.embedded.credential(),
       };
@@ -214,14 +254,16 @@ export class AccountService {
    */
   async signInLocal(input: {
     readonly url: string;
-    readonly email: string;
+    /** An email or a username, as typed. */
+    readonly identifier: string;
     readonly password: string;
     readonly deviceName?: string;
   }): Promise<ServerAccount | TwoFactorStep> {
     const origin = this.notEmbedded(normalizeServerUrl(input.url));
     const deviceName = this.deviceName(input.deviceName);
+    // User profile spec §5: the server tells an email (it holds `@`) from a username.
     const response = await this.deps.client.signInLocal(origin, {
-      email: input.email,
+      identifier: input.identifier,
       password: input.password,
       device: { name: deviceName },
     });
@@ -547,8 +589,9 @@ export class AccountService {
         return;
       }
       const me = await this.deps.client.me(account.url, token);
-      if (me.user.email !== account.email || me.user.displayName !== account.displayName) {
-        await this.replace(account.url, { ...account, email: me.user.email, displayName: me.user.displayName });
+      const next = withProfile({ ...account, email: me.user.email }, profileFieldsOf(me.user));
+      if (next !== undefined || me.user.email !== account.email) {
+        await this.replace(account.url, next ?? { ...account, email: me.user.email });
       }
     } catch (error) {
       if (error instanceof WirebenchError && error.code === 'identity-unauthenticated') {
@@ -562,20 +605,21 @@ export class AccountService {
   }
 
   /**
-   * The server took a new display name for you (`PATCH /me`): the stored account follows without asking `me`
-   * again. The embedder's account changes in memory only, as it is never stored.
+   * The server answered with your profile (`GET` or `PATCH /me`, an image upload or removal): the stored
+   * account takes the name, username and photo without asking `me` again, so the Accounts list and the account
+   * menu follow. The embedder's account changes in memory only, as it is never stored. Nothing changed, nothing
+   * is written and no listener is told.
    */
-  async setDisplayName(url: string, displayName: string): Promise<void> {
+  async setProfile(url: string, fields: AccountProfileFields): Promise<void> {
     const origin = normalizeServerUrl(url);
     if (origin === this.embedded?.origin) {
-      if (this.embedded.displayName === displayName) return;
-      this.embedded.displayName = displayName;
-      this.notify();
+      if (this.applyEmbeddedProfile(this.embedded, fields)) this.notify();
       return;
     }
     const account = this.find(origin);
-    if (account === undefined || account.displayName === displayName) return;
-    await this.replace(origin, { ...account, displayName });
+    const next = account === undefined ? undefined : withProfile(account, fields);
+    if (next === undefined) return;
+    await this.replace(origin, next);
   }
 
   /** {@link refresh} for every signed-in account, in parallel; called once after {@link load}. */
@@ -600,7 +644,27 @@ export class AccountService {
       tokenRef: embedded.tokenRef,
       ...(embedded.credential() === undefined ? { signedOut: true as const } : {}),
       addedAt: embedded.addedAt,
+      ...(embedded.username !== null ? { username: embedded.username } : {}),
+      ...(embedded.photo !== null ? { photo: embedded.photo } : {}),
     };
+  }
+
+  /** {@link setProfile} on the embedder's account; true when anything changed. */
+  private applyEmbeddedProfile(embedded: EmbeddedAccount, fields: AccountProfileFields): boolean {
+    let changed = false;
+    if (fields.displayName !== undefined && fields.displayName !== embedded.displayName) {
+      embedded.displayName = fields.displayName;
+      changed = true;
+    }
+    if (fields.username !== undefined && fields.username !== embedded.username) {
+      embedded.username = fields.username;
+      changed = true;
+    }
+    if (fields.photo !== undefined && fields.photo?.version !== embedded.photo?.version) {
+      embedded.photo = fields.photo === null ? null : { version: fields.photo.version };
+      changed = true;
+    }
+    return changed;
   }
 
   /**
@@ -618,16 +682,12 @@ export class AccountService {
     if (token !== undefined) {
       try {
         const me = await this.deps.client.me(embedded.origin, token);
-        if (
-          me.user.id !== embedded.userId ||
-          me.user.email !== embedded.email ||
-          me.user.displayName !== embedded.displayName
-        ) {
+        if (me.user.id !== embedded.userId || me.user.email !== embedded.email) {
           embedded.userId = me.user.id;
           embedded.email = me.user.email;
-          embedded.displayName = me.user.displayName;
           changed = true;
         }
+        if (this.applyEmbeddedProfile(embedded, profileFieldsOf(me.user))) changed = true;
       } catch {
         // Offline or refused: what the embedder says about its session is what counts.
       }
@@ -673,8 +733,9 @@ export class AccountService {
       tokenRef,
       addedAt: previous?.addedAt ?? (this.deps.now ?? (() => new Date()))().toISOString(),
     };
-    await this.replace(origin, account);
-    return account;
+    const signedIn = withProfile(account, profileFieldsOf(response.user)) ?? account;
+    await this.replace(origin, signedIn);
+    return signedIn;
   }
 
   private async replace(origin: string, account: ServerAccount): Promise<void> {

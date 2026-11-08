@@ -222,7 +222,7 @@ The metadata is read once, at start-up. When the IdP rotates its signing certifi
 The automated tests sign responses with a test key. Before each release that changes sign-in or SCIM, run
 these against a real Entra ID tenant and a real Okta org:
 
-- [ ] Sign in from the app with _Continue with …_; the status bar shows the account.
+- [ ] Sign in from the app with _Continue with …_; the top right of the title bar shows the account.
 - [ ] A person created at the IdP appears as an account, with the right name and email.
 - [ ] Changing their name at the IdP changes it in Wirebench.
 - [ ] Deactivating them disables the account and signs their app out.

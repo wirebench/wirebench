@@ -86,7 +86,8 @@ describe('AccountService, two-step sign-in (two-step sign-in spec §4.2, §4.3)'
       defaultDeviceName: () => 'test-host',
       now: () => clock,
     });
-  const password = (s: AccountService) => s.signInLocal({ url: URL_A, email: 'alice@example.com', password: PASSWORD });
+  const password = (s: AccountService) =>
+    s.signInLocal({ url: URL_A, identifier: 'alice@example.com', password: PASSWORD });
 
   it('signInLocal holds the challenge and answers the methods only', async () => {
     const s = service(fakeClient());

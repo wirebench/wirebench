@@ -97,16 +97,21 @@ describeDb('scoped tables outside a tenant unit (hosted spec §19.4, plan Task 1
     );
     // 0024's claim.
     await tdb.query("insert into custom_domains (name, token) values ('app.customer.test', 'token-0024')");
-    // 0026's four (two-step sign-in spec §7).
-    await tdb.query("insert into identity_totp (user_id, sealed_secret) values ($1, '\\x00'::bytea)", [admin!.id]);
+    // 0026's image.
     await tdb.query(
-      "insert into identity_passkeys (id, user_id, credential_id, public_key, name) values ('passkey-0026', $1, '\\x01'::bytea, '\\x02'::bytea, 'Laptop')",
+      "insert into user_images (user_id, kind, content_type, data, sha256) values ($1, 'photo', 'image/webp', '\\x00', 'sha')",
       [admin!.id],
     );
-    await tdb.query("insert into identity_recovery_codes (user_id, code_hash) values ($1, 'code-0026')", [admin!.id]);
+    // 0027's four (two-step sign-in spec §7).
+    await tdb.query("insert into identity_totp (user_id, sealed_secret) values ($1, '\\x00'::bytea)", [admin!.id]);
+    await tdb.query(
+      "insert into identity_passkeys (id, user_id, credential_id, public_key, name) values ('passkey-0027', $1, '\\x01'::bytea, '\\x02'::bytea, 'Laptop')",
+      [admin!.id],
+    );
+    await tdb.query("insert into identity_recovery_codes (user_id, code_hash) values ($1, 'code-0027')", [admin!.id]);
     await tdb.query(
       `insert into identity_two_factor_challenges (id, user_id, secret_hash, purpose, expires_at)
-       values ('challenge-0026', $1, 'hash-0026', 'register', now() + interval '1 minute')`,
+       values ('challenge-0027', $1, 'hash-0027', 'register', now() + interval '1 minute')`,
       [admin!.id],
     );
   });

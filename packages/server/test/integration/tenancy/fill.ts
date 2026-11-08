@@ -577,7 +577,13 @@ export async function fill(t: TwoTenants, tenant: Tenant): Promise<Filled> {
     tenant.scope.tenantId,
   ]);
 
-  // ---- 0026's tables (two-step sign-in spec §7): a row each by hand, each carrying the slug.
+  // ---- 0026's profile photo, by hand: a few bytes stand for the image, which no check reads here.
+  await tenant.tdb.query(
+    "insert into user_images (user_id, kind, content_type, data, sha256, updated_at) values ($1, 'photo', 'image/webp', $2, $3, $4)",
+    [browser.user.id, Buffer.from(`photo of ${slug}`), sha256(`photo of ${slug}`), at],
+  );
+
+  // ---- 0027's tables (two-step sign-in spec §7): a row each by hand, each carrying the slug.
   await tenant.tdb.query('insert into identity_totp (user_id, sealed_secret, confirmed_at) values ($1, $2, $3)', [
     browser.user.id,
     Buffer.from(`totp-${slug}`),

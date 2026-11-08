@@ -79,7 +79,7 @@ test.afterAll(async () => {
 
 async function passwordStep(): Promise<void> {
   await page.goto('/sign-in');
-  await page.locator('#email').fill(seed.existingEmail);
+  await page.locator('#identifier').fill(seed.existingEmail);
   await page.locator('#password').fill(seed.existingPassword);
   await page.getByRole('button', { name: 'Sign in' }).click();
 }

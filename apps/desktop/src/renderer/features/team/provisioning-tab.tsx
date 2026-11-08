@@ -62,6 +62,8 @@ export function ProvisioningTab({
   }, [url]);
 
   if (store.errorCode === 'licensing-feature-required') {
+    // Beside the Server page's own SCIM card, which already says it needs Enterprise, a second note only repeats it.
+    if (!scim) return null;
     return (
       <div data-testid="provisioning-tab" className="flex flex-col gap-3 text-sm">
         <p data-testid="provisioning-gated" role="status">

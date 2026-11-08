@@ -90,6 +90,7 @@ const EXPECTED_GRANTS: Readonly<Record<string, readonly string[]>> = {
   // Unscoped (spec §23.3): the custom-domains module holds, marks live and releases its tenant's name.
   tenant_hosts: DML,
   tenants: DML,
+  user_images: DML,
   users: DML,
   workspace_grants: DML,
   workspaces: DML,

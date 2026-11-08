@@ -12,6 +12,7 @@ import type { ServerContext, ServerModule } from '../context.js';
 import { identitySettings, type IdentityEnv } from './env.js';
 import { authenticate, type BearerFallback } from './guard.js';
 import { discoverOidc, type OidcProvider, type OidcSettings } from './oidc.js';
+import { profileLimiters } from './profile-limit.js';
 import { TenantRateLimiter } from './rate-limit.js';
 import { authLocalRoutes } from './routes/auth-local.js';
 import { meTwoFactorRoutes } from './routes/me-two-factor.js';
@@ -21,6 +22,7 @@ import { browserSignInRoutes } from './routes/browser-sign-in.js';
 import { invitationRoutes } from './routes/invitations.js';
 import { invitePageRoutes } from './routes/invite-page.js';
 import { meRoutes } from './routes/me.js';
+import { profileRoutes } from './routes/profiles.js';
 import { userRoutes } from './routes/users.js';
 import { settingsRoutes } from '../settings/routes.js';
 import { sweepExpired } from './sessions.js';
@@ -93,6 +95,7 @@ export function identityModule(options: IdentityOptions = {}): ServerModule {
           ...(options.now !== undefined ? { now: () => now().getTime() } : {}),
         }),
       },
+      profileLimiters: profileLimiters(ctx.tenancy.db, options.now !== undefined ? () => now().getTime() : undefined),
       providerFor,
       ...(ctx.config.mode === 'hosted'
         ? { oidcOffered: async (scope: TenantScope) => (await ctx.settings.of(scope, 'oidc')) !== undefined }
@@ -145,6 +148,7 @@ export function identityModule(options: IdentityOptions = {}): ServerModule {
       authOidcRoutes(identity)(app);
       meRoutes(identity)(app);
       meTwoFactorRoutes(identity)(app);
+      profileRoutes(identity)(app);
       invitationRoutes(identity)(app);
       userRoutes(identity)(app);
       // Spec §22.12: a tenant's settings, for its server admins; behind identity's guard, as the user routes are.

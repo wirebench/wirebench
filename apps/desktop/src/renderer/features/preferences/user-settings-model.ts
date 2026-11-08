@@ -16,7 +16,7 @@ export const USER_NAV: readonly { readonly title: 'You' | 'Access'; readonly pag
   {
     title: 'You',
     pages: [
-      { id: 'profile', label: 'Profile', subtitle: 'Your name, email and how you sign in.' },
+      { id: 'profile', label: 'Profile', subtitle: 'Your photo, name, username and a few words about you.' },
       { id: 'password', label: 'Password', subtitle: 'Change the password you sign in with.' },
     ],
   },

@@ -24,6 +24,7 @@ import { newTotpSecret, stepAt, totpAt } from '../../../src/identity/two-factor/
 import type { SignedInUser } from '../../helpers/identity.js';
 import { license } from '../../helpers/licensing.js';
 import { SoftAuthenticator } from '../../helpers/soft-authenticator.js';
+import { webpFor } from '../../helpers/webp.js';
 import {
   bearer,
   cookie,
@@ -475,6 +476,16 @@ export const ROUTE_MAP: Readonly<Record<string, RouteCase>> = {
       return json(ctx, 'PATCH', api('/me'), { name: 'Renamed' }, bearer(user));
     },
   },
+  'PUT /api/v1/me/images/:kind': {
+    cls: 'own',
+    // A user of the sender's own: uploads are limited per person (user profile ruling 12).
+    request: async (ctx) => {
+      const user = await fresh.user(ctx.from.tenant);
+      const data = webpFor('photo').toString('base64');
+      return json(ctx, 'PUT', api('/me/images/photo'), { contentType: 'image/webp', data }, bearer(user));
+    },
+  },
+  'DELETE /api/v1/me/images/:kind': { cls: 'own', request: (ctx) => json(ctx, 'DELETE', api('/me/images/cover')) },
   'POST /api/v1/me/password': {
     cls: 'own',
     // A user of the sender's of their own: a change of password ends their other sessions.
@@ -748,6 +759,15 @@ export const ROUTE_MAP: Readonly<Record<string, RouteCase>> = {
     }),
   },
   'GET /api/v1/users': { cls: 'own', request: (ctx) => json(ctx, 'GET', api('/users')) },
+  // The fill gives A's browser user a photo; B's units cannot see it, nor A's people.
+  'GET /api/v1/users/:id/images/:kind': {
+    cls: 'refused',
+    request: (ctx) => json(ctx, 'GET', api(`/users/${ctx.a.browser.user.id}/images/photo`)),
+  },
+  'GET /api/v1/users/:id/profile': {
+    cls: 'refused',
+    request: (ctx) => json(ctx, 'GET', api(`/users/${ctx.a.member.user.id}/profile`)),
+  },
   'PATCH /api/v1/users/:id': {
     cls: 'refused',
     request: (ctx) => json(ctx, 'PATCH', api(`/users/${ctx.a.member.user.id}`), { disabled: false }),

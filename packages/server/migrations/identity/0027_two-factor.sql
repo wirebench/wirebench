@@ -1,4 +1,4 @@
--- Wirebench Server 0026: two-step sign-in (two-step sign-in spec §7). Four tables, scoped as 0021 scopes its
+-- Wirebench Server 0027: two-step sign-in (two-step sign-in spec §7). Four tables, scoped as 0021 scopes its
 -- tables: `tenant_id` defaulting to the setting, first in every key, then `tenant_scope()`.
 --
 -- - `identity_totp`: a person's authenticator secret, sealed under a key derived from the tenant's data key and the

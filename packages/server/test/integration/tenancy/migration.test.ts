@@ -47,6 +47,7 @@ import type { Querier } from '../../../src/db/querier.js';
 import { TenantAdmin } from '../../../src/tenancy/directory.js';
 import { tenantDbFactory, type TenantDb } from '../../../src/tenancy/tenant-db.js';
 import { createTenancy, directoryOf } from '../../../src/tenancy/tenancy.js';
+import { addProfileSchema, dropProfileSchema } from '../../helpers/profile-schema.js';
 import { license, licensingHarness, testKeys } from '../../helpers/licensing.js';
 
 /** Where the rollback test cuts 0020: the foreign keys are gone, no key is rebuilt yet. */
@@ -357,6 +358,16 @@ describeDb('migration 0020 on the frozen 0019 fixture (hosted spec §19.3, §19.
   });
 
   it('serves the hot lookups from an index until 0021', async () => {
+    // The user queries read 0026's columns, which this schema at 0020 is given for the explain only.
+    await addProfileSchema(db.owner);
+    try {
+      await explainHotLookups();
+    } finally {
+      await dropProfileSchema(db.owner);
+    }
+  });
+
+  async function explainHotLookups(): Promise<void> {
     const plans: string[] = [];
     const explaining = {
       query: async <R extends Record<string, unknown>>(text: string, params?: readonly unknown[]) => {
@@ -391,7 +402,7 @@ describeDb('migration 0020 on the frozen 0019 fixture (hosted spec §19.3, §19.
     expect(ciToken).toMatch(/Index Scan using ci_tokens_token_hash_key(_0019)? /);
     expect(scimToken).toMatch(/Index Scan using scim_tokens_token_hash_key(_0019)? /);
     for (const plan of plans) expect(plan).not.toMatch(/Seq Scan/);
-  });
+  }
 
   it('rewrites no table: every storage file is the same, and each tenant_id is a missing-value default', async () => {
     const now = await filenodes();
@@ -576,6 +587,8 @@ describeDb('migration 0020 on the frozen 0019 fixture (hosted spec §19.3, §19.
       db.owner,
       (await allMigrations(BUILTIN_MODULES)).filter((m) => m.version === 22),
     );
+    // So do the user queries 0026's columns, which nothing after this test compares.
+    await addProfileSchema(db.owner);
     await db.grant();
     const keys = testKeys();
     const h = await licensingHarness(keys, {
@@ -674,7 +687,7 @@ describeDb('migration 0021 on the frozen 0019 fixture: forced isolation (hosted 
     const started = performance.now();
     const { applied } = await migrate(db.owner, await allMigrations(BUILTIN_MODULES));
     console.info(`[tenancy] 0020 and 0021 on the 0019 fixture: ${(performance.now() - started).toFixed(0)} ms`);
-    expect(applied).toEqual([20, 21, 22, 23, 24, 25, 26]);
+    expect(applied).toEqual([20, 21, 22, 23, 24, 25, 26, 27]);
     await db.grant();
     tenantId = (await db.owner.query<{ id: string }>('select default_tenant_id as id from server_identity')).rows[0]!
       .id;

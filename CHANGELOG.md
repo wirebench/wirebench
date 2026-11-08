@@ -7,6 +7,12 @@ All notable changes to this project are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Profiles: photo, cover, username and about.** User settings → Profile lets you add a photo and a cover image
+  (cropped and resized in the app, saved as WebP), a username that is unique on the server and can be typed in place
+  of your email to sign in with your password, and up to 500 characters about yourself. Your photo shows in the
+  account menu and on People, and clicking a person on People opens their profile card. The server re-checks every
+  image, refuses ones carrying location or camera details, and rate-limits profile changes and uploads; people who
+  share no team with you cannot open your profile.
 - **Two-step sign-in.** A Wirebench Server account with a password can add a second step: an authenticator app
   (6-digit codes) or passkeys, with ten one-use recovery codes. Set it up on **User settings → Password**; after the
   password, the sign-in page and the desktop's Sign in dialog ask for a code, a recovery code or a passkey (the
@@ -20,8 +26,11 @@ All notable changes to this project are documented here. The format follows
   for the desktop app, which keeps working as before.
 - **User settings.** You, on every server you sign in to, in one place: **Profile** (edit your name, see your email
   and how you sign in), **Password**, **Servers you're signed in to**, **Signed-in devices** (sign any other device
-  out) and **CI tokens**. Open it with **Account settings…** in the status bar's account menu or **Account: Account
-  settings** in the palette. With several servers signed in, a picker chooses which one the pages show.
+  out) and **CI tokens**. Open it with **Account settings…** in the account menu at the top right or **Account:
+  Account settings** in the palette. The account menu (your email, Account settings, Signed-in devices, Manage team,
+  Sign out) moved from the status bar to the title bar's top right. With several servers signed in, a picker
+  chooses which one the pages show. Team settings' Workspaces page shows each workspace as a card: its name, your
+  role, Access… and Delete, then labelled rows for default access, recording and features.
 - **Team settings in the browser.** The browser client manages a team on a settings page of its own, in place of
   the Team dialog: a team switcher, then **This team** (Overview, People, Workspaces, What roles can do) and, for
   server admins, **Server** (License and seats, Sign-in, Provisioning, Domain, Email, Audit log, Audit forwarding,

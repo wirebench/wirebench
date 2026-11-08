@@ -29,6 +29,9 @@ export interface FakeUser {
   readonly password: string;
   readonly displayName: string;
   readonly serverAdmin?: boolean;
+  /** User profile spec §2: signs in in place of the email; stored lower-case. */
+  readonly username?: string;
+  readonly about?: string;
   /** Two-step sign-in on (two-step sign-in spec §3.1): the password answers a second step, which this code finishes. */
   readonly twoFactorCode?: string;
 }
@@ -432,9 +435,15 @@ function diffTrees(from: ReadonlyMap<string, FakeSyncFile>, to: ReadonlyMap<stri
  * server behind the same origin (live-updates spec §7).
  */
 export async function startFakeServer(options: FakeServerOptions = {}): Promise<FakeServer> {
-  const users = new Map(
+  const users = new Map<string, FakeUser & { readonly id: string }>(
     (options.users ?? []).map((user) => [user.email.toLowerCase(), { ...user, id: `u-${user.email}` }]),
   );
+  /** Profile images by `userId|kind` (user profile spec §6.2): the bytes the app uploaded and their version. */
+  const images = new Map<string, { readonly data: Buffer; readonly version: string }>();
+  const imageRef = (userId: string, kind: string): { version: string } | null => {
+    const image = images.get(`${userId}|${kind}`);
+    return image === undefined ? null : { version: image.version };
+  };
   const invitations = new Map<string, FakeInvitation>(Object.entries(options.invitations ?? {}));
   const capabilities = [
     ...(options.capabilities ?? ['sync', LIVE_CAPABILITY]),
@@ -607,6 +616,8 @@ export async function startFakeServer(options: FakeServerOptions = {}): Promise<
       role: membership.role,
       disabled: false,
       addedAt: membership.addedAt,
+      username: user.username ?? null,
+      photo: imageRef(user.id, 'photo'),
     };
   };
   const toWorkspace = (ws: WorkspaceRow, access: { role: WorkspaceRole; source: RoleSource }) => ({
@@ -1465,7 +1476,117 @@ export async function startFakeServer(options: FakeServerOptions = {}): Promise<
 
   const userOf = (email: string) => {
     const user = users.get(email.toLowerCase())!;
-    return { id: user.id, email: user.email, displayName: user.displayName, serverAdmin: user.serverAdmin ?? false };
+    return {
+      id: user.id,
+      email: user.email,
+      displayName: user.displayName,
+      serverAdmin: user.serverAdmin ?? false,
+      username: user.username ?? null,
+      about: user.about ?? '',
+      photo: imageRef(user.id, 'photo'),
+      cover: imageRef(user.id, 'cover'),
+    };
+  };
+  /**
+   * User profile spec §6.2, as far as the app's flows need it: `PATCH /me`, `PUT`/`DELETE /me/images/:kind`,
+   * `GET /users/:id/images/:kind` and `GET /users/:id/profile`. The real checks (WebP header, dimensions, reserved
+   * names, rate limits) live in `packages/server`; this one refuses a malformed or taken username only.
+   */
+  const serveProfile = async (
+    request: IncomingMessage,
+    response: ServerResponse,
+    path: URL,
+    email: string | undefined,
+  ): Promise<boolean> => {
+    const me = path.pathname === '/api/v1/me' && request.method === 'PATCH';
+    const myImage = /^\/api\/v1\/me\/images\/(photo|cover)$/.exec(path.pathname);
+    const theirs = /^\/api\/v1\/users\/([^/]+)\/(profile|images\/(photo|cover))$/.exec(path.pathname);
+    if (!me && myImage === null && theirs === null) return false;
+    if (email === undefined) {
+      problem(response, 401, 'identity-unauthenticated');
+      return true;
+    }
+    const self = userByEmail(email)!;
+    if (me) {
+      const body = (await readJson(request)) as { name?: string; username?: string | null; about?: string };
+      let next = { ...self };
+      if (body.name !== undefined) next = { ...next, displayName: body.name.trim() };
+      if (body.about !== undefined) next = { ...next, about: body.about.trim() };
+      if (body.username === null) {
+        const cleared: { -readonly [K in keyof typeof next]: (typeof next)[K] } = { ...next };
+        delete cleared.username;
+        next = cleared;
+      } else if (body.username !== undefined) {
+        const username = body.username.toLowerCase();
+        if (!/^[a-z0-9][a-z0-9._-]{2,29}$/.test(username)) {
+          problem(response, 400, 'identity-username-invalid');
+          return true;
+        }
+        if ([...users.values()].some((user) => user.username === username && user.id !== self.id)) {
+          problem(response, 409, 'identity-username-taken');
+          return true;
+        }
+        next = { ...next, username };
+      }
+      users.set(self.email.toLowerCase(), next);
+      send(response, 200, { user: userOf(email), methods: { local: true, oidc: [] } });
+      return true;
+    }
+    if (myImage !== null) {
+      const key = `${self.id}|${myImage[1]!}`;
+      if (request.method === 'DELETE') {
+        images.delete(key);
+        send(response, 204);
+        return true;
+      }
+      if (request.method !== 'PUT') return false;
+      const body = (await readJson(request)) as { contentType?: string; data?: string };
+      const data = Buffer.from(body.data ?? '', 'base64');
+      if (body.contentType !== 'image/webp' || data.subarray(8, 12).toString('latin1') !== 'WEBP') {
+        problem(response, 400, 'identity-image-invalid');
+        return true;
+      }
+      const version = createHash('sha256').update(data).digest('hex').slice(0, 16);
+      images.set(key, { data, version });
+      send(response, 200, { version });
+      return true;
+    }
+    if (request.method !== 'GET') return false;
+    const userId = decodeURIComponent(theirs![1]!);
+    const person = userById(userId);
+    if (theirs![3] !== undefined) {
+      const image = person === undefined ? undefined : images.get(`${person.id}|${theirs![3]}`);
+      if (image === undefined) {
+        problem(response, 404, 'identity-image-not-found');
+        return true;
+      }
+      response.writeHead(200, {
+        'content-type': 'image/webp',
+        'x-content-type-options': 'nosniff',
+        'cache-control': 'private, max-age=86400',
+      });
+      response.end(image.data);
+      return true;
+    }
+    // A profile is for the person, a team mate or a server admin; anyone else is told it does not exist.
+    const mate = (other: string): boolean =>
+      [...teams.values()].some((team) => team.members.has(email.toLowerCase()) && team.members.has(other));
+    const visible =
+      person !== undefined && (person.id === self.id || self.serverAdmin === true || mate(person.email.toLowerCase()));
+    if (!visible) {
+      problem(response, 404, 'identity-user-not-found');
+      return true;
+    }
+    send(response, 200, {
+      id: person.id,
+      displayName: person.displayName,
+      email: person.email,
+      username: person.username ?? null,
+      about: person.about ?? '',
+      photo: imageRef(person.id, 'photo'),
+      cover: imageRef(person.id, 'cover'),
+    });
+    return true;
   };
   const issue = (response: ServerResponse, email: string): void => {
     const token = newToken();
@@ -1734,8 +1855,12 @@ export async function startFakeServer(options: FakeServerOptions = {}): Promise<
         return issue(response, options.saml.email);
       }
       if (request.method === 'POST' && path.pathname === '/api/v1/auth/local/sign-in') {
-        const body = (await readJson(request)) as { email: string; password: string };
-        const user = users.get(body.email.toLowerCase());
+        // User profile spec §5: `identifier` holding `@` is an email, anything else a username; `email` is the old body.
+        const body = (await readJson(request)) as { identifier?: string; email?: string; password: string };
+        const identifier = (body.identifier ?? body.email ?? '').toLowerCase();
+        const user = identifier.includes('@')
+          ? users.get(identifier)
+          : [...users.values()].find((candidate) => candidate.username === identifier);
         if (user === undefined || user.password !== body.password)
           return problem(response, 401, 'identity-invalid-credentials');
         const twoFactorCode = (options.users ?? []).find((one) => one.email === user.email)?.twoFactorCode;
@@ -1794,6 +1919,7 @@ export async function startFakeServer(options: FakeServerOptions = {}): Promise<
         if (email === undefined) return problem(response, 401, 'identity-unauthenticated');
         return send(response, 200, { user: userOf(email), methods: { local: true, oidc: [] } });
       }
+      if (await serveProfile(request, response, path, email)) return;
       if (
         path.pathname === '/api/v1/auth/saml/info' ||
         path.pathname.startsWith('/api/v1/scim-tokens') ||

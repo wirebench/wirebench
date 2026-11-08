@@ -7,7 +7,7 @@
  * transform, so the handler trims and re-checks the length (`teams-name-invalid`).
  */
 import { z } from 'zod';
-import { emailSchema } from './identity.js';
+import { emailSchema, imageRefSchema } from './identity.js';
 
 /**
  * Crockford base32 ULID, upper case, 26 characters: what `ulidx` mints and what the server's
@@ -58,6 +58,9 @@ export const teamMemberSchema = z.object({
   /** §16 question 4: a disabled user stays listed, marked, and removable. */
   disabled: z.boolean(),
   addedAt: z.string(),
+  // User profile spec §6.2; optional so a newer client reads an older server.
+  username: z.string().nullable().optional(),
+  photo: imageRefSchema.nullable().optional(),
 });
 export type TeamMember = z.infer<typeof teamMemberSchema>;
 export const teamMembersResponseSchema = z.array(teamMemberSchema);

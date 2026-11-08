@@ -124,14 +124,24 @@ describe('AccountService with an embedded account', () => {
     await expect(s.tokenFor(URL_A)).resolves.toBeUndefined();
   });
 
-  it('setDisplayName renames the embedded account in memory and tells the listeners', async () => {
+  it('setProfile changes the embedded account in memory and tells the listeners', async () => {
     const s = service();
     await s.load();
     await s.refresh(URL_A);
     const changed = vi.fn();
     s.onChange(changed);
-    await s.setDisplayName(`${URL_A}/`, 'Alice B');
-    expect(s.list()[0]!.displayName).toBe('Alice B');
+    await s.setProfile(`${URL_A}/`, {
+      displayName: 'Alice B',
+      username: 'alice',
+      photo: { version: '0123456789abcdef' },
+    });
+    expect(s.list()[0]).toMatchObject({
+      displayName: 'Alice B',
+      username: 'alice',
+      photo: { version: '0123456789abcdef' },
+    });
+    expect(changed).toHaveBeenCalledTimes(1);
+    await s.setProfile(URL_A, { username: 'alice' });
     expect(changed).toHaveBeenCalledTimes(1);
     expect(existsSync(join(dir, ACCOUNTS_FILE))).toBe(false);
   });
@@ -142,9 +152,9 @@ describe('AccountService with an embedded account', () => {
     const refused = { code: ACCOUNT_MANAGED_BY_SERVER } as const;
     await expect(s.signOut(URL_A)).rejects.toMatchObject(refused);
     await expect(s.remove(URL_A)).rejects.toMatchObject(refused);
-    await expect(s.signInLocal({ url: URL_A, email: 'a@example.com', password: 'x'.repeat(12) })).rejects.toMatchObject(
-      refused,
-    );
+    await expect(
+      s.signInLocal({ url: URL_A, identifier: 'a@example.com', password: 'x'.repeat(12) }),
+    ).rejects.toMatchObject(refused);
     await expect(
       s.acceptInvitation({ url: URL_A, secret: 's', displayName: 'A', password: 'x'.repeat(12) }),
     ).rejects.toMatchObject(refused);
