@@ -133,7 +133,11 @@ test('signs in at a browser tab and opens the seeded server workspace', async ()
   // browser-client.spec.ts joined this workspace as the same user, so the server's host already holds
   // its checkout: the dialog then offers to open that one instead of joining again.
   const alreadyPresent = dialog.getByTestId('open-team-workspace-already-present');
-  await expect(alreadyPresent.or(page.getByTestId('activity-bar'))).toBeVisible({ timeout: 60_000 });
+  // The tab may have reopened another workspace (#879), so the IDE being up says nothing: wait for the dialog to
+  // offer the existing copy, or to close on its own.
+  await expect
+    .poll(async () => (await alreadyPresent.isVisible()) || !(await dialog.isVisible()), { timeout: 60_000 })
+    .toBe(true);
   if (await alreadyPresent.isVisible()) {
     await dialog.getByTestId('open-team-workspace-open-existing').click();
   }
