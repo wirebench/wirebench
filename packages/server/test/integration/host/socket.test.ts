@@ -37,6 +37,12 @@ import { call, seedTeam } from '../../helpers/teams.js';
 import type { Database } from '../../../src/db/querier.js';
 
 const AT = '2026-09-24T12:00:00.000Z';
+/** The desktop app's version, which the bundle answers `app.version` with rather than the server's (#875). */
+const APP_VERSION = (
+  JSON.parse(await readFile(new URL('../../../../../apps/desktop/package.json', import.meta.url), 'utf8')) as {
+    version: string;
+  }
+).version;
 
 /** `workspaceSnapshot`'s files, its `workspace.yaml` carrying the server workspace's id as a shared one must. */
 async function snapshotOf(
@@ -95,7 +101,7 @@ describeDb('the host socket (hosted edition spec §17.3)', () => {
     });
     expect(hello).toBe(client.frames[0]);
     const version = await client.call('app.version');
-    expect(version).toMatchObject({ ok: true, value: { version: '0.0.0-test' } });
+    expect(version).toMatchObject({ ok: true, value: { version: APP_VERSION } });
     // Not registered on a host without dialogs and files, and refused by the allowlist besides.
     expect(await client.call('fs.openText', {})).toMatchObject({
       ok: false,
