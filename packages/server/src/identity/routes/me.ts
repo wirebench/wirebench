@@ -1,5 +1,6 @@
 import {
   devicesResponseSchema,
+  rememberedAccountsResponseSchema,
   identityIdParamsSchema,
   meResponseSchema,
   isValidUsername,
@@ -17,6 +18,7 @@ import { jsonSchema } from '../../schema.js';
 import type { IdentityEnv } from '../env.js';
 import {
   aboutInvalid,
+  browserOnly,
   displayNameInvalid,
   invalidCredentials,
   methodDisabled,
@@ -31,7 +33,8 @@ import { isTokenExpired, requireUser } from '../guard.js';
 import { hashPassword, verifyPassword } from '../passwords.js';
 import { profileLimit } from '../profile-limit.js';
 import * as repo from '../repo.js';
-import { publicUser } from '../sessions.js';
+import { presentedSessions, writeRemembered } from '../remembered.js';
+import { imageRef, publicUser } from '../sessions.js';
 import * as twoFactorRepo from '../two-factor/repo.js';
 
 /**
@@ -61,6 +64,26 @@ export const meRoutes =
           const twoFactor = (await twoFactorRepo.twoFactorUsers(tx, [user.id])).has(user.id);
           return { user: publicUser(user), methods, twoFactor };
         });
+      },
+    );
+
+    // The other accounts this browser holds (switch accounts spec §5.5), people and never tokens. A remembered session
+    // that ended (revoked, expired, its user disabled or removed) is left out and dropped from the cookie.
+    app.get(
+      '/me/accounts',
+      { preHandler: requireUser, schema: { response: { 200: jsonSchema(rememberedAccountsResponseSchema) } } },
+      async (request, reply) => {
+        if (request.caller!.via !== 'cookie') throw browserOnly();
+        const presented = await presentedSessions(env, request);
+        if (presented.stale) writeRemembered(env, request, reply, presented.remembered);
+        reply.header('cache-control', 'no-store');
+        return presented.remembered.map(({ user }) => ({
+          userId: user.id,
+          displayName: user.displayName,
+          email: user.email,
+          username: user.username,
+          photo: imageRef(user.photo),
+        }));
       },
     );
 

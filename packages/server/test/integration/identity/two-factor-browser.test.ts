@@ -274,4 +274,75 @@ describeDb('two-step sign-in, the browser page and the desktop hand-off (spec §
     h.clock.advance(5 * 60_000 + 1);
     expect(codeOf(await complete(two, two.verifier))).toBe('identity-flow-invalid');
   });
+
+  // Switch accounts spec §5.3 through the second step: *Add an account* keeps the session the browser held.
+  const ACCOUNTS_COOKIE = '__Host-wb_accounts';
+  const addForm = (cookie: string) =>
+    form('/sign-in/local', { identifier: 'alice@example.com', password: PASSWORD, add: '1' }, cookie);
+
+  it('Add an account with a second step keeps the old session, by code and by passkey', async () => {
+    const bob = await signedInUser(h, { email: 'bob@example.com', kind: 'browser' });
+    const alice = await signedInUser(h, { email: 'alice@example.com', password: PASSWORD });
+    const code = await withTotp(alice);
+    const key = await withPasskey(alice);
+    const held = `${SESSION_COOKIE}=${bob.token}`;
+
+    const page = await addForm(held);
+    expect(page.statusCode).toBe(200);
+    expect(page.body).toContain('<input type="hidden" name="add" value="1">');
+    expect(page.body).toContain('data-add="1"');
+    const challenge = `${CHALLENGE_COOKIE}=${cookieFrom(page, CHALLENGE_COOKIE)!}`;
+    const done = await form('/sign-in/two-factor', { method: 'totp', code: code(), add: '1' }, `${held}; ${challenge}`);
+    expect(done.statusCode, done.body).toBe(303);
+    expect(cookieFrom(done, SESSION_COOKIE)).toMatch(DEVICE_TOKEN_PATTERN);
+    expect(cookieFrom(done, ACCOUNTS_COOKIE)).toBe(bob.token);
+    const bobStill = await h.app.inject({
+      method: 'GET',
+      url: '/api/v1/me',
+      headers: { authorization: `Bearer ${bob.token}` },
+    });
+    expect(bobStill.statusCode).toBe(200);
+
+    const second = await addForm(held);
+    const cookie = `${held}; ${CHALLENGE_COOKIE}=${cookieFrom(second, CHALLENGE_COOKIE)!}`;
+    const options = await script('/sign-in/two-factor/passkey/options', {}, cookie);
+    const byKey = await script(
+      '/sign-in/two-factor/passkey/verify',
+      { add: true, response: key.get(options.json<{ challenge: string }>()) },
+      cookie,
+    );
+    expect(byKey.statusCode, byKey.body).toBe(200);
+    expect(cookieFrom(byKey, ACCOUNTS_COOKIE)).toBe(bob.token);
+  });
+
+  it('a sixth account is refused at the second step before the code is spent', async () => {
+    const held = await Promise.all(
+      ['a', 'b', 'c', 'd', 'e'].map((name) => signedInUser(h, { email: `${name}@example.com`, kind: 'browser' })),
+    );
+    const alice = await signedInUser(h, { email: 'alice@example.com', password: PASSWORD });
+    const code = await withTotp(alice);
+    const sessions = `${SESSION_COOKIE}=${held[0]!.token}; ${ACCOUNTS_COOKIE}=${held
+      .slice(1)
+      .map((one) => one.token)
+      .join(' ')}`;
+    // The password leads to the second step; the refusal comes there, before the code is checked.
+    const page = await addForm(sessions);
+    expect(page.statusCode).toBe(200);
+    const challenge = `${CHALLENGE_COOKIE}=${cookieFrom(page, CHALLENGE_COOKIE)!}`;
+    const full = await form(
+      '/sign-in/two-factor',
+      { method: 'totp', code: code(), add: '1' },
+      `${sessions}; ${challenge}`,
+    );
+    expect(full.statusCode).toBe(409);
+    expect(full.body).toContain('This browser already holds five accounts.');
+    expect(cookieFrom(full, SESSION_COOKIE)).toBeUndefined();
+    // The code was not spent: the same challenge still finishes once there is room.
+    const room = await form(
+      '/sign-in/two-factor',
+      { method: 'totp', code: code(), add: '1' },
+      `${SESSION_COOKIE}=${held[0]!.token}; ${challenge}`,
+    );
+    expect(room.statusCode, room.body).toBe(303);
+  });
 });

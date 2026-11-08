@@ -199,6 +199,27 @@ describeDb('identity fire sites (audit-log spec §3.2)', () => {
     });
   });
 
+  it('switching accounts in a browser records user.session_switched: from whom, to whom (switch accounts §7)', async () => {
+    const from = await signedInUser(h, { email: 'from@example.com', kind: 'browser' });
+    const to = await signedInUser(h, { email: 'to@example.com', kind: 'browser' });
+    const res = await h.app.inject({
+      method: 'POST',
+      url: '/sign-in/switch',
+      headers: {
+        'content-type': 'application/x-www-form-urlencoded',
+        origin: 'https://wirebench.test',
+        cookie: `__Host-wb_session=${from.token}; __Host-wb_accounts=${to.token}`,
+      },
+      payload: new URLSearchParams({ user: to.user.id }).toString(),
+    });
+    expect(res.statusCode, res.body).toBe(303);
+    expect(last(events, 'user.session_switched')).toMatchObject({
+      actor: { kind: 'user', userId: from.user.id, email: 'from@example.com', tokenId: from.tokenId },
+      target: { kind: 'user', id: to.user.id },
+      details: { from: from.user.id },
+    });
+  });
+
   it('a failing audit insert fails the sign-in and leaves no token row', async () => {
     const user = await signedInUser(h, { email: 'f@example.com', password: PASSWORD });
     const before = await h.tdb.query('select 1 from device_tokens where user_id = $1', [user.user.id]);

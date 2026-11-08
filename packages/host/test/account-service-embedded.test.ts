@@ -11,7 +11,12 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { WirebenchError } from '@wirebench/engine';
 import { stringify as stringifyYaml } from 'yaml';
-import { ACCOUNT_MANAGED_BY_SERVER, AccountService, ACCOUNTS_FILE } from '../src/account-service.js';
+import {
+  ACCOUNT_MANAGED_BY_SERVER,
+  ACCOUNT_SWITCH_IN_BROWSER,
+  AccountService,
+  ACCOUNTS_FILE,
+} from '../src/account-service.js';
 import type { ServerClient } from '../src/server-client.js';
 
 const URL_A = 'https://wb.test';
@@ -196,5 +201,39 @@ describe('AccountService with an embedded account', () => {
       [OTHER, 'd'],
       [URL_A, 'Web browser'],
     ]);
+  });
+});
+
+describe('AccountService with an embedded account — switching', () => {
+  let dir: string;
+  beforeEach(async () => {
+    dir = await mkdtemp(join(tmpdir(), 'wb-accounts-switch-'));
+  });
+  afterEach(() => rm(dir, { recursive: true, force: true }));
+
+  it('keeps the embedder’s account active and leaves every other person on its server to the browser', async () => {
+    const s = new AccountService({
+      userDataDir: dir,
+      client: {
+        me: vi.fn().mockResolvedValue({ user: USER, methods: { local: true, oidc: false } }),
+      } as unknown as ServerClient,
+      secrets: fakeSecrets(),
+      openExternal: () => Promise.resolve(),
+      embedded: { url: URL_A, credential: () => TOKEN_1 },
+    });
+    await s.load();
+    await s.refreshAll();
+    expect(s.active()).toEqual({ url: URL_A, userId: USER.id });
+    // Only the embedder's account is listed: the others the browser holds are the page's to read.
+    expect(s.list().map((account) => account.userId)).toEqual([USER.id]);
+    await expect(s.setActive({ url: URL_A, userId: USER.id })).resolves.toEqual({ url: URL_A, userId: USER.id });
+    await expect(s.setActive({ url: URL_A, userId: 'bob' })).rejects.toMatchObject({
+      code: ACCOUNT_SWITCH_IN_BROWSER,
+      details: { userId: 'bob' },
+    });
+    await expect(s.setActive({ url: 'https://elsewhere.test', userId: 'bob' })).rejects.toMatchObject({
+      code: 'account-unknown-server',
+    });
+    await expect(s.tokenFor({ url: URL_A, userId: 'bob' })).resolves.toBeUndefined();
   });
 });

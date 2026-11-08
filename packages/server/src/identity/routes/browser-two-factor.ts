@@ -10,9 +10,17 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { auditSource } from '../../context.js';
 import { toProblem } from '../../problem.js';
 import { primaryUrl, tenantUrl } from '../../tenancy/urls.js';
-import { endPresentedSession, onPrimaryHost, safeRedirectPath } from '../browser-flows.js';
-import { challengeCookie, clearChallengeCookie, setChallengeCookie, setSessionCookie } from '../cookies.js';
-import { identitySettings, type IdentityEnv } from '../env.js';
+import {
+  ACCOUNTS_FULL_MESSAGE,
+  type BrowserSignInMode,
+  onPrimaryHost,
+  placeBrowserSession,
+  roomForSignIn,
+  safeRedirectPath,
+  sendAccountsFull,
+} from '../browser-flows.js';
+import { challengeCookie, clearChallengeCookie, setChallengeCookie } from '../cookies.js';
+import type { IdentityEnv } from '../env.js';
 import { methodDisabled, originRefused, twoFactorExpired } from '../errors.js';
 import { sendSignInPage } from '../sign-in-page.js';
 import { hashSecret } from '../tokens.js';
@@ -55,6 +63,7 @@ export function sendTwoFactorStep(
   reply: FastifyReply,
   challenge: TwoFactorChallenge,
   redirectTo: string,
+  mode: BrowserSignInMode = 'replace',
 ): FastifyReply {
   const url = tenantUrl(env.ctx.config, reply.request);
   setChallengeCookie(reply, url, challenge.secret);
@@ -65,6 +74,7 @@ export function sendTwoFactorStep(
     setup: challenge.setup,
     redirectTo,
     ...(at !== undefined ? { passkeyAt: at } : {}),
+    ...(mode === 'add' ? { add: true } : {}),
   });
 }
 
@@ -108,6 +118,7 @@ export const browserTwoFactorRoutes =
     form.post('/sign-in/two-factor', { bodyLimit }, async (request, reply) => {
       const url = guardPost(request);
       const redirectTo = safeRedirectPath(field(request.body, 'redirect_to'), url);
+      const mode: BrowserSignInMode = field(request.body, 'add') === '1' ? 'add' : 'replace';
       const secret = challengeCookie(request, url);
       if (secret === undefined) return startAgain(reply, url, redirectTo, 401, TWO_FACTOR_EXPIRED_MESSAGE);
       const method = field(request.body, 'method') === 'recovery' ? 'recovery' : 'totp';
@@ -117,10 +128,12 @@ export const browserTwoFactorRoutes =
       try {
         const row = await presentedChallenge(env, request, secret, { purpose: 'sign-in', kind: 'browser' });
         methods = methodList(await twoFactorRepo.methodsOf(env.ctx.tenancy.db(request.tenant), row.userId));
+        // *Add an account* past five (switch accounts spec §5.3) is refused before the code is spent.
+        if (!(await roomForSignIn(env, request, row.userId, mode)))
+          return await sendAccountsFull(env, reply, redirectTo);
         const signed = await verifyCode(env, request.tenant, source, row, method, field(request.body, 'code') ?? '');
-        await endPresentedSession(env, request, source);
         clearChallengeCookie(reply, url);
-        setSessionCookie(reply, url, signed.token, Math.floor(identitySettings(env.ctx.config).tokenMaxMs / 1000));
+        await placeBrowserSession(env, request, reply, row.userId, signed.token, mode, source);
         return await reply.code(303).header('location', redirectTo).header('cache-control', 'no-store').send();
       } catch (error) {
         const refused = toProblem(error);
@@ -146,6 +159,7 @@ export const browserTwoFactorRoutes =
           message: refused.body.message,
           attemptsLeft: MAX_ATTEMPTS - left.attempts,
           ...(at !== undefined ? { passkeyAt: at } : {}),
+          ...(mode === 'add' ? { add: true } : {}),
         };
         return sendTwoFactorPage(reply.code(refused.status), page);
       }
@@ -186,10 +200,16 @@ export const browserTwoFactorRoutes =
         loopback.searchParams.set('grant', grant);
         return reply.header('cache-control', 'no-store').send({ location: loopback.href });
       }
+      const mode: BrowserSignInMode = (request.body as { add?: unknown } | undefined)?.add === true ? 'add' : 'replace';
+      // As the code form: *Add an account* past five is refused before the passkey is spent.
+      if (!(await roomForSignIn(env, request, row.userId, mode)))
+        return reply
+          .code(409)
+          .header('cache-control', 'no-store')
+          .send({ code: 'identity-accounts-full', message: ACCOUNTS_FULL_MESSAGE });
       const signed = await signInWithPasskey(env, request.tenant, request, source, row, answer);
-      await endPresentedSession(env, request, source);
       clearChallengeCookie(reply, url);
-      setSessionCookie(reply, url, signed.token, Math.floor(identitySettings(env.ctx.config).tokenMaxMs / 1000));
+      await placeBrowserSession(env, request, reply, row.userId, signed.token, mode, source);
       const location = safeRedirectPath(field(request.body, 'redirectTo'), url);
       return reply.header('cache-control', 'no-store').send({ location });
     });

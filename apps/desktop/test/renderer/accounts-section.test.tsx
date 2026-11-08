@@ -21,7 +21,7 @@ const account = (url: string, signedOut = false): AccountWire => ({
 describe('AccountsSection', () => {
   beforeEach(() => {
     installWirebenchApi();
-    useAccountStore.setState({ servers: [], loaded: true });
+    useAccountStore.setState({ servers: [], active: null, loaded: true });
     useUiStore.setState({ signInDialog: { open: false, url: undefined }, teamDialog: { open: false, url: undefined } });
   });
   afterEach(() => {
@@ -53,9 +53,9 @@ describe('AccountsSection', () => {
     const update = vi.fn();
     render(<AccountsSection preferences={DEFAULT_PREFERENCES_WIRE} update={update} />);
     fireEvent.click(screen.getByTestId('account-row-sign-out'));
-    await vi.waitFor(() => expect(signOut).toHaveBeenCalledWith({ url: 'https://one.test' }));
+    await vi.waitFor(() => expect(signOut).toHaveBeenCalledWith({ account: { url: 'https://one.test', userId: 'u' } }));
     fireEvent.click(screen.getByTestId('account-row-remove'));
-    await vi.waitFor(() => expect(remove).toHaveBeenCalledWith({ url: 'https://one.test' }));
+    await vi.waitFor(() => expect(remove).toHaveBeenCalledWith({ account: { url: 'https://one.test', userId: 'u' } }));
     fireEvent.click(screen.getByTestId('accounts-show-in-status-bar'));
     expect(update).toHaveBeenCalledWith({ accounts: { showInStatusBar: false } });
   });
@@ -77,6 +77,33 @@ describe('AccountsSection', () => {
     fireEvent.click(row.querySelector('[data-testid="account-row-sign-out"]')!);
     expect(endTab).toHaveBeenCalledTimes(1);
     expect(signOut).not.toHaveBeenCalled();
+  });
+
+  it('in a browser tab offers Sign out of all accounts in this browser through env.signOutAll', () => {
+    const api = installWirebenchApi();
+    useBrowserEnv(api);
+    const signOutAll = vi.fn();
+    Object.defineProperty(api, 'env', { configurable: true, value: { ...api.env, signOut: vi.fn(), signOutAll } });
+    useAccountStore.setState({
+      servers: [account('https://wb.test'), { ...account('https://wb.test'), userId: 'u2', remembered: true }],
+      active: { url: 'https://wb.test', userId: 'u' },
+    });
+    render(<AccountsSection preferences={DEFAULT_PREFERENCES_WIRE} update={vi.fn()} />);
+    // Only the active account's row: the others are the account menu's to switch to.
+    expect(screen.getAllByTestId('account-row-wb.test')).toHaveLength(1);
+    const button = screen.getByTestId('accounts-sign-out-all');
+    expect(button.textContent).toBe('Sign out of all accounts in this browser');
+    fireEvent.click(button);
+    expect(signOutAll).toHaveBeenCalledTimes(1);
+  });
+
+  it('the desktop has no Sign out of all, and lists two accounts on one server as two rows', () => {
+    useAccountStore.setState({
+      servers: [account('https://wb.test'), { ...account('https://wb.test'), userId: 'u2', email: 'b@wb.test' }],
+    });
+    render(<AccountsSection preferences={DEFAULT_PREFERENCES_WIRE} update={vi.fn()} />);
+    expect(screen.queryByTestId('accounts-sign-out-all')).toBeNull();
+    expect(screen.getAllByTestId('account-row-wb.test')).toHaveLength(2);
   });
 
   it('says so when no server is known', () => {

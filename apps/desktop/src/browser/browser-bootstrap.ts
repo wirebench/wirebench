@@ -25,7 +25,7 @@
  * §18.3), after the first hello: `env.agent` carries its status and the pairing calls, and the API's
  * `invoke` sends every `agent.*` channel over that socket and everything else to the server.
  */
-import { buildApi, type Invoke, type WirebenchApi } from '../preload/build-api.js';
+import { buildApi, type Invoke, type RememberedAccount, type WirebenchApi } from '../preload/build-api.js';
 import { createAgentConnection, type FetchAnswer } from './agent-connection.js';
 import { createSocketTransport, hostSocketUrl, type Hello, type SocketLike } from './socket-transport.js';
 
@@ -48,6 +48,55 @@ export const SIGN_IN_PATH = '/sign-in';
 export const TENANT_SUSPENDED_REASON = 'tenant-suspended';
 /** The root sign-out (spec §17.2): a form post, so the browser sends the page's Origin, which it checks. */
 export const SIGN_OUT_PATH = '/sign-out';
+/** Signs out of every account the browser holds (switch accounts spec §5.4). */
+export const SIGN_OUT_ALL_PATH = '/sign-out?all=1';
+/** Makes another account this browser holds the active one (switch accounts spec §5.2). */
+export const SWITCH_ACCOUNT_PATH = '/sign-in/switch';
+
+/** The other accounts the browser holds (switch accounts spec §5.5): cookie callers only. */
+export const REMEMBERED_ACCOUNTS_PATH = '/api/v1/me/accounts';
+
+/**
+ * The rows of a `GET /me/accounts` answer that look like people; anything else (an older server's `404` body, a
+ * malformed row) is left out. A missing `username` or `photo` reads as none.
+ */
+export function rememberedAccountsOf(body: unknown): RememberedAccount[] {
+  const rows: unknown = Array.isArray(body) ? body : (body as { accounts?: unknown } | null)?.accounts;
+  if (!Array.isArray(rows)) return [];
+  const out: RememberedAccount[] = [];
+  for (const row of rows as unknown[]) {
+    if (typeof row !== 'object' || row === null) continue;
+    const r = row as Record<string, unknown>;
+    if (typeof r['userId'] !== 'string' || typeof r['displayName'] !== 'string' || typeof r['email'] !== 'string')
+      continue;
+    const photo = r['photo'] as { version?: unknown } | null | undefined;
+    out.push({
+      userId: r['userId'],
+      displayName: r['displayName'],
+      email: r['email'],
+      username: typeof r['username'] === 'string' ? r['username'] : null,
+      photo:
+        photo !== null && typeof photo === 'object' && typeof photo.version === 'string'
+          ? { version: photo.version }
+          : null,
+    });
+  }
+  return out;
+}
+
+/** Where the tab is: path, query and hash, as `redirect_to` carries it. */
+function herePath(location: { readonly pathname: string; readonly search: string; readonly hash: string }): string {
+  return location.pathname + location.search + location.hash;
+}
+
+/** The sign-in page in *Add an account* mode (spec §5.3), coming back to where the tab was. */
+export function addAccountUrl(location: {
+  readonly pathname: string;
+  readonly search: string;
+  readonly hash: string;
+}): string {
+  return `${SIGN_IN_PATH}?add=1&redirect_to=${encodeURIComponent(herePath(location))}`;
+}
 
 /**
  * The sign-in page, told to come back to where the tab was: path, query and hash. The server checks
@@ -58,7 +107,7 @@ export function signInUrl(location: {
   readonly search: string;
   readonly hash: string;
 }): string {
-  return `${SIGN_IN_PATH}?redirect_to=${encodeURIComponent(location.pathname + location.search + location.hash)}`;
+  return `${SIGN_IN_PATH}?redirect_to=${encodeURIComponent(herePath(location))}`;
 }
 export const ME_PATH = '/api/v1/me';
 
@@ -285,20 +334,58 @@ export async function startBrowserClient(deps: BootstrapDeps): Promise<void> {
     },
   });
 
-  // Ends the session with a same-origin form post, built with DOM calls (no markup). The server revokes
-  // the cookie's token, which closes this socket 4401; the form's navigation is already leaving, so
-  // that close sends the tab nowhere else.
-  const signOut = (): void => {
+  // The account forms are same-origin posts built with DOM calls (no markup), so the browser sends the page's Origin,
+  // which the server checks. The server answers with a redirect, so the tab reloads as whoever is active then; its
+  // sockets are closed here, and a 4401 from the server's revocation finds the tab already leaving.
+  const leaveWithForm = (action: string, fields: Readonly<Record<string, string>>): void => {
     if (leaving) return;
     leaving = true;
     const form = deps.document.createElement('form');
     form.method = 'post';
-    form.action = SIGN_OUT_PATH;
+    form.action = action;
     form.hidden = true;
+    for (const [name, value] of Object.entries(fields)) {
+      const input = deps.document.createElement('input');
+      input.type = 'hidden';
+      input.name = name;
+      input.value = value;
+      form.appendChild(input);
+    }
     deps.document.body.appendChild(form);
     form.submit();
     agent.close();
     transport.close();
+  };
+  // Ends the active session. Another account the browser holds then becomes active and the tab comes back here;
+  // with none, the server sends it to sign in.
+  const signOut = (): void => {
+    leaveWithForm(SIGN_OUT_PATH, { redirect_to: herePath(deps.location) });
+  };
+  const signOutAll = (): void => {
+    leaveWithForm(SIGN_OUT_ALL_PATH, {});
+  };
+  const switchAccount = (userId: string): void => {
+    leaveWithForm(SWITCH_ACCOUNT_PATH, { user: userId, redirect_to: herePath(deps.location) });
+  };
+  // A navigation, not a post: the sign-in page is where the person types who they are.
+  const addAccount = (): void => {
+    if (leaving) return;
+    leaving = true;
+    agent.close();
+    transport.close();
+    deps.location.assign(addAccountUrl(deps.location));
+  };
+
+  // Same-origin, with the page's cookie: the route answers cookie callers only. Never cached, as a switch elsewhere
+  // in this browser changes it.
+  const rememberedAccounts = async (): Promise<readonly RememberedAccount[]> => {
+    try {
+      const answer = await deps.fetch(REMEMBERED_ACCOUNTS_PATH, { credentials: 'same-origin', cache: 'no-store' });
+      if (answer.status !== 200) return [];
+      return rememberedAccountsOf(await answer.json());
+    } catch {
+      return [];
+    }
   };
 
   const hello = await transport.ready;
@@ -316,6 +403,10 @@ export async function startBrowserClient(deps: BootstrapDeps): Promise<void> {
       host: 'browser',
       capabilities: hello.capabilities,
       signOut,
+      signOutAll,
+      switchAccount,
+      addAccount,
+      rememberedAccounts,
       onOsThemeChanged: os.onChanged,
       agent: agent.env,
     },

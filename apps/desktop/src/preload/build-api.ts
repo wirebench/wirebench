@@ -72,6 +72,18 @@ export interface AgentPairingView {
 }
 
 /**
+ * Another account the tab's browser holds (switch accounts spec §5.5), as `GET /api/v1/me/accounts` lists it:
+ * a person, never a token. The active account is never among them.
+ */
+export interface RememberedAccount {
+  readonly userId: string;
+  readonly displayName: string;
+  readonly email: string;
+  readonly username: string | null;
+  readonly photo: { readonly version: string } | null;
+}
+
+/**
  * The browser tab's local agent (spec §18.2, §18.3), set by the browser bootstrap only: the second socket's
  * status, and the pairing calls *This machine* makes on the server with the tab's cookie. The desktop has no
  * agent of its own to route to, so the preload never sets it, and nothing about a send changes there.
@@ -142,6 +154,13 @@ export type WirebenchApi = ApiFromChannels<typeof windowChannels> & {
    * `account.signOut`, so the tab ends its session with the root `/sign-out` instead (hosted edition spec
    * §17.2). The preload never sets it; the renderer offers its plain *Sign out* only when it is there.
    *
+   * `signOutAll`, `switchAccount` and `addAccount` are the browser's other account actions (switch accounts spec §5),
+   * set with `signOut` by the browser bootstrap only: signing out of every account the tab's browser holds, making
+   * another of them active (a user id from `GET /me/accounts`), and the sign-in page in *Add an account* mode. Each
+   * leaves the page, which reloads as whoever is active then. `rememberedAccounts` reads the other accounts the
+   * browser holds with the page's own cookie (the route takes no bearer token, and one host may serve the same person
+   * in several browsers), most recent first; `[]` when it cannot.
+   *
    * `onOsThemeChanged` is a live OS-theme source the page itself has: the browser bootstrap sets it over
    * `prefers-color-scheme`, since the server has no OS theme of the user's. When it is there the renderer
    * follows it and not `theme.get`/`theme.changed`; the preload leaves it unset, as main's `nativeTheme`
@@ -157,6 +176,10 @@ export type WirebenchApi = ApiFromChannels<typeof windowChannels> & {
     readonly fixedLayout?: boolean;
     readonly sendTemplatesUnasked?: boolean;
     readonly signOut?: () => void;
+    readonly signOutAll?: () => void;
+    readonly switchAccount?: (userId: string) => void;
+    readonly addAccount?: () => void;
+    readonly rememberedAccounts?: () => Promise<readonly RememberedAccount[]>;
     readonly onOsThemeChanged?: (listener: (os: 'dark' | 'light') => void) => () => void;
     readonly agent?: AgentEnv;
   };

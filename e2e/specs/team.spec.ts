@@ -117,7 +117,7 @@ test.describe('teams and workspace roles', () => {
 
     // Carol accepts through the local path and lands on the team as a member.
     await page.getByTestId('status-bar-account').click();
-    await page.getByTestId(`account-sign-out-${new URL(server.url).host}`).click();
+    await page.getByTestId('account-sign-out').click();
     await expect(page.getByTestId('status-bar-account')).toContainText('Sign in', { timeout: 20_000 });
     const signInDialog = await openSignIn(page, server.url);
     await signInDialog.getByTestId('sign-in-have-code').click();

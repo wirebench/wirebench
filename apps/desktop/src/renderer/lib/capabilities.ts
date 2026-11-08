@@ -34,6 +34,50 @@ export function tabSignOut(): (() => void) | undefined {
   return (globalThis as { wirebench?: { env?: { signOut?: () => void } } }).wirebench?.env?.signOut;
 }
 
+/** One of `env`'s optional members, when the browser bootstrap set it; the desktop preload sets none of these. */
+function envMember<K extends 'signOutAll' | 'switchAccount' | 'addAccount' | 'rememberedAccounts'>(
+  key: K,
+): BrowserAccountActions[K] | undefined {
+  return (globalThis as { wirebench?: { env?: Partial<BrowserAccountActions> } }).wirebench?.env?.[key];
+}
+
+/** Another account the tab's browser holds, as the bootstrap's `env.rememberedAccounts` lists it. */
+export interface TabRememberedAccount {
+  readonly userId: string;
+  readonly displayName: string;
+  readonly email: string;
+  readonly username: string | null;
+  readonly photo: { readonly version: string } | null;
+}
+
+/** The browser's account actions (switch accounts spec §5), as `env` carries them. */
+interface BrowserAccountActions {
+  readonly signOutAll: () => void;
+  readonly switchAccount: (userId: string) => void;
+  readonly addAccount: () => void;
+  readonly rememberedAccounts: () => Promise<readonly TabRememberedAccount[]>;
+}
+
+/** Signs out of every account the tab's browser holds (`env.signOutAll`); `undefined` on the desktop. */
+export function tabSignOutAll(): (() => void) | undefined {
+  return envMember('signOutAll');
+}
+
+/** Makes another account the tab's browser holds active; the tab reloads as them. `undefined` on the desktop. */
+export function tabSwitchAccount(): ((userId: string) => void) | undefined {
+  return envMember('switchAccount');
+}
+
+/** The sign-in page in *Add an account* mode (`env.addAccount`); `undefined` on the desktop. */
+export function tabAddAccount(): (() => void) | undefined {
+  return envMember('addAccount');
+}
+
+/** Reads the other accounts the tab's browser holds with the page's cookie; `undefined` on the desktop. */
+export function tabRememberedAccounts(): (() => Promise<readonly TabRememberedAccount[]>) | undefined {
+  return envMember('rememberedAccounts');
+}
+
 /**
  * Whether this window has a local agent to route sends to: the browser bootstrap sets `env.agent`
  * (hosted edition spec §18.3), the desktop preload never does. Asked about the API's shape, never `host`.

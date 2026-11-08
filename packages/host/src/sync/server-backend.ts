@@ -28,6 +28,7 @@ import {
   mergeFiles,
   WirebenchError,
 } from '@wirebench/engine';
+import type { AccountService, AccountTarget } from '../account-service.js';
 import type { LiveClients } from '../live/live-clients.js';
 import type { ServerClient } from '../server-client.js';
 import { withToken, type TokenSource } from '../server-token.js';
@@ -50,7 +51,12 @@ import type { SyncConflictWire, SyncLogEntryWire, SyncState, SyncStatusWire } fr
 export interface ServerBackendDeps {
   readonly client: Pick<ServerClient, 'syncHead' | 'syncChanges' | 'pushCommits' | 'syncLog'> &
     Partial<Pick<ServerClient, 'requestTeamSecretsKey' | 'workspaceAccess'>>;
-  readonly accounts: TokenSource;
+  /**
+   * The accounts' tokens. `accountFor` picks the account a state from before switching accounts syncs as (the
+   * server's only one, else its active one), which the first sync then records; without it such a state syncs
+   * as whichever account the URL stands for at each call.
+   */
+  readonly accounts: TokenSource & Partial<Pick<AccountService, 'accountFor'>>;
   /** The share's server origin (`share.yaml`'s `server.url`, stored normalised). */
   readonly url: string;
   readonly workspaceId: string;
@@ -58,8 +64,13 @@ export interface ServerBackendDeps {
   readonly tree: string;
   readonly state: ServerState;
   readonly now?: () => Date;
-  /** The signed-in account's name and email: the identity until one is set (§3.1). */
-  readonly defaultIdentity?: () => { readonly name: string; readonly email: string } | undefined;
+  /**
+   * The name and email of the account this copy syncs as (`userId`, absent before the first sync records one):
+   * the identity until one is set (§3.1).
+   */
+  readonly defaultIdentity?: (
+    userId: string | undefined,
+  ) => { readonly name: string; readonly email: string } | undefined;
   /** The most one push request carries before it is split; a test lowers it. Default {@link PUSH_BATCH_BYTES}. */
   readonly pushBatchBytes?: number;
   /**
@@ -253,6 +264,8 @@ export class ServerBackend implements SyncBackend {
   private readonly pushBatchBytes: number;
   /** The server's history from a base backwards. It never changes, so keyed by the base it never goes stale. */
   private logCache: LogCache | undefined;
+  /** The `userId` this copy syncs as, once read from or recorded in its state (switch accounts ruling 5). */
+  private syncsAs: string | undefined;
 
   constructor(deps: ServerBackendDeps) {
     this.deps = deps;
@@ -623,13 +636,39 @@ export class ServerBackend implements SyncBackend {
 
   // ——— internals ——————————————————————————————————————————————————————————————————————————
 
-  /** Every call to the server: the account token (`withToken`), then §3.5's mapping. */
+  /** Every call to the server: the token of the account this copy syncs as (`withToken`), then §3.5's mapping. */
   private async call<T>(request: (origin: string, token: string) => Promise<T>): Promise<T> {
     try {
-      return await withToken(this.deps, this.deps.url, request);
+      return await withToken(this.deps, await this.account(), request);
     } catch (error) {
       throw mapServerError(error);
     }
+  }
+
+  /**
+   * The account this copy syncs as (switch accounts ruling 5): the `userId` its state records, never the active
+   * account as such, so switching accounts leaves an open workspace alone. A state without one takes the
+   * account the URL stands for now (the only one on that server, else the active one) and records it.
+   */
+  private async account(): Promise<AccountTarget> {
+    if (this.syncsAs !== undefined) return { url: this.deps.url, userId: this.syncsAs };
+    const recorded = await this.state.read().then(
+      (doc) => doc.userId,
+      () => undefined,
+    );
+    if (recorded !== undefined) {
+      this.syncsAs = recorded;
+      return { url: this.deps.url, userId: recorded };
+    }
+    const chosen = this.deps.accounts.accountFor?.(this.deps.url);
+    if (chosen === undefined || chosen.signedOut === true) return this.deps.url;
+    try {
+      await this.state.update({ userId: chosen.userId });
+      this.syncsAs = chosen.userId;
+    } catch {
+      // The state cannot be written now: this call goes as that account, and the next one tries again.
+    }
+    return { url: this.deps.url, userId: chosen.userId };
   }
 
   /** `gitAvailable` means "sync works" for a server share (assumption 6): SyncService arms its fetch timer on it. */
@@ -703,7 +742,7 @@ export class ServerBackend implements SyncBackend {
   }
 
   private currentIdentity(doc: ServerStateDoc): { readonly name: string; readonly email: string } | undefined {
-    return doc.identity ?? this.deps.defaultIdentity?.();
+    return doc.identity ?? this.deps.defaultIdentity?.(doc.userId ?? this.syncsAs);
   }
 
   /**

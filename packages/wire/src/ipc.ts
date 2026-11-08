@@ -176,6 +176,9 @@ import {
   accountPasskeyRemoveRequestSchema,
   accountStartOidcRequestSchema,
   accountUrlRequestSchema,
+  accountScopedRequestSchema,
+  accountSetActiveRequestSchema,
+  accountActiveResponseSchema,
   apiCancelImportRequestSchema,
   apiCancelImportResponseSchema,
   apiDefinitionDocumentsResponseSchema,
@@ -733,10 +736,18 @@ export const channels = {
       accountAcceptInvitationRequestSchema,
       accountResponseSchema,
     ),
-    signOut: defineChannel('account.signOut', accountUrlRequestSchema, accountListResponseSchema),
-    remove: defineChannel('account.remove', accountUrlRequestSchema, accountListResponseSchema),
-    /** User settings (settings split spec §4): you on the server `url` names. */
-    profile: defineChannel('account.profile', accountUrlRequestSchema, accountProfileWireSchema),
+    /** Signing the active account out makes the most recently active other one active (switch accounts §2). */
+    signOut: defineChannel('account.signOut', accountScopedRequestSchema, accountListResponseSchema),
+    remove: defineChannel('account.remove', accountScopedRequestSchema, accountListResponseSchema),
+    /**
+     * Makes a signed-in account the active one (switch accounts spec §4). Inside a server, another account the
+     * browser holds answers `account-switch-in-browser`: the browser switches, through `env.switchAccount`.
+     */
+    setActive: defineChannel('account.setActive', accountSetActiveRequestSchema, accountListResponseSchema),
+    /** The active account, `null` when none is signed in. */
+    active: defineChannel('account.active', z.undefined(), accountActiveResponseSchema),
+    /** User settings (settings split spec §4): you, as the account `account` names. */
+    profile: defineChannel('account.profile', accountScopedRequestSchema, accountProfileWireSchema),
     /**
      * Changes any of your name, username and about text; the stored account takes the name and username too, so
      * the Accounts list and the account menu follow.
@@ -755,7 +766,7 @@ export const channels = {
       accountChangePasswordRequestSchema,
       accountDoneResponseSchema,
     ),
-    devices: defineChannel('account.devices', accountUrlRequestSchema, accountDevicesResponseSchema),
+    devices: defineChannel('account.devices', accountScopedRequestSchema, accountDevicesResponseSchema),
     signOutDevice: defineChannel('account.signOutDevice', accountDeviceRefRequestSchema, accountDoneResponseSchema),
     /** User settings → Password, two-step sign-in (spec §5). Every change but a rename takes the password. */
     twoFactorStatus: defineChannel(
@@ -1684,7 +1695,9 @@ export const events = {
     changed: defineEvent('schedules.changed', schedulesChangedEventWireSchema),
   },
   account: {
-    /** The list of known servers changed (sign-in, sign-out, removal, a token the server refused). */
+    /**
+     * The accounts or the active one changed (sign-in, sign-out, removal, switching, a token the server refused).
+     */
     changed: defineEvent('account.changed', accountChangedEventSchema),
   },
 } as const;

@@ -10,7 +10,7 @@ import type { TeamMemberWire, TeamRoleWire } from '@shared/wire-base.js';
 import { Button } from '../../../components/button.js';
 import { ConfirmDialog } from '../../../components/confirm-dialog.js';
 import { PersonAvatar } from '../../../components/person-avatar.js';
-import { useAccountStore } from '../../../state/account.js';
+import { accountOnServer, useAccountStore } from '../../../state/account.js';
 import { useLicenseStore } from '../../../state/license.js';
 import { selectedTeam, useTeamStore } from '../../../state/team.js';
 import { INPUT_CLASS, ROLE_LABELS, SELECT_CLASS, TEAM_ROLES } from '../roles.js';
@@ -45,7 +45,7 @@ function SeatLine({ url }: { readonly url: string }) {
 export function PeoplePage() {
   const store = useTeamStore();
   const team = selectedTeam(store);
-  const youId = useAccountStore((s) => s.servers.find((server) => server.url === store.url)?.userId);
+  const youId = useAccountStore((s) => accountOnServer(s.servers, s.active, store.url)?.userId);
   const isAdmin = team?.myRole === 'admin';
   const [filter, setFilter] = useState<PeopleFilter>('all');
   const [query, setQuery] = useState('');

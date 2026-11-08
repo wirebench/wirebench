@@ -39,7 +39,7 @@ export function stubWirebenchApi(overrides: ApiOverrides = {}): WirebenchApi {
       kerberosAvailability: vi.fn().mockResolvedValue({ ok: true, value: { available: true, platform: 'linux' } }),
     },
     account: {
-      list: vi.fn().mockResolvedValue({ ok: true, value: { servers: [] } }),
+      list: vi.fn().mockResolvedValue({ ok: true, value: { servers: [], active: null } }),
       probe: fail('account.probe'),
       signInLocal: fail('account.signInLocal'),
       startOidc: fail('account.startOidc'),
@@ -49,6 +49,8 @@ export function stubWirebenchApi(overrides: ApiOverrides = {}): WirebenchApi {
       acceptInvitation: fail('account.acceptInvitation'),
       signOut: fail('account.signOut'),
       remove: fail('account.remove'),
+      setActive: fail('account.setActive'),
+      active: vi.fn().mockResolvedValue({ ok: true, value: null }),
       profile: fail('account.profile'),
       updateProfile: fail('account.updateProfile'),
       image: fail('account.image'),

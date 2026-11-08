@@ -1,6 +1,7 @@
 {
   "channels": [
     "account.acceptInvitation",
+    "account.active",
     "account.addPasskey",
     "account.cancelSignIn",
     "account.cancelTwoFactor",
@@ -22,6 +23,7 @@
     "account.renamePasskey",
     "account.resetTwoFactor",
     "account.serverPeople",
+    "account.setActive",
     "account.setImage",
     "account.setUpTotp",
     "account.signInLocal",

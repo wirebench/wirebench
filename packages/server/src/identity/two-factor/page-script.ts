@@ -62,6 +62,7 @@ export const TWO_FACTOR_SCRIPT = `'use strict';
       const r = credential.response;
       const answer = await post('/sign-in/two-factor/passkey/verify', {
         redirectTo: button.dataset.redirect || '/',
+        add: button.dataset.add === '1',
         response: {
           id: credential.id,
           rawId: toB64(credential.rawId),

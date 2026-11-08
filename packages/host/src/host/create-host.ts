@@ -148,7 +148,7 @@ import { agentTeamSecrets } from '../agent-team-secrets.js';
 import { sendFromDirectory, type DetachedSendResult, type SendFromDirectoryInput } from '../send/detached.js';
 import { ProjectHost } from '../project-host.js';
 import { OAuth2Service } from '../oauth2.js';
-import { registerAccountChannels, toAccountWire } from '../ipc/account.js';
+import { accountList, registerAccountChannels } from '../ipc/account.js';
 import { registerTeamChannels } from '../ipc/team.js';
 import { HooksService } from '../hooks/hooks-service.js';
 import { SchedulesService } from '../schedules/schedules-service.js';
@@ -1610,7 +1610,8 @@ export async function createHost(platform: HostPlatform, embedder: HostOptions =
     registryOf: (entityId) => workspaceService.hostOfEntity(entityId).runContextFor(entityId)?.registry,
     environmentsOf: (projectId) => workspaceService.hostOfEntity(projectId).sendEnvironments().environments,
   });
-  accountService.onChange((servers) => broadcast(events.account.changed, { servers: servers.map(toAccountWire) }));
+  // Every account and the active one (switch accounts spec §6).
+  accountService.onChange(() => broadcast(events.account.changed, accountList(accountService)));
   // Signing in to a window's workspace's server sends what its audit outbox kept while signed out.
   accountService.onChange((servers) => {
     for (const scope of scopes.all()) {

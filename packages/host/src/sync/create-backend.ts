@@ -38,7 +38,7 @@ import { SERVER_STATE_DIR, ServerState } from './server-state.js';
  */
 export interface ServerSyncServices {
   readonly client: ServerClient;
-  readonly accounts: TokenSource & Pick<AccountService, 'list'>;
+  readonly accounts: TokenSource & Pick<AccountService, 'list'> & Partial<Pick<AccountService, 'accountFor'>>;
   readonly live?: Pick<LiveClients, 'subscribe'>;
 }
 
@@ -86,10 +86,16 @@ export async function createSyncBackend(options: CreateSyncBackendOptions): Prom
         workspaceId,
         tree,
         state: new ServerState(join(dir, SERVER_STATE_DIR)),
-        defaultIdentity: () => {
+        defaultIdentity: (userId) => {
+          // The account the copy syncs as; before the first sync records one, the account the URL stands for.
           const account = server.accounts
             .list()
-            .find((candidate) => candidate.url === url && candidate.signedOut !== true);
+            .find(
+              (candidate) =>
+                candidate.url === url &&
+                candidate.signedOut !== true &&
+                (userId === undefined || candidate.userId === userId),
+            );
           return account === undefined ? undefined : { name: account.displayName, email: account.email };
         },
         ...(server.live !== undefined ? { live: server.live } : {}),

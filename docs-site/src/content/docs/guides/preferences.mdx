@@ -17,8 +17,8 @@ Settings are split by who a change affects:
 - **App settings** — this app on this machine: the sections below. This is what <kbd>⌘,</kbd> /
   <kbd>Ctrl+,</kbd> opens.
 - **User settings** — you, on every server you sign in to: your profile and password, the servers you're signed
-  in to, your signed-in devices and CI tokens. Open it with **Account settings…** in the account menu at the
-  top right, or **Account: Account settings** in the palette. See [User settings](#user-settings).
+  in to, your signed-in devices and CI tokens. Open it with **Settings** in the account menu at the top right, or
+  **Account: Account settings** in the palette. See [User settings](#user-settings).
 - **Team settings** — a team and its server, in the server's browser client. Open it with
   **Account: Manage team…**. See
   [Teams and roles](/wirebench/docs/guides/shared-workspaces/#teams-and-roles).
@@ -211,15 +211,35 @@ full, generated list is in [Commands and shortcuts](/wirebench/docs/reference/co
 
 ## User settings
 
-User settings is about you, on every server: open it with **Account settings…** in the account menu at the top right
-or **Account: Account settings** in the palette. When you are signed in to more than one server, a picker at the
-top chooses which one the pages show.
+User settings is about you: open it with **Settings** (or **View profile**, which lands on Profile) in the account
+menu at the top right, or **Account: Account settings** in the palette. Profile, Password and Signed-in devices show
+the **active account** — the one the account menu shows. To see another of your accounts, switch to it from the
+account menu first.
+
+### The account menu
+
+The top right of the title bar shows the active account's photo (your initials without one) and email. Its menu
+holds, in order:
+
+- A header with your photo, name, `@username · email`, and the server's address when your accounts are on more than
+  one server.
+- **View profile** (User settings → Profile) and **Settings** (User settings).
+- **Sign out**, which signs the active account out. Another account you are signed in as becomes active, the most
+  recently used first.
+- **Switch accounts**: every other account you are signed in as, most recently used first. Choosing one makes it
+  active, and a message says who you are now signed in as and where. An account the app still knows but that is
+  signed out shows dimmed, with **Sign in**.
+- **Add account**, which opens the sign-in dialog with the active server's address filled in (change it to sign in
+  somewhere else). Signing in as someone else on the same server adds a second account; it does not replace the
+  first.
+
+**Manage team…**, **Signed-in devices** and the list of servers are in User settings and the command palette.
 
 | Group | Page | What it covers |
 | --- | --- | --- |
 | You | **Profile** | Your photo and cover image, your name (up to 120 characters; it is what your team sees), your username, a few words about you, your email, and how you sign in |
 | | **Password** | Change the password you sign in with; shown only where the server signs you in with a password |
-| Access | **Servers you're signed in to** | Every server Wirebench knows about, with your email and whether you are signed in; **Sign out**, **Remove**, **Add server…**, and whether the top right shows who you're signed in as |
+| Access | **Servers you're signed in to** | Every account Wirebench knows about, with its server, email and whether it is signed in; **Sign out**, **Remove**, **Add server…**, and whether the top right shows who you're signed in as. In the browser, **Sign out of all accounts in this browser** |
 | | **Signed-in devices** | Every device signed in as you, and **Sign out** for each but this one |
 | | **CI tokens** | Tokens for the open server workspace — see [Run in CI](/wirebench/docs/guides/run-in-ci/) |
 

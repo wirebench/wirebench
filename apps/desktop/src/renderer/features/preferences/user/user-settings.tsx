@@ -1,18 +1,16 @@
 /**
- * User settings (settings split spec §4): you, on every server. Profile, Password and Signed-in devices are about you
- * on one server — the picker's, shown when more than one is signed in — while Servers and CI tokens are this app's.
+ * User settings (settings split spec §4): you. Profile, Password and Signed-in devices are about the **active**
+ * account (switch accounts spec §4), which the account menu switches; Servers and CI tokens are this app's.
  */
 import { useEffect, useState } from 'react';
 import { CircleUser, KeyRound, MonitorSmartphone, Server, Smartphone, type LucideIcon } from 'lucide-react';
 import { Button } from '../../../components/button.js';
 import { SettingsVariantProvider } from '../../../components/settings-grid.js';
-import { signedInServers, useAccountStore } from '../../../state/account.js';
+import { accountKey, useActiveAccount } from '../../../state/account.js';
 import { usePreferencesStore } from '../../../state/preferences.js';
-import { useSyncStore } from '../../../state/sync.js';
 import { useUiStore } from '../../../state/ui.js';
 import { useUserSettingsStore } from '../../../state/user-settings.js';
 import { TokensSection } from '../sections/tokens-section.js';
-import { settingsServerUrl } from '../server/server-settings-store.js';
 import { storedSectionModified } from '../settings-model.js';
 import { SettingsNavGroup, SettingsNavItem, SettingsPageHeader, SettingsShell } from '../settings-shell.js';
 import { USER_NAV, resolveUserPage, userNav, type UserSettingsPageId } from '../user-settings-model.js';
@@ -29,28 +27,18 @@ const ICONS: Readonly<Record<UserSettingsPageId, LucideIcon>> = {
   tokens: Smartphone,
 };
 
-/** The pages that read the picked server's profile. */
+/** The pages that read the active account's profile. */
 const PER_SERVER: ReadonlySet<UserSettingsPageId> = new Set<UserSettingsPageId>(['profile', 'password', 'devices']);
 
 const PAGES = USER_NAV.flatMap((group) => group.pages);
 
-function hostOf(url: string): string {
-  try {
-    return new URL(url).host;
-  } catch {
-    return url;
-  }
-}
-
 export function UserSettings({ initialPage }: { readonly initialPage?: UserSettingsPageId }) {
   const [requested, setRequested] = useState<UserSettingsPageId | undefined>(initialPage);
   const close = useUiStore((state) => state.setPreferencesOpen);
-  const servers = useAccountStore((state) => state.servers);
-  const signedIn = signedInServers(servers);
-  const linked = useSyncStore((state) => (state.status.kind === 'server' ? state.status.remote : undefined));
-  const [picked, setPicked] = useState<string | undefined>(undefined);
-  // The picked server while it is still signed in; else the open workspace's, else the first.
-  const url = signedIn.some((server) => server.url === picked) ? picked : settingsServerUrl(signedIn, linked);
+  const current = useActiveAccount();
+  const url = current?.url;
+  // Two accounts may share a server: switching between them must read afresh, so the page is keyed by account.
+  const key = current === undefined ? undefined : accountKey(current);
 
   const profile = useUserSettingsStore((state) => (state.url === url ? state.profile : undefined));
   const loading = useUserSettingsStore((state) => state.loading);
@@ -59,9 +47,11 @@ export function UserSettings({ initialPage }: { readonly initialPage?: UserSetti
   const resetPreferences = usePreferencesStore((state) => state.reset);
 
   useEffect(() => {
-    if (url === undefined) useUserSettingsStore.getState().reset();
-    else void useUserSettingsStore.getState().load(url);
-  }, [url]);
+    // Reset first, so another account's profile is never shown under this one, even on the same server. The host
+    // reads a URL as that server's active account.
+    useUserSettingsStore.getState().reset();
+    if (url !== undefined) void useUserSettingsStore.getState().load(url);
+  }, [key, url]);
   useEffect(() => () => useUserSettingsStore.getState().reset(), []);
 
   // Password shows once the server says it signs in with passwords; a request for it waits for that answer.
@@ -88,27 +78,6 @@ export function UserSettings({ initialPage }: { readonly initialPage?: UserSetti
     </SettingsNavGroup>
   ));
 
-  const header =
-    signedIn.length > 1 ? (
-      <label className="block text-xs text-fg-subtle">
-        Server
-        <select
-          data-testid="user-settings-server"
-          value={url}
-          onChange={(event) => {
-            setPicked(event.target.value);
-          }}
-          className="mt-1 h-7 w-full rounded-md border border-hairline bg-surface-raised px-2 text-sm text-fg-default focus:border-accent focus:outline-none"
-        >
-          {signedIn.map((server) => (
-            <option key={server.url} value={server.url}>
-              {hostOf(server.url)}
-            </option>
-          ))}
-        </select>
-      </label>
-    ) : undefined;
-
   const body = (() => {
     if (PER_SERVER.has(page)) {
       if (url === undefined) {
@@ -130,10 +99,10 @@ export function UserSettings({ initialPage }: { readonly initialPage?: UserSetti
     }
     switch (page) {
       case 'profile':
-        // Keyed by server and name, so a new answer replaces the field's draft.
-        return <ProfilePage key={`${url ?? ''}:${profile!.user.displayName}`} profile={profile!} />;
+        // Keyed by account and name, so a new answer replaces the field's draft.
+        return <ProfilePage key={`${key ?? ''}:${profile!.user.displayName}`} profile={profile!} />;
       case 'password':
-        return <PasswordPage key={url} profile={profile!} />;
+        return <PasswordPage key={key} profile={profile!} />;
       case 'devices':
         return <DevicesPage />;
       case 'servers':
@@ -148,7 +117,6 @@ export function UserSettings({ initialPage }: { readonly initialPage?: UserSetti
       <SettingsShell
         area="user"
         nav={nav}
-        {...(header === undefined ? {} : { header })}
         onBack={() => {
           close(false);
         }}

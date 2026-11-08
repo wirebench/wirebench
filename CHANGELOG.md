@@ -7,6 +7,16 @@ All notable changes to this project are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Switch accounts.** Sign in as several people at once — on different servers, or two on the same one — and switch
+  between them from the account menu at the top right. One account is active: the menu, User settings, Manage team…,
+  Team settings, Open a team workspace… and sharing to a team all follow it, while an open workspace keeps syncing as
+  the account it was opened with. The menu now holds your photo, name, `@username` and email, **View profile**,
+  **Settings**, **Sign out**, **Switch accounts** (dimmed with **Sign in** for an account that is signed out) and
+  **Add account**; User settings' server picker and the share form's server choice are gone. A browser holds up to
+  five accounts on its server: switching reloads the tab as that person, **Add account** signs someone in without
+  signing the current person out, signing out carries on as the next account, and **Sign out of all accounts in this
+  browser** ends them all. On the server, `POST /sign-in/switch`, `GET /api/v1/me/accounts`, `/sign-in?add=1` and
+  `POST /sign-out?all=1`; switching is audited as `user.session.switched`.
 - **Profiles: photo, cover, username and about.** User settings → Profile lets you add a photo and a cover image
   (cropped and resized in the app, saved as WebP), a username that is unique on the server and can be typed in place
   of your email to sign in with your password, and up to 500 characters about yourself. Your photo shows in the
@@ -26,10 +36,9 @@ All notable changes to this project are documented here. The format follows
   for the desktop app, which keeps working as before.
 - **User settings.** You, on every server you sign in to, in one place: **Profile** (edit your name, see your email
   and how you sign in), **Password**, **Servers you're signed in to**, **Signed-in devices** (sign any other device
-  out) and **CI tokens**. Open it with **Account settings…** in the account menu at the top right or **Account:
-  Account settings** in the palette. The account menu (your email, Account settings, Signed-in devices, Manage team,
-  Sign out) moved from the status bar to the title bar's top right. With several servers signed in, a picker
-  chooses which one the pages show. Team settings' Workspaces page shows each workspace as a card: its name, your
+  out) and **CI tokens**. Open it with **Settings** in the account menu at the top right or **Account: Account
+  settings** in the palette. The account menu moved from the status bar to the title bar's top right. The pages show
+  the active account (see **Switch accounts**). Team settings' Workspaces page shows each workspace as a card: its name, your
   role, Access… and Delete, then labelled rows for default access, recording and features.
 - **Team settings in the browser.** The browser client manages a team on a settings page of its own, in place of
   the Team dialog: a team switcher, then **This team** (Overview, People, Workspaces, What roles can do) and, for

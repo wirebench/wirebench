@@ -30,6 +30,8 @@ export interface TwoFactorPageInput {
   readonly passkeyAt?: string;
   /** The desktop's hand-off (spec §4.2): the passkey alone, for this flow. */
   readonly flow?: string;
+  /** *Add an account* (switch accounts spec §5.3): every method carries `add=1`, so finishing keeps the others. */
+  readonly add?: boolean;
 }
 
 export const SETUP_IN_APP_MESSAGE =
@@ -41,7 +43,8 @@ function passkeyPart(input: TwoFactorPageInput): string {
     return `<p>To use a passkey, sign in at <a href="${url}/sign-in">${url}</a>.</p>`;
   }
   const flow = input.flow !== undefined ? ` data-flow="${escapeHtml(input.flow)}"` : '';
-  return `<button type="button" id="passkey"${flow} data-redirect="${escapeHtml(input.redirectTo)}">Use a passkey</button>
+  const add = input.add === true ? ' data-add="1"' : '';
+  return `<button type="button" id="passkey"${flow}${add} data-redirect="${escapeHtml(input.redirectTo)}">Use a passkey</button>
 <p id="passkey-status" class="message" role="status"></p>`;
 }
 
@@ -63,7 +66,10 @@ export function renderTwoFactorPage(input: TwoFactorPageInput): string {
     return withScript(signInFrame(input.serverUrl, parts.join('\n')));
   }
   const onward =
-    input.redirectTo === '/' ? '' : `<input type="hidden" name="redirect_to" value="${escapeHtml(input.redirectTo)}">`;
+    (input.redirectTo === '/'
+      ? ''
+      : `<input type="hidden" name="redirect_to" value="${escapeHtml(input.redirectTo)}">`) +
+    (input.add === true ? '<input type="hidden" name="add" value="1">' : '');
   if (input.methods.includes('passkey')) parts.push(passkeyPart(input));
   if (input.methods.includes('totp'))
     parts.push(`<form method="post" action="/sign-in/two-factor">

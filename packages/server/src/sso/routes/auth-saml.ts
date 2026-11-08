@@ -20,6 +20,7 @@ import { ANONYMOUS_SOURCE, auditSource, recordAudit } from '../../context.js';
 import {
   FLOW_EXPIRED_MESSAGE,
   finishBrowserSignIn,
+  handOffAddedSignIn,
   onPrimaryHost,
   refusalMessage,
   safeRedirectPath,
@@ -285,8 +286,12 @@ export const authSamlRoutes =
               status: 403,
               message: refusalMessage(answer.code),
               redirectTo: flow.redirectTo,
+              add: flow.addAccount,
             });
           }
+          // *Add an account* needs the browser's session cookies, which this cross-site post does not carry.
+          if (flow.addAccount)
+            return handOffAddedSignIn(env, request, reply, answer.user, auditSource(request), flow.redirectTo);
           return finishBrowserSignIn(env, request, reply, answer.user, 'saml', auditSource(request), flow.redirectTo);
         },
       );
@@ -387,6 +392,7 @@ export const browserSamlStartRoutes =
             tenantUrl(env.ctx.config, request),
           ),
           nonce: requestId,
+          addAccount: (request.query as Record<string, unknown>)['add'] === '1',
         });
         return reply
           .code(302)

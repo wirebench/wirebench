@@ -40,7 +40,7 @@ describe('account.* commands', () => {
   beforeEach(() => {
     installWirebenchApi();
     registerShellCommands(() => undefined);
-    useAccountStore.setState({ servers: [], loaded: true });
+    useAccountStore.setState({ servers: [], active: null, loaded: true });
     useUiStore.setState({
       signInDialog: { open: false, url: undefined },
       teamDialog: { open: false, url: undefined },
@@ -55,7 +55,7 @@ describe('account.* commands', () => {
     expect(useUiStore.getState().signInDialog).toEqual({ open: true, url: undefined });
   });
 
-  it('account.signOut is gated on a signed-in server; one server signs out', async () => {
+  it('account.signOut is gated on a signed-in account and signs the active one out', async () => {
     const signOut = vi.fn().mockResolvedValue({ ok: true, value: { servers: [] } });
     installWirebenchApi({ account: { signOut } });
     const command = getCommand('account.signOut')!;
@@ -65,13 +65,18 @@ describe('account.* commands', () => {
     useAccountStore.setState({ servers: [account('https://one.test')] });
     expect(command.when?.(context)).toBe(true);
     void command.run(context);
-    await vi.waitFor(() => expect(signOut).toHaveBeenCalledWith({ url: 'https://one.test' }));
+    await vi.waitFor(() => expect(signOut).toHaveBeenCalledWith({ account: { url: 'https://one.test', userId: 'u' } }));
   });
 
-  it('sign out with two servers opens Servers you’re signed in to', () => {
-    useAccountStore.setState({ servers: [account('https://one.test'), account('https://two.test')] });
+  it('with two accounts signed in, sign out signs out the active one only', async () => {
+    const signOut = vi.fn().mockResolvedValue({ ok: true, value: { servers: [] } });
+    installWirebenchApi({ account: { signOut } });
+    useAccountStore.setState({
+      servers: [account('https://one.test'), account('https://two.test')],
+      active: { url: 'https://two.test', userId: 'u' },
+    });
     void getCommand('account.signOut')!.run(context);
-    expect(useUiStore.getState().preferences).toEqual({ open: true, area: 'user', section: 'servers' });
+    await vi.waitFor(() => expect(signOut).toHaveBeenCalledWith({ account: { url: 'https://two.test', userId: 'u' } }));
   });
 
   it('Account settings opens User settings', () => {

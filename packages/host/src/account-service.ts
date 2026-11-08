@@ -1,9 +1,14 @@
 /**
- * Who this installation is signed in as, per server (identity spec §3.8, §4.3, §5.3). Main owns
- * all of it: `accounts.yaml` (no token inside — only a secret-store ref), the token itself in the
- * secret store under `wirebench-server:<url>`, the browser hand-off for OIDC, and the rule that a
- * server answering `identity-unauthenticated` marks the account signed out rather than looping.
- * The renderer receives `ServerAccount` minus `tokenRef` (see `ipc/account.ts`).
+ * Who this installation is signed in as (identity spec §3.8, §4.3, §5.3; switch accounts spec §2, §6). An
+ * account is one person on one server, `(url, userId)`, so two may share a server; exactly one signed-in
+ * account is active whenever any is. Main owns all of it: `accounts.yaml` (no token inside — only a
+ * secret-store ref), each account's token in the secret store under `wirebench-server:<url>#<userId>`, the
+ * browser hand-off for OIDC, and the rule that a server answering `identity-unauthenticated` marks the account
+ * signed out rather than looping. The renderer receives `ServerAccount` minus `tokenRef` (see `ipc/account.ts`).
+ *
+ * Callers outside the renderer that still name a server by URL alone (an {@link AccountTarget} string) get that
+ * server's account as {@link AccountService.accountFor} picks it: the active one when it is on that server, else
+ * the most recently active signed-in one there, else any.
  */
 import { randomBytes } from 'node:crypto';
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
@@ -14,6 +19,7 @@ import {
   parseAccountsFile,
   pkce,
   WirebenchError,
+  type AccountRef,
   type AccountsFile,
   type ImageRef,
   type InvitationLookupResponse,
@@ -30,6 +36,23 @@ import { normalizeServerUrl, type ServerClient } from './server-client.js';
 
 export const ACCOUNTS_FILE = 'accounts.yaml';
 export const TOKEN_LABEL_PREFIX = 'wirebench-server:';
+/** The secret-store label of one account's device token (switch accounts ruling 4). */
+export function tokenLabel(origin: string, userId: string): string {
+  return `${TOKEN_LABEL_PREFIX}${origin}#${userId}`;
+}
+
+/**
+ * Which account a call is for: an exact account, or a server URL alone (switch accounts ruling 1), which stands
+ * for the account {@link AccountService.accountFor} picks on that server.
+ */
+export type AccountTarget = string | AccountRef;
+
+/**
+ * What a host inside a server answers to `setActive` on a remembered browser account (switch accounts ruling 6):
+ * only the browser can switch, by submitting `/sign-in/switch`, so the renderer calls `env.switchAccount`.
+ */
+export const ACCOUNT_SWITCH_IN_BROWSER = 'account-switch-in-browser';
+
 /** As the OAuth2 request flow: five minutes for the browser. */
 export const SIGN_IN_TIMEOUT_MS = 5 * 60 * 1000;
 
@@ -134,6 +157,35 @@ function withProfile(account: ServerAccount, fields: AccountProfileFields): Serv
   return next;
 }
 
+const sameAccount = (a: AccountRef, b: AccountRef): boolean => a.url === b.url && a.userId === b.userId;
+
+const refOf = (account: AccountRef): AccountRef => ({ url: account.url, userId: account.userId });
+
+/**
+ * The order `list()` and the file keep: by server, and within a server the account a URL alone stands for
+ * first — the active one, then signed-in ones most recently active first, then signed-out ones — so a caller
+ * that finds the first account for a URL gets the same one {@link AccountService.accountFor} does.
+ */
+function accountOrder(active: AccountRef | null): (a: ServerAccount, b: ServerAccount) => number {
+  const rank = (account: ServerAccount): number =>
+    active !== null && sameAccount(account, active) ? 0 : account.signedOut === true ? 2 : 1;
+  return (a, b) =>
+    a.url.localeCompare(b.url) ||
+    rank(a) - rank(b) ||
+    (b.lastActiveAt ?? '').localeCompare(a.lastActiveAt ?? '') ||
+    a.userId.localeCompare(b.userId);
+}
+
+/** The signed-in account most recently active, other than `except`; `null` when there is none. */
+function mostRecentSignedIn(servers: readonly ServerAccount[], except?: AccountRef): AccountRef | null {
+  const candidates = servers.filter(
+    (server) => server.signedOut !== true && (except === undefined || !sameAccount(server, except)),
+  );
+  // A stable sort keeps file order among accounts never made active (a file from before switching).
+  const [first] = [...candidates].sort((a, b) => (b.lastActiveAt ?? '').localeCompare(a.lastActiveAt ?? ''));
+  return first === undefined ? null : refOf(first);
+}
+
 function freshTokenRef(): string {
   return `sec_${randomBytes(13).toString('hex')}`;
 }
@@ -167,7 +219,7 @@ const LOOPBACK_MESSAGES: Readonly<Record<string, string>> = {
 
 export class AccountService {
   private readonly file: string;
-  private accounts: AccountsFile = { version: ACCOUNTS_FILE_VERSION, servers: [] };
+  private accounts: AccountsFile = { version: ACCOUNTS_FILE_VERSION, active: null, servers: [] };
   private pending: LoopbackCallback | undefined;
   /** The second step a password sign-in is waiting on (two-step sign-in spec §3.2): main only, five minutes. */
   private secondStep: PendingSecondStep | undefined;
@@ -224,8 +276,10 @@ export class AccountService {
       const parsed = parseAccountsFile(document);
       // The embedder's account is never read from the file, even if one was left there.
       const embedded = this.embedded?.origin;
-      this.accounts =
-        embedded === undefined ? parsed : { ...parsed, servers: parsed.servers.filter((s) => s.url !== embedded) };
+      const servers = embedded === undefined ? parsed.servers : parsed.servers.filter((s) => s.url !== embedded);
+      const active =
+        embedded !== undefined && parsed.active?.url === embedded ? mostRecentSignedIn(servers) : parsed.active;
+      this.accounts = { ...parsed, active, servers: [...servers].sort(accountOrder(active)) };
     } finally {
       this.markReady();
     }
@@ -233,7 +287,55 @@ export class AccountService {
 
   list(): readonly ServerAccount[] {
     if (this.embedded === undefined) return this.accounts.servers;
-    return [...this.accounts.servers, this.embeddedAccount(this.embedded)].sort((a, b) => a.url.localeCompare(b.url));
+    return [...this.accounts.servers, this.embeddedAccount(this.embedded)].sort(accountOrder(this.active()));
+  }
+
+  /**
+   * The active account (switch accounts spec §2): signed in, or `null` when no account is. Inside a server it is
+   * the embedder's account while the browser session lasts (ruling 6).
+   */
+  active(): AccountRef | null {
+    const embedded = this.embedded;
+    if (embedded !== undefined && embedded.credential() !== undefined && embedded.userId !== '')
+      return { url: embedded.origin, userId: embedded.userId };
+    return this.accounts.active;
+  }
+
+  /**
+   * The account `target` names: exactly, for an {@link AccountRef}; for a URL alone, that server's active
+   * account, else its most recently active signed-in one, else any (ruling 1). `undefined` when there is none.
+   */
+  accountFor(target: AccountTarget): ServerAccount | undefined {
+    if (typeof target === 'string') {
+      const origin = normalizeServerUrl(target);
+      return this.list().find((server) => server.url === origin);
+    }
+    const ref = { url: normalizeServerUrl(target.url), userId: target.userId };
+    return this.list().find((server) => sameAccount(server, ref));
+  }
+
+  /**
+   * Makes a signed-in account the active one and stamps `lastActiveAt`, which orders *Switch accounts*. Inside a
+   * server, the embedder's account is active already; another account the browser holds is the browser's to
+   * switch to.
+   *
+   * @throws WirebenchError `account-unknown-server` | `account-signed-out` | {@link ACCOUNT_SWITCH_IN_BROWSER}
+   */
+  async setActive(target: AccountRef): Promise<AccountRef> {
+    const ref = { url: normalizeServerUrl(target.url), userId: target.userId };
+    const embedded = this.embedded;
+    if (embedded !== undefined && ref.url === embedded.origin) {
+      if (ref.userId === embedded.userId) return ref;
+      // Which other people the browser holds only the page knows (it reads `GET /me/accounts` with its cookie).
+      throw new WirebenchError(ACCOUNT_SWITCH_IN_BROWSER, 'Switch to this account in the browser', {
+        details: { userId: ref.userId },
+      });
+    }
+    const account = this.find(ref);
+    if (account === undefined) throw new WirebenchError('account-unknown-server', `No account for ${ref.url}`);
+    if (account.signedOut === true) throw new WirebenchError('account-signed-out', `Sign in to ${ref.url} first.`);
+    await this.write(ref, { ...account, lastActiveAt: this.nowIso() }, ref);
+    return ref;
   }
 
   onChange(listener: (servers: readonly ServerAccount[]) => void): () => void {
@@ -524,33 +626,42 @@ export class AccountService {
     return { cancelled: false };
   }
 
-  /** Best effort on the server; the token is gone locally either way (§3.8). */
-  async signOut(url: string): Promise<void> {
-    const origin = this.notEmbedded(normalizeServerUrl(url));
-    const account = this.find(origin);
+  /**
+   * Best effort on the server; the token is gone locally either way (§3.8). Signing the active account out makes
+   * the most recently active other signed-in account active, or none (switch accounts spec §2).
+   */
+  async signOut(target: AccountTarget): Promise<void> {
+    const origin = this.notEmbedded(normalizeServerUrl(typeof target === 'string' ? target : target.url));
+    const account = this.findTarget(target);
     if (account === undefined) throw new WirebenchError('account-unknown-server', `No account for ${origin}`);
     const token = await this.deps.secrets.get(account.tokenRef);
     if (token !== undefined && account.signedOut !== true) {
       await this.deps.client.signOut(origin, token).catch(() => undefined);
     }
     await this.deps.secrets.delete(account.tokenRef);
-    await this.replace(origin, { ...account, signedOut: true });
+    await this.markOut(account);
   }
 
-  async remove(url: string): Promise<void> {
-    const origin = this.notEmbedded(normalizeServerUrl(url));
-    const account = this.find(origin);
+  async remove(target: AccountTarget): Promise<void> {
+    this.notEmbedded(normalizeServerUrl(typeof target === 'string' ? target : target.url));
+    const account = this.findTarget(target);
     if (account === undefined) return;
-    if (account.signedOut !== true) await this.signOut(origin);
+    if (account.signedOut !== true) await this.signOut(refOf(account));
     await this.deps.secrets.delete(account.tokenRef).catch(() => undefined);
-    await this.persist({ ...this.accounts, servers: this.accounts.servers.filter((server) => server.url !== origin) });
+    await this.persist({
+      ...this.accounts,
+      servers: this.accounts.servers.filter((server) => !sameAccount(server, account)),
+    });
   }
 
-  /** The device token for a server, for the modules that call it; `undefined` when signed out. */
-  async tokenFor(url: string): Promise<string | undefined> {
-    const origin = normalizeServerUrl(url);
-    if (origin === this.embedded?.origin) return this.embedded.credential();
-    const account = this.find(origin);
+  /** The device token of an account, for the modules that call its server; `undefined` when signed out. */
+  async tokenFor(target: AccountTarget): Promise<string | undefined> {
+    const origin = normalizeServerUrl(typeof target === 'string' ? target : target.url);
+    if (origin === this.embedded?.origin) {
+      if (typeof target !== 'string' && target.userId !== this.embedded.userId) return undefined;
+      return this.embedded.credential();
+    }
+    const account = this.findTarget(target);
     if (account === undefined || account.signedOut === true) return undefined;
     return this.deps.secrets.get(account.tokenRef);
   }
@@ -561,11 +672,11 @@ export class AccountService {
    * surfaced here, but memory already reflects the intent and the next successful write persists
    * it (see {@link persist}), so this never becomes an unhandled rejection.
    */
-  markSignedOut(url: string): void {
+  markSignedOut(target: AccountTarget): void {
     // The embedder ends the sessions it signed in; a refused call changes nothing here.
-    const account = this.find(normalizeServerUrl(url));
+    const account = this.findTarget(target);
     if (account === undefined || account.signedOut === true) return;
-    this.replace(account.url, { ...account, signedOut: true }).catch(() => undefined);
+    this.markOut(account).catch(() => undefined);
   }
 
   /**
@@ -574,29 +685,29 @@ export class AccountService {
    * over; any other failure — offline, a proxy in the way — changes nothing, so a laptop on a
    * train does not lose its session. Never retried: one call, one answer.
    */
-  async refresh(url: string): Promise<void> {
-    const origin = normalizeServerUrl(url);
+  async refresh(target: AccountTarget): Promise<void> {
+    const origin = normalizeServerUrl(typeof target === 'string' ? target : target.url);
     if (origin === this.embedded?.origin) {
       await this.refreshEmbedded(this.embedded);
       return;
     }
-    const account = this.find(origin);
+    const account = this.findTarget(target);
     if (account === undefined || account.signedOut === true) return;
     try {
       const token = await this.deps.secrets.get(account.tokenRef);
       if (token === undefined) {
-        await this.replace(account.url, { ...account, signedOut: true });
+        await this.markOut(account);
         return;
       }
       const me = await this.deps.client.me(account.url, token);
       const next = withProfile({ ...account, email: me.user.email }, profileFieldsOf(me.user));
       if (next !== undefined || me.user.email !== account.email) {
-        await this.replace(account.url, next ?? { ...account, email: me.user.email });
+        await this.write(refOf(account), next ?? { ...account, email: me.user.email });
       }
     } catch (error) {
       if (error instanceof WirebenchError && error.code === 'identity-unauthenticated') {
         await this.deps.secrets.delete(account.tokenRef).catch(() => undefined);
-        await this.replace(account.url, { ...account, signedOut: true });
+        await this.markOut(account);
       }
       // Any other failure (a keychain error reading the token, a network error from `me`) changes
       // nothing, same as it always has for a network failure — a keychain hiccup must not sign
@@ -610,22 +721,25 @@ export class AccountService {
    * menu follow. The embedder's account changes in memory only, as it is never stored. Nothing changed, nothing
    * is written and no listener is told.
    */
-  async setProfile(url: string, fields: AccountProfileFields): Promise<void> {
-    const origin = normalizeServerUrl(url);
+  async setProfile(target: AccountTarget, fields: AccountProfileFields): Promise<void> {
+    const origin = normalizeServerUrl(typeof target === 'string' ? target : target.url);
     if (origin === this.embedded?.origin) {
+      if (typeof target !== 'string' && target.userId !== this.embedded.userId) return;
       if (this.applyEmbeddedProfile(this.embedded, fields)) this.notify();
       return;
     }
-    const account = this.find(origin);
+    const account = this.findTarget(target);
     const next = account === undefined ? undefined : withProfile(account, fields);
-    if (next === undefined) return;
-    await this.replace(origin, next);
+    if (account === undefined || next === undefined) return;
+    await this.write(refOf(account), next);
   }
 
   /** {@link refresh} for every signed-in account, in parallel; called once after {@link load}. */
   async refreshAll(): Promise<void> {
     await Promise.all([
-      ...this.accounts.servers.filter((server) => server.signedOut !== true).map((server) => this.refresh(server.url)),
+      ...this.accounts.servers
+        .filter((server) => server.signedOut !== true)
+        .map((server) => this.refresh(refOf(server))),
       ...(this.embedded !== undefined ? [this.refreshEmbedded(this.embedded)] : []),
     ]);
   }
@@ -716,14 +830,34 @@ export class AccountService {
     return name !== undefined && name.length > 0 ? name : (this.deps.defaultDeviceName ?? hostname)();
   }
 
-  private find(origin: string): ServerAccount | undefined {
-    return this.accounts.servers.find((server) => server.url === origin);
+  private nowIso(): string {
+    return (this.deps.now ?? (() => new Date()))().toISOString();
   }
 
+  /** A stored account, exactly (never the embedder's). */
+  private find(ref: AccountRef): ServerAccount | undefined {
+    return this.accounts.servers.find((server) => sameAccount(server, ref));
+  }
+
+  /** A stored account by {@link AccountTarget}; a URL alone picks as {@link accountFor} does. */
+  private findTarget(target: AccountTarget): ServerAccount | undefined {
+    if (typeof target === 'string') {
+      const origin = normalizeServerUrl(target);
+      return this.accounts.servers.find((server) => server.url === origin);
+    }
+    return this.find({ url: normalizeServerUrl(target.url), userId: target.userId });
+  }
+
+  /**
+   * A new sign-in is its own account: signing in to a server as a second person adds one, as the same person
+   * replaces that person's token. Either way it becomes the active account.
+   */
   private async store(origin: string, response: SignInResponse, deviceName: string): Promise<ServerAccount> {
-    const previous = this.find(origin);
+    const ref = { url: origin, userId: response.user.id };
+    const previous = this.find(ref);
     if (previous !== undefined) await this.deps.secrets.delete(previous.tokenRef).catch(() => undefined);
-    const tokenRef = await this.deps.secrets.set(response.token, { label: `${TOKEN_LABEL_PREFIX}${origin}` });
+    const tokenRef = await this.deps.secrets.set(response.token, { label: tokenLabel(origin, ref.userId) });
+    const now = this.nowIso();
     const account: ServerAccount = {
       url: origin,
       userId: response.user.id,
@@ -731,19 +865,41 @@ export class AccountService {
       displayName: response.user.displayName,
       deviceName,
       tokenRef,
-      addedAt: previous?.addedAt ?? (this.deps.now ?? (() => new Date()))().toISOString(),
+      addedAt: previous?.addedAt ?? now,
+      lastActiveAt: now,
     };
     const signedIn = withProfile(account, profileFieldsOf(response.user)) ?? account;
-    await this.replace(origin, signedIn);
+    await this.write(ref, signedIn, ref);
     return signedIn;
   }
 
-  private async replace(origin: string, account: ServerAccount): Promise<void> {
-    const others = this.accounts.servers.filter((server) => server.url !== origin);
-    await this.persist({ ...this.accounts, servers: [...others, account].sort((a, b) => a.url.localeCompare(b.url)) });
+  /** `account` signed out: the active account passes to the most recently active other signed-in one. */
+  private async markOut(account: ServerAccount): Promise<void> {
+    const ref = refOf(account);
+    const { active } = this.accounts;
+    const servers = this.accounts.servers.map((server) =>
+      sameAccount(server, ref) ? { ...server, signedOut: true as const } : server,
+    );
+    const next = active !== null && sameAccount(active, ref) ? mostRecentSignedIn(servers, ref) : active;
+    await this.write(ref, { ...account, signedOut: true }, next);
   }
 
-  private async persist(next: AccountsFile): Promise<void> {
+  /** Puts `account` in place of the entry `ref` names (or adds it); `active` changes the active account. */
+  private async write(
+    ref: AccountRef,
+    account: ServerAccount,
+    active: AccountRef | null = this.accounts.active,
+  ): Promise<void> {
+    const others = this.accounts.servers.filter((server) => !sameAccount(server, ref));
+    await this.persist({ ...this.accounts, active, servers: [...others, account] });
+  }
+
+  private async persist(proposed: AccountsFile): Promise<void> {
+    // Switch accounts spec §2: the active account is a signed-in entry whenever there is one.
+    const wanted = proposed.active;
+    const named = wanted === null ? undefined : proposed.servers.find((server) => sameAccount(server, wanted));
+    const active = named !== undefined && named.signedOut !== true ? wanted : mostRecentSignedIn(proposed.servers);
+    const next: AccountsFile = { ...proposed, active, servers: [...proposed.servers].sort(accountOrder(active)) };
     // Updated in memory before the write lands, so a synchronous caller of `markSignedOut`
     // (fire-and-forget) sees `list()` reflect the change immediately, not after the disk I/O.
     // Memory always reflects the latest intent; if the write below fails, the caller that

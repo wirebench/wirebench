@@ -68,7 +68,7 @@ import type {
   WorkspaceLocalState,
   WorkspaceShare,
 } from '@wirebench/engine';
-import type { AccountService } from './account-service.js';
+import type { AccountService, AccountTarget } from './account-service.js';
 import type { RecordsReadPicks, RecordsWritePicks } from './dialog-picks.js';
 import { normalizeServerUrl } from './server-client.js';
 import type { ServerClient } from './server-client.js';
@@ -732,17 +732,20 @@ async function requireSignedIn(server: ServerShareServices, url: string): Promis
 }
 
 /**
- * The signed-in account's name and email, for the local commit identity. Per §3.1 it defaults to
- * the account's. The server ignores it: commits are attributed to the token's user.
+ * The account a new share or join syncs as, recorded in its state (switch accounts ruling 5): the one the URL
+ * stands for, which is the active account when it is on that server (`list()` puts it first). Its name and email
+ * are the local commit identity (§3.1); the server ignores that: commits are attributed to the token's user.
  */
 function accountIdentity(
   server: ServerShareServices,
   url: string,
-): { readonly identity?: { readonly name: string; readonly email: string } } {
+): { readonly identity?: { readonly name: string; readonly email: string }; readonly userId?: string } {
   const account = server.accounts
     .list()
     .find((candidate) => normalizeServerUrl(candidate.url) === url && candidate.signedOut !== true);
-  return account !== undefined ? { identity: { name: account.displayName, email: account.email } } : {};
+  return account !== undefined
+    ? { identity: { name: account.displayName, email: account.email }, userId: account.userId }
+    : {};
 }
 
 /**
@@ -1152,17 +1155,17 @@ export async function serverShareTargets(
  */
 export async function openableTeamWorkspaces(
   deps: ShareDeps,
-  servers: readonly string[],
+  accounts: readonly AccountTarget[],
 ): Promise<OpenableTeamWorkspace[]> {
-  if (servers.length === 0) {
+  if (accounts.length === 0) {
     return [];
   }
   const server = requireServer(deps);
   const settled = await Promise.allSettled(
-    servers.map(async (raw) => {
-      const url = normalizeServerUrl(raw);
+    accounts.map(async (account) => {
+      const url = normalizeServerUrl(typeof account === 'string' ? account : account.url);
       await requireSyncCapability(deps, url);
-      return await withToken(server, url, async (origin, token) => {
+      return await withToken(server, account, async (origin, token) => {
         const rows = await server.client.listWorkspaces(origin, token);
         const heads = await Promise.all(rows.map((row) => headOrGone(server.client, origin, token, row.id)));
         return rows

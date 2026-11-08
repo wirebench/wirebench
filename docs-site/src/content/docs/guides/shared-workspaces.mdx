@@ -221,13 +221,41 @@ app. A password-reset link sets the new password the same way. The page always s
 too.
 
 Once signed in, the top right of the title bar shows your email. The session is a device token the server issued to
-this installation: it lives in the OS keychain (`secrets.json` names it under `wirebench-server:<url>`,
-the value is never in a file) and expires after 30 days without use, or 180 days at most. The
+this installation for that account: it lives in the OS keychain (`secrets.json` names it under
+`wirebench-server:<url>#<user id>`, the value is never in a file) and expires after 30 days without use, or 180 days at most. The
 password is sent once to the server and kept nowhere.
 
-**Sign out** (account menu at the top right → *Sign out of `<server>`*, or User settings → Servers you're signed in to) revokes the token on the
-server and forgets it here. If the server stops accepting the token — an admin removed the device, it
+**Sign out** (account menu at the top right, or User settings → Servers you're signed in to) revokes the token on
+the server and forgets it here. If the server stops accepting the token — an admin removed the device, it
 expired — the app says so once, with **Sign in again**, and does nothing on its own.
+
+### Several accounts
+
+You can be signed in as several people at once — on different servers, or two on the same one (a work account and a
+test account, say). One of them is **active**: the account menu at the top right shows it, and **Switch accounts**
+in that menu lists the others, most recently used first. **Add account** signs someone else in without signing the
+active person out, and the new account becomes active. Signing the active account out makes the most recently used
+other one active.
+
+What follows the active account:
+
+| Where | What it does |
+| --- | --- |
+| Account menu | Shows the active account |
+| User settings | Profile, Password and Signed-in devices are the active account's |
+| Manage team… and Team settings | Open on the active account's server and teams |
+| Open a team workspace… | Lists the active account's team workspaces |
+| Share this workspace… → Wirebench Server | Shares as the active account |
+| Open workspaces | Unchanged: a workspace keeps syncing as the account it was opened with |
+
+When you switch while a workspace from the previous account's server is open, a message says it keeps syncing as
+the account it was opened with.
+
+**In the browser**, one browser holds up to five accounts on its server. **Switch accounts** reloads the tab as the
+person you choose; **Add account** opens the sign-in page as *Add an account*, with **Cancel** back to where you
+were; **Sign out** signs the active account out and the tab carries on as the next one, or goes to the sign-in page
+when there is none. User settings → Servers you're signed in to has **Sign out of all accounts in this browser**.
+With five accounts already, the sign-in page asks you to sign one out first.
 
 Admins manage accounts from the server: `wirebench-server admin invite <email>` prints an invitation
 link, and the API under `/api/v1/users` and `/api/v1/invitations` does the rest (see the server's
@@ -237,8 +265,8 @@ is made.
 ## Teams and roles
 
 On Wirebench Server, every shared workspace belongs to a team, and what you can do in it depends on your role.
-Open **Account: Manage team…** from the palette, the account menu at the top right, or **Manage team…** beside a
-signed-in server under User settings → Servers you're signed in to.
+Open **Account: Manage team…** from the palette, or **Manage team…** beside a signed-in server under User settings →
+Servers you're signed in to. Without a server named, it opens on the active account's.
 
 Team management happens in the server's browser client, on its **Team settings** page. In the desktop app,
 **Manage team…** opens that page in your default browser (you sign in there the first time), on the team of the open
@@ -289,7 +317,8 @@ Wirebench talks to the server over HTTP, so nobody needs git installed.
 
 1. From **Manage workspaces…**, choose **Share this workspace…**, then **Wirebench Server** (offered
    once you are signed in).
-2. Pick the server, when you are signed in to more than one, and the team.
+2. Pick the team. The workspace is shared as the active account, on its server; switch accounts in the account menu
+   first to share somewhere else.
 3. Choose **A new workspace** — named after yours unless you change it, with the team's default role
    *No access*, *Viewer* (the default) or *Editor* — or **An existing empty workspace** that a team admin
    created and you can edit. Your workspace then takes that one's name.
