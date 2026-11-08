@@ -71,6 +71,13 @@ import {
   type LicenseState,
   meResponseSchema,
   devicesResponseSchema,
+  IMAGE_LIMITS,
+  imageRefSchema,
+  userProfileSchema,
+  type ImageKind,
+  type ImageRef,
+  type MeUpdateRequest,
+  type UserProfile,
   metaResponseSchema,
   oidcStartResponseSchema,
   SERVER_API_VERSION,
@@ -284,9 +291,65 @@ export class ServerClient {
 
   // ---- you on the server (settings split spec §4) ------------------------------------------
 
-  /** `PATCH /me`; answers what `GET /me` answers. */
-  updateMe(url: string, token: string, name: string): Promise<MeResponse> {
-    return this.call(url, { method: 'PATCH', path: '/api/v1/me', token, body: { name }, schema: meResponseSchema });
+  /** `PATCH /me` with any of name, username (`null` clears it) and about; answers what `GET /me` answers. */
+  updateMe(url: string, token: string, patch: MeUpdateRequest): Promise<MeResponse> {
+    return this.call(url, { method: 'PATCH', path: '/api/v1/me', token, body: patch, schema: meResponseSchema });
+  }
+
+  /** `PUT /me/images/:kind` (user profile spec §6.2): the base64 WebP the app made; answers its new version. */
+  putImage(url: string, token: string, kind: ImageKind, data: string): Promise<ImageRef> {
+    return this.call(url, {
+      method: 'PUT',
+      path: `/api/v1/me/images/${encodeURIComponent(kind)}`,
+      token,
+      body: { contentType: 'image/webp', data },
+      schema: imageRefSchema,
+    });
+  }
+
+  async deleteImage(url: string, token: string, kind: ImageKind): Promise<void> {
+    await this.call<unknown>(url, { method: 'DELETE', path: `/api/v1/me/images/${encodeURIComponent(kind)}`, token });
+  }
+
+  /** `GET /users/:id/profile`: a team mate's card; a stranger is the server's 404. */
+  profile(url: string, token: string, userId: string): Promise<UserProfile> {
+    return this.call(url, {
+      method: 'GET',
+      path: `/api/v1/users/${encodeURIComponent(userId)}/profile`,
+      token,
+      schema: userProfileSchema,
+    });
+  }
+
+  /**
+   * `GET /users/:id/images/:kind` as a `data:image/webp;base64,…` URL, the only form the renderer shows (its CSP
+   * allows `data:` images, never a server's). Only a WebP within the cover's byte cap is taken: anything else the
+   * server answers, whatever its content type says, is `server-bad-response`.
+   */
+  async image(url: string, token: string, userId: string, kind: ImageKind): Promise<string> {
+    const origin = normalizeServerUrl(url);
+    const options = (await this.deps.options?.(origin)) ?? {};
+    let exchange: HttpExchange;
+    try {
+      exchange = await this.send({
+        url: `${origin}/api/v1/users/${encodeURIComponent(userId)}/images/${encodeURIComponent(kind)}`,
+        method: 'GET',
+        headers: { accept: 'image/webp', authorization: `Bearer ${token}` },
+        timeoutMs: this.deps.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+        followRedirects: false,
+        // One byte over the largest cap shows as `truncated`, so an oversized answer is refused, not cut.
+        maxSizeBytes: IMAGE_LIMITS.cover.maxBytes + 1,
+        ...transportOptions(options),
+      });
+    } catch (error) {
+      throw new WirebenchError('server-unreachable', `Could not reach ${origin}`, { cause: error });
+    }
+    if (exchange.status < 200 || exchange.status >= 300) return this.throwProblem(origin, exchange);
+    const type = (exchange.headers['content-type'] ?? '').split(';')[0]!.trim().toLowerCase();
+    if (type !== 'image/webp' || exchange.truncated || !isWebp(exchange.body)) {
+      throw new WirebenchError('server-bad-response', 'The server answered with something that is not a profile image');
+    }
+    return `data:image/webp;base64,${Buffer.from(exchange.body).toString('base64')}`;
   }
 
   /** The passwords go in the body only; a refusal is the server's code and message, which never quote them. */
@@ -1302,6 +1365,12 @@ const auditParams = (q: AuditQueryWire | AuditExportQueryWire): Record<string, s
   to: q.to,
   workspaceId: q.workspaceId,
 });
+
+/** A RIFF container of type `WEBP`: the first twelve bytes, which is all the client needs to check. */
+function isWebp(bytes: Uint8Array): boolean {
+  const ascii = (from: number, to: number): string => String.fromCharCode(...bytes.subarray(from, to));
+  return bytes.length >= 12 && ascii(0, 4) === 'RIFF' && ascii(8, 12) === 'WEBP';
+}
 
 function parseJson(text: string, contentType: string | undefined): unknown {
   if (text.length === 0) return undefined;

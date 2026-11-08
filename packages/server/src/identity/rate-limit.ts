@@ -189,10 +189,17 @@ type KeyedRequest = Pick<FastifyRequest, 'tenant' | 'ip' | 'body' | 'caller'>;
 
 /** The per-IP key; `request.ip` already honours `trustProxy`. */
 export const ipKey = (request: KeyedRequest): string => `${request.tenant.tenantId}:ip:${request.ip}`;
-/** The per-email key of a body that carries one, lower-cased so case cannot dodge the bucket. */
-export const emailKey = (request: KeyedRequest): string | undefined => {
-  const email = (request.body as { readonly email?: unknown } | undefined)?.email;
-  return typeof email === 'string' ? `${request.tenant.tenantId}:email:${email.trim().toLowerCase()}` : undefined;
+/**
+ * The per-account key of a sign-in body (user profile spec §5): its `identifier`, or the `email` an older desktop or a
+ * cached page sends, lower-cased so case cannot dodge the bucket. An email and a username are keyed apart, so the
+ * bucket holds whichever one is typed: ten tries a minute each, as before.
+ */
+export const identifierKey = (request: KeyedRequest): string | undefined => {
+  const body = request.body as { readonly identifier?: unknown; readonly email?: unknown } | undefined;
+  const typed = typeof body?.identifier === 'string' ? body.identifier : body?.email;
+  if (typeof typed !== 'string') return undefined;
+  const lower = typed.trim().toLowerCase();
+  return `${request.tenant.tenantId}:${lower.includes('@') ? 'email' : 'username'}:${lower}`;
 };
 /** The per-caller key of an authenticated request; `undefined` before identity's guard has run. */
 export const callerKey = (request: KeyedRequest): string | undefined =>

@@ -55,13 +55,13 @@ describeDb('a 0019 installation on one superuser URL (spec §19.4, owner ruling 
     await removeTempDir(dataDir);
   });
 
-  it('listens, at 0025, with the default tenant loaded', async () => {
+  it('listens, at 0026, with the default tenant loaded', async () => {
     const health = await fetch(`http://127.0.0.1:${String(server.port)}/healthz`);
     expect(health.status).toBe(200);
     const applied = await db.owner.query<{ version: number }>(
       'select max(version)::int as version from schema_migrations',
     );
-    expect(applied.rows[0]!.version).toBe(25);
+    expect(applied.rows[0]!.version).toBe(26);
     expect(directoryOf(server.ctx.tenancy).defaultScope().slug).toBe('default');
   });
 

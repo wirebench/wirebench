@@ -4,6 +4,7 @@ import type { TenantScope } from '../tenancy/scope.js';
 import { primaryUrl, type ScopeSource } from '../tenancy/urls.js';
 import { methodDisabled, oidcFailed } from './errors.js';
 import type { OidcProvider } from './oidc.js';
+import type { ProfileLimiters } from './profile-limit.js';
 import type { TenantRateLimiter } from './rate-limit.js';
 
 /** The §4.1 knobs the routes read, derived once from the configuration. */
@@ -47,6 +48,8 @@ export interface IdentityEnv {
   readonly settings: IdentitySettings;
   readonly now: () => Date;
   readonly limiter: TenantRateLimiter;
+  /** The per-person profile buckets (user profile ruling 12). */
+  readonly profileLimiters: ProfileLimiters;
   /**
    * The OIDC client of `scope`'s tenant: the environment's self-hosted, the tenant's own in hosted mode. `undefined`
    * answers as a server without OIDC (`identity-method-disabled`).

@@ -18,6 +18,9 @@ export interface MemberRow {
   readonly role: TeamRole;
   readonly disabled: boolean;
   readonly addedAt: string;
+  /** User profile spec §6.2: shown on People rows. */
+  readonly username: string | null;
+  readonly photo: { readonly version: string } | null;
 }
 export interface TeamInvitationRow {
   readonly id: string;
@@ -77,7 +80,9 @@ function dated<T>(row: Raw, keys: readonly string[]): T {
 
 const TEAM_COLUMNS = 'id, name, created_at as "createdAt"';
 const MEMBER_SELECT = `select m.user_id as "userId", u.email, u.display_name as "displayName", m.role,
-  u.disabled_at is not null as disabled, m.added_at as "addedAt"
+  u.disabled_at is not null as disabled, m.added_at as "addedAt", u.username,
+  (select json_build_object('version', left(i.sha256, 16)) from user_images i
+    where i.user_id = u.id and i.kind = 'photo') as photo
   from team_members m join users u on u.id = m.user_id`;
 const WORKSPACE_SELECT = `select w.id, w.name, w.team_id as "teamId", t.name as "teamName",
   w.default_role as "defaultRole", w.record_desktop_activity as "recordDesktopActivity",

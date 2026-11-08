@@ -8,7 +8,10 @@
  *   its own). A `bytea` is base64, a time is `YYYY-MM-DDTHH:MM:SS.ffffffZ` in UTC (the audit chain's own form), an
  *   address is `abbrev(inet)`, a boolean or a 2- or 4-byte integer is JSON, and every other value is its PostgreSQL
  *   text, a `jsonb` included, so the chain's canonical text of each audit row is in the file as it was sealed;
- * - `repos/<workspaceId>.bundle`: `git bundle create … --all`, under the repository lock.
+ * - `repos/<workspaceId>.bundle`: `git bundle create … --all`, under the repository lock;
+ * - `users/<userId>/photo.webp` and `cover.webp`: each person's profile images as files (user profile spec §6.3), read
+ *   in the tables' unit. They are a copy for people reading the archive: the import restores the images from
+ *   `user_images`, and the manifest does not list them.
  *
  * The tables are read in one repeatable-read, read-only unit of the tenant; the bundles after it (spec §22.9, my
  * call: a lock over the whole export would stop the team's work). Sealed values are redacted as `tables.ts` says,
@@ -17,7 +20,7 @@
  */
 import { createHash, randomBytes } from 'node:crypto';
 import { createReadStream, createWriteStream, lstatSync } from 'node:fs';
-import { mkdir, rename, rm, stat } from 'node:fs/promises';
+import { mkdir, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { once } from 'node:events';
 import { WirebenchError, type GitCli } from '@wirebench/engine';
@@ -388,6 +391,29 @@ async function tenantOf(tx: TenantQuerier): Promise<ExportManifest['tenant']> {
   return row;
 }
 
+/** A user id that is safe as one path segment: ids are ULIDs, so every real one is. */
+const PATH_SAFE_ID = /^[0-9A-Za-z_-]{1,64}$/;
+
+/** Writes every profile image under `dir`, one read at a time so no more than one image is held, and names them. */
+async function writeImages(tx: TenantQuerier, dir: string): Promise<TarSource[]> {
+  const images = await tx.query<{ userId: string; kind: string }>(
+    'select user_id as "userId", kind from user_images order by user_id, kind',
+  );
+  const sources: TarSource[] = [];
+  for (const { userId, kind } of images.rows) {
+    if (!PATH_SAFE_ID.test(userId)) continue;
+    const row = (
+      await tx.query<{ data: Buffer }>('select data from user_images where user_id = $1 and kind = $2', [userId, kind])
+    ).rows[0];
+    if (row === undefined) continue;
+    const path = join(dir, userId, `${kind}.webp`);
+    await mkdir(dirname(path), { recursive: true });
+    await writeFile(path, row.data, { mode: 0o600 });
+    sources.push({ name: `users/${userId}/${kind}.webp`, path });
+  }
+  return sources;
+}
+
 /**
  * Writes `scope`'s export to `out` (created, or replaced whole). The working files go to the tenant's `tmp/` and are
  * removed after, whatever happened.
@@ -423,7 +449,16 @@ export async function writeExport(deps: ExportDeps, scope: TenantScope, out: str
         const workspaces = (await tx.query<{ id: string }>('select id from workspaces order by id')).rows.map(
           (row) => row.id,
         );
-        return { tenant, written, unsealed, workspaces, anchor: await readAnchor(tx), omitted: await omittedItems(tx) };
+        const images = await writeImages(tx, join(work, 'users'));
+        return {
+          tenant,
+          written,
+          unsealed,
+          workspaces,
+          images,
+          anchor: await readAnchor(tx),
+          omitted: await omittedItems(tx),
+        };
       },
       { readOnlySnapshot: true },
     );
@@ -482,6 +517,7 @@ export async function writeExport(deps: ExportDeps, scope: TenantScope, out: str
           name: `repos/${workspaceId}.bundle`,
           path: join(work, 'repos', `${workspaceId}.bundle`),
         })),
+      ...snapshot.images,
     ];
     await mkdir(dirname(out), { recursive: true });
     const partial = `${out}.partial-${randomBytes(4).toString('hex')}`;

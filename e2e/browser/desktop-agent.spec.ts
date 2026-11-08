@@ -119,7 +119,7 @@ async function openRequest(name: string): Promise<void> {
 test('signs in at a browser tab and opens the seeded server workspace', async () => {
   await page.goto('/');
   await expect(page).toHaveURL(/\/sign-in\?redirect_to=/);
-  await page.locator('#email').fill(seed.email);
+  await page.locator('#identifier').fill(seed.email);
   await page.locator('#password').fill(seed.password);
   await page.getByRole('button', { name: 'Sign in' }).click();
   await expect(page).toHaveURL(/\/$/);

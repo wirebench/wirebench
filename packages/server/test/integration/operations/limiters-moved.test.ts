@@ -10,7 +10,7 @@ import type { FastifyRequest } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AGENT_RATE_LIMITS, PairingBudget } from '../../../src/agent/routes.js';
 import { CatchBuckets, catchBucketKey } from '../../../src/hooks/rate-limit.js';
-import { TenantRateLimiter, chargeKeys, emailKey, ipKey } from '../../../src/identity/rate-limit.js';
+import { TenantRateLimiter, chargeKeys, identifierKey, ipKey } from '../../../src/identity/rate-limit.js';
 import { scimLimiterKey } from '../../../src/sso/scim/plugin.js';
 import { TenantDirectory } from '../../../src/tenancy/directory.js';
 import { scopeOf, type TenantScope } from '../../../src/tenancy/scope.js';
@@ -123,7 +123,7 @@ describeDb('the limiters on the shared table (hosted spec §20.7)', () => {
         now: () => 0,
       });
       const ip = fresh();
-      const keys = (tenant: TenantScope) => [ipKey(request(tenant, ip)), emailKey(request(tenant, ip))];
+      const keys = (tenant: TenantScope) => [ipKey(request(tenant, ip)), identifierKey(request(tenant, ip))];
       for (let i = 0; i < 10; i += 1) expect(await chargeKeys(limiter, ONE, keys(ONE))).toBe(0);
       expect(await chargeKeys(limiter, ONE, keys(ONE))).toBeGreaterThan(0);
       expect(await chargeKeys(limiter, TWO, keys(TWO))).toBe(0);

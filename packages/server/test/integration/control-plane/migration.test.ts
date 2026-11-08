@@ -101,7 +101,7 @@ describeDb('migration 0023: the control plane (hosted spec §22.2, §22.3)', () 
 
   it("is followed by 0025, the control plane's too, adding what a signup's completion bound it to, all nullable", async () => {
     const migrations = await allMigrations(BUILTIN_MODULES);
-    expect(migrations.at(-1)).toMatchObject({ version: 25, name: 'signup-ref' });
+    expect(migrations.at(-2)).toMatchObject({ version: 25, name: 'signup-ref' });
     const columns = (await columnsOf(db.owner)).filter((column) => column.table === 'signups').slice(-8);
     expect(columns.map(({ column, type, notNull }) => [column, type, notNull])).toEqual([
       ['provider', 'text', false],

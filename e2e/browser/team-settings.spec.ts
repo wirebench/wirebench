@@ -48,7 +48,7 @@ test.beforeAll(async ({ browser }) => {
 
   await page.goto('/');
   await expect(page).toHaveURL(/\/sign-in\?redirect_to=/);
-  await page.locator('#email').fill(seed.email);
+  await page.locator('#identifier').fill(seed.email);
   await page.locator('#password').fill(seed.password);
   await page.getByRole('button', { name: 'Sign in' }).click();
   await expect(page).toHaveURL(/\/$/);

@@ -7,6 +7,12 @@ All notable changes to this project are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Profiles: photo, cover, username and about.** User settings → Profile lets you add a photo and a cover image
+  (cropped and resized in the app, saved as WebP), a username that is unique on the server and can be typed in place
+  of your email to sign in with your password, and up to 500 characters about yourself. Your photo shows in the
+  account menu and on People, and clicking a person on People opens their profile card. The server re-checks every
+  image, refuses ones carrying location or camera details, and rate-limits profile changes and uploads; people who
+  share no team with you cannot open your profile.
 - **Accept an invitation in the browser.** An invitation link's page lets the invitee
   choose a password (typed twice) and their name, or continue with the team's single sign-on, and lands them signed
   in on the browser app. A password-reset link sets the new password the same way. The page still shows the code

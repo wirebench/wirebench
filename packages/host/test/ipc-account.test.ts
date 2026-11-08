@@ -54,12 +54,24 @@ function fakeService() {
     remove: vi.fn().mockResolvedValue(undefined),
     tokenFor: vi.fn().mockResolvedValue(TOKEN),
     markSignedOut: vi.fn(),
-    setDisplayName: vi.fn().mockResolvedValue(undefined),
+    setProfile: vi.fn().mockResolvedValue(undefined),
   };
 }
 
 const TOKEN = `wbs_${'A'.repeat(43)}`;
 const USER = { id: 'u1', email: 'alice@example.com', displayName: 'Alice', serverAdmin: false };
+/** USER as the profile channels answer it: a server older than profiles reads as none set. */
+const USER_WIRE = { ...USER, username: null, about: '', photo: null, cover: null };
+const PHOTO = { version: '0123456789abcdef' };
+const PERSON = {
+  id: 'u2',
+  displayName: 'Bob',
+  email: 'bob@example.com',
+  username: 'bob',
+  about: 'Hi',
+  photo: PHOTO,
+  cover: null,
+};
 const METHODS = { local: true, oidc: [{ issuer: 'https://idp.test' }] };
 const DEVICE = {
   id: 'd1',
@@ -78,6 +90,10 @@ function fakeClient() {
     changePassword: vi.fn().mockResolvedValue(undefined),
     listDevices: vi.fn().mockResolvedValue([DEVICE]),
     revokeDevice: vi.fn().mockResolvedValue(undefined),
+    putImage: vi.fn().mockResolvedValue(PHOTO),
+    deleteImage: vi.fn().mockResolvedValue(undefined),
+    image: vi.fn().mockResolvedValue('data:image/webp;base64,UklGRg=='),
+    profile: vi.fn().mockResolvedValue(PERSON),
   };
 }
 
@@ -97,8 +113,14 @@ describe('account.* channels', () => {
       deviceName: 'Mac',
       signedOut: false,
       addedAt: '2026-09-24T12:00:00.000Z',
+      username: null,
+      photo: null,
     });
     expect(toAccountWire({ ...ACCOUNT, signedOut: true }).signedOut).toBe(true);
+    expect(toAccountWire({ ...ACCOUNT, username: 'alice', photo: PHOTO })).toMatchObject({
+      username: 'alice',
+      photo: PHOTO,
+    });
   });
 
   it('registers every channel and answers with wire shapes', async () => {
@@ -109,11 +131,11 @@ describe('account.* channels', () => {
       ok: true,
       value: { url: 'https://wb.test', meta: { apiVersion: 1 } },
     });
-    expect(await invoke('account.signInLocal', { url: 'https://wb.test', email: 'a', password: 'p' })).toEqual({
+    expect(await invoke('account.signInLocal', { url: 'https://wb.test', identifier: 'a', password: 'p' })).toEqual({
       ok: true,
       value: { account: toAccountWire(ACCOUNT) },
     });
-    expect(accounts.signInLocal).toHaveBeenCalledWith({ url: 'https://wb.test', email: 'a', password: 'p' });
+    expect(accounts.signInLocal).toHaveBeenCalledWith({ url: 'https://wb.test', identifier: 'a', password: 'p' });
     expect(await invoke('account.startOidc', { url: 'https://wb.test' })).toMatchObject({ ok: true });
     expect(await invoke('account.startSaml', { url: 'https://wb.test' })).toMatchObject({ ok: true });
     expect(accounts.startSaml).toHaveBeenCalledWith({ url: 'https://wb.test' });
@@ -145,17 +167,22 @@ describe('account.* channels', () => {
     const accounts = fakeService();
     accounts.signInLocal.mockRejectedValue(new WirebenchError('identity-invalid-credentials', 'nope'));
     registerAccountChannels(table, deps(accounts));
-    const result = await invoke('account.signInLocal', { url: 'https://wb.test', email: 'a', password: 'p' });
+    const result = await invoke('account.signInLocal', { url: 'https://wb.test', identifier: 'a', password: 'p' });
     expect(result.ok).toBe(false);
     expect(!result.ok && result.error.code).toBe('identity-invalid-credentials');
   });
 
-  it('account.profile joins /me and /meta’s auth.local', async () => {
+  it('account.profile joins /me and /meta’s auth.local, and the stored account takes the answer', async () => {
     const d = deps();
     registerAccountChannels(table, d);
     expect(await invoke('account.profile', { url: 'https://WB.test/x' })).toEqual({
       ok: true,
-      value: { user: USER, methods: METHODS, localPasswords: false },
+      value: { user: USER_WIRE, methods: METHODS, localPasswords: false },
+    });
+    expect(d.accounts.setProfile).toHaveBeenCalledWith('https://wb.test', {
+      displayName: 'Alice',
+      username: null,
+      photo: null,
     });
     expect(d.accounts.tokenFor).toHaveBeenCalledWith('https://wb.test');
     expect(d.client.me).toHaveBeenCalledWith('https://wb.test', TOKEN);
@@ -167,10 +194,91 @@ describe('account.* channels', () => {
     registerAccountChannels(table, d);
     expect(await invoke('account.updateProfile', { url: 'https://wb.test', name: 'Alice B' })).toEqual({
       ok: true,
-      value: { user: { ...USER, displayName: 'Alice B' }, methods: METHODS, localPasswords: false },
+      value: { user: { ...USER_WIRE, displayName: 'Alice B' }, methods: METHODS, localPasswords: false },
     });
-    expect(d.client.updateMe).toHaveBeenCalledWith('https://wb.test', TOKEN, 'Alice B');
-    expect(d.accounts.setDisplayName).toHaveBeenCalledWith('https://wb.test', 'Alice B');
+    expect(d.client.updateMe).toHaveBeenCalledWith('https://wb.test', TOKEN, { name: 'Alice B' });
+    expect(d.accounts.setProfile).toHaveBeenCalledWith('https://wb.test', {
+      displayName: 'Alice B',
+      username: null,
+      photo: null,
+    });
+  });
+
+  it('account.updateProfile sends only the fields given, null to clear the username, and stores the answer', async () => {
+    const d = deps();
+    const stored = { ...USER, username: 'alice', about: 'Tests things', photo: PHOTO, cover: PHOTO };
+    d.client.updateMe.mockResolvedValue({ user: stored, methods: METHODS });
+    registerAccountChannels(table, d);
+    const result = await invoke('account.updateProfile', { url: 'https://wb.test', username: 'Alice', about: 'x' });
+    expect(result).toEqual({ ok: true, value: { user: stored, methods: METHODS, localPasswords: false } });
+    expect(d.client.updateMe).toHaveBeenCalledWith('https://wb.test', TOKEN, { username: 'Alice', about: 'x' });
+    expect(d.accounts.setProfile).toHaveBeenCalledWith('https://wb.test', {
+      displayName: 'Alice',
+      username: 'alice',
+      photo: PHOTO,
+    });
+    await invoke('account.updateProfile', { url: 'https://wb.test', username: null });
+    expect(d.client.updateMe).toHaveBeenLastCalledWith('https://wb.test', TOKEN, { username: null });
+  });
+
+  it('account.image answers the data URL main fetched with the account’s token', async () => {
+    const d = deps();
+    registerAccountChannels(table, d);
+    const request = { url: 'https://wb.test', userId: 'u2', kind: 'cover', version: PHOTO.version };
+    expect(await invoke('account.image', request)).toEqual({
+      ok: true,
+      value: { dataUrl: 'data:image/webp;base64,UklGRg==' },
+    });
+    expect(d.client.image).toHaveBeenCalledWith('https://wb.test', TOKEN, 'u2', 'cover');
+    // An unknown kind never reaches the server.
+    const refused = await invoke('account.image', { ...request, kind: 'banner' });
+    expect(refused.ok).toBe(false);
+    expect(d.client.image).toHaveBeenCalledTimes(1);
+  });
+
+  it('account.setImage and removeImage reach /me/images; only the photo changes the stored account', async () => {
+    const d = deps();
+    registerAccountChannels(table, d);
+    expect(await invoke('account.setImage', { url: 'https://wb.test', kind: 'photo', data: 'UklGRg==' })).toEqual({
+      ok: true,
+      value: PHOTO,
+    });
+    expect(d.client.putImage).toHaveBeenCalledWith('https://wb.test', TOKEN, 'photo', 'UklGRg==');
+    expect(d.accounts.setProfile).toHaveBeenLastCalledWith('https://wb.test', { photo: PHOTO });
+    await invoke('account.setImage', { url: 'https://wb.test', kind: 'cover', data: 'UklGRg==' });
+    expect(d.accounts.setProfile).toHaveBeenCalledTimes(1);
+    expect(await invoke('account.removeImage', { url: 'https://wb.test', kind: 'photo' })).toEqual({
+      ok: true,
+      value: { done: true },
+    });
+    expect(d.client.deleteImage).toHaveBeenCalledWith('https://wb.test', TOKEN, 'photo');
+    expect(d.accounts.setProfile).toHaveBeenLastCalledWith('https://wb.test', { photo: null });
+    await invoke('account.removeImage', { url: 'https://wb.test', kind: 'cover' });
+    expect(d.accounts.setProfile).toHaveBeenCalledTimes(2);
+  });
+
+  it('account.setImage leaves the stored account alone when the server refuses the image', async () => {
+    const { WirebenchError } = await import('@wirebench/engine');
+    const d = deps();
+    d.client.putImage.mockRejectedValue(new WirebenchError('identity-image-invalid', 'Not a photo'));
+    registerAccountChannels(table, d);
+    const result = await invoke('account.setImage', { url: 'https://wb.test', kind: 'photo', data: 'AAAA' });
+    expect(!result.ok && result.error.code).toBe('identity-image-invalid');
+    expect(d.accounts.setProfile).not.toHaveBeenCalled();
+  });
+
+  it('account.person answers a team mate’s profile; a stranger keeps the server’s 404 code', async () => {
+    const { WirebenchError } = await import('@wirebench/engine');
+    const d = deps();
+    registerAccountChannels(table, d);
+    expect(await invoke('account.person', { url: 'https://wb.test', userId: 'u2' })).toEqual({
+      ok: true,
+      value: PERSON,
+    });
+    expect(d.client.profile).toHaveBeenCalledWith('https://wb.test', TOKEN, 'u2');
+    d.client.profile.mockRejectedValue(new WirebenchError('identity-user-not-found', 'No such person'));
+    const stranger = await invoke('account.person', { url: 'https://wb.test', userId: 'u9' });
+    expect(!stranger.ok && stranger.error.code).toBe('identity-user-not-found');
   });
 
   it('account.updateProfile leaves the stored account alone when the server refuses', async () => {
@@ -180,7 +288,7 @@ describe('account.* channels', () => {
     registerAccountChannels(table, d);
     const result = await invoke('account.updateProfile', { url: 'https://wb.test', name: ' ' });
     expect(!result.ok && result.error.code).toBe('identity-name-invalid');
-    expect(d.accounts.setDisplayName).not.toHaveBeenCalled();
+    expect(d.accounts.setProfile).not.toHaveBeenCalled();
   });
 
   it('account.changePassword sends both passwords and answers done; a refusal keeps the server’s code', async () => {
@@ -227,6 +335,10 @@ describe('account.* channels', () => {
     ['account.changePassword', { url: 'https://wb.test', newPassword: 'new-password-2' }, 'changePassword'],
     ['account.devices', { url: 'https://wb.test' }, 'listDevices'],
     ['account.signOutDevice', { url: 'https://wb.test', id: 'd1' }, 'revokeDevice'],
+    ['account.image', { url: 'https://wb.test', userId: 'u2', kind: 'photo', version: 'v' }, 'image'],
+    ['account.setImage', { url: 'https://wb.test', kind: 'photo', data: 'AAAA' }, 'putImage'],
+    ['account.removeImage', { url: 'https://wb.test', kind: 'cover' }, 'deleteImage'],
+    ['account.person', { url: 'https://wb.test', userId: 'u2' }, 'profile'],
   ] as const)('%s: a signed-out answer marks the account signed out', async (channel, request, call) => {
     const { WirebenchError } = await import('@wirebench/engine');
     const d = deps();

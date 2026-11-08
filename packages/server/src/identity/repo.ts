@@ -15,6 +15,20 @@ export interface UserRow {
   readonly serverAdmin: boolean;
   readonly createdAt: string;
   readonly disabledAt: string | null;
+  /** As the person typed it; `null` until they set one (user profile spec §2). */
+  readonly username: string | null;
+  readonly about: string;
+  /** Each image's version (ruling 1: the first 16 hex characters of its sha256), `null` when unset. */
+  readonly photo: string | null;
+  readonly cover: string | null;
+}
+export type ImageKind = 'photo' | 'cover';
+/** A stored profile image (user profile spec §6.1). */
+export interface ImageRow {
+  readonly contentType: string;
+  readonly data: Buffer;
+  readonly sha256: string;
+  readonly updatedAt: string;
 }
 export interface CredentialRow {
   readonly userId: string;
@@ -75,8 +89,10 @@ function withDates<T>(row: Raw, keys: readonly string[]): T {
   return out as T;
 }
 
-const USER_COLUMNS =
-  'id, email, email_lower as "emailLower", display_name as "displayName", server_admin as "serverAdmin", created_at as "createdAt", disabled_at as "disabledAt"';
+/** An image's version (ruling 1), read beside the user row that `usersAlias` names. */
+export const imageVersionOf = (usersAlias: string, kind: ImageKind): string =>
+  `(select left(i.sha256, 16) from user_images i where i.user_id = ${usersAlias}.id and i.kind = '${kind}')`;
+const USER_COLUMNS = `id, email, email_lower as "emailLower", display_name as "displayName", server_admin as "serverAdmin", created_at as "createdAt", disabled_at as "disabledAt", username, about, ${imageVersionOf('users', 'photo')} as "photo", ${imageVersionOf('users', 'cover')} as "cover"`;
 const USER_DATES = ['createdAt', 'disabledAt'];
 const INVITATION_COLUMNS =
   'id, kind, email, email_lower as "emailLower", user_id as "userId", secret_hash as "secretHash", server_admin as "serverAdmin", created_by as "createdBy", created_at as "createdAt", expires_at as "expiresAt", accepted_at as "acceptedAt", revoked_at as "revokedAt"';
@@ -96,6 +112,14 @@ const first = <T>(rows: readonly Raw[], dates: readonly string[]): T | undefined
 export async function findUserByEmail(db: TenantQuerier, emailLower: string): Promise<UserRow | undefined> {
   return first(
     (await db.query(`select ${USER_COLUMNS} from users where email_lower = $1`, [emailLower])).rows,
+    USER_DATES,
+  );
+}
+
+/** `usernameLower` is compared as stored: the caller lower-cases what was typed. */
+export async function findUserByUsername(db: TenantQuerier, usernameLower: string): Promise<UserRow | undefined> {
+  return first(
+    (await db.query(`select ${USER_COLUMNS} from users where username_lower = $1`, [usernameLower])).rows,
     USER_DATES,
   );
 }
@@ -151,8 +175,83 @@ export async function setDisplayName(db: TenantQuerier, id: string, name: string
   await db.query('update users set display_name = $2 where id = $1', [id, name]);
 }
 
+/**
+ * Writes the profile fields given, and only those: `username: null` clears it. The unique key on the lower-case
+ * username (`USERNAME_KEY` in `db/errors.ts`) refuses a name another person holds.
+ */
+export async function setProfile(
+  db: TenantQuerier,
+  id: string,
+  fields: { readonly displayName?: string; readonly username?: string | null; readonly about?: string },
+): Promise<void> {
+  const sets: string[] = [];
+  const values: unknown[] = [id];
+  const param = (value: unknown): string => {
+    values.push(value);
+    return `$${String(values.length)}`;
+  };
+  if (fields.displayName !== undefined) sets.push(`display_name = ${param(fields.displayName)}`);
+  if (fields.username !== undefined) {
+    const n = param(fields.username);
+    sets.push(`username = ${n}::text, username_lower = lower(${n}::text)`);
+  }
+  if (fields.about !== undefined) sets.push(`about = ${param(fields.about)}`);
+  if (sets.length === 0) return;
+  await db.query(`update users set ${sets.join(', ')} where id = $1`, values);
+}
+
 export async function setDisabled(db: TenantQuerier, id: string, at: Date | null): Promise<void> {
   await db.query('update users set disabled_at = $2 where id = $1', [id, at]);
+}
+
+// ---- profile images ------------------------------------------------------------------------
+
+/** Stores (or replaces) one of a user's images. `sha256` is the hex digest of `data`. */
+export async function putImage(
+  db: TenantQuerier,
+  input: {
+    readonly userId: string;
+    readonly kind: ImageKind;
+    readonly contentType: string;
+    readonly data: Buffer;
+    readonly sha256: string;
+    readonly at: Date;
+  },
+): Promise<void> {
+  await db.query(
+    `insert into user_images (user_id, kind, content_type, data, sha256, updated_at) values ($1, $2, $3, $4, $5, $6)
+     on conflict (tenant_id, user_id, kind) do update
+       set content_type = excluded.content_type, data = excluded.data, sha256 = excluded.sha256, updated_at = excluded.updated_at`,
+    [input.userId, input.kind, input.contentType, input.data, input.sha256, input.at],
+  );
+}
+
+/** `false` when there was none. */
+export async function deleteImage(db: TenantQuerier, userId: string, kind: ImageKind): Promise<boolean> {
+  const result = await db.query('delete from user_images where user_id = $1 and kind = $2', [userId, kind]);
+  return (result.rowCount ?? 0) > 0;
+}
+
+export async function getImage(db: TenantQuerier, userId: string, kind: ImageKind): Promise<ImageRow | undefined> {
+  return first(
+    (
+      await db.query(
+        'select content_type as "contentType", data, sha256, updated_at as "updatedAt" from user_images where user_id = $1 and kind = $2',
+        [userId, kind],
+      )
+    ).rows,
+    ['updatedAt'],
+  );
+}
+
+/** Ruling 3: whether `a` and `b` are members of one team, which is who may read each other's profile. */
+export async function sharesTeam(db: TenantQuerier, a: string, b: string): Promise<boolean> {
+  const result = await db.query<{ shared: boolean }>(
+    `select exists (select 1 from team_members x join team_members y on y.team_id = x.team_id
+                     where x.user_id = $1 and y.user_id = $2) as shared`,
+    [a, b],
+  );
+  return result.rows[0]?.shared === true;
 }
 
 // ---- credentials and OIDC identities -------------------------------------------------------
@@ -382,7 +481,8 @@ export async function tokenByHash(
   const rows = (
     await db.query(
       `select t.id, t.user_id as "userId", t.token_hash as "tokenHash", t.device_name as "deviceName", t.kind, t.created_at as "createdAt", t.last_used_at as "lastUsedAt", t.revoked_at as "revokedAt",
-              u.email as "u_email", u.email_lower as "u_emailLower", u.display_name as "u_displayName", u.server_admin as "u_serverAdmin", u.created_at as "u_createdAt", u.disabled_at as "u_disabledAt"
+              u.email as "u_email", u.email_lower as "u_emailLower", u.display_name as "u_displayName", u.server_admin as "u_serverAdmin", u.created_at as "u_createdAt", u.disabled_at as "u_disabledAt",
+              u.username as "u_username", u.about as "u_about", ${imageVersionOf('u', 'photo')} as "u_photo", ${imageVersionOf('u', 'cover')} as "u_cover"
        from device_tokens t join users u on u.id = t.user_id where t.token_hash = $1`,
       [tokenHash],
     )

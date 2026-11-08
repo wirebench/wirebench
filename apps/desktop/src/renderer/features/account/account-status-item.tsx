@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { ChevronDown, LogOut, MonitorSmartphone, UserRound, Users } from 'lucide-react';
+import { PersonAvatar } from '../../components/person-avatar.js';
 import { tabSignOut } from '../../lib/capabilities.js';
 import { signedInServers, useAccountStore } from '../../state/account.js';
 import { usePreferencesStore } from '../../state/preferences.js';
@@ -17,24 +18,6 @@ function hostOf(url: string): string {
   } catch {
     return url;
   }
-}
-
-/** The avatar's letter: the first letter of the email. */
-function initial(email: string): string {
-  return (email.trim()[0] ?? '?').toUpperCase();
-}
-
-function Avatar({ email, size = 'sm' }: { readonly email: string; readonly size?: 'sm' | 'md' }) {
-  return (
-    <span
-      aria-hidden="true"
-      className={`flex shrink-0 items-center justify-center rounded-full bg-accent-muted font-medium text-fg-default ${
-        size === 'md' ? 'h-8 w-8 text-sm' : 'h-6 w-6 text-xs'
-      }`}
-    >
-      {initial(email)}
-    </span>
-  );
 }
 
 /**
@@ -89,7 +72,14 @@ export function AccountStatusItem() {
           aria-label={`Account: ${label}`}
           className="flex h-row max-w-64 items-center gap-1.5 rounded-md pr-1.5 pl-1 text-sm text-fg-muted hover:bg-surface-hover hover:text-fg-default focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none"
         >
-          <Avatar email={first.email} />
+          <PersonAvatar
+            url={first.url}
+            userId={first.userId}
+            name={first.displayName}
+            photo={first.photo ?? null}
+            size="sm"
+            testId="status-bar-account-avatar"
+          />
           <span className="truncate">{label}</span>
           <ChevronDown size={12} aria-hidden="true" className="shrink-0 text-fg-subtle" />
         </button>
@@ -102,11 +92,21 @@ export function AccountStatusItem() {
           data-testid="status-bar-account-menu"
           className="z-dropdown w-64 rounded-lg border border-hairline-strong bg-surface-overlay p-1 shadow-lg"
         >
-          <div className="flex items-center gap-2.5 px-2 py-2">
-            <Avatar email={first.email} size="md" />
+          <div data-testid="account-menu-header" className="flex items-center gap-2.5 px-2 py-2">
+            <PersonAvatar
+              url={first.url}
+              userId={first.userId}
+              name={first.displayName}
+              photo={first.photo ?? null}
+              size="md"
+              testId="account-menu-avatar"
+            />
             <div className="min-w-0">
-              <div className="truncate text-sm text-fg-default">{first.email}</div>
+              <div className="truncate text-sm text-fg-default">{first.displayName}</div>
               <div className="truncate text-xs text-fg-subtle">
+                {first.username ? `@${first.username} · ${first.email}` : first.email}
+              </div>
+              <div className="truncate text-xs text-fg-faint">
                 {signedIn.length === 1 ? hostOf(first.url) : `Signed in to ${String(signedIn.length)} servers`}
               </div>
             </div>

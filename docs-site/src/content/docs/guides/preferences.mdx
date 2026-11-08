@@ -217,7 +217,7 @@ top chooses which one the pages show.
 
 | Group | Page | What it covers |
 | --- | --- | --- |
-| You | **Profile** | Your name, which you can edit (up to 120 characters; it is what your team sees), your email, and how you sign in |
+| You | **Profile** | Your photo and cover image, your name (up to 120 characters; it is what your team sees), your username, a few words about you, your email, and how you sign in |
 | | **Password** | Change the password you sign in with; shown only where the server signs you in with a password |
 | Access | **Servers you're signed in to** | Every server Wirebench knows about, with your email and whether you are signed in; **Sign out**, **Remove**, **Add server…**, and whether the top right shows who you're signed in as |
 | | **Signed-in devices** | Every device signed in as you, and **Sign out** for each but this one |
@@ -229,6 +229,24 @@ signs out and forgets it; **Add server…** opens the same sign-in dialog as **S
 when Wirebench asks for it. **Show your account at the top right** (on by default) controls only whether the
 account menu appears once a server is known — the list of servers itself isn't a preference. A name set by
 your identity provider over SCIM is replaced by the next update it sends.
+
+### Your profile
+
+Everything on **Profile** is what people on your teams see: your photo next to your name on **People** and in the
+account menu, and the whole profile on the card that opens when someone clicks your name.
+
+- **Photo and cover.** **Change photo…** and **Change cover…** pick a PNG, JPEG, WebP or GIF file (up to 20 MB), then
+  let you drag it and zoom it into a circle (the photo) or a wide band (the cover). Wirebench resizes it to 256 × 256
+  or 1500 × 500 and saves it as WebP. **Remove** takes it away; without a photo your initials show.
+- **Username.** 3–30 letters, digits, `.`, `_` or `-`, starting with a letter or digit, unique on the server. It shows
+  as `@username`, and you can type it in place of your email to sign in with your password. Names that could pass for
+  staff (such as `admin` or `support`) are refused. Clear the field to drop it.
+- **About you.** Up to 500 characters, shown as plain text with its line breaks.
+
+The server checks every image again: only a still WebP of the right size is kept, and a file carrying location or
+camera details is refused, so none of that reaches the server. Profile changes and uploads are limited per person
+(30 changes a minute, 20 uploads an hour). Only you change your profile; people who share no team with you can't
+open it.
 
 ## Layout
 

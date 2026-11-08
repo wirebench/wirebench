@@ -117,11 +117,11 @@ async function adminSignsIn(stack: Stack): Promise<void> {
 }
 
 /**
- * At `0025` (slice 5's operations tables, slice 7's control-plane tables and slice 8's custom domains on top of `0021`), with the data directory moved. With the fixture's secrets key the browser-client values are re-sealed
+ * At `0026` (slice 5's operations tables, slice 7's control-plane tables, slice 8's custom domains and the user profile on top of `0021`), with the data directory moved. With the fixture's secrets key the browser-client values are re-sealed
  * too (`done`); without one the server generates and stores its own key at start-up, so the step reaches `done` as well.
  */
 async function expectUpgraded(stack: Stack): Promise<void> {
-  expect(await psql(stack, 'select max(version) from schema_migrations')).toBe('25');
+  expect(await psql(stack, 'select max(version) from schema_migrations')).toBe('26');
   expect(await psql(stack, 'select tenancy_step from server_identity')).toBe('done');
   await adminSignsIn(stack);
 }
