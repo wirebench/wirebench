@@ -112,13 +112,13 @@ test('the team deep link the desktop opens shows Team settings on the tab’s se
 });
 
 test('opens the seeded server workspace', async () => {
-  const dialog = await openTeamDialog(page);
+  const dialog = await openTeamDialog(page, seed.teamName);
   await dialog.getByTestId('team-workspace-row').filter({ hasText: seed.workspaceName }).click();
   await expect(dialog).toBeHidden({ timeout: 60_000 });
   await expect(page.getByTestId('activity-bar')).toBeVisible();
   await expect(projectRow()).toBeVisible();
-  // The title bar says whose workspace it is: the team before the workspace's name.
-  await expect(page.getByTestId('workspace-switcher-team')).toHaveText(seed.teamName);
+  // The title bar says whose workspace it is: the active team before the workspace's name.
+  await expect(page.getByTestId('title-team-switcher')).toContainText(seed.teamName);
 });
 
 test('a reload reopens the workspace the tab had open (#879)', async () => {
@@ -241,7 +241,7 @@ test('the account menu opens Team settings (#877)', async () => {
 });
 
 test('opens an empty team workspace and starts it: its first commit reaches the server (#878)', async () => {
-  const dialog = await openTeamDialog(page);
+  const dialog = await openTeamDialog(page, seed.teamName);
   await dialog.getByTestId('team-workspace-row').filter({ hasText: seed.emptyWorkspaceName }).click();
   await expect(dialog).toBeHidden({ timeout: 60_000 });
   await expect(page.getByTestId('activity-bar')).toBeVisible();

@@ -128,7 +128,7 @@ test('signs in at a browser tab and opens the seeded server workspace', async ()
   await clearServerPairings();
   expect(await serverPairings()).toEqual([]);
 
-  const dialog = await openTeamDialog(page);
+  const dialog = await openTeamDialog(page, seed.teamName);
   await dialog.getByTestId('team-workspace-row').filter({ hasText: seed.workspaceName }).click();
   // browser-client.spec.ts joined this workspace as the same user, so the server's host already holds
   // its checkout: the dialog then offers to open that one instead of joining again.

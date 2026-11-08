@@ -4,6 +4,8 @@ import { Button } from '../../components/button.js';
 import { hasCapability } from '../../lib/capabilities.js';
 import { signedInServers, useAccountStore } from '../../state/account.js';
 import { ipc } from '../../state/ipc-client.js';
+import { useShallow } from 'zustand/react/shallow';
+import { inOtherTeam, pickActive, useActiveTeamStore } from '../../state/active-team.js';
 import { useUiStore } from '../../state/ui.js';
 import { useWorkspaceStore } from '../../state/workspace.js';
 import type { TeamWorkspaceWire } from '@shared/wire-base.js';
@@ -39,6 +41,7 @@ export function OpenTeamWorkspaceDialog() {
   /** Set when an open was refused because that workspace is already on this machine. */
   const [existing, setExisting] = useState<AlreadyPresent | undefined>(undefined);
   const [error, setError] = useState<string | undefined>(undefined);
+  const teamState = useActiveTeamStore(useShallow(pickActive));
 
   useEffect(() => {
     if (!open) {
@@ -100,7 +103,10 @@ export function OpenTeamWorkspaceDialog() {
     }
   };
 
-  const rows = listing.state === 'ready' ? listing.rows : [];
+  // The active team's workspaces only: another team's are one switch away in the title bar.
+  const rows = (listing.state === 'ready' ? listing.rows : []).filter(
+    (row) => !inOtherTeam(teamState, row.url, row.workspace.id),
+  );
   const severalServers = new Set(rows.map((row) => row.url)).size > 1;
 
   return (

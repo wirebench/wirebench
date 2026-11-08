@@ -103,9 +103,13 @@ All notable changes to this project are documented here. The format follows
 - **The browser client reports the app's version (#875)**, in the status bar and in its requests' `User-Agent`,
   rather than the server package's.
 - **Closing a browser tab no longer logs "There is no window to do this in" on the server (#876).**
-- **The title bar names a team workspace's team.** It reads *Platform / Payments*, and the workspace menu shows each
-  team workspace's team beside its name, so you always know whose workspace you are in. In a browser tab, a workspace
-  held by another tab is now refused as "open in another tab" rather than "another window".
+- **A team switcher in the title bar.** Signed in to a Wirebench Server, the title bar shows the team you are working
+  in before the workspace's name (*Platform ▾ / Payments*), with or without a workspace open. Its menu lists your
+  teams and *Manage team…* for the active one. The workspace list, the workspace menu and *Open a team workspace…*
+  show the active team's workspaces (local workspaces always show), *Manage team…* opens on it, and opening another
+  team's workspace makes that team active. Switching team with another team's workspace open moves to the new team's
+  most recently used workspace, or to the workspace list when it has none here yet. The choice is remembered per account. In a browser tab, a workspace held by
+  another tab is now refused as "open in another tab" rather than "another window".
 
 ## [7.0.0] - 2026-11-06
 

@@ -7,6 +7,8 @@ import { useUiStore } from '../state/ui.js';
 import { AccountStatusItem } from '../features/account/account-status-item.js';
 import { EnvSwitcher } from '../features/environments/env-switcher.js';
 import { WorkspaceSwitcher } from '../features/workspace/switcher.js';
+import { TitleTeamSwitcher } from '../features/team/team-switcher.js';
+import { activeTeam, useActiveTeamStore } from '../state/active-team.js';
 
 export interface TitleBarProps {
   readonly platform: Platform;
@@ -25,6 +27,7 @@ export interface TitleBarProps {
 export function TitleBar({ platform, workspaceName, dirty = false, onOpenPalette, onToggleTheme }: TitleBarProps) {
   const theme = useUiStore((state) => state.theme);
   const settingsOpen = useUiStore((state) => state.preferences.open);
+  const hasTeam = useActiveTeamStore((state) => activeTeam(state) !== undefined);
   // Off a Mac a terminal keeps Ctrl+K for the shell, so while one has the focus the hint is the chord that works there.
   const inTerminal = useTerminalFocused() && platform !== 'mac';
   const paletteShortcut = inTerminal
@@ -40,9 +43,16 @@ export function TitleBar({ platform, workspaceName, dirty = false, onOpenPalette
       {platform === 'mac' && <div className="w-[68px] shrink-0" aria-hidden="true" />}
       <span className="flex shrink-0 items-center gap-1 text-sm text-fg-muted">
         wirebench
-        {workspaceName !== null && (
+        {/* The team you are working in, then the workspace: "Platform / Payments". */}
+        {hasTeam && (
           <>
             <span className="text-fg-faint">·</span>
+            <TitleTeamSwitcher />
+          </>
+        )}
+        {workspaceName !== null && (
+          <>
+            <span className="text-fg-faint">{hasTeam ? '/' : '·'}</span>
             {/* The name is the dropdown's trigger: with a workspace open, the way to another
                 one is the name itself. With none open the picker is already that. */}
             <WorkspaceSwitcher />

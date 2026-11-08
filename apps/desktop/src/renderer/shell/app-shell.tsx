@@ -6,6 +6,7 @@ import { PairMachineDialog } from '../features/account/pair-machine-dialog.js';
 import { SignInDialog } from '../features/account/sign-in-dialog.js';
 import { TeamDialog } from '../features/team/team-dialog.js';
 import { openTeamDeepLink } from '../features/team/team-link.js';
+import { useActiveTeam } from '../features/team/use-active-team.js';
 import { openUserDeepLink } from '../features/preferences/user/user-link.js';
 import { isBrowserTab } from '../lib/capabilities.js';
 import { WebhooksDialogs } from '../features/webhooks/webhooks-dialogs.js';
@@ -216,6 +217,7 @@ const TeamSessionLogsDialog = lazy(async () => {
 });
 
 export function AppShell() {
+  useActiveTeam();
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [paletteMode, setPaletteMode] = useState<PaletteMode>('commands');
   const platform = useMemo(() => detectPlatform(), []);

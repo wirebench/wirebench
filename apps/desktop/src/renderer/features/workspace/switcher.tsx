@@ -1,6 +1,8 @@
 import { useEffect, useRef } from 'react';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { Check, ChevronDown, Folder, GitBranch, Server } from 'lucide-react';
+import { useShallow } from 'zustand/react/shallow';
+import { ofOtherTeam, pickActive, useActiveTeamStore } from '../../state/active-team.js';
 import { useUiStore } from '../../state/ui.js';
 import { hasCapability } from '../../lib/capabilities.js';
 import { useWorkspaceStore } from '../../state/workspace.js';
@@ -30,7 +32,9 @@ export function WorkspaceSwitcher() {
   const setOpen = useUiStore((state) => state.setWorkspaceSwitcherOpen);
   const setCreateOpen = useUiStore((state) => state.setWorkspaceCreateOpen);
   const setManageOpen = useUiStore((state) => state.setWorkspaceManageOpen);
+  const setTeamDialogOpen = useUiStore((state) => state.setTeamWorkspaceDialogOpen);
   const contentRef = useRef<HTMLDivElement | null>(null);
+  const activeTeams = useActiveTeamStore(useShallow((state) => pickActive(state)));
 
   // Opened from the command palette, the menu mounts while the palette is still closing, and
   // the palette hands focus back to whatever held it before as it goes — which would leave an
@@ -54,7 +58,10 @@ export function WorkspaceSwitcher() {
   if (workspace === null) {
     return null;
   }
-  const rows = workspaces.length > 0 ? workspaces : NO_WORKSPACES;
+  // The menu follows the title bar's active team: another team's workspaces are one team switch away.
+  const rows = (workspaces.length > 0 ? workspaces : NO_WORKSPACES).filter(
+    (row) => row.id === workspace.id || !ofOtherTeam(activeTeams, row),
+  );
   const team = teamOf(workspace);
 
   return (
@@ -76,8 +83,8 @@ export function WorkspaceSwitcher() {
             ) : (
               <GitBranch data-testid="workspace-switcher-share" size={12} aria-hidden="true" />
             ))}
-          {/* A team workspace says whose it is: the team, then the workspace. */}
-          {team !== undefined && (
+          {/* A team workspace says whose it is, unless the title bar's team switcher already does. */}
+          {team !== undefined && activeTeams.teamId === undefined && (
             <>
               <span data-testid="workspace-switcher-team" className="text-fg-muted">
                 {team}
@@ -140,6 +147,19 @@ export function WorkspaceSwitcher() {
             >
               <span className="w-3" aria-hidden="true" />
               Create workspace…
+            </DropdownMenu.Item>
+          )}
+          {/* The active team's workspaces not opened here yet are a click away. */}
+          {activeTeams.teamId !== undefined && (
+            <DropdownMenu.Item
+              data-testid="workspace-switcher-open-team"
+              className={ITEM_CLASS}
+              onSelect={() => {
+                setTeamDialogOpen(true);
+              }}
+            >
+              <span className="w-3" aria-hidden="true" />
+              Open a team workspace…
             </DropdownMenu.Item>
           )}
           <DropdownMenu.Item
