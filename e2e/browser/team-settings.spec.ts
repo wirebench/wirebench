@@ -9,6 +9,7 @@
  */
 import { expect, test, type BrowserContext, type Locator, type Page } from '@playwright/test';
 import { runCommand } from '../helpers/palette.js';
+import { appReady } from '../helpers/server.js';
 import { readSeed, type Seed } from './stack.js';
 
 test.describe.configure({ mode: 'serial' });
@@ -52,7 +53,7 @@ test.beforeAll(async ({ browser }) => {
   await page.locator('#password').fill(seed.password);
   await page.getByRole('button', { name: 'Sign in' }).click();
   await expect(page).toHaveURL(/\/$/);
-  await expect(page.getByTestId('workspace-open-team')).toBeVisible({ timeout: 60_000 });
+  await expect(appReady(page)).toBeVisible({ timeout: 60_000 });
 });
 
 test.afterAll(async () => {

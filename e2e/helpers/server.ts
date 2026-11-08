@@ -58,10 +58,21 @@ export async function shareToTeam(
 
 /** Opens *Open a team workspace…* from the picker and returns the dialog. */
 export async function openTeamDialog(page: Page): Promise<Locator> {
-  await page.getByTestId('workspace-open-team').click();
+  // The picker's button, or the palette's command when a workspace is open (a browser tab reopens its last, #879).
+  const button = page.getByTestId('workspace-open-team');
+  if (await button.isVisible()) await button.click();
+  else await runCommand(page, 'Open Team Workspace');
   const dialog = page.getByTestId('open-team-workspace-dialog');
   await expect(dialog).toBeVisible();
   return dialog;
+}
+
+/**
+ * The app has loaded: the picker, or a workspace a browser tab reopened (#879). A sign-in waits for this, not for
+ * the picker alone.
+ */
+export function appReady(page: Page): Locator {
+  return page.getByTestId('workspace-open-team').or(page.getByTestId('activity-bar'));
 }
 
 /** Opens the team workspace `name` from the picker, and waits for the IDE and its badge. */

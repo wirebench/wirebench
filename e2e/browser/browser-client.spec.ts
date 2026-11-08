@@ -10,13 +10,20 @@
  * endpoints are rate-limited per address. Every page the flow loads reports its CSP violations and the
  * console reports its errors; the last step asserts there were none.
  */
+import { readFileSync } from 'node:fs';
 import { expect, test, type BrowserContext, type Locator, type Page } from '@playwright/test';
+import { runCommand } from '../helpers/palette.js';
 import { openTeamDialog } from '../helpers/server.js';
 import { apiRow, responseStatus, restRequestRow, sendRest, unfoldRow } from '../helpers/rest.js';
 import { ensureUnpaired, pairAgent, unpairAgent } from './agent.js';
 import { BASE_URL, readAgentHome, readSeed, type Seed } from './stack.js';
 
 test.describe.configure({ mode: 'serial' });
+
+/** The desktop app's version: the tab is its renderer, so it reports this one, not the server's (#875). */
+const APP_VERSION = (
+  JSON.parse(readFileSync(new URL('../../apps/desktop/package.json', import.meta.url), 'utf8')) as { version: string }
+).version;
 
 // Read in the worker, after global setup has seeded the server; the runner loads this file before that.
 let seed: Seed;
@@ -112,6 +119,12 @@ test('opens the seeded server workspace', async () => {
   await expect(projectRow()).toBeVisible();
 });
 
+test('a reload reopens the workspace the tab had open (#879)', async () => {
+  await page.reload();
+  await expect(projectRow()).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByTestId('workspace-open-team')).toHaveCount(0);
+});
+
 test('the SSH area and the file-manager reveal are absent', async () => {
   // The rail's SSH entry (`activity-hosts`) needs the `ssh` capability, which the browser host lacks.
   const rail = page.getByTestId('activity-bar');
@@ -194,6 +207,48 @@ test('History says which host sent each exchange: the agent, or the server', asy
   const serverRow = rows.filter({ hasText: new RegExp(`/hello|${seed.echoRequest}`) }).first();
   await expect(agentRow.getByTestId('history-origin')).toHaveAttribute('data-origin', 'agent');
   await expect(serverRow.getByTestId('history-origin')).toHaveAttribute('data-origin', 'server');
+});
+
+test('the tab reports the app’s version, not the server’s (#875)', async () => {
+  const reply = await page.evaluate(async () => {
+    const api = (window as unknown as { wirebench: { app: { version(request: undefined): Promise<unknown> } } })
+      .wirebench;
+    return await api.app.version(undefined);
+  });
+  expect(reply).toMatchObject({ ok: true, value: { version: APP_VERSION } });
+});
+
+test('the workspace list shows none of the server’s folders (#880)', async () => {
+  await runCommand(page, 'Manage Workspaces');
+  const dialog = page.getByTestId('workspace-manage-dialog');
+  await expect(dialog.getByTestId('workspace-rename-name').first()).toBeVisible();
+  await expect(dialog).not.toContainText('/data/');
+  await expect(dialog).not.toContainText('checkouts');
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+});
+
+test('the account menu opens Team settings (#877)', async () => {
+  await page.getByTestId('status-bar-account').click();
+  await page.getByTestId('account-manage-teams').click();
+  const settings = page.getByTestId('team-settings');
+  await expect(settings).toBeVisible({ timeout: 60_000 });
+  await expect(settings.getByTestId('team-switcher')).toContainText(seed.teamName);
+  await page.keyboard.press('Escape');
+  await expect(settings).toBeHidden();
+});
+
+test('opens an empty team workspace and starts it: its first commit reaches the server (#878)', async () => {
+  const dialog = await openTeamDialog(page);
+  await dialog.getByTestId('team-workspace-row').filter({ hasText: seed.emptyWorkspaceName }).click();
+  await expect(dialog).toBeHidden({ timeout: 60_000 });
+  await expect(page.getByTestId('activity-bar')).toBeVisible();
+  const head = async (): Promise<unknown> =>
+    await page.evaluate(async (id) => {
+      const response = await fetch(`/api/v1/workspaces/${id}/sync/head`);
+      return response.ok ? ((await response.json()) as { head: unknown }).head : `status ${String(response.status)}`;
+    }, seed.emptyWorkspaceId);
+  await expect.poll(head, { timeout: 60_000 }).toMatch(/^[0-9a-f]{40}$/);
 });
 
 test('signing out lands on the sign-in page, and the app is no longer served', async () => {

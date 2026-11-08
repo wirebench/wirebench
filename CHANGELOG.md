@@ -93,6 +93,17 @@ All notable changes to this project are documented here. The format follows
 - **Settings → Server in the desktop app.** A server admin manages the server's own settings in Team settings in the
   browser client; the desktop's **Manage team…** opens it there.
 
+### Fixed
+- **The browser client opens a team workspace it just created (#878).** **Open a team workspace…** in a browser tab
+  now lists an empty workspace you can edit, and opening it starts it: the tab writes the workspace's first file and
+  pushes it, so a team that only uses the browser no longer needs the desktop app to put something in a workspace.
+- **A browser tab reopens its workspace after a reload (#879)**, as the desktop does after a restart. A second tab
+  beside one that holds the workspace starts at the workspace list.
+- **The browser client no longer shows the server's folders (#880)** in the workspace list or Manage Workspaces.
+- **The browser client reports the app's version (#875)**, in the status bar and in its requests' `User-Agent`,
+  rather than the server package's.
+- **Closing a browser tab no longer logs "There is no window to do this in" on the server (#876).**
+
 ## [7.0.0] - 2026-11-06
 
 ### Added

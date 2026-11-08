@@ -71,6 +71,9 @@ export interface Seed {
   readonly agentRequest: string;
   /** The path {@link agentRequest} asks for, which its echo answers with. */
   readonly agentPath: string;
+  /** A team workspace made on the server and left empty: the tab starts it (#878). */
+  readonly emptyWorkspaceName: string;
+  readonly emptyWorkspaceId: string;
 }
 
 export const SEED_ENV = 'WIREBENCH_E2E_BROWSER_SEED';
