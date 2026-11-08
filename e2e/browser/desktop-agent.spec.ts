@@ -12,7 +12,7 @@
  */
 import { expect, test, type BrowserContext, type Locator, type Page } from '@playwright/test';
 import type { LaunchedPackagedApp } from '../helpers/launch-app.js';
-import { openTeamDialog } from '../helpers/server.js';
+import { appReady, openTeamDialog } from '../helpers/server.js';
 import { apiRow, responseStatus, restRequestRow, sendRest, unfoldRow } from '../helpers/rest.js';
 import { ensureUnpaired } from './agent.js';
 import {
@@ -123,7 +123,7 @@ test('signs in at a browser tab and opens the seeded server workspace', async ()
   await page.locator('#password').fill(seed.password);
   await page.getByRole('button', { name: 'Sign in' }).click();
   await expect(page).toHaveURL(/\/$/);
-  await expect(page.getByTestId('workspace-open-team')).toBeVisible({ timeout: 60_000 });
+  await expect(appReady(page)).toBeVisible({ timeout: 60_000 });
   // No pairing from an earlier attempt: the desktop's is the only one this spec makes.
   await clearServerPairings();
   expect(await serverPairings()).toEqual([]);
@@ -133,7 +133,11 @@ test('signs in at a browser tab and opens the seeded server workspace', async ()
   // browser-client.spec.ts joined this workspace as the same user, so the server's host already holds
   // its checkout: the dialog then offers to open that one instead of joining again.
   const alreadyPresent = dialog.getByTestId('open-team-workspace-already-present');
-  await expect(alreadyPresent.or(page.getByTestId('activity-bar'))).toBeVisible({ timeout: 60_000 });
+  // The tab may have reopened another workspace (#879), so the IDE being up says nothing: wait for the dialog to
+  // offer the existing copy, or to close on its own.
+  await expect
+    .poll(async () => (await alreadyPresent.isVisible()) || !(await dialog.isVisible()), { timeout: 60_000 })
+    .toBe(true);
   if (await alreadyPresent.isVisible()) {
     await dialog.getByTestId('open-team-workspace-open-existing').click();
   }

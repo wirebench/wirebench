@@ -10,6 +10,7 @@
 import { deflateSync } from 'node:zlib';
 import { expect, test, type BrowserContext, type Locator, type Page } from '@playwright/test';
 import { runCommand } from '../helpers/palette.js';
+import { appReady } from '../helpers/server.js';
 import { readSeed, type Seed } from './stack.js';
 
 test.describe.configure({ mode: 'serial' });
@@ -100,7 +101,7 @@ async function signIn(identifier: string): Promise<void> {
   await page.locator('#password').fill(seed.password);
   await page.getByRole('button', { name: 'Sign in' }).click();
   await expect(page).toHaveURL(/\/$/);
-  await expect(page.getByTestId('workspace-open-team')).toBeVisible({ timeout: 60_000 });
+  await expect(appReady(page)).toBeVisible({ timeout: 60_000 });
 }
 
 async function openProfile(): Promise<Locator> {

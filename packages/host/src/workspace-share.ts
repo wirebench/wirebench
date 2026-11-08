@@ -24,6 +24,7 @@ import { cp as nodeCp, mkdir, readdir, readFile, realpath, rename as nodeRename,
 import { basename, isAbsolute, join, relative, sep } from 'node:path';
 import {
   appliesToProject,
+  createWorkspace,
   DEFAULT_GIT_SHARE_SETTINGS,
   DEFAULT_SYNC_SETTINGS,
   deleteShare,
@@ -128,6 +129,12 @@ export interface ShareDeps {
   ) => Promise<WorkspaceWire>;
   /** Wirebench Server's client, tokens and the workspace state; absent where no server flow can run. */
   readonly server?: ServerShareServices;
+  /**
+   * Whether an empty team workspace can be opened here and started from nothing. True on a host without
+   * the machine's own files (the browser client): it has no local workspace to share into an empty one,
+   * so opening it is the only way to put something in it (#878).
+   */
+  readonly startEmpty?: boolean;
 }
 
 /** The open workspace as these operations see it. */
@@ -1069,31 +1076,45 @@ export async function joinFromServer(
 
   let snapshot: SyncSnapshotResponse;
   let files: Map<string, TreeFile>;
+  /** Set when an empty workspace was started here: its first commit pushes the new manifest. */
+  let startedEmpty = false;
   try {
     snapshot = await withToken(server, url, (origin, token) => server.client.syncSnapshot(origin, token, workspaceId));
-    if (snapshot.head === null) {
+    if (snapshot.head === null && canStartEmpty(deps, row)) {
+      if (existsSync(workspaceDir(deps.userDataDir, workspaceId))) {
+        throw alreadyPresent({ id: workspaceId, name: row.name });
+      }
+      await mkdir(joining, { recursive: true });
+      await saveWorkspace(createWorkspace(row.name, { id: workspaceId }), joining, deps.fsOption);
+      files = new Map();
+      startedEmpty = true;
+    } else if (snapshot.head === null) {
       throw new WirebenchError(
         'workspace-not-found',
         'This team workspace is still empty. Once an editor shares a workspace into it, it can be opened.',
         { details: { workspaceId } },
       );
-    }
-    files = new Map(
-      snapshot.files.map((file): [string, TreeFile] => [file.path, { encoding: file.encoding, content: file.content }]),
-    );
-    await mkdir(joining, { recursive: true });
-    // Validates every path (assertTreePath) before writing: the snapshot is the server's word.
-    await writeTreeFiles(joining, files);
-    const { workspace } = await loadWorkspace(joining, deps.fsOption);
-    if (requireWorkspaceId(workspace.id) !== workspaceId) {
-      throw new WirebenchError(
-        'sync-workspace-id-mismatch',
-        'The workspace on the server carries a different id in its workspace.yaml, so it cannot be opened here.',
-        { details: { workspaceId, manifestId: workspace.id } },
+    } else {
+      files = new Map(
+        snapshot.files.map((file): [string, TreeFile] => [
+          file.path,
+          { encoding: file.encoding, content: file.content },
+        ]),
       );
-    }
-    if (existsSync(workspaceDir(deps.userDataDir, workspaceId))) {
-      throw alreadyPresent(workspace);
+      await mkdir(joining, { recursive: true });
+      // Validates every path (assertTreePath) before writing: the snapshot is the server's word.
+      await writeTreeFiles(joining, files);
+      const { workspace } = await loadWorkspace(joining, deps.fsOption);
+      if (requireWorkspaceId(workspace.id) !== workspaceId) {
+        throw new WirebenchError(
+          'sync-workspace-id-mismatch',
+          'The workspace on the server carries a different id in its workspace.yaml, so it cannot be opened here.',
+          { details: { workspaceId, manifestId: workspace.id } },
+        );
+      }
+      if (existsSync(workspaceDir(deps.userDataDir, workspaceId))) {
+        throw alreadyPresent(workspace);
+      }
     }
   } catch (error) {
     await deps.files.rm(joining, { recursive: true, force: true }).catch(() => undefined);
@@ -1121,7 +1142,14 @@ export async function joinFromServer(
     await deps.files.rm(joining, { recursive: true, force: true }).catch(() => undefined);
     throw error;
   }
-  return await deps.open(workspaceId);
+  return startedEmpty
+    ? await deps.open(workspaceId, { initialCommitMessage: `Start workspace ${row.name}` })
+    : await deps.open(workspaceId);
+}
+
+/** Whether `row`, an empty team workspace, may be started here: a host that can, by someone who may edit it. */
+function canStartEmpty(deps: ShareDeps, row: TeamWorkspace): boolean {
+  return deps.startEmpty === true && row.myRole !== 'viewer';
 }
 
 /**
@@ -1147,7 +1175,8 @@ export async function serverShareTargets(
 
 /**
  * *Open a team workspace…*'s rows: the workspaces that have a head, on every server in `servers`
- * (empty ones stay hidden, O1). They are sorted by team, then by name.
+ * (empty ones stay hidden, O1, except where {@link canStartEmpty} lets this host start one). They are
+ * sorted by team, then by name.
  *
  * Failures are handled per server:
  * - a server that fails (unreachable, signed out, too old) is skipped while another one answers;
@@ -1169,9 +1198,9 @@ export async function openableTeamWorkspaces(
         const rows = await server.client.listWorkspaces(origin, token);
         const heads = await Promise.all(rows.map((row) => headOrGone(server.client, origin, token, row.id)));
         return rows
-          .filter((_row, index) => {
+          .filter((row, index) => {
             const found = heads[index];
-            return found !== undefined && found.head !== null;
+            return found !== undefined && (found.head !== null || canStartEmpty(deps, row));
           })
           .map((workspace): OpenableTeamWorkspace => ({ url, workspace }));
       });

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { Button } from '../../components/button.js';
+import { hasCapability } from '../../lib/capabilities.js';
 import { signedInServers, useAccountStore } from '../../state/account.js';
 import { ipc } from '../../state/ipc-client.js';
 import { useUiStore } from '../../state/ui.js';
@@ -112,7 +113,9 @@ export function OpenTeamWorkspaceDialog() {
         >
           <Dialog.Title className="text-md font-medium text-fg-default">Open a team workspace</Dialog.Title>
           <Dialog.Description className="mt-1 text-xs text-fg-subtle">
-            Workspaces your teams share on Wirebench Server. An empty one appears once someone shares into it.
+            {hasCapability('files')
+              ? 'Workspaces your teams share on Wirebench Server. An empty one appears once someone shares into it.'
+              : 'Workspaces your teams share on Wirebench Server. Opening an empty one starts it here.'}
           </Dialog.Description>
 
           {!signedIn ? (
@@ -140,7 +143,9 @@ export function OpenTeamWorkspaceDialog() {
             </p>
           ) : rows.length === 0 ? (
             <p data-testid="open-team-workspace-empty" className="mt-4 text-sm text-fg-subtle">
-              No team workspace has anything in it yet.
+              {hasCapability('files')
+                ? 'No team workspace has anything in it yet.'
+                : 'No team workspace yet. Create one in Manage team → Workspaces.'}
             </p>
           ) : (
             <ul className="mt-3 flex min-h-0 flex-col overflow-y-auto">

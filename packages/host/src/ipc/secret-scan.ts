@@ -53,8 +53,11 @@ export function registerSecretScanChannels(
   registerHandler(table, channels.secretScan.hold, (request, sender) => {
     if (!watched.has(sender)) {
       watched.add(sender);
+      // Read now, while this caller's scope is the current one: `sessions` may follow the current window, and
+      // by the time the caller closes there is none (#876).
+      const releaseOwner = sessions.releaseOwner;
       const drop = (): void => {
-        sessions.releaseOwner(sender.id);
+        releaseOwner(sender.id);
       };
       sender.onClosed(drop);
       // A crash, a reload (or any main-frame navigation) starts a renderer that knows nothing of the old holds.

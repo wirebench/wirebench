@@ -129,6 +129,8 @@ export async function seedServer(agentEchoUrl: string): Promise<Seed> {
     loopbackRequest: 'Loopback',
     agentRequest: 'Agent echo',
     agentPath: '/from-agent',
+    emptyWorkspaceName: `Empty workspace ${stamp}`,
+    emptyWorkspaceId: '',
   };
 
   const secret = invite(seed.email);
@@ -146,6 +148,14 @@ export async function seedServer(agentEchoUrl: string): Promise<Seed> {
     'POST',
     `/teams/${team.id}/workspaces`,
     { name: seed.workspaceName },
+    token,
+  );
+
+  // 4c. A second workspace, left empty: the tab starts it, as a browser-only team must (#878).
+  const empty = await call<{ id: string }>(
+    'POST',
+    `/teams/${team.id}/workspaces`,
+    { name: seed.emptyWorkspaceName },
     token,
   );
 
@@ -184,5 +194,5 @@ export async function seedServer(agentEchoUrl: string): Promise<Seed> {
   } finally {
     await rm(scratch, { recursive: true, force: true });
   }
-  return { ...seed, teamId: team.id, secondTeamId: second.id };
+  return { ...seed, teamId: team.id, secondTeamId: second.id, emptyWorkspaceId: empty.id };
 }

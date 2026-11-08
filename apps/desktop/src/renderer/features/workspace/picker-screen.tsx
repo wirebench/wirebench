@@ -182,7 +182,8 @@ export function WorkspacePicker() {
                     data-testid="workspace-picker-row"
                     data-workspace-id={workspace.id}
                     disabled={unreadable}
-                    title={unreadable ? `${workspace.dir} (unreadable)` : workspace.dir}
+                    // Without the machine's files the folder is the server's own (#880): never shown.
+                    title={localFiles ? (unreadable ? `${workspace.dir} (unreadable)` : workspace.dir) : workspace.name}
                     onClick={() => {
                       void workspaceActions.open(workspace.id);
                     }}
@@ -190,7 +191,9 @@ export function WorkspacePicker() {
                   >
                     <span className="shrink-0 text-sm text-fg-default">{workspace.name}</span>
                     {workspace.share !== undefined && <ShareGlyph share={workspace.share} />}
-                    <span className="min-w-0 flex-1 truncate font-mono text-xs text-fg-subtle">{workspace.dir}</span>
+                    <span className="min-w-0 flex-1 truncate font-mono text-xs text-fg-subtle">
+                      {localFiles ? workspace.dir : ''}
+                    </span>
                     <span className="shrink-0 text-xs text-fg-faint">
                       {unreadable
                         ? 'Cannot be read'

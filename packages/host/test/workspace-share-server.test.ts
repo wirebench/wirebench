@@ -731,6 +731,39 @@ describe('joinFromServer (§3.4 Open a team workspace)', () => {
     expect(h.opened).toEqual([]);
   });
 
+  it('starts an empty workspace on a host without machine files (#878): fresh manifest, empty base, first commit named', async () => {
+    const h = await harness();
+    const deps: ShareDeps = { ...h.deps, startEmpty: true };
+    const row = h.server.add({ name: 'Fresh', role: 'editor' });
+
+    const wire = await joinFromServer(deps, { url: URL_A, workspaceId: row.id });
+
+    const dir = workspaceDir(h.root, row.id);
+    expect(wire.id).toBe(row.id);
+    const { workspace } = await loadWorkspace(join(dir, 'tree'));
+    expect(workspace).toMatchObject({ id: row.id, name: 'Fresh', projects: [] });
+    const state = new ServerState(join(dir, SERVER_STATE_DIR));
+    expect(await state.read()).toMatchObject({ base: { head: null }, role: 'editor' });
+    expect(await state.baseFiles()).toEqual(new Map());
+    expect((await loadShare(dir))?.kind).toBe('server');
+    expect(h.opened).toEqual([{ id: row.id, initialCommitMessage: 'Start workspace Fresh' }]);
+    expect(await readdir(join(h.root, 'workspaces', '.joining'))).toEqual([]);
+  });
+
+  it('still refuses an empty workspace to a viewer, or where the host does not start one', async () => {
+    const h = await harness();
+    const viewed = h.server.add({ name: 'Viewed', role: 'viewer' });
+    const empty = h.server.add({ name: 'Empty', role: 'editor' });
+
+    await expect(
+      joinFromServer({ ...h.deps, startEmpty: true }, { url: URL_A, workspaceId: viewed.id }),
+    ).rejects.toMatchObject({ code: 'workspace-not-found' });
+    await expect(joinFromServer(h.deps, { url: URL_A, workspaceId: empty.id })).rejects.toMatchObject({
+      code: 'workspace-not-found',
+    });
+    expect(h.opened).toEqual([]);
+  });
+
   it('checks the id before any call, and the sync capability before any download', async () => {
     const h = await harness();
     await expect(joinFromServer(h.deps, { url: URL_A, workspaceId: '../../etc' })).rejects.toMatchObject({
@@ -837,6 +870,17 @@ describe('the dialogs’ lists', () => {
     ]);
     await expect(openableTeamWorkspaces(h.deps, [URL_B])).rejects.toMatchObject({ code: 'account-signed-out' });
     expect(await openableTeamWorkspaces(h.deps, [])).toEqual([]);
+  });
+  it('openableTeamWorkspaces lists an empty workspace the caller may edit where the host starts one (#878)', async () => {
+    const h = await harness();
+    const full = h.server.add({ name: 'Payments', role: 'viewer', files: ONE_FILE });
+    const staging = h.server.add({ name: 'Staging', role: 'editor' });
+    h.server.add({ name: 'Viewed', role: 'viewer' });
+
+    expect(await openableTeamWorkspaces({ ...h.deps, startEmpty: true }, [URL_A])).toEqual([
+      { url: URL_A, workspace: full },
+      { url: URL_A, workspace: staging },
+    ]);
   });
 });
 

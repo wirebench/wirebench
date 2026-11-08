@@ -81,8 +81,12 @@ export function WorkspaceManageDialog() {
                       }}
                       className="h-row w-48 shrink-0 rounded border border-hairline-strong bg-surface-base px-2 text-sm text-fg-default outline-none focus:ring-1 focus:ring-accent"
                     />
-                    <span className="min-w-0 flex-1 truncate font-mono text-xs text-fg-subtle" title={row.dir}>
-                      {row.dir}
+                    {/* Without the machine's files the folder is the server's own (#880): never shown. */}
+                    <span
+                      className="min-w-0 flex-1 truncate font-mono text-xs text-fg-subtle"
+                      title={hasCapability('files') ? row.dir : undefined}
+                    >
+                      {hasCapability('files') ? row.dir : ''}
                     </span>
                     <span className="shrink-0 text-xs text-fg-faint">{plural(row.projectCount, 'project')}</span>
                     {row.id === workspace?.id &&
