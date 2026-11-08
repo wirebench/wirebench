@@ -842,7 +842,9 @@ export class WorkspaceService implements ProjectRouter {
   /** @throws WirebenchError `workspace-open-elsewhere` when another window holds `id`. */
   private refuseHeldElsewhere(id: string): void {
     if (this.deps.heldElsewhere?.(id) === true) {
-      throw new WirebenchError('workspace-open-elsewhere', 'That workspace is open in another window.', {
+      // A host without the machine's files serves browser tabs, where a caller is a tab rather than a window.
+      const where = this.deps.machineFiles === false ? 'tab' : 'window';
+      throw new WirebenchError('workspace-open-elsewhere', `That workspace is open in another ${where}.`, {
         details: { workspaceId: id },
       });
     }
