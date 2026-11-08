@@ -29,6 +29,9 @@ import { sendSignInPage } from '../sign-in-page.js';
 import { mintSecret, pkceChallenge } from '../tokens.js';
 import { checkLocalCredentials } from './auth-local.js';
 import { browserInviteRoutes } from './browser-invite.js';
+import { browserTwoFactorRoutes, sendTwoFactorStep } from './browser-two-factor.js';
+import { BROWSER_DEVICE_NAME } from '../browser-flows.js';
+import { twoFactorGate } from '../two-factor/gate.js';
 
 /** An email and a password with room to spare; anything bigger is not a sign-in. */
 const FORM_BODY_LIMIT = 16 * 1024;
@@ -117,16 +120,14 @@ export const browserSignInRoutes =
             redirectTo,
             add,
           });
-        return finishBrowserSignIn(
-          env,
-          request,
-          reply,
-          checked.user,
-          'local',
-          source,
-          redirectTo,
-          add ? 'add' : 'replace',
-        );
+        // Two-step sign-in (spec §4.1): the code page instead of a session, its challenge in the `wb_2fa` cookie.
+        const challenge = await twoFactorGate(env, request.tenant, checked.user, {
+          deviceName: BROWSER_DEVICE_NAME,
+          kind: 'browser',
+        });
+        const mode = add ? 'add' : 'replace';
+        if (challenge !== undefined) return sendTwoFactorStep(env, reply, challenge, redirectTo, mode);
+        return finishBrowserSignIn(env, request, reply, checked.user, 'local', source, redirectTo, mode);
       });
       // Sign-out (spec §17.2, switch accounts spec §5.4): revokes the presented browser token, which announces
       // `sessionEnded` and so closes that session's host sockets with 4401. The most recent remembered session then
@@ -194,6 +195,8 @@ export const browserSignInRoutes =
       });
       // The invitation page's form (team management in the browser §2.3), under the same parser and limit.
       browserInviteRoutes(env, FORM_BODY_LIMIT)(form);
+      // The second step's code form (two-step sign-in spec §4.1), under the same parser, limit and Origin check.
+      browserTwoFactorRoutes(env, FORM_BODY_LIMIT)(form);
       registered();
     });
 

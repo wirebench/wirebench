@@ -172,6 +172,35 @@ export function clearFlowCookie(reply: FastifyReply, url: string): void {
   appendSetCookie(reply, `${flowCookieName(url)}=; ${attributes(url, 0)}`);
 }
 
+/**
+ * The second step's cookie (two-step sign-in spec §3.2) holds the challenge's secret between the password form and
+ * the code form, so the page never carries it. `SameSite=Strict`: both forms are this server's own, and no other
+ * site's navigation needs to bring it along. It lives as long as the challenge, five minutes.
+ */
+export function challengeCookieName(url: string): '__Host-wb_2fa' | 'wb_2fa' {
+  return isSecure(url) ? '__Host-wb_2fa' : 'wb_2fa';
+}
+
+const CHALLENGE_COOKIE_SECONDS = 5 * 60;
+
+export function setChallengeCookie(reply: FastifyReply, url: string, secret: string): void {
+  appendSetCookie(
+    reply,
+    `${challengeCookieName(url)}=${secret}; Max-Age=${CHALLENGE_COOKIE_SECONDS}; Path=/; HttpOnly${isSecure(url) ? '; Secure' : ''}; SameSite=Strict`,
+  );
+}
+
+export function clearChallengeCookie(reply: FastifyReply, url: string): void {
+  appendSetCookie(
+    reply,
+    `${challengeCookieName(url)}=; Max-Age=0; Path=/; HttpOnly${isSecure(url) ? '; Secure' : ''}; SameSite=Strict`,
+  );
+}
+
+export function challengeCookie(request: FastifyRequest, url: string): string | undefined {
+  return cookieValue(request, challengeCookieName(url));
+}
+
 export function flowCookie(request: FastifyRequest, url: string): string | undefined {
   return cookieValue(request, flowCookieName(url));
 }

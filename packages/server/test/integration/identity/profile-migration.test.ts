@@ -54,9 +54,9 @@ describeDb('migration 0026: the user profile (user profile spec §6.1)', () => {
     await db?.close();
   });
 
-  it('is migration 26, from the identity folder, after the control plane’s 0025', async () => {
+  it('is migration 26, from the identity folder, after the control plane’s 0025, before two-step sign-in’s 0027', async () => {
     const migrations = await allMigrations(BUILTIN_MODULES);
-    expect(migrations.slice(-2).map((m) => `${m.version}_${m.name}`)).toEqual(['25_signup-ref', '26_user-profile']);
+    expect(migrations.slice(-3, -1).map((m) => `${m.version}_${m.name}`)).toEqual(['25_signup-ref', '26_user-profile']);
   });
 
   describe('users', () => {

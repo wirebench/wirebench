@@ -1,6 +1,7 @@
 import {
   localSignInRequestSchema,
   signInResponseSchema,
+  twoFactorChallengeResponseSchema,
   type LocalSignInRequest,
   type WirebenchError,
 } from '@wirebench/engine';
@@ -16,6 +17,7 @@ import { hashPassword, verifyPassword } from '../passwords.js';
 import { identifierKey, ipKey, rateLimit } from '../rate-limit.js';
 import * as repo from '../repo.js';
 import { emailLower, signIn } from '../sessions.js';
+import { twoFactorGate } from '../two-factor/gate.js';
 
 /**
  * Verified instead of a credential when no account matches, so an unknown email or username costs the same scrypt as
@@ -87,7 +89,7 @@ export const authLocalRoutes =
         preHandler: [rateLimit(env, (request) => [ipKey(request), identifierKey(request)])],
         schema: {
           body: jsonSchema(localSignInRequestSchema, { io: 'input' }),
-          response: { 201: jsonSchema(signInResponseSchema) },
+          response: { 200: jsonSchema(twoFactorChallengeResponseSchema), 201: jsonSchema(signInResponseSchema) },
         },
       },
       async (request, reply) => {
@@ -99,6 +101,15 @@ export const authLocalRoutes =
         const identifier = (body.identifier ?? body.email)!;
         const checked = await checkLocalCredentials(env, request.tenant, source, identifier, body.password);
         if (!checked.ok) throw checked.error;
+        // Two-step sign-in (spec §3.1): a person with a second factor gets its challenge, and no session yet.
+        const challenge = await twoFactorGate(env, request.tenant, checked.user, {
+          deviceName: body.device.name,
+          kind: 'device',
+        });
+        if (challenge !== undefined)
+          return reply.code(200).send({
+            twoFactor: { challenge: challenge.secret, methods: challenge.methods, setup: challenge.setup },
+          });
         return reply.code(201).send(await signIn(env, request.tenant, checked.user, 'local', body.device.name, source));
       },
     );

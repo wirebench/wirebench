@@ -27,6 +27,31 @@ import type {
   TerminalShareInfo,
 } from '@wirebench/engine';
 import {
+  localSignInResponseSchema,
+  usersResponseSchema,
+  type UserSummary,
+  passkeyAddResponseSchema,
+  passkeyBrowserStartResponseSchema,
+  webauthnJsonSchema,
+  type PasskeyAddRequest,
+  type PasskeyAddResponse,
+  recoveryCodesResponseSchema,
+  totpConfirmResponseSchema,
+  totpSetupResponseSchema,
+  twoFactorSetupSignInResponseSchema,
+  twoFactorStatusSchema,
+  type LocalSignInResponse,
+  type PasskeyBrowserStartRequest,
+  type PasskeyBrowserStartResponse,
+  type PasskeyCompleteRequest,
+  type RecoveryCodesResponse,
+  type TotpConfirmResponse,
+  type TotpSetupResponse,
+  type TwoFactorSetupSignInResponse,
+  type TwoFactorStatus,
+  type TwoFactorVerifyRequest,
+} from '@wirebench/engine';
+import {
   accessResponseSchema,
   type DesktopAuditBatch,
   captureSchema,
@@ -223,6 +248,8 @@ interface Call<T> {
   readonly schema?: z.ZodType<T>;
   readonly body?: unknown;
   readonly token?: string;
+  /** An `Authorization` other than a bearer token: the setup challenge's `TwoFactor <secret>` (two-step spec §4.3). */
+  readonly authorization?: string;
   /** This call's deadline; wins over the client-wide `timeoutMs`. Set only by the large sync transfers. */
   readonly timeoutMs?: number;
 }
@@ -249,8 +276,150 @@ export class ServerClient {
     return parseOrBad(metaResponseSchema, raw);
   }
 
-  signInLocal(url: string, body: LocalSignInRequest): Promise<SignInResponse> {
-    return this.call(url, { method: 'POST', path: '/api/v1/auth/local/sign-in', body, schema: signInResponseSchema });
+  /** A session, or the second step's challenge for a person with two-step sign-in (two-step spec §3.1). */
+  signInLocal(url: string, body: LocalSignInRequest): Promise<LocalSignInResponse> {
+    return this.call(url, {
+      method: 'POST',
+      path: '/api/v1/auth/local/sign-in',
+      body,
+      schema: localSignInResponseSchema,
+    });
+  }
+
+  // ---- two-step sign-in (two-step sign-in spec §7) -------------------------------------------
+
+  verifyTwoFactor(url: string, body: TwoFactorVerifyRequest): Promise<SignInResponse> {
+    return this.call(url, {
+      method: 'POST',
+      path: '/api/v1/auth/two-factor/verify',
+      body,
+      schema: signInResponseSchema,
+    });
+  }
+
+  startTwoFactorPasskey(url: string, body: PasskeyBrowserStartRequest): Promise<PasskeyBrowserStartResponse> {
+    return this.call(url, {
+      method: 'POST',
+      path: '/api/v1/auth/two-factor/passkey/browser-start',
+      body,
+      schema: passkeyBrowserStartResponseSchema,
+    });
+  }
+
+  completeTwoFactorPasskey(url: string, body: PasskeyCompleteRequest): Promise<SignInResponse> {
+    return this.call(url, {
+      method: 'POST',
+      path: '/api/v1/auth/two-factor/passkey/complete',
+      body,
+      schema: signInResponseSchema,
+    });
+  }
+
+  twoFactorStatus(url: string, token: string): Promise<TwoFactorStatus> {
+    return this.call(url, { method: 'GET', path: '/api/v1/me/two-factor', token, schema: twoFactorStatusSchema });
+  }
+
+  /** Signed in with the password, or under a setup challenge (no password: one was checked moments ago). */
+  setUpTotp(
+    url: string,
+    as: { readonly token: string; readonly password: string } | { readonly challenge: string },
+  ): Promise<TotpSetupResponse> {
+    return this.call(url, {
+      method: 'POST',
+      path: '/api/v1/me/two-factor/totp',
+      ...('token' in as
+        ? { token: as.token, body: { password: as.password } }
+        : { authorization: `TwoFactor ${as.challenge}`, body: {} }),
+      schema: totpSetupResponseSchema,
+    });
+  }
+
+  confirmTotp(url: string, token: string, code: string): Promise<TotpConfirmResponse> {
+    return this.call(url, {
+      method: 'POST',
+      path: '/api/v1/me/two-factor/totp/confirm',
+      token,
+      body: { code },
+      schema: totpConfirmResponseSchema,
+    });
+  }
+
+  /** The setup challenge's confirm (two-step spec §4.3): the session, with the recovery codes to show first. */
+  confirmTotpSetup(url: string, challenge: string, code: string): Promise<TwoFactorSetupSignInResponse> {
+    return this.call(url, {
+      method: 'POST',
+      path: '/api/v1/me/two-factor/totp/confirm',
+      authorization: `TwoFactor ${challenge}`,
+      body: { code },
+      schema: twoFactorSetupSignInResponseSchema,
+    });
+  }
+
+  async removeTotp(url: string, token: string, password: string): Promise<void> {
+    await this.call<unknown>(url, { method: 'DELETE', path: '/api/v1/me/two-factor/totp', token, body: { password } });
+  }
+
+  regenerateRecoveryCodes(url: string, token: string, password: string): Promise<RecoveryCodesResponse> {
+    return this.call(url, {
+      method: 'POST',
+      path: '/api/v1/me/two-factor/recovery-codes',
+      token,
+      body: { password },
+      schema: recoveryCodesResponseSchema,
+    });
+  }
+
+  /** A passkey's creation options, after the password (spec §5.2). */
+  passkeyRegistrationOptions(url: string, token: string, password: string): Promise<Record<string, unknown>> {
+    return this.call(url, {
+      method: 'POST',
+      path: '/api/v1/me/two-factor/passkeys/options',
+      token,
+      body: { password },
+      schema: webauthnJsonSchema,
+    });
+  }
+
+  addPasskey(url: string, token: string, body: PasskeyAddRequest): Promise<PasskeyAddResponse> {
+    return this.call(url, {
+      method: 'POST',
+      path: '/api/v1/me/two-factor/passkeys',
+      token,
+      body,
+      schema: passkeyAddResponseSchema,
+    });
+  }
+
+  async renamePasskey(url: string, token: string, id: string, name: string): Promise<void> {
+    await this.call<unknown>(url, {
+      method: 'PATCH',
+      path: `/api/v1/me/two-factor/passkeys/${encodeURIComponent(id)}`,
+      token,
+      body: { name },
+    });
+  }
+
+  async removePasskey(url: string, token: string, id: string, password: string): Promise<void> {
+    await this.call<unknown>(url, {
+      method: 'DELETE',
+      path: `/api/v1/me/two-factor/passkeys/${encodeURIComponent(id)}`,
+      token,
+      body: { password },
+    });
+  }
+
+  /** Every user of the server (server admins only): `GET /users`. */
+  listUsers(url: string, token: string): Promise<UserSummary[]> {
+    return this.call(url, { method: 'GET', path: '/api/v1/users', token, schema: usersResponseSchema });
+  }
+
+  /** A server admin's reset of another person's two-step sign-in (two-step spec §7); it ends their sessions. */
+  async resetTwoFactor(url: string, token: string, userId: string): Promise<void> {
+    await this.call<unknown>(url, {
+      method: 'DELETE',
+      path: `/api/v1/users/${encodeURIComponent(userId)}/two-factor`,
+      token,
+    });
   }
 
   startOidc(url: string, body: OidcStartRequest): Promise<OidcStartResponse> {
@@ -1288,6 +1457,7 @@ export class ServerClient {
           accept: 'application/json',
           ...(payload !== undefined ? { 'content-type': 'application/json' } : {}),
           ...(call.token !== undefined ? { authorization: `Bearer ${call.token}` } : {}),
+          ...(call.authorization !== undefined ? { authorization: call.authorization } : {}),
         },
         ...(payload !== undefined ? { body: payload } : {}),
         timeoutMs: call.timeoutMs ?? this.deps.timeoutMs ?? DEFAULT_TIMEOUT_MS,

@@ -192,4 +192,39 @@ describe('People page (settings split spec §3.3)', () => {
     render(<PeoplePage />);
     await waitFor(() => expect(screen.getByTestId('people-seats').textContent).toBe('4 seats in use on this server'));
   });
+
+  it('a server admin sees who has two-step sign-in, and can reset it behind a confirm', async () => {
+    const resetTwoFactor = ok({ done: true });
+    const serverPeople = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        value: {
+          people: [
+            { userId: 'me', password: true, twoFactor: false, disabled: false },
+            { userId: 'bob', password: true, twoFactor: true, disabled: false },
+          ],
+        },
+      })
+      .mockResolvedValue({ ok: true, value: { people: [] } });
+    await open('member', {}, { serverAdmin: true, extra: { account: { serverPeople, resetTwoFactor } } });
+    expect((await screen.findByTestId('member-two-factor-bob')).textContent).toBe('2-step');
+    expect(screen.queryByTestId('member-two-factor-me')).toBeNull();
+    // Not a team admin: the menu holds the reset only.
+    fireEvent.pointerDown(screen.getByTestId('member-menu-bob'), { button: 0, ctrlKey: false });
+    expect(await screen.findByTestId('member-reset-two-factor-bob')).toBeTruthy();
+    expect(screen.queryByTestId('member-remove-bob')).toBeNull();
+    fireEvent.click(screen.getByTestId('member-reset-two-factor-bob'));
+    fireEvent.click(await screen.findByTestId('member-reset-two-factor-confirm-ok'));
+    await waitFor(() => expect(resetTwoFactor).toHaveBeenCalledWith({ url: URL_, userId: 'bob' }));
+    await waitFor(() => expect(screen.queryByTestId('member-two-factor-bob')).toBeNull());
+  });
+
+  it('shows no two-step badge or reset to anyone but a server admin', async () => {
+    const serverPeople = ok({ people: [{ userId: 'bob', password: true, twoFactor: true, disabled: false }] });
+    await open('admin', {}, { extra: { account: { serverPeople } } });
+    await screen.findByTestId('member-row-bob');
+    expect(serverPeople).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('member-two-factor-bob')).toBeNull();
+  });
 });

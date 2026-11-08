@@ -17,8 +17,14 @@ import { agentRedeemMessage, agentRequestMessage, LIVE_PATH, TERMINAL_SHARE_PATH
 import type { InjectOptions, LightMyRequestResponse } from 'fastify';
 import { claim, removeClaim } from '../../../src/custom-domains/repo.js';
 import { accountsCookieName, addedCookieName, sessionCookieName } from '../../../src/identity/cookies.js';
+import { primaryUrl } from '../../../src/tenancy/urls.js';
 import { mintSecret, newId, pkceChallenge } from '../../../src/identity/tokens.js';
+import { sealTotpSecret } from '../../../src/identity/two-factor/keys.js';
+import * as twoFactorRepo from '../../../src/identity/two-factor/repo.js';
+import { newTotpSecret, stepAt, totpAt } from '../../../src/identity/two-factor/totp.js';
+import type { SignedInUser } from '../../helpers/identity.js';
 import { license } from '../../helpers/licensing.js';
+import { SoftAuthenticator } from '../../helpers/soft-authenticator.js';
 import { webpFor } from '../../helpers/webp.js';
 import {
   bearer,
@@ -129,6 +135,119 @@ async function reclaim(ctx: Ctx, claimAgain: boolean): Promise<void> {
     await removeClaim(tx);
     if (claimAgain) await claim(tx, { name, createdBy: null, now: ctx.w.t.h.clock.now });
   });
+}
+
+/**
+ * A fresh user of A's with a confirmed authenticator, and a second-step challenge of theirs finished as `kind`: its
+ * secret and the current code. Always A's (two-step sign-in spec §3.2), so B's host, which has no such challenge,
+ * refuses it, while A's own finishes the sign-in.
+ */
+async function twoFactorChallenge(ctx: Ctx, kind: 'device' | 'browser'): Promise<{ secret: string; code: string }> {
+  const tenant = ctx.a.tenant;
+  const now = ctx.w.t.h.clock.now;
+  const user = await fresh.user(tenant);
+  const totp = newTotpSecret();
+  const dataKey = await ctx.w.t.h.ctx.tenancy.dataKey(tenant.scope);
+  await twoFactorRepo.upsertPendingTotp(tenant.tdb, user.user.id, sealTotpSecret(dataKey, user.user.id, totp), now);
+  await twoFactorRepo.confirmTotp(tenant.tdb, user.user.id, stepAt(now.getTime()) - 2, now);
+  const { secret, hash } = mintSecret();
+  await twoFactorRepo.insertChallenge(tenant.tdb, {
+    id: newId(),
+    userId: user.user.id,
+    secretHash: hash,
+    purpose: 'sign-in',
+    deviceName: 'probe',
+    tokenKind: kind,
+    at: now,
+    expiresAt: new Date(now.getTime() + 5 * 60_000),
+  });
+  return { secret, code: totpAt(totp, stepAt(now.getTime())) };
+}
+
+/**
+ * A software passkey for `tenant`'s relying party: its primary URL (spec §3.5), which is its live custom name while it
+ * has one. The custom-domain templates claim and drop that name during the sweep, so it is read from the server's own
+ * map of hosts when the template is built.
+ */
+function softKeyOf(ctx: Ctx, tenant: Ctx['from']['tenant']): SoftAuthenticator {
+  const scope = ctx.w.t.resolver.resolve(tenant.host) ?? tenant.scope;
+  const origin = primaryUrl(ctx.w.t.h.ctx.config, scope);
+  return new SoftAuthenticator(new URL(origin).hostname, origin);
+}
+
+/** A passkey of `owner`'s in `tenant`, written through the repository, with the software key that signs for it. */
+async function withPasskey(ctx: Ctx, tenant: Ctx['from']['tenant'], owner: SignedInUser) {
+  const key = softKeyOf(ctx, tenant);
+  const id = newId();
+  await twoFactorRepo.insertPasskey(tenant.tdb, {
+    id,
+    userId: owner.user.id,
+    credentialId: key.credentialId,
+    publicKey: key.publicKey,
+    counter: 0,
+    transports: ['internal'],
+    name: 'probe',
+    at: ctx.w.t.h.clock.now,
+  });
+  return { id, key };
+}
+
+/** A's passkey, of a fresh user of A's; sent by that user on A's host, by a fresh user of the sender's elsewhere. */
+async function foreignPasskey(ctx: Ctx): Promise<{ id: string; sender: SignedInUser }> {
+  const owner = await fresh.user(ctx.a.tenant);
+  const { id } = await withPasskey(ctx, ctx.a.tenant, owner);
+  return { id, sender: ctx.from.tenant.slug === ctx.a.tenant.slug ? owner : await fresh.user(ctx.from.tenant) };
+}
+
+/**
+ * A sign-in challenge of a fresh user of A's with a passkey, its WebAuthn challenge asked, and the key's answer;
+ * finished as `kind`, and with the desktop's passkey hand-off started when `flow`.
+ */
+async function passkeyChallenge(
+  ctx: Ctx,
+  kind: 'device' | 'browser' = 'device',
+  flow = false,
+): Promise<{ secret: string; response: Record<string, unknown>; flowId: string }> {
+  const tenant = ctx.a.tenant;
+  const now = ctx.w.t.h.clock.now;
+  const user = await fresh.user(tenant);
+  const { key } = await withPasskey(ctx, tenant, user);
+  const { secret, hash } = mintSecret();
+  const webauthnChallenge = mintSecret().secret;
+  const id = newId();
+  await twoFactorRepo.insertChallenge(tenant.tdb, {
+    id,
+    userId: user.user.id,
+    secretHash: hash,
+    purpose: 'sign-in',
+    deviceName: 'probe',
+    tokenKind: kind,
+    webauthnChallenge,
+    at: now,
+    expiresAt: new Date(now.getTime() + 5 * 60_000),
+  });
+  const flowId = newId();
+  if (flow)
+    await twoFactorRepo.startChallengeFlow(tenant.tdb, id, {
+      flowId,
+      codeChallenge: pkceChallenge(mintSecret().secret),
+      loopbackPort: 49152,
+    });
+  return { secret, response: key.get({ challenge: webauthnChallenge }), flowId };
+}
+
+/**
+ * A fresh user of `tenant`'s with an authenticator, confirmed or still pending, and the code it shows now; through
+ * the repository, so a template on a suspended tenant can still build it.
+ */
+async function withTotp(ctx: Ctx, tenant: Ctx['from']['tenant'], confirmed: boolean) {
+  const now = ctx.w.t.h.clock.now;
+  const user = await fresh.user(tenant);
+  const totp = newTotpSecret();
+  const dataKey = await ctx.w.t.h.ctx.tenancy.dataKey(tenant.scope);
+  await twoFactorRepo.upsertPendingTotp(tenant.tdb, user.user.id, sealTotpSecret(dataKey, user.user.id, totp), now);
+  if (confirmed) await twoFactorRepo.confirmTotp(tenant.tdb, user.user.id, stepAt(now.getTime()) - 2, now);
+  return { user, code: totpAt(totp, stepAt(now.getTime())) };
 }
 
 /** An agent-signed request of `pairingId`, by `key`, on the tenant `ctx.from` is (the path is the server's). */
@@ -253,6 +372,98 @@ export const ROUTE_MAP: Readonly<Record<string, RouteCase>> = {
 
   // ---- identity: the caller's own
   'GET /api/v1/me': { cls: 'own', request: (ctx) => json(ctx, 'GET', api('/me')) },
+  'GET /api/v1/me/two-factor': { cls: 'own', request: (ctx) => json(ctx, 'GET', api('/me/two-factor')) },
+  'POST /api/v1/me/two-factor/totp': {
+    cls: 'own',
+    request: async (ctx) =>
+      json(ctx, 'POST', api('/me/two-factor/totp'), { password: PASSWORD }, bearer(await fresh.user(ctx.from.tenant))),
+  },
+  'POST /api/v1/me/two-factor/totp/confirm': {
+    cls: 'own',
+    request: async (ctx) => {
+      const { user, code } = await withTotp(ctx, ctx.from.tenant, false);
+      return json(ctx, 'POST', api('/me/two-factor/totp/confirm'), { code }, bearer(user));
+    },
+  },
+  'DELETE /api/v1/me/two-factor/totp': {
+    cls: 'own',
+    request: async (ctx) => {
+      const { user } = await withTotp(ctx, ctx.from.tenant, true);
+      return json(ctx, 'DELETE', api('/me/two-factor/totp'), { password: PASSWORD }, bearer(user));
+    },
+  },
+  'POST /api/v1/me/two-factor/passkeys/options': {
+    cls: 'own',
+    request: async (ctx) =>
+      json(
+        ctx,
+        'POST',
+        api('/me/two-factor/passkeys/options'),
+        { password: PASSWORD },
+        bearer(await fresh.user(ctx.from.tenant)),
+      ),
+  },
+  'POST /api/v1/me/two-factor/passkeys': {
+    cls: 'own',
+    request: async (ctx) => {
+      const tenant = ctx.from.tenant;
+      const now = ctx.w.t.h.clock.now;
+      const user = await fresh.user(tenant);
+      // The relying party as the server names it right now; a suspended tenant's routes refuse, so there the
+      // registration is written through the repository instead.
+      const asked = await tenant.call<{ challenge: string; rp: { id: string } }>(
+        user,
+        'POST',
+        '/me/two-factor/passkeys/options',
+        { password: PASSWORD },
+      );
+      let challenge: string;
+      let key: SoftAuthenticator;
+      if (asked.status === 200) {
+        challenge = asked.body.challenge;
+        key = new SoftAuthenticator(asked.body.rp.id, `https://${asked.body.rp.id}`);
+      } else {
+        challenge = mintSecret().secret;
+        await twoFactorRepo.replaceRegisterChallenge(tenant.tdb, {
+          id: newId(),
+          userId: user.user.id,
+          secretHash: mintSecret().hash,
+          webauthnChallenge: challenge,
+          at: now,
+          expiresAt: new Date(now.getTime() + 5 * 60_000),
+        });
+        key = softKeyOf(ctx, tenant);
+      }
+      return json(
+        ctx,
+        'POST',
+        api('/me/two-factor/passkeys'),
+        { name: 'probe', response: key.create({ challenge }) },
+        bearer(user),
+      );
+    },
+  },
+  'PATCH /api/v1/me/two-factor/passkeys/:id': {
+    cls: 'refused',
+    request: async (ctx) => {
+      const { id, sender } = await foreignPasskey(ctx);
+      return json(ctx, 'PATCH', api(`/me/two-factor/passkeys/${id}`), { name: 'renamed' }, bearer(sender));
+    },
+  },
+  'DELETE /api/v1/me/two-factor/passkeys/:id': {
+    cls: 'refused',
+    request: async (ctx) => {
+      const { id, sender } = await foreignPasskey(ctx);
+      return json(ctx, 'DELETE', api(`/me/two-factor/passkeys/${id}`), { password: PASSWORD }, bearer(sender));
+    },
+  },
+  'POST /api/v1/me/two-factor/recovery-codes': {
+    cls: 'own',
+    request: async (ctx) => {
+      const { user } = await withTotp(ctx, ctx.from.tenant, true);
+      return json(ctx, 'POST', api('/me/two-factor/recovery-codes'), { password: PASSWORD }, bearer(user));
+    },
+  },
   'GET /api/v1/me/devices': { cls: 'own', request: (ctx) => json(ctx, 'GET', api('/me/devices')) },
   'GET /api/v1/me/accounts': {
     cls: 'own',
@@ -324,6 +535,80 @@ export const ROUTE_MAP: Readonly<Record<string, RouteCase>> = {
         {},
       ),
   },
+  'POST /api/v1/auth/two-factor/verify': {
+    cls: 'refused',
+    statuses: [401],
+    request: async (ctx) => {
+      const { secret, code } = await twoFactorChallenge(ctx, 'device');
+      return json(ctx, 'POST', api('/auth/two-factor/verify'), { challenge: secret, method: 'totp', code }, {});
+    },
+  },
+  'POST /api/v1/auth/two-factor/passkey/options': {
+    cls: 'refused',
+    statuses: [401],
+    request: async (ctx) => {
+      const { secret } = await passkeyChallenge(ctx);
+      return json(ctx, 'POST', api('/auth/two-factor/passkey/options'), { challenge: secret }, {});
+    },
+  },
+  'POST /api/v1/auth/two-factor/passkey/verify': {
+    cls: 'refused',
+    statuses: [401],
+    request: async (ctx) => {
+      const { secret, response } = await passkeyChallenge(ctx);
+      return json(ctx, 'POST', api('/auth/two-factor/passkey/verify'), { challenge: secret, response }, {});
+    },
+  },
+  'POST /api/v1/auth/two-factor/passkey/browser-start': {
+    cls: 'refused',
+    statuses: [401],
+    request: async (ctx) => {
+      const { secret } = await passkeyChallenge(ctx);
+      return json(
+        ctx,
+        'POST',
+        api('/auth/two-factor/passkey/browser-start'),
+        { challenge: secret, codeChallenge: pkceChallenge(VERIFIER), loopbackPort: 49152 },
+        {},
+      );
+    },
+  },
+  // A's flow, granted as its flow page would grant it: B's host knows no such flow.
+  'POST /api/v1/auth/two-factor/passkey/complete': {
+    cls: 'refused',
+    statuses: [400],
+    request: async (ctx) => {
+      const tenant = ctx.a.tenant;
+      const now = ctx.w.t.h.clock.now;
+      const user = await fresh.user(tenant);
+      const id = newId();
+      const flowId = newId();
+      const grant = mintSecret();
+      await twoFactorRepo.insertChallenge(tenant.tdb, {
+        id,
+        userId: user.user.id,
+        secretHash: mintSecret().hash,
+        purpose: 'sign-in',
+        deviceName: 'probe',
+        tokenKind: 'device',
+        at: now,
+        expiresAt: new Date(now.getTime() + 5 * 60_000),
+      });
+      await twoFactorRepo.startChallengeFlow(tenant.tdb, id, {
+        flowId,
+        codeChallenge: pkceChallenge(VERIFIER),
+        loopbackPort: 49152,
+      });
+      await twoFactorRepo.setChallengeGrant(tenant.tdb, id, grant.hash);
+      return json(
+        ctx,
+        'POST',
+        api('/auth/two-factor/passkey/complete'),
+        { flowId, grant: grant.secret, codeVerifier: VERIFIER },
+        {},
+      );
+    },
+  },
   'POST /api/v1/auth/sign-out': {
     cls: 'own',
     request: async (ctx) =>
@@ -365,6 +650,70 @@ export const ROUTE_MAP: Readonly<Record<string, RouteCase>> = {
       headers: { origin: ctx.from.tenant.origin, 'content-type': 'application/x-www-form-urlencoded' },
       payload: new URLSearchParams({ email: ctx.a.admin.user.email, password: PASSWORD }).toString(),
     }),
+  },
+  'POST /sign-in/two-factor': {
+    cls: 'refused',
+    // As the password form: a refusal is the page again, a sign-in sets the session cookie.
+    refused: (res) => !String(res.headers['set-cookie'] ?? '').includes('wb_session='),
+    request: async (ctx) => {
+      const { secret, code } = await twoFactorChallenge(ctx, 'browser');
+      return {
+        method: 'POST',
+        url: '/sign-in/two-factor',
+        headers: {
+          origin: ctx.from.tenant.origin,
+          cookie: `__Host-wb_2fa=${secret}`,
+          'content-type': 'application/x-www-form-urlencoded',
+        },
+        payload: new URLSearchParams({ method: 'totp', code }).toString(),
+      };
+    },
+  },
+  'GET /sign-in/two-factor.js': { cls: 'own', request: () => ({ method: 'GET', url: '/sign-in/two-factor.js' }) },
+  'POST /sign-in/two-factor/cancel': {
+    cls: 'own',
+    request: (ctx) => ({
+      method: 'POST',
+      url: '/sign-in/two-factor/cancel',
+      headers: { origin: ctx.from.tenant.origin, 'content-type': 'application/x-www-form-urlencoded' },
+      payload: '',
+    }),
+  },
+  // The page script's calls, for A's browser challenge in its cookie: B's host has no such challenge.
+  'POST /sign-in/two-factor/passkey/options': {
+    cls: 'refused',
+    statuses: [401],
+    request: async (ctx) => {
+      const { secret } = await passkeyChallenge(ctx, 'browser');
+      return {
+        method: 'POST',
+        url: '/sign-in/two-factor/passkey/options',
+        headers: { origin: ctx.from.tenant.origin, cookie: `__Host-wb_2fa=${secret}` },
+        payload: {},
+      };
+    },
+  },
+  'POST /sign-in/two-factor/passkey/verify': {
+    cls: 'refused',
+    refused: (res) => !String(res.headers['set-cookie'] ?? '').includes('wb_session='),
+    request: async (ctx) => {
+      const { secret, response } = await passkeyChallenge(ctx, 'browser');
+      return {
+        method: 'POST',
+        url: '/sign-in/two-factor/passkey/verify',
+        headers: { origin: ctx.from.tenant.origin, cookie: `__Host-wb_2fa=${secret}` },
+        payload: { response },
+      };
+    },
+  },
+  // The desktop's flow page, for A's flow: B's host answers no page for it.
+  'GET /sign-in/two-factor/passkey': {
+    cls: 'refused',
+    refused: (res) => !res.body.includes('data-flow'),
+    request: async (ctx) => {
+      const { flowId } = await passkeyChallenge(ctx, 'device', true);
+      return { method: 'GET', url: `/sign-in/two-factor/passkey?flow=${flowId}` };
+    },
   },
   'GET /sign-in/added': {
     cls: 'refused',
@@ -474,6 +823,11 @@ export const ROUTE_MAP: Readonly<Record<string, RouteCase>> = {
   'PATCH /api/v1/users/:id': {
     cls: 'refused',
     request: (ctx) => json(ctx, 'PATCH', api(`/users/${ctx.a.member.user.id}`), { disabled: false }),
+  },
+  // A fresh user of A's: the reset ends their sessions, which the member's other templates need.
+  'DELETE /api/v1/users/:id/two-factor': {
+    cls: 'refused',
+    request: async (ctx) => json(ctx, 'DELETE', api(`/users/${(await fresh.user(ctx.a.tenant)).user.id}/two-factor`)),
   },
   'POST /api/v1/users/:id/password-reset': {
     cls: 'refused',

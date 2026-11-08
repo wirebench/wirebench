@@ -119,7 +119,8 @@ export async function seedServer(agentEchoUrl: string): Promise<Seed> {
     secondTeamName: `Second team ${stamp}`,
     secondTeamId: '',
     existingEmail: `browser-e2e-existing-${stamp}@example.com`,
-    // Signed in as a second account in one browser by the switch-accounts spec; it never leaves this run either.
+    // Its password too: the switch-accounts spec signs it in as a second account in one browser, and the two-step
+    // sign-in spec signs in as it (no seat is free for an account of its own). It never leaves this run.
     existingPassword: randomBytes(18).toString('base64url'),
     workspaceName: `Browser workspace ${stamp}`,
     projectName: 'Echo project',

@@ -933,6 +933,7 @@ describe('PreferencesEditor — what moved out (settings split spec §2)', () =>
           smtp: { source: 'tenant', writable: true, value: null },
           retention: { source: 'tenant', writable: true, value: null },
           budgets: { source: 'tenant', writable: false, value: null },
+          twoFactor: { source: 'tenant', writable: true, value: null },
         },
       },
     });

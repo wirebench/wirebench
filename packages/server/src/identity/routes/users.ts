@@ -18,13 +18,13 @@ import { requireServerAdmin } from '../guard.js';
 import { createPasswordReset } from '../invitations.js';
 import * as repo from '../repo.js';
 import { imageRef } from '../sessions.js';
+import * as twoFactorRepo from '../two-factor/repo.js';
 import { setUserDisabled } from '../user-state.js';
 
 async function summaries(db: TenantQuerier, users: readonly repo.UserRow[]): Promise<UserSummary[]> {
-  const methods = await repo.signInMethodsOf(
-    db,
-    users.map((user) => user.id),
-  );
+  const ids = users.map((user) => user.id);
+  const methods = await repo.signInMethodsOf(db, ids);
+  const twoFactor = await twoFactorRepo.twoFactorUsers(db, ids);
   return users.map((user) => ({
     id: user.id,
     email: user.email,
@@ -36,6 +36,7 @@ async function summaries(db: TenantQuerier, users: readonly repo.UserRow[]): Pro
     // Spread into a plain mutable array: repo.SignInMethods.oidc is `readonly`, but the wire
     // schema's inferred UserSummary.oidc is not, so this array is copied rather than aliased.
     methods: { local: methods.get(user.id)!.local, oidc: [...methods.get(user.id)!.oidc] },
+    twoFactor: twoFactor.has(user.id),
   }));
 }
 
@@ -115,6 +116,35 @@ export const userRoutes =
               primaryUrl(env.ctx.config, request),
             ),
           );
+      },
+    );
+
+    // An admin's reset (two-step sign-in spec §7, ruling 3): every method and code of the person goes, and so does
+    // every session, since whoever has the lost phone may be signed in. The admin's own session stays on a self-reset.
+    app.delete(
+      '/users/:id/two-factor',
+      { preHandler: requireServerAdmin, schema: { params: jsonSchema(identityIdParamsSchema, { io: 'input' }) } },
+      async (request, reply) => {
+        const { id } = request.params as { id: string };
+        const caller = request.caller!;
+        const db = env.ctx.tenancy.db(request.tenant);
+        if ((await repo.findUserById(db, id)) === undefined) throw notFound('User');
+        const except = id === caller.id ? caller.tokenId : undefined;
+        await db.transaction(async (tx) => {
+          await twoFactorRepo.deleteTwoFactorOf(tx, id);
+          await repo.revokeTokensOfUser(tx, id, env.now(), except);
+          await recordAudit(env.ctx.hooks, tx, {
+            ...auditSource(request),
+            action: 'user.two_factor_reset',
+            target: { kind: 'user', id },
+          });
+        });
+        announce(
+          env.ctx.hooks.sessionEnded,
+          { tenantId: request.tenant.tenantId, userId: id, ...(except !== undefined ? { exceptTokenId: except } : {}) },
+          request.log,
+        );
+        return reply.code(204).send();
       },
     );
   };

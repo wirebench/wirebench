@@ -23,6 +23,13 @@ All notable changes to this project are documented here. The format follows
   account menu and on People, and clicking a person on People opens their profile card. The server re-checks every
   image, refuses ones carrying location or camera details, and rate-limits profile changes and uploads; people who
   share no team with you cannot open your profile.
+- **Two-step sign-in.** A Wirebench Server account with a password can add a second step: an authenticator app
+  (6-digit codes) or passkeys, with ten one-use recovery codes. Set it up on **User settings → Password**; after the
+  password, the sign-in page and the desktop's Sign in dialog ask for a code, a recovery code or a passkey (the
+  desktop finishes a passkey in your browser). A server admin can require it for everyone who signs in with a
+  password (**Team settings → Server → Sign-in**, or `WIREBENCH_SERVER_REQUIRE_TWO_FACTOR` on a self-hosted server),
+  sees who has it on in **People**, and can reset it for someone who lost their device. Single sign-on leaves the
+  second step to the identity provider.
 - **Accept an invitation in the browser.** An invitation link's page lets the invitee
   choose a password (typed twice) and their name, or continue with the team's single sign-on, and lands them signed
   in on the browser app. A password-reset link sets the new password the same way. The page still shows the code

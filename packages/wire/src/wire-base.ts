@@ -3055,6 +3055,82 @@ export const accountAcceptInvitationRequestSchema = z.object({
   deviceName: z.string().optional(),
 });
 export const accountCancelResponseSchema = z.object({ cancelled: z.boolean() });
+
+// Two-step sign-in (two-step sign-in spec §4, §5, §8). The challenge's secret stays in main: the renderer learns only
+// which methods the person has, and recovery codes cross once, in the answer that made them.
+export const twoFactorMethodWireSchema = z.enum(['totp', 'passkey', 'recovery']);
+export type TwoFactorMethodWire = z.infer<typeof twoFactorMethodWireSchema>;
+/** A correct password of a person with two-step sign-in: no account yet, the second step instead. */
+export const accountTwoFactorStepSchema = z.object({
+  twoFactor: z.object({ methods: z.array(twoFactorMethodWireSchema), setup: z.boolean() }),
+});
+export type AccountTwoFactorStep = z.infer<typeof accountTwoFactorStepSchema>;
+export const accountSignInLocalResponseSchema = z.union([accountResponseSchema, accountTwoFactorStepSchema]);
+export type AccountSignInLocalResponse = z.infer<typeof accountSignInLocalResponseSchema>;
+export const accountTwoFactorVerifyRequestSchema = z.object({
+  method: z.enum(['totp', 'recovery']),
+  code: z.string(),
+});
+export const accountTotpSetupWireSchema = z.object({ uri: z.string(), qrSvg: z.string(), secret: z.string() });
+export type AccountTotpSetupWire = z.infer<typeof accountTotpSetupWireSchema>;
+export const accountRecoveryCodesWireSchema = z.object({ recoveryCodes: z.array(z.string()) });
+export type AccountRecoveryCodesWire = z.infer<typeof accountRecoveryCodesWireSchema>;
+/** The setup step's confirm (spec §4.3): the account, with the codes to show before it is used. */
+export const accountTwoFactorSetupDoneSchema = z.object({
+  account: accountWireSchema,
+  recoveryCodes: z.array(z.string()),
+});
+export const accountTwoFactorCodeRequestSchema = z.object({ code: z.string() });
+export const accountPasswordRequestSchema = z.object({ url: z.string(), password: z.string() });
+export const accountTotpConfirmRequestSchema = z.object({ url: z.string(), code: z.string() });
+/** The first method's confirm answers the new codes; a later one, none. */
+export const accountTotpConfirmResponseSchema = z.object({ recoveryCodes: z.array(z.string()).optional() });
+export const accountPasskeyWireSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  createdAt: z.string(),
+  lastUsedAt: z.string().nullable(),
+});
+export type AccountPasskeyWire = z.infer<typeof accountPasskeyWireSchema>;
+/** User settings → Password (spec §5); `available: false` without password sign-in (plan ruling 6). */
+export const accountTwoFactorStatusWireSchema = z.union([
+  z.object({ available: z.literal(false) }),
+  z.object({
+    available: z.literal(true),
+    enabled: z.boolean(),
+    required: z.boolean(),
+    totp: z.object({ addedAt: z.string() }).nullable(),
+    passkeys: z.array(accountPasskeyWireSchema),
+    recoveryCodesLeft: z.number(),
+  }),
+]);
+export type AccountTwoFactorStatusWire = z.infer<typeof accountTwoFactorStatusWireSchema>;
+/** A passkey's creation options and the browser's answer, as `@simplewebauthn` shapes them; the server checks them. */
+export const accountWebauthnJsonSchema = z.record(z.string(), z.unknown());
+export const accountPasskeyAddRequestSchema = z.object({
+  url: z.string(),
+  name: z.string(),
+  response: accountWebauthnJsonSchema,
+});
+export const accountPasskeyAddResponseSchema = z.object({
+  passkey: accountPasskeyWireSchema,
+  recoveryCodes: z.array(z.string()).optional(),
+});
+/**
+ * For a server admin (two-step sign-in spec §6, §7): who has two-step sign-in on, and who signs in with a password at
+ * all, for the People badge and the Sign-in page's count.
+ */
+export const accountServerPersonWireSchema = z.object({
+  userId: z.string(),
+  password: z.boolean(),
+  twoFactor: z.boolean(),
+  disabled: z.boolean(),
+});
+export type AccountServerPersonWire = z.infer<typeof accountServerPersonWireSchema>;
+export const accountServerPeopleResponseSchema = z.object({ people: z.array(accountServerPersonWireSchema) });
+export const accountUserRefRequestSchema = z.object({ url: z.string(), userId: z.string() });
+export const accountPasskeyRenameRequestSchema = z.object({ url: z.string(), id: z.string(), name: z.string() });
+export const accountPasskeyRemoveRequestSchema = z.object({ url: z.string(), id: z.string(), password: z.string() });
 /**
  * You on one server (settings split spec §4): `GET /me`, plus whether the server signs in with passwords at all
  * (`GET /meta` `auth.local`), which decides whether the Password page shows.
@@ -3802,10 +3878,18 @@ export const domainRemoveResponseWireSchema = z.object({ removed: z.literal(true
  * self-hosted server answers every section with `source: "environment"` and `writable: false`, in the environment's
  * own shape (`idpMetadataSource` for the SAML document, `caFile` for the forwarding CA), so the fields stay open.
  */
-export const SERVER_SETTINGS_SECTIONS = ['oidc', 'saml', 'auditForward', 'smtp', 'retention', 'budgets'] as const;
+export const SERVER_SETTINGS_SECTIONS = [
+  'oidc',
+  'saml',
+  'auditForward',
+  'smtp',
+  'retention',
+  'budgets',
+  'twoFactor',
+] as const;
 export type ServerSettingsSectionWire = (typeof SERVER_SETTINGS_SECTIONS)[number];
 /** The sections a tenant's server admin writes; `budgets` is the operator's (spec §22.12). */
-export const SERVER_SETTINGS_WRITABLE = ['oidc', 'saml', 'auditForward', 'smtp', 'retention'] as const;
+export const SERVER_SETTINGS_WRITABLE = ['oidc', 'saml', 'auditForward', 'smtp', 'retention', 'twoFactor'] as const;
 export type ServerSettingsWritableSectionWire = (typeof SERVER_SETTINGS_WRITABLE)[number];
 export const serverSettingsSourceWireSchema = z.enum(['environment', 'tenant']);
 export type ServerSettingsSourceWire = z.infer<typeof serverSettingsSourceWireSchema>;
@@ -3825,6 +3909,8 @@ export const serverSettingsWireSchema = z.object({
     smtp: serverSettingsSectionStateWireSchema,
     retention: serverSettingsSectionStateWireSchema,
     budgets: serverSettingsSectionStateWireSchema,
+    /** Optional: a server older than two-step sign-in answers without it. */
+    twoFactor: serverSettingsSectionStateWireSchema.optional(),
   }),
 });
 export type ServerSettingsWire = z.infer<typeof serverSettingsWireSchema>;

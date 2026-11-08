@@ -31,6 +31,7 @@ describeDb('users and password resets (§3.1)', () => {
         photo: null,
         disabledAt: h.clock.now.toISOString(),
         methods: { local: false, oidc: [] },
+        twoFactor: false,
       },
       {
         id: admin.user.id,
@@ -40,6 +41,7 @@ describeDb('users and password resets (§3.1)', () => {
         username: null,
         photo: null,
         methods: { local: true, oidc: [] },
+        twoFactor: false,
       },
     ]);
   });

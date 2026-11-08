@@ -111,6 +111,123 @@ export type UserProfile = z.infer<typeof userProfileSchema>;
 export const signInResponseSchema = z.object({ token: z.string().regex(DEVICE_TOKEN_PATTERN), user: serverUserSchema });
 export type SignInResponse = z.infer<typeof signInResponseSchema>;
 
+/** The second factors a person may have (two-step sign-in spec §3.1), in the order the clients offer them. */
+export const TWO_FACTOR_METHODS = ['totp', 'passkey', 'recovery'] as const;
+export const twoFactorMethodSchema = z.enum(TWO_FACTOR_METHODS);
+export type TwoFactorMethod = z.infer<typeof twoFactorMethodSchema>;
+/** Room for a code typed with spaces or dashes; the server normalises it. */
+export const MAX_TWO_FACTOR_CODE_LENGTH = 32;
+
+/**
+ * A correct password of a person with two-step sign-in (spec §3.1): no session yet, the challenge to answer instead.
+ * `setup` is a person without a method on a server that requires one (§4.3).
+ */
+export const twoFactorChallengeResponseSchema = z.object({
+  twoFactor: z.object({
+    challenge: z.string().regex(SECRET_PATTERN),
+    methods: z.array(twoFactorMethodSchema),
+    setup: z.boolean(),
+  }),
+});
+export type TwoFactorChallengeResponse = z.infer<typeof twoFactorChallengeResponseSchema>;
+/** What `POST /auth/local/sign-in` answers: a session (201), or the second step's challenge (200). */
+export const localSignInResponseSchema = z.union([signInResponseSchema, twoFactorChallengeResponseSchema]);
+export type LocalSignInResponse = z.infer<typeof localSignInResponseSchema>;
+export const twoFactorVerifyRequestSchema = z.object({
+  challenge: z.string().regex(SECRET_PATTERN),
+  method: z.enum(['totp', 'recovery']),
+  code: z.string().min(1).max(MAX_TWO_FACTOR_CODE_LENGTH),
+});
+export type TwoFactorVerifyRequest = z.infer<typeof twoFactorVerifyRequestSchema>;
+
+export const passkeySummarySchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  createdAt: z.string(),
+  lastUsedAt: z.string().nullable(),
+});
+export type PasskeySummary = z.infer<typeof passkeySummarySchema>;
+/**
+ * `GET /me/two-factor` (spec §5): `available: false` when two-step sign-in cannot apply to the person, because local
+ * passwords are off or the account has no password (plan ruling 6).
+ */
+export const twoFactorStatusSchema = z.union([
+  z.object({ available: z.literal(false) }),
+  z.object({
+    available: z.literal(true),
+    enabled: z.boolean(),
+    required: z.boolean(),
+    totp: z.object({ addedAt: z.string() }).nullable(),
+    passkeys: z.array(passkeySummarySchema),
+    recoveryCodesLeft: z.number().int().min(0),
+  }),
+]);
+export type TwoFactorStatus = z.infer<typeof twoFactorStatusSchema>;
+/** The current password a change asks for (spec §5). */
+export const reauthRequestSchema = z.object({ password: passwordSchema });
+export type ReauthRequest = z.infer<typeof reauthRequestSchema>;
+/** Starting an authenticator: the password, except under a setup challenge (spec §4.3), which follows one. */
+export const totpSetupRequestSchema = z.object({ password: passwordSchema.optional() });
+export type TotpSetupRequest = z.infer<typeof totpSetupRequestSchema>;
+export const totpSetupResponseSchema = z.object({
+  uri: z.string(),
+  /** The QR code of `uri` as an SVG document, which the clients show through a `data:` URL. */
+  qrSvg: z.string(),
+  /** The key in base32, for typing by hand. */
+  secret: z.string(),
+});
+export type TotpSetupResponse = z.infer<typeof totpSetupResponseSchema>;
+export const totpConfirmRequestSchema = z.object({ code: z.string().min(1).max(MAX_TWO_FACTOR_CODE_LENGTH) });
+export type TotpConfirmRequest = z.infer<typeof totpConfirmRequestSchema>;
+/** Shown once (spec §5.3). */
+export const recoveryCodesResponseSchema = z.object({ recoveryCodes: z.array(z.string()) });
+export type RecoveryCodesResponse = z.infer<typeof recoveryCodesResponseSchema>;
+/** The first method's confirm answers the new codes; a later one answers none. */
+export const totpConfirmResponseSchema = z.object({ recoveryCodes: z.array(z.string()).optional() });
+export type TotpConfirmResponse = z.infer<typeof totpConfirmResponseSchema>;
+/** The setup challenge's confirm (spec §4.3): the session, with the codes to show before it is used. */
+export const twoFactorSetupSignInResponseSchema = signInResponseSchema.extend({ recoveryCodes: z.array(z.string()) });
+export type TwoFactorSetupSignInResponse = z.infer<typeof twoFactorSetupSignInResponseSchema>;
+
+/** A WebAuthn ceremony's options or a browser's answer to them, as `@simplewebauthn` shapes them; checked there. */
+export const webauthnJsonSchema = z.record(z.string(), z.unknown());
+export const MAX_PASSKEY_NAME_LENGTH = 80;
+/** At most this many passkeys per person (plan Task 7). */
+export const MAX_PASSKEYS = 10;
+export const passkeyNameSchema = z.string().min(1).max(MAX_PASSKEY_NAME_LENGTH);
+export const passkeyChallengeRequestSchema = z.object({ challenge: z.string().regex(SECRET_PATTERN) });
+export type PasskeyChallengeRequest = z.infer<typeof passkeyChallengeRequestSchema>;
+export const passkeyVerifyRequestSchema = z.object({
+  challenge: z.string().regex(SECRET_PATTERN),
+  response: webauthnJsonSchema,
+});
+export type PasskeyVerifyRequest = z.infer<typeof passkeyVerifyRequestSchema>;
+/** The desktop's passkey hand-off (spec §4.2): its PKCE challenge and loopback, for the browser's flow page. */
+export const passkeyBrowserStartRequestSchema = z.object({
+  challenge: z.string().regex(SECRET_PATTERN),
+  codeChallenge: z.string().regex(SECRET_PATTERN),
+  loopbackPort: z.number().int().min(1).max(65_535),
+});
+export type PasskeyBrowserStartRequest = z.infer<typeof passkeyBrowserStartRequestSchema>;
+export const passkeyBrowserStartResponseSchema = z.object({ url: z.string().url() });
+export type PasskeyBrowserStartResponse = z.infer<typeof passkeyBrowserStartResponseSchema>;
+/** The grant the loopback got, traded with the verifier for the session. */
+export const passkeyCompleteRequestSchema = z.object({
+  flowId: identityIdSchema,
+  grant: z.string().regex(SECRET_PATTERN),
+  codeVerifier: z.string().regex(PKCE_VERIFIER_PATTERN),
+});
+export type PasskeyCompleteRequest = z.infer<typeof passkeyCompleteRequestSchema>;
+export const passkeyAddRequestSchema = z.object({ name: passkeyNameSchema, response: webauthnJsonSchema });
+export type PasskeyAddRequest = z.infer<typeof passkeyAddRequestSchema>;
+export const passkeyAddResponseSchema = z.object({
+  passkey: passkeySummarySchema,
+  recoveryCodes: z.array(z.string()).optional(),
+});
+export type PasskeyAddResponse = z.infer<typeof passkeyAddResponseSchema>;
+export const passkeyRenameRequestSchema = z.object({ name: passkeyNameSchema });
+export type PasskeyRenameRequest = z.infer<typeof passkeyRenameRequestSchema>;
+
 /**
  * User profile spec §5: `identifier` is an email or a username; `email` stays for desktops older than usernames.
  * Exactly one of the two: the handler refuses both or neither, since JSON Schema here cannot say "one of".
@@ -151,7 +268,12 @@ export const oidcCallbackQuerySchema = z.object({
 export type OidcCallbackQuery = z.infer<typeof oidcCallbackQuerySchema>;
 
 export const signInMethodsSchema = z.object({ local: z.boolean(), oidc: z.array(z.object({ issuer: z.string() })) });
-export const meResponseSchema = z.object({ user: serverUserSchema, methods: signInMethodsSchema });
+/** `twoFactor` is optional so a desktop still reads a server older than two-step sign-in. */
+export const meResponseSchema = z.object({
+  user: serverUserSchema,
+  methods: signInMethodsSchema,
+  twoFactor: z.boolean().optional(),
+});
 export type MeResponse = z.infer<typeof meResponseSchema>;
 
 export const passwordChangeRequestSchema = z.object({
@@ -241,6 +363,8 @@ export const userSummarySchema = z.object({
   serverAdmin: z.boolean(),
   disabledAt: z.string().optional(),
   methods: signInMethodsSchema,
+  /** Two-step sign-in is on (plan ruling 8); absent from a server older than it. */
+  twoFactor: z.boolean().optional(),
   username: z.string().nullable().optional(),
   photo: imageRefSchema.nullable().optional(),
 });

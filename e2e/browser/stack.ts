@@ -54,7 +54,7 @@ export interface Seed {
   readonly existingEmail: string;
   /**
    * {@link existingEmail}'s password, a test value made by the seed: `switch-accounts.spec.ts` signs it in as a second
-   * account in the same browser.
+   * account in the same browser, and `two-factor.spec.ts` signs in as it (no seat is free for an account of its own).
    */
   readonly existingPassword: string;
   readonly workspaceName: string;

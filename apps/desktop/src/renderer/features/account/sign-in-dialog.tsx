@@ -1,19 +1,20 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { XCircle } from 'lucide-react';
 import { Button } from '../../components/button.js';
 import { showToast } from '../../components/toast.js';
 import type { IpcError } from '@shared/ipc.js';
-import type { AccountWire, ServerMetaWire } from '@shared/wire-base.js';
+import type { AccountWire, ServerMetaWire, TwoFactorMethodWire } from '@shared/wire-base.js';
 import { signInErrorMessage } from '../../state/account.js';
 import { ipc } from '../../state/ipc-client.js';
 import { useUiStore } from '../../state/ui.js';
 
 import { MIN_PASSWORD_LENGTH } from './password-rules.js';
+import { SecondStep, SetupStep } from './two-factor/second-step.js';
 
 export { MIN_PASSWORD_LENGTH };
 
-type Step = 'server' | 'methods' | 'waiting' | 'code' | 'password';
+type Step = 'server' | 'methods' | 'waiting' | 'code' | 'password' | 'second' | 'setup';
 
 const INPUT_CLASS =
   'mt-1 w-full rounded border border-hairline-strong bg-surface-base px-2 py-1.5 text-sm text-fg-default outline-none focus:ring-1 focus:ring-accent';
@@ -47,6 +48,8 @@ export function SignInDialog() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState<string | undefined>(undefined);
   const [busy, setBusy] = useState(false);
+  /** The second step's methods, once a correct password led to one (two-step sign-in spec §4.2). */
+  const [methods, setMethods] = useState<readonly TwoFactorMethodWire[]>([]);
   /** Which provider the browser hand-off is waiting on, for the waiting line. */
   const [browserMethod, setBrowserMethod] = useState<'oidc' | 'saml'>('oidc');
 
@@ -70,6 +73,8 @@ export function SignInDialog() {
       clearSecrets();
     } else {
       clearSecrets();
+      // A second step left open is dropped in main too; it would lapse on the server anyway.
+      void ipc().account.cancelTwoFactor(undefined);
     }
     // `clearSecrets` is a plain closure over setters, which never change, so it is safe to
     // leave out of the dependency list below.
@@ -84,6 +89,12 @@ export function SignInDialog() {
     setOpen(false);
     showToast(`Signed in as ${account.email}`);
   };
+
+  /** The second step can no longer be finished: back to the password, saying why. */
+  const twoFactorEnded = useCallback((message: string): void => {
+    setStep('methods');
+    setError(message);
+  }, []);
 
   const probe = async (): Promise<void> => {
     if (busy || url.trim().length === 0) return;
@@ -108,6 +119,13 @@ export function SignInDialog() {
     setBusy(false);
     if (!result.ok) {
       failed(result.error);
+      return;
+    }
+    if ('twoFactor' in result.value) {
+      // The password is no longer needed: the second step finishes with the challenge main holds.
+      setPassword('');
+      setMethods(result.value.twoFactor.methods);
+      setStep(result.value.twoFactor.setup ? 'setup' : 'second');
       return;
     }
     finished(result.value.account);
@@ -308,6 +326,10 @@ export function SignInDialog() {
             </div>
           )}
 
+          {step === 'second' && <SecondStep methods={methods} onSignedIn={finished} onEnded={twoFactorEnded} />}
+
+          {step === 'setup' && <SetupStep server={url} onSignedIn={finished} onEnded={twoFactorEnded} />}
+
           {step === 'waiting' && (
             <div data-testid="sign-in-waiting" className="mt-3 text-sm text-fg-subtle">
               Waiting for the browser… Finish signing in with {browserMethod === 'saml' ? samlName : providerName}, then
@@ -409,7 +431,10 @@ export function SignInDialog() {
                   onClick={() => {
                     setError(undefined);
                     clearSecrets();
-                    if (step === 'password') setStep('code');
+                    if (step === 'second' || step === 'setup') {
+                      void ipc().account.cancelTwoFactor(undefined);
+                      setStep('methods');
+                    } else if (step === 'password') setStep('code');
                     else if (step === 'code') setStep('methods');
                     else setStep('server');
                   }}

@@ -89,6 +89,13 @@ export const EXPORT_TABLES: Readonly<Record<string, TableClass>> = {
   subscriptions: skip("the control plane's own: a subscription stays with its tenant at the provider"),
   tenant_exports: skip("the control plane's own: the exports of the tenant"),
   custom_domains: skip('a custom name is verified again on the server it is moved to'),
+  // Two-step sign-in (spec §7): the authenticator secret and the recovery code hashes are bound to this tenant's data
+  // key, which the import does not carry, and a passkey to this server's host, which may change; exporting one without
+  // the others could lock a person out. So none goes, and people set two-step sign-in up again, as they sign in again.
+  identity_passkeys: skip('bound to this server’s host: the person adds their passkeys again'),
+  identity_totp: skip('sealed under this tenant’s data key: the person sets the authenticator up again'),
+  identity_recovery_codes: skip('hashed under this tenant’s data key: the person makes new codes'),
+  identity_two_factor_challenges: SHORT_LIVED,
 };
 
 /** The tables an export holds a file for, by name. */

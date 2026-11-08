@@ -1,0 +1,75 @@
+---
+title: Two-step sign-in
+description: Add an authenticator app or a passkey as a second step after your Wirebench Server password, keep recovery codes, and require two-step sign-in for everyone on a server.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+Two-step sign-in asks for a second step after your password: a 6-digit code from an authenticator app, or a
+passkey. It guards password sign-in only. Single sign-on (OIDC or SAML) leaves the second step to your identity
+provider.
+
+## Set it up
+
+Open **User settings → Password** (in the desktop app, **Account settings…** in the status bar's account menu). The
+**Two-step sign-in** section is under the password form.
+
+<Steps>
+
+1. Under **Authenticator app**, choose **Set up** and type your current password.
+2. Scan the QR code with an authenticator app, or type the key shown beside it.
+3. Type the 6-digit code the app shows, and choose **Verify**.
+4. Save the ten **recovery codes**: **Copy all** or **Download as text**, then **I've saved them**. They are not shown
+   again.
+
+</Steps>
+
+To add a **passkey**, choose **Add a passkey** in the browser app and type your password; your browser or system
+asks for the passkey. In the desktop app, **Add a passkey in your browser** opens this page in your browser.
+
+Your first method turns two-step sign-in on. You can have one authenticator app and up to ten passkeys.
+
+## Sign in
+
+After your password, Wirebench asks for the second step:
+
+- **Authenticator code**: type the code from your app.
+- **Use a passkey**: in the browser, your browser asks for it. In the desktop app, your browser opens to finish, then
+  you are signed in to the app.
+- **Use a recovery code instead**: each code works once. When you have none left, make a new set on the Password
+  page.
+
+<Aside>
+  A passkey belongs to your server's primary address. If you reach the server through another address, the sign-in
+  page offers codes and links to the primary address for your passkey.
+</Aside>
+
+## Change or remove it
+
+Every change asks for your current password first. **Make new codes** replaces your recovery codes, and the old set
+stops working. Removing your last method turns two-step sign-in off and deletes your recovery codes.
+
+If you lose your authenticator and your passkeys and have no recovery code left, ask a server admin to reset your
+two-step sign-in.
+
+## For server admins
+
+- **Require it.** In **Team settings → Server → Sign-in**, turn on **Require two-step sign-in for password sign-in**.
+  No one is signed out; each person without a second step sets one up at their next sign-in. The card shows how many
+  people with a password have none yet. On a self-hosted server, set `WIREBENCH_SERVER_REQUIRE_TWO_FACTOR=true`
+  instead.
+- **See who has it.** **People** shows a **2-step** badge on everyone who has it on.
+- **Reset it.** In a person's **⋯** menu, **Reset two-step sign-in** removes every method and recovery code they have
+  and signs them out on every device.
+
+The audit log records every method added or removed, new recovery codes, resets, and each wrong second step, never a
+code.
+
+## Security
+
+- Authenticator codes follow RFC 6238 (6 digits, 30 seconds, one step of clock drift either side), and a code is
+  never accepted twice.
+- Authenticator keys are encrypted with your server's secrets key; recovery codes are stored only as keyed hashes.
+- After a correct password the server keeps a five-minute, one-use challenge, never a session. Five wrong answers end
+  it, and ten wrong second steps in an hour pause a person's second step for a few minutes.
+- Passkeys are checked against the server's own origin, with a fresh challenge every time.

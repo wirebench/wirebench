@@ -46,7 +46,7 @@ import { primaryUrl, tenantUrl, type UrlConfig } from '../tenancy/urls.js';
 export const BROWSER_FLOW_TTL_MS = 10 * 60 * 1000;
 
 /** What a browser token's row is called on the user's device list. */
-const BROWSER_DEVICE_NAME = 'Web browser';
+export const BROWSER_DEVICE_NAME = 'Web browser';
 
 const MAX_REDIRECT_LENGTH = 2048;
 
@@ -251,7 +251,7 @@ function arrange(
   return { keep, end, endActive: !keepActive };
 }
 
-const sendAccountsFull = (env: FlowEnv, reply: FastifyReply, redirectTo: string): Promise<FastifyReply> =>
+export const sendAccountsFull = (env: FlowEnv, reply: FastifyReply, redirectTo: string): Promise<FastifyReply> =>
   sendSignInPage(reply, env.ctx, { status: 409, message: ACCOUNTS_FULL_MESSAGE, redirectTo, add: true, full: true });
 
 /**
@@ -286,6 +286,42 @@ export async function finishBrowserSignIn(
     .header('location', safeRedirectPath(redirectTo, url))
     .header('cache-control', 'no-store')
     .send();
+}
+
+/**
+ * Before a browser's second step is verified (two-step sign-in spec §4.1): whether signing in as `userId` in `mode`
+ * leaves room, so an *Add an account* past five is refused before a code or passkey is spent.
+ */
+export async function roomForSignIn(
+  env: FlowEnv,
+  request: FastifyRequest,
+  userId: string,
+  mode: BrowserSignInMode,
+): Promise<boolean> {
+  return arrange(await presentedSessions(env, request), userId, mode).keep.length <= MAX_REMEMBERED_SESSIONS;
+}
+
+/**
+ * The second step's finish: the session {@link finishBrowserSignIn} would have minted, minted by the second step
+ * instead, arranged among the browser's sessions as that does in `mode`. The caller answers the browser.
+ */
+export async function placeBrowserSession(
+  env: FlowEnv,
+  request: FastifyRequest,
+  reply: FastifyReply,
+  userId: string,
+  token: string,
+  mode: BrowserSignInMode,
+  source: AuditSource,
+): Promise<void> {
+  const url = tenantUrl(env.ctx.config, request);
+  const presented = await presentedSessions(env, request);
+  const { keep, end, endActive } = arrange(presented, userId, mode);
+  if (endActive) await endPresentedSession(env, request, source);
+  for (const session of end) await revokeSession(env, request, session, source);
+  setSessionCookie(reply, url, token, Math.floor(identitySettings(env.ctx.config).tokenMaxMs / 1000));
+  if (presented.presented || keep.length > 0)
+    writeRemembered(env, request, reply, keep.slice(0, MAX_REMEMBERED_SESSIONS));
 }
 
 /** Where a SAML *Add an account* lands from its ACS, to see the browser's sessions (see `addedCookieName`). */

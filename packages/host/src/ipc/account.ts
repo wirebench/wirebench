@@ -29,6 +29,11 @@ export interface AccountChannelDeps {
     | 'tokenFor'
     | 'markSignedOut'
     | 'setProfile'
+    | 'verifyTwoFactor'
+    | 'startTwoFactorPasskey'
+    | 'cancelTwoFactor'
+    | 'twoFactorSetupStart'
+    | 'twoFactorSetupConfirm'
   >;
   /** User settings' calls (settings split spec §4, user profile spec §7), each with the account's token. */
   readonly client: Pick<
@@ -43,6 +48,17 @@ export interface AccountChannelDeps {
     | 'deleteImage'
     | 'image'
     | 'profile'
+    | 'twoFactorStatus'
+    | 'setUpTotp'
+    | 'confirmTotp'
+    | 'removeTotp'
+    | 'regenerateRecoveryCodes'
+    | 'renamePasskey'
+    | 'removePasskey'
+    | 'passkeyRegistrationOptions'
+    | 'addPasskey'
+    | 'listUsers'
+    | 'resetTwoFactor'
   >;
 }
 
@@ -121,16 +137,33 @@ export function registerAccountChannels(table: HandlerTable, deps: AccountChanne
     return servers();
   });
   registerHandler(table, channels.account.probe, (request) => deps.accounts.probe(request.url));
-  registerHandler(table, channels.account.signInLocal, async (request) => ({
-    account: toAccountWire(
-      await deps.accounts.signInLocal({
-        url: request.url,
-        identifier: request.identifier,
-        password: request.password,
-        ...(request.deviceName !== undefined ? { deviceName: request.deviceName } : {}),
-      }),
-    ),
+  registerHandler(table, channels.account.signInLocal, async (request) => {
+    const signed = await deps.accounts.signInLocal({
+      url: request.url,
+      identifier: request.identifier,
+      password: request.password,
+      ...(request.deviceName !== undefined ? { deviceName: request.deviceName } : {}),
+    });
+    // The second step: its methods only; the challenge stays in main (two-step sign-in spec §3.2).
+    if ('twoFactor' in signed)
+      return { twoFactor: { methods: [...signed.twoFactor.methods], setup: signed.twoFactor.setup } };
+    return { account: toAccountWire(signed) };
+  });
+  registerHandler(table, channels.account.verifyTwoFactor, async (request) => ({
+    account: toAccountWire(await deps.accounts.verifyTwoFactor({ method: request.method, code: request.code })),
   }));
+  registerHandler(table, channels.account.startTwoFactorPasskey, async () => ({
+    account: toAccountWire(await deps.accounts.startTwoFactorPasskey()),
+  }));
+  registerHandler(table, channels.account.cancelTwoFactor, () => {
+    deps.accounts.cancelTwoFactor();
+    return Promise.resolve(DONE);
+  });
+  registerHandler(table, channels.account.twoFactorSetupStart, () => deps.accounts.twoFactorSetupStart());
+  registerHandler(table, channels.account.twoFactorSetupConfirm, async (request) => {
+    const done = await deps.accounts.twoFactorSetupConfirm(request.code);
+    return { account: toAccountWire(done.account), recoveryCodes: done.recoveryCodes };
+  });
   registerHandler(table, channels.account.startOidc, async (request) => ({
     account: toAccountWire(
       await deps.accounts.startOidc({
@@ -226,6 +259,69 @@ export function registerAccountChannels(table: HandlerTable, deps: AccountChanne
   registerHandler(table, channels.account.signOutDevice, (r) =>
     withToken(deps, targetOf(r), async (url, token) => {
       await c.revokeDevice(url, token, r.id);
+      return DONE;
+    }),
+  );
+
+  // User settings → Password, two-step sign-in (two-step sign-in spec §5); the password goes to the server only.
+  registerHandler(table, channels.account.twoFactorStatus, (r) =>
+    withToken(deps, r.url, (url, token) => c.twoFactorStatus(url, token)),
+  );
+  registerHandler(table, channels.account.setUpTotp, (r) =>
+    withToken(deps, r.url, (url, token) => c.setUpTotp(url, { token, password: r.password })),
+  );
+  registerHandler(table, channels.account.confirmTotp, (r) =>
+    withToken(deps, r.url, async (url, token) => {
+      const confirmed = await c.confirmTotp(url, token, r.code);
+      return confirmed.recoveryCodes !== undefined ? { recoveryCodes: confirmed.recoveryCodes } : {};
+    }),
+  );
+  registerHandler(table, channels.account.removeTotp, (r) =>
+    withToken(deps, r.url, async (url, token) => {
+      await c.removeTotp(url, token, r.password);
+      return DONE;
+    }),
+  );
+  registerHandler(table, channels.account.regenerateRecoveryCodes, (r) =>
+    withToken(deps, r.url, (url, token) => c.regenerateRecoveryCodes(url, token, r.password)),
+  );
+  registerHandler(table, channels.account.passkeyOptions, (r) =>
+    withToken(deps, r.url, (url, token) => c.passkeyRegistrationOptions(url, token, r.password)),
+  );
+  registerHandler(table, channels.account.addPasskey, (r) =>
+    withToken(deps, r.url, async (url, token) => {
+      const added = await c.addPasskey(url, token, { name: r.name, response: r.response });
+      return {
+        passkey: added.passkey,
+        ...(added.recoveryCodes !== undefined ? { recoveryCodes: added.recoveryCodes } : {}),
+      };
+    }),
+  );
+  registerHandler(table, channels.account.serverPeople, (r) =>
+    withToken(deps, r.url, async (url, token) => ({
+      people: (await c.listUsers(url, token)).map((user) => ({
+        userId: user.id,
+        password: user.methods.local,
+        twoFactor: user.twoFactor === true,
+        disabled: user.disabledAt !== undefined,
+      })),
+    })),
+  );
+  registerHandler(table, channels.account.resetTwoFactor, (r) =>
+    withToken(deps, r.url, async (url, token) => {
+      await c.resetTwoFactor(url, token, r.userId);
+      return DONE;
+    }),
+  );
+  registerHandler(table, channels.account.renamePasskey, (r) =>
+    withToken(deps, r.url, async (url, token) => {
+      await c.renamePasskey(url, token, r.id, r.name);
+      return DONE;
+    }),
+  );
+  registerHandler(table, channels.account.removePasskey, (r) =>
+    withToken(deps, r.url, async (url, token) => {
+      await c.removePasskey(url, token, r.id, r.password);
       return DONE;
     }),
   );

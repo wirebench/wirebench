@@ -24,7 +24,8 @@ export const UNSCOPED_TABLES: readonly string[] = [
 
 /**
  * The scoped tables: the 36 of spec §19.3, as 0020 and 0021 name them, then the three of 0022 (spec §20.6, §20.7),
- * the three of 0023 (spec §22.3), the one of 0024 (spec §23.3) and the one of 0026 (user profile spec §6.1).
+ * the three of 0023 (spec §22.3), the one of 0024 (spec §23.3), the one of 0026 (user profile spec §6.1) and the four
+ * of 0027 (two-step sign-in spec §7).
  */
 export const SCOPED_TABLES: readonly string[] = [
   'workspaces',
@@ -71,11 +72,15 @@ export const SCOPED_TABLES: readonly string[] = [
   'tenant_settings',
   'custom_domains',
   'user_images',
+  'identity_totp',
+  'identity_passkeys',
+  'identity_recovery_codes',
+  'identity_two_factor_challenges',
 ];
 
 /**
- * The scoped tables 0019 did not have: 0020 creates `host_leases`, 0022 three more, 0023 three more and 0024
- * `custom_domains`, and 0026 `user_images`.
+ * The scoped tables 0019 did not have: 0020 creates `host_leases`, 0022 three more, 0023 three more, 0024
+ * `custom_domains`, 0026 `user_images` and 0027 four more.
  */
 export const SCOPED_AFTER_0019: readonly string[] = [
   'host_leases',
@@ -87,6 +92,10 @@ export const SCOPED_AFTER_0019: readonly string[] = [
   'tenant_settings',
   'custom_domains',
   'user_images',
+  'identity_totp',
+  'identity_passkeys',
+  'identity_recovery_codes',
+  'identity_two_factor_challenges',
 ];
 
 export type ColumnInfo = {

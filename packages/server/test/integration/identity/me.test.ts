@@ -36,6 +36,7 @@ describeDb('/me (§3.1)', () => {
         cover: null,
       },
       methods: { local: true, oidc: [{ issuer: 'https://idp.test' }] },
+      twoFactor: false,
     });
   });
 

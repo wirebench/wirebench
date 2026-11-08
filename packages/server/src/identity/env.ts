@@ -51,6 +51,11 @@ export interface IdentityEnv {
   /** The per-person profile buckets (user profile ruling 12). */
   readonly profileLimiters: ProfileLimiters;
   /**
+   * The second step's own limits (two-step sign-in spec §3.3): `limiter` per address and per person, apart from the
+   * password step's; `failures` the person's lockout, charged only by a wrong factor.
+   */
+  readonly twoFactor: { readonly limiter: TenantRateLimiter; readonly failures: TenantRateLimiter };
+  /**
    * The OIDC client of `scope`'s tenant: the environment's self-hosted, the tenant's own in hosted mode. `undefined`
    * answers as a server without OIDC (`identity-method-disabled`).
    */

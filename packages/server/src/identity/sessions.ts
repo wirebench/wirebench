@@ -1,11 +1,18 @@
 /** Minting a session for a user who just proved who they are, and the sweep that ends stale ones. */
-import { MAX_DEVICE_NAME_LENGTH, type ImageRef, type ServerUser, type SignInResponse } from '@wirebench/engine';
+import {
+  MAX_DEVICE_NAME_LENGTH,
+  type ImageRef,
+  type ServerUser,
+  type SignInResponse,
+  type TwoFactorMethod,
+} from '@wirebench/engine';
 import { recordAudit, type AuditSource } from '../context.js';
 import type { TenantScope } from '../tenancy/scope.js';
 import type { TenantQuerier } from '../tenancy/tenant-db.js';
 import type { IdentityEnv } from './env.js';
 import * as repo from './repo.js';
 import { mintToken, newId } from './tokens.js';
+import * as twoFactorRepo from './two-factor/repo.js';
 
 export const emailLower = (email: string): string => email.trim().toLowerCase();
 
@@ -62,20 +69,46 @@ export async function signIn(
   source: AuditSource,
   kind: repo.TokenKind = 'device',
 ): Promise<SignInResponse> {
-  return env.ctx.tenancy.db(scope).transaction(async (tx) => {
-    const issued = await issueToken(env, tx, user, deviceName, kind);
-    await recordAudit(env.ctx.hooks, tx, {
-      ...source,
-      actor: { kind: 'user', userId: user.id, email: user.email, tokenId: issued.tokenId },
-      action: 'auth.signed_in',
-      target: { kind: 'user', id: user.id },
-      details: { method, device: deviceLabel(deviceName), tokenId: issued.tokenId },
-    });
-    return issued.response;
+  return env.ctx.tenancy
+    .db(scope)
+    .transaction((tx) => issueSession(env, tx, user, { method, deviceName, source, kind }));
+}
+
+/**
+ * {@link signIn} inside a unit the caller holds: the second step takes its challenge in the same one (two-step
+ * sign-in spec §3.1), and `secondFactor` names the factor it was finished with.
+ */
+export async function issueSession(
+  env: Pick<IdentityEnv, 'ctx' | 'now'>,
+  tx: TenantQuerier,
+  user: repo.UserRow,
+  sign: {
+    readonly method: 'local' | 'oidc' | 'saml';
+    readonly deviceName: string;
+    readonly source: AuditSource;
+    readonly kind: repo.TokenKind;
+    readonly secondFactor?: TwoFactorMethod;
+  },
+): Promise<SignInResponse> {
+  const issued = await issueToken(env, tx, user, sign.deviceName, sign.kind);
+  await recordAudit(env.ctx.hooks, tx, {
+    ...sign.source,
+    actor: { kind: 'user', userId: user.id, email: user.email, tokenId: issued.tokenId },
+    action: 'auth.signed_in',
+    target: { kind: 'user', id: user.id },
+    details: {
+      method: sign.method,
+      device: deviceLabel(sign.deviceName),
+      tokenId: issued.tokenId,
+      ...(sign.secondFactor !== undefined ? { secondFactor: sign.secondFactor } : {}),
+    },
   });
+  return issued.response;
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+/** How long an authenticator secret waits for its first code (two-step sign-in spec §5.1). */
+export const PENDING_TOTP_MS = 10 * 60 * 1000;
 
 export const SWEEP_JOB = 'identity-sweep';
 
@@ -96,6 +129,9 @@ export async function sweepExpired(env: Pick<IdentityEnv, 'ctx' | 'settings' | '
       });
       await repo.deleteExpiredFlows(tx, new Date(now));
       await repo.deleteExpiredBrowserFlows(tx, new Date(now));
+      // Two-step sign-in (spec §3.2, §5.1): ended challenges, and authenticator secrets nobody confirmed in time.
+      await twoFactorRepo.deleteExpiredChallenges(tx, new Date(now));
+      await twoFactorRepo.deleteStalePendingTotp(tx, new Date(now - PENDING_TOTP_MS));
     },
     env.ctx.log,
   );

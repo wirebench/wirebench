@@ -35,6 +35,7 @@ import { profileLimit } from '../profile-limit.js';
 import * as repo from '../repo.js';
 import { presentedSessions, writeRemembered } from '../remembered.js';
 import { imageRef, publicUser } from '../sessions.js';
+import * as twoFactorRepo from '../two-factor/repo.js';
 
 /**
  * The about text as stored (ruling 13): line breaks folded to `\n`, every other control character dropped, then
@@ -60,7 +61,8 @@ export const meRoutes =
           const user = await repo.findUserById(tx, caller.id);
           if (user === undefined) throw unauthenticated();
           const methods = (await repo.signInMethodsOf(tx, [user.id])).get(user.id)!;
-          return { user: publicUser(user), methods };
+          const twoFactor = (await twoFactorRepo.twoFactorUsers(tx, [user.id])).has(user.id);
+          return { user: publicUser(user), methods, twoFactor };
         });
       },
     );
@@ -138,7 +140,8 @@ export const meRoutes =
             });
           }
           const methods = (await repo.signInMethodsOf(tx, [user.id])).get(user.id)!;
-          return { user: publicUser({ ...user, ...changes }), methods };
+          const twoFactor = (await twoFactorRepo.twoFactorUsers(tx, [user.id])).has(user.id);
+          return { user: publicUser({ ...user, ...changes }), methods, twoFactor };
         });
       },
     );

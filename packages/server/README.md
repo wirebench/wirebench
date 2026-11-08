@@ -24,6 +24,7 @@ database, one data directory; run it behind TLS. Design: `docs/specs/2026-09-24-
 | `WIREBENCH_SERVER_BODY_LIMIT_MB` | no | `32` | Maximum request body in MiB. |
 | `WIREBENCH_SERVER_ALLOW_INSECURE_PUBLIC_URL` | no | `false` | Permit an `http://` public URL (development only). |
 | `WIREBENCH_SERVER_LOCAL_AUTH` | no | `true` | Offer local accounts (email and password). |
+| `WIREBENCH_SERVER_REQUIRE_TWO_FACTOR` | no | `false` | Require two-step sign-in for password sign-in (self-hosted; a hosted team sets it in Team settings). |
 | `WIREBENCH_SERVER_OIDC_ISSUER` | no | — | OIDC issuer URL; setting it turns OIDC sign-in on. Discovery runs at start-up. Refused in hosted mode, like every `WIREBENCH_SERVER_OIDC_*` variable: each team sets its own provider. |
 | `WIREBENCH_SERVER_OIDC_CLIENT_ID` | no | — | Client id registered at the issuer. Required with the issuer. |
 | `WIREBENCH_SERVER_OIDC_CLIENT_SECRET` | no | — | Client secret registered at the issuer. Required with the issuer. Never logged. |
@@ -407,6 +408,22 @@ tokens expire after `WIREBENCH_SERVER_TOKEN_IDLE_DAYS` without use or
 in the app, and an admin who disables a user revokes them all. A user changes their own display name with
 `PATCH /api/v1/me` (`{ "name": … }`, 1–120 characters after trimming), recorded in the audit log as
 `user.updated`; on a server provisioned over SCIM, the next push overwrites it.
+
+### Two-step sign-in
+
+A person with a password can add an authenticator app (RFC 6238 codes) and up to ten passkeys, with ten one-use
+recovery codes, under `/api/v1/me/two-factor` (`GET` the status; `POST /totp` and `/totp/confirm`; `DELETE /totp`;
+`POST /recovery-codes`; `POST /passkeys/options` and `/passkeys`; `PATCH` and `DELETE /passkeys/:id`). Every change
+but a passkey's rename takes the current password. After a correct password, `POST /api/v1/auth/local/sign-in`
+answers `200 { twoFactor: { challenge, methods, setup } }` instead of a token; `POST /api/v1/auth/two-factor/verify`
+(a code), `/passkey/options` and `/passkey/verify`, or the desktop's `/passkey/browser-start` and `/passkey/complete`
+finish it with `201 { token, user }`. The browser's `/sign-in` page asks for the second step itself. A challenge
+lives five minutes and ends after five wrong answers; the second step has its own rate limits, and ten wrong
+answers in an hour pause a person's second step. `WIREBENCH_SERVER_REQUIRE_TWO_FACTOR=true` makes every person
+with a password set one up at their next sign-in (a hosted team sets it in Team settings, the `twoFactor` settings
+section). A server admin's `DELETE /api/v1/users/:id/two-factor` removes every method and code of that person and
+ends their sessions. The secrets and passkeys are not part of a tenant export. Single sign-on skips the second
+step: the identity provider owns it.
 
 ## SAML and SCIM
 

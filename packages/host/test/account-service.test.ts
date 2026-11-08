@@ -135,7 +135,7 @@ describe('AccountService', () => {
       deviceName: 'test-host',
       addedAt: '2026-09-24T12:00:00.000Z',
     });
-    expect(account.signedOut).toBeUndefined();
+    expect((account as { signedOut?: true }).signedOut).toBeUndefined();
     // One token per account (switch accounts ruling 4): the label names the person too.
     expect([...secrets.entries.values()]).toEqual([
       { value: TOKEN, label: `${TOKEN_LABEL_PREFIX}${URL_A}#${USER.id}` },

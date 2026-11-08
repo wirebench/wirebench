@@ -59,6 +59,11 @@ function fakeService() {
     tokenFor: vi.fn().mockResolvedValue(TOKEN),
     markSignedOut: vi.fn(),
     setProfile: vi.fn().mockResolvedValue(undefined),
+    verifyTwoFactor: vi.fn().mockResolvedValue(ACCOUNT),
+    startTwoFactorPasskey: vi.fn().mockResolvedValue(ACCOUNT),
+    cancelTwoFactor: vi.fn(),
+    twoFactorSetupStart: vi.fn().mockResolvedValue({ uri: 'otpauth://totp/x', qrSvg: '<svg/>', secret: 'ABCD' }),
+    twoFactorSetupConfirm: vi.fn().mockResolvedValue({ account: ACCOUNT, recoveryCodes: ['aaaaa-bbbbb'] }),
   };
 }
 
@@ -94,6 +99,17 @@ function fakeClient() {
     changePassword: vi.fn().mockResolvedValue(undefined),
     listDevices: vi.fn().mockResolvedValue([DEVICE]),
     revokeDevice: vi.fn().mockResolvedValue(undefined),
+    twoFactorStatus: vi.fn().mockResolvedValue({ available: false }),
+    setUpTotp: vi.fn().mockResolvedValue({ uri: 'otpauth://totp/x', qrSvg: '<svg/>', secret: 'ABCD' }),
+    confirmTotp: vi.fn().mockResolvedValue({ recoveryCodes: ['aaaaa-bbbbb'] }),
+    removeTotp: vi.fn().mockResolvedValue(undefined),
+    regenerateRecoveryCodes: vi.fn().mockResolvedValue({ recoveryCodes: ['ccccc-ddddd'] }),
+    renamePasskey: vi.fn().mockResolvedValue(undefined),
+    removePasskey: vi.fn().mockResolvedValue(undefined),
+    passkeyRegistrationOptions: vi.fn().mockResolvedValue({ challenge: 'c' }),
+    listUsers: vi.fn().mockResolvedValue([]),
+    resetTwoFactor: vi.fn().mockResolvedValue(undefined),
+    addPasskey: vi.fn().mockResolvedValue({ passkey: { id: 'p1', name: 'Phone', createdAt: 'x', lastUsedAt: null } }),
     putImage: vi.fn().mockResolvedValue(PHOTO),
     deleteImage: vi.fn().mockResolvedValue(undefined),
     image: vi.fn().mockResolvedValue('data:image/webp;base64,UklGRg=='),
@@ -173,6 +189,49 @@ describe('account.* channels', () => {
       ok: true,
       value: LIST,
     });
+  });
+
+  it('a second step crosses as its methods only, and finishes into an account (two-step sign-in spec §4.2)', async () => {
+    const accounts = fakeService();
+    accounts.signInLocal.mockResolvedValue({ twoFactor: { methods: ['totp', 'recovery'], setup: false } });
+    registerAccountChannels(table, deps(accounts));
+    expect(await invoke('account.signInLocal', { url: 'https://wb.test', identifier: 'a', password: 'p' })).toEqual({
+      ok: true,
+      value: { twoFactor: { methods: ['totp', 'recovery'], setup: false } },
+    });
+    expect(await invoke('account.verifyTwoFactor', { method: 'totp', code: '123456' })).toEqual({
+      ok: true,
+      value: { account: toAccountWire(ACCOUNT) },
+    });
+    expect(accounts.verifyTwoFactor).toHaveBeenCalledWith({ method: 'totp', code: '123456' });
+    expect(await invoke('account.startTwoFactorPasskey', undefined)).toMatchObject({ ok: true });
+    expect(await invoke('account.cancelTwoFactor', undefined)).toEqual({ ok: true, value: { done: true } });
+    expect(await invoke('account.twoFactorSetupConfirm', { code: '123456' })).toEqual({
+      ok: true,
+      value: { account: toAccountWire(ACCOUNT), recoveryCodes: ['aaaaa-bbbbb'] },
+    });
+  });
+
+  it('the Password page’s two-step calls carry the account’s token and the password to the server only', async () => {
+    const client = fakeClient();
+    registerAccountChannels(table, deps(fakeService(), client));
+    const url = 'https://wb.test';
+    expect(await invoke('account.twoFactorStatus', { url })).toEqual({ ok: true, value: { available: false } });
+    expect(await invoke('account.setUpTotp', { url, password: 'pw' })).toMatchObject({ ok: true });
+    expect(client.setUpTotp).toHaveBeenCalledWith(url, { token: TOKEN, password: 'pw' });
+    expect(await invoke('account.confirmTotp', { url, code: '1' })).toEqual({
+      ok: true,
+      value: { recoveryCodes: ['aaaaa-bbbbb'] },
+    });
+    expect(await invoke('account.removeTotp', { url, password: 'pw' })).toEqual({ ok: true, value: { done: true } });
+    expect(await invoke('account.regenerateRecoveryCodes', { url, password: 'pw' })).toEqual({
+      ok: true,
+      value: { recoveryCodes: ['ccccc-ddddd'] },
+    });
+    expect(await invoke('account.renamePasskey', { url, id: 'p1', name: 'Phone' })).toMatchObject({ ok: true });
+    expect(client.renamePasskey).toHaveBeenCalledWith(url, TOKEN, 'p1', 'Phone');
+    expect(await invoke('account.removePasskey', { url, id: 'p1', password: 'pw' })).toMatchObject({ ok: true });
+    expect(client.removePasskey).toHaveBeenCalledWith(url, TOKEN, 'p1', 'pw');
   });
 
   it('answers a WirebenchError from the service as a failed envelope with its code', async () => {

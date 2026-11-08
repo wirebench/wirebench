@@ -27,6 +27,8 @@ import {
   type ServerAccount,
   type ServerUser,
   type SignInResponse,
+  type TotpSetupResponse,
+  type TwoFactorMethod,
 } from '@wirebench/engine';
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import { startLoopbackCallback, type LoopbackCallback } from './loopback-callback.js';
@@ -78,6 +80,29 @@ export interface AccountServiceDeps {
 
 /** What a host inside a server answers for an account that only the embedder may change. */
 export const ACCOUNT_MANAGED_BY_SERVER = 'account-managed-by-server';
+
+/** What the renderer learns of a second step: the person's methods, and whether this is the required setup. */
+export interface TwoFactorStep {
+  readonly twoFactor: { readonly methods: readonly TwoFactorMethod[]; readonly setup: boolean };
+}
+
+/** The server's challenge lives five minutes (two-step sign-in spec §3.2); the host forgets it no later. */
+export const SECOND_STEP_MS = 5 * 60 * 1000;
+
+interface PendingSecondStep {
+  readonly origin: string;
+  readonly challenge: string;
+  readonly deviceName: string;
+  readonly setup: boolean;
+  readonly expiresAt: number;
+}
+
+/** Refusals after which the challenge is gone on the server, so the pending step goes too. */
+function challengeEnded(code: string): boolean {
+  return (
+    code === 'identity-two-factor-expired' || code === 'identity-user-disabled' || code === 'identity-flow-invalid'
+  );
+}
 
 /** The embedder's account between `me` calls: who the token belongs to, and the ref its token is known by. */
 interface EmbeddedAccount {
@@ -196,6 +221,11 @@ export class AccountService {
   private readonly file: string;
   private accounts: AccountsFile = { version: ACCOUNTS_FILE_VERSION, active: null, servers: [] };
   private pending: LoopbackCallback | undefined;
+  /** The second step a password sign-in is waiting on (two-step sign-in spec §3.2): main only, five minutes. */
+  private secondStep: PendingSecondStep | undefined;
+  private now(): Date {
+    return (this.deps.now ?? (() => new Date()))();
+  }
   /** Set synchronously before the loopback binds, so a second `startOidc` in the same tick sees it. */
   private starting = false;
   /** `cancelSignIn` called while {@link starting}: cancel the loopback as soon as it binds. */
@@ -320,13 +350,17 @@ export class AccountService {
     return { url: origin, meta: await this.deps.client.meta(origin) };
   }
 
+  /**
+   * The password step. A person with two-step sign-in gets no account yet: the challenge is kept here, never handed
+   * to the renderer, and the answer names the methods only (two-step sign-in spec §3.2, §4.2).
+   */
   async signInLocal(input: {
     readonly url: string;
     /** An email or a username, as typed. */
     readonly identifier: string;
     readonly password: string;
     readonly deviceName?: string;
-  }): Promise<ServerAccount> {
+  }): Promise<ServerAccount | TwoFactorStep> {
     const origin = this.notEmbedded(normalizeServerUrl(input.url));
     const deviceName = this.deviceName(input.deviceName);
     // User profile spec §5: the server tells an email (it holds `@`) from a username.
@@ -335,7 +369,138 @@ export class AccountService {
       password: input.password,
       device: { name: deviceName },
     });
+    if ('twoFactor' in response) {
+      const { challenge, methods, setup } = response.twoFactor;
+      this.secondStep = { origin, challenge, deviceName, setup, expiresAt: this.now().getTime() + SECOND_STEP_MS };
+      return { twoFactor: { methods, setup } };
+    }
+    this.secondStep = undefined;
     return this.store(origin, response, deviceName);
+  }
+
+  /** The pending second step, or `account-two-factor-expired` once it is gone or past its five minutes. */
+  private step(setup = false): PendingSecondStep {
+    const step = this.secondStep;
+    if (step === undefined || step.expiresAt <= this.now().getTime() || step.setup !== setup) {
+      this.secondStep = undefined;
+      throw new WirebenchError('account-two-factor-expired', 'This sign-in has expired. Sign in again.');
+    }
+    return step;
+  }
+
+  /** Drops the pending step when the server says it ended; any other refusal leaves it to try again. */
+  private async finishing<T>(call: () => Promise<T>): Promise<T> {
+    try {
+      return await call();
+    } catch (error) {
+      if (error instanceof WirebenchError && challengeEnded(error.code)) this.secondStep = undefined;
+      throw error;
+    }
+  }
+
+  /** The second step with an authenticator or recovery code. */
+  async verifyTwoFactor(input: {
+    readonly method: 'totp' | 'recovery';
+    readonly code: string;
+  }): Promise<ServerAccount> {
+    const step = this.step();
+    const response = await this.finishing(() =>
+      this.deps.client.verifyTwoFactor(step.origin, {
+        challenge: step.challenge,
+        method: input.method,
+        code: input.code,
+      }),
+    );
+    this.secondStep = undefined;
+    return this.store(step.origin, response, step.deviceName);
+  }
+
+  /**
+   * The second step with a passkey (spec §4.2): the desktop runs no WebAuthn, so the server's passkey page opens in the
+   * browser and hands a one-time grant to the loopback, traded here with the PKCE verifier, as the OIDC hand-off is.
+   * `cancelSignIn` ends it early.
+   */
+  async startTwoFactorPasskey(): Promise<ServerAccount> {
+    const step = this.step();
+    if (this.pending !== undefined || this.starting)
+      throw new WirebenchError('account-sign-in-pending', 'A sign-in is already waiting for the browser');
+    this.starting = true;
+    this.cancelRequested = false;
+    const pair = pkce();
+    let flowId: string | undefined;
+    let listener: LoopbackCallback;
+    try {
+      listener = await (this.deps.loopback ?? startLoopbackCallback)({
+        expected: { name: 'flow', value: () => flowId },
+        timeoutMs: SIGN_IN_TIMEOUT_MS,
+        describe: (params) =>
+          params.get('grant') !== null
+            ? { ok: true, message: 'Signed in. You can close this tab and go back to Wirebench.' }
+            : { ok: false, message: 'Wirebench could not sign you in. You can close this tab.' },
+      });
+    } catch (error) {
+      this.starting = false;
+      throw error;
+    }
+    this.starting = false;
+    this.pending = listener;
+    void listener.result.catch(() => undefined);
+    if (this.cancelRequested) listener.cancel();
+    try {
+      const started = await this.finishing(() =>
+        this.deps.client.startTwoFactorPasskey(step.origin, {
+          challenge: step.challenge,
+          codeChallenge: pair.challenge,
+          loopbackPort: listener.port,
+        }),
+      );
+      const page = new URL(started.url);
+      // The server's own page: its own origin, or its primary over https (a custom name, plan ruling 3).
+      if (page.origin !== new URL(step.origin).origin && page.protocol !== 'https:')
+        throw new WirebenchError('server-bad-response', 'The server sent an unexpected passkey page.');
+      const flow = page.searchParams.get('flow');
+      if (flow === null) throw new WirebenchError('server-bad-response', 'The server sent no passkey flow.');
+      flowId = flow;
+      await this.deps.openExternal(page.href);
+      const params = await listener.result;
+      const grant = params.get('grant');
+      if (grant === null) throw new WirebenchError('account-sign-in-failed', 'The browser came back without a grant.');
+      const response = await this.finishing(() =>
+        this.deps.client.completeTwoFactorPasskey(step.origin, { flowId: flow, grant, codeVerifier: pair.verifier }),
+      );
+      this.secondStep = undefined;
+      return await this.store(step.origin, response, step.deviceName);
+    } catch (error) {
+      listener.cancel();
+      if (error instanceof WirebenchError && error.code === 'loopback-timeout')
+        throw new WirebenchError('account-sign-in-timeout', 'The sign-in was not completed in time');
+      if (error instanceof WirebenchError && error.code === 'loopback-cancelled')
+        throw new WirebenchError('account-sign-in-cancelled', 'The sign-in was cancelled');
+      throw error;
+    } finally {
+      this.pending = undefined;
+    }
+  }
+
+  /** Back or close in the dialog: the pending step is forgotten (it lapses on the server in five minutes). */
+  cancelTwoFactor(): void {
+    this.secondStep = undefined;
+    this.pending?.cancel();
+  }
+
+  /** The required setup at sign-in (spec §4.3, plan ruling 5): an authenticator under the setup challenge. */
+  async twoFactorSetupStart(): Promise<TotpSetupResponse> {
+    const step = this.step(true);
+    return this.finishing(() => this.deps.client.setUpTotp(step.origin, { challenge: step.challenge }));
+  }
+
+  /** Confirms the setup's authenticator: the account, signed in, and its recovery codes to show once. */
+  async twoFactorSetupConfirm(code: string): Promise<{ account: ServerAccount; recoveryCodes: string[] }> {
+    const step = this.step(true);
+    const response = await this.finishing(() => this.deps.client.confirmTotpSetup(step.origin, step.challenge, code));
+    this.secondStep = undefined;
+    const { recoveryCodes, ...session } = response;
+    return { account: await this.store(step.origin, session, step.deviceName), recoveryCodes };
   }
 
   async lookupInvitation(input: { readonly url: string; readonly secret: string }): Promise<InvitationLookupResponse> {

@@ -12,6 +12,8 @@ const DIRS = [
   '../../integration/agent/',
   '../../integration/control-plane/',
   '../../integration/custom-domains/',
+  // Two-step sign-in's failures and lockout (`two-factor-sign-in.test.ts`).
+  '../../integration/identity/',
   // The control plane's tenant routes, with two tenants (`tenant.export_downloaded`).
   '../../integration/tenancy/modules/',
   './',

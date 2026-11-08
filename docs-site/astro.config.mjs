@@ -63,6 +63,7 @@ export default defineConfig({
             { label: 'Editions and licenses', slug: 'guides/server-licensing' },
             { label: 'Audit log', slug: 'guides/server-audit-log' },
             { label: 'SAML and SCIM', slug: 'guides/server-saml-scim' },
+            { label: 'Two-step sign-in', slug: 'guides/server-two-step-sign-in' },
             { label: 'Scheduled runs', slug: 'guides/server-scheduled-runs' },
             { label: 'Browser client', slug: 'guides/server-browser-client' },
             { label: 'Webhook inbox', slug: 'guides/webhooks' },

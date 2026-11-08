@@ -257,6 +257,9 @@ class EnvironmentSettings extends Base implements TenantSettings {
       case 'budgets':
         value = environmentBudgets(config);
         break;
+      case 'twoFactor':
+        value = { required: config.requireTwoFactor };
+        break;
       // The SAML provider and the forward sink are read at start-up by their modules (a file path, a fetched URL).
       default:
         value = undefined;
@@ -312,6 +315,7 @@ class EnvironmentSettings extends Base implements TenantSettings {
       ),
       retention: state({ ...environmentRetention(config) }),
       budgets: state({ ...environmentBudgets(config) }),
+      twoFactor: state({ required: config.requireTwoFactor }),
     });
   }
 

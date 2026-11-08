@@ -9,11 +9,15 @@ import { SettingsGroup, SettingsItem } from '../../../components/settings-grid.j
 import { MIN_PASSWORD_LENGTH } from '../../account/password-rules.js';
 import { useUserSettingsStore } from '../../../state/user-settings.js';
 import { USER_INPUT } from './profile-page.js';
+import { TwoFactorSection } from './two-factor-section.js';
+import { readUserDeepLink } from './user-link.js';
+import { isBrowserTab } from '../../../lib/capabilities.js';
 
 const CHANGED = 'Password changed. Your other devices were signed out.';
 
 export function PasswordPage({ profile }: { readonly profile: AccountProfileWire }) {
   const changePassword = useUserSettingsStore((state) => state.changePassword);
+  const url = useUserSettingsStore((state) => state.url);
   // An account without a password yet (single sign-on only) sets one without a current one.
   const hasPassword = profile.methods.local;
   const [current, setCurrent] = useState('');
@@ -62,39 +66,48 @@ export function PasswordPage({ profile }: { readonly profile: AccountProfileWire
   );
 
   return (
-    <form
-      data-testid="user-password"
-      onSubmit={(event) => {
-        void submit(event);
-      }}
-    >
-      <SettingsGroup
-        title={hasPassword ? 'Change your password' : 'Set a password'}
-        hint={`At least ${String(MIN_PASSWORD_LENGTH)} characters. Every other device you are signed in on is signed out.`}
+    <>
+      <form
+        data-testid="user-password"
+        onSubmit={(event) => {
+          void submit(event);
+        }}
       >
-        <SettingsItem>
-          {hasPassword && field('user-password-current', 'Current password', current, setCurrent, 'current-password')}
-          {field('user-password-new', 'New password', next, setNext, 'new-password')}
-          {field('user-password-repeat', 'Repeat the new password', repeat, setRepeat, 'new-password')}
-          {repeat.length > 0 && repeat !== next && (
-            <p className="mt-1 text-xs text-fg-subtle">The two new passwords differ.</p>
-          )}
-          <div className="mt-3 flex items-center gap-3">
-            <Button type="submit" variant="primary" data-testid="user-password-submit" disabled={!ready}>
-              {hasPassword ? 'Change password' : 'Set password'}
-            </Button>
-            {result !== undefined && (
-              <p
-                data-testid="user-password-result"
-                role={result.ok ? 'status' : 'alert'}
-                className={`text-sm ${result.ok ? 'text-fg-muted' : 'text-status-danger'}`}
-              >
-                {result.message}
-              </p>
+        <SettingsGroup
+          title={hasPassword ? 'Change your password' : 'Set a password'}
+          hint={`At least ${String(MIN_PASSWORD_LENGTH)} characters. Every other device you are signed in on is signed out.`}
+        >
+          <SettingsItem>
+            {hasPassword && field('user-password-current', 'Current password', current, setCurrent, 'current-password')}
+            {field('user-password-new', 'New password', next, setNext, 'new-password')}
+            {field('user-password-repeat', 'Repeat the new password', repeat, setRepeat, 'new-password')}
+            {repeat.length > 0 && repeat !== next && (
+              <p className="mt-1 text-xs text-fg-subtle">The two new passwords differ.</p>
             )}
-          </div>
-        </SettingsItem>
-      </SettingsGroup>
-    </form>
+            <div className="mt-3 flex items-center gap-3">
+              <Button type="submit" variant="primary" data-testid="user-password-submit" disabled={!ready}>
+                {hasPassword ? 'Change password' : 'Set password'}
+              </Button>
+              {result !== undefined && (
+                <p
+                  data-testid="user-password-result"
+                  role={result.ok ? 'status' : 'alert'}
+                  className={`text-sm ${result.ok ? 'text-fg-muted' : 'text-status-danger'}`}
+                >
+                  {result.message}
+                </p>
+              )}
+            </div>
+          </SettingsItem>
+        </SettingsGroup>
+      </form>
+      {/* Two-step sign-in guards password sign-in; off the server's passwords it says so (spec §5). */}
+      {url !== undefined && (
+        <TwoFactorSection
+          url={url}
+          addPasskeyNow={isBrowserTab() && readUserDeepLink(window.location.search)?.addPasskey === true}
+        />
+      )}
+    </>
   );
 }

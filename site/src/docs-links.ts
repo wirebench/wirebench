@@ -37,6 +37,7 @@ export const DOCS_LINKS = {
   serverLicensing: 'guides/server-licensing',
   serverAuditLog: 'guides/server-audit-log',
   serverSamlScim: 'guides/server-saml-scim',
+  serverTwoStepSignIn: 'guides/server-two-step-sign-in',
   serverScheduledRuns: 'guides/server-scheduled-runs',
   serverBrowserClient: 'guides/server-browser-client',
   managedPreferences: 'guides/managed-preferences',

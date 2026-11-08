@@ -52,6 +52,7 @@ const BUNDLED_DEV_DEPENDENCIES = [
   '@radix-ui/react-scroll-area',
   '@radix-ui/react-tabs',
   '@radix-ui/react-tooltip',
+  '@simplewebauthn/browser',
   '@tanstack/react-virtual',
   '@xterm/addon-fit',
   '@xterm/addon-web-links',

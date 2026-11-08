@@ -687,7 +687,7 @@ describeDb('migration 0021 on the frozen 0019 fixture: forced isolation (hosted 
     const started = performance.now();
     const { applied } = await migrate(db.owner, await allMigrations(BUILTIN_MODULES));
     console.info(`[tenancy] 0020 and 0021 on the 0019 fixture: ${(performance.now() - started).toFixed(0)} ms`);
-    expect(applied).toEqual([20, 21, 22, 23, 24, 25, 26]);
+    expect(applied).toEqual([20, 21, 22, 23, 24, 25, 26, 27]);
     await db.grant();
     tenantId = (await db.owner.query<{ id: string }>('select default_tenant_id as id from server_identity')).rows[0]!
       .id;

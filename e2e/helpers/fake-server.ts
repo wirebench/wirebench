@@ -32,6 +32,8 @@ export interface FakeUser {
   /** User profile spec §2: signs in in place of the email; stored lower-case. */
   readonly username?: string;
   readonly about?: string;
+  /** Two-step sign-in on (two-step sign-in spec §3.1): the password answers a second step, which this code finishes. */
+  readonly twoFactorCode?: string;
 }
 
 /** A team seeded at start: its name, its members' roles by email, and any empty server workspaces. */
@@ -154,6 +156,8 @@ export interface FakeServer {
   readonly tokens: string[];
   /** Tokens the app signed out. */
   readonly signOuts: string[];
+  /** Every passkey hand-off the desktop started (`browser-start`): its loopback port. */
+  readonly passkeyStarts: readonly { readonly loopbackPort: number }[];
   /** Every request, in order. */
   readonly requests: readonly FakeRequest[];
   /** The id of the server workspace called `name`. @throws when there is none. */
@@ -543,6 +547,9 @@ export async function startFakeServer(options: FakeServerOptions = {}): Promise<
   }));
   const signOuts: string[] = [];
   const requests: FakeRequest[] = [];
+  /** Second-step challenges by their secret: the email each finishes. */
+  const challenges = new Map<string, string>();
+  const passkeyStarts: { loopbackPort: number }[] = [];
   let url = '';
 
   let seq = 1;
@@ -1856,7 +1863,32 @@ export async function startFakeServer(options: FakeServerOptions = {}): Promise<
           : [...users.values()].find((candidate) => candidate.username === identifier);
         if (user === undefined || user.password !== body.password)
           return problem(response, 401, 'identity-invalid-credentials');
+        const twoFactorCode = (options.users ?? []).find((one) => one.email === user.email)?.twoFactorCode;
+        if (twoFactorCode !== undefined) {
+          const challenge = randomBytes(32).toString('base64url');
+          challenges.set(challenge, user.email);
+          return send(response, 200, {
+            twoFactor: { challenge, methods: ['totp', 'passkey', 'recovery'], setup: false },
+          });
+        }
         return issue(response, user.email);
+      }
+      if (request.method === 'POST' && path.pathname === '/api/v1/auth/two-factor/verify') {
+        const body = (await readJson(request)) as { challenge: string; code: string };
+        const email = challenges.get(body.challenge);
+        if (email === undefined) return problem(response, 401, 'identity-two-factor-expired');
+        const expected = (options.users ?? []).find((one) => one.email === email)?.twoFactorCode;
+        if (body.code !== expected) return problem(response, 401, 'identity-two-factor-invalid');
+        challenges.delete(body.challenge);
+        return issue(response, email);
+      }
+      if (request.method === 'POST' && path.pathname === '/api/v1/auth/two-factor/passkey/browser-start') {
+        const body = (await readJson(request)) as { challenge: string; loopbackPort: number };
+        if (!challenges.has(body.challenge)) return problem(response, 401, 'identity-two-factor-expired');
+        passkeyStarts.push({ loopbackPort: body.loopbackPort });
+        return send(response, 200, {
+          url: `${url}/sign-in/two-factor/passkey?flow=FLOW${String(passkeyStarts.length)}`,
+        });
       }
       if (request.method === 'GET' && path.pathname === '/api/v1/invitations/lookup') {
         const invitation = invitations.get(path.searchParams.get('secret') ?? '');
@@ -2346,6 +2378,7 @@ export async function startFakeServer(options: FakeServerOptions = {}): Promise<
         ended: log.ended,
       })),
     signOuts,
+    passkeyStarts,
     requests,
     workspaceId: (name) => {
       const found = [...workspaces.values()].find((ws) => ws.name === name);

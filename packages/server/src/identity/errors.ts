@@ -78,5 +78,29 @@ export const notInvited = (): WirebenchError =>
     'No account or open invitation exists for this email. Ask a server admin to invite you.',
     403,
   );
+/** Any limit of a sign-in step, the second step's lockout too (two-step sign-in spec §3.3), with `Retry-After`. */
+export const rateLimited = (retryAfter: number): WirebenchError =>
+  problem('identity-rate-limited', 'Too many attempts. Try again shortly.', 429, { retryAfter });
+/** Every wrong second factor, whatever the method or reason (two-step sign-in spec §10). */
+export const twoFactorInvalid = (): WirebenchError =>
+  problem('identity-two-factor-invalid', 'That code did not work. Check it and try again.', 401);
+export const twoFactorExpired = (): WirebenchError =>
+  problem('identity-two-factor-expired', 'This sign-in has expired. Sign in again.', 401);
+export const twoFactorRequired = (): WirebenchError =>
+  problem('identity-two-factor-required', 'This server requires two-step sign-in.', 403);
+export const twoFactorExists = (): WirebenchError =>
+  problem('identity-two-factor-exists', 'An authenticator app is already set up. Remove it first.', 409);
+export const twoFactorSetupExpired = (): WirebenchError =>
+  problem(
+    'identity-two-factor-setup-expired',
+    'This setup has expired. Start setting up the authenticator again.',
+    409,
+  );
+export const twoFactorOff = (): WirebenchError =>
+  problem('identity-two-factor-off', 'Two-step sign-in is off. Set up a method first.', 409);
+export const passkeyLimit = (max: number): WirebenchError =>
+  problem('identity-passkey-limit', `You can add up to ${max} passkeys. Remove one first.`, 409);
+export const passkeyFailed = (): WirebenchError =>
+  problem('identity-passkey-failed', 'The passkey could not be used. Try again or use another method.', 401);
 export const oidcFailed = (): WirebenchError =>
   problem('identity-oidc-failed', 'The identity provider did not complete the sign-in.', 502);

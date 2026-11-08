@@ -197,6 +197,8 @@ describeDb('identity in a tenant (tenancy Task 8)', () => {
         expect.stringContaining('delete from device_tokens'),
         expect.stringContaining('delete from oidc_flows'),
         expect.stringContaining('delete from browser_flows'),
+        expect.stringContaining('delete from identity_two_factor_challenges'),
+        expect.stringContaining('delete from identity_totp'),
       ]);
     }
     expect(await repo.tokensOfUser(h.tdb, alice.user.id)).toEqual([]);

@@ -222,6 +222,7 @@ const inputSchema = z.object({
   bodyLimitMb: integerText(1, 1024, '32'),
   allowInsecurePublicUrl: booleanText('false'),
   localAuth: booleanText('true'),
+  requireTwoFactor: booleanText('false'),
   oidcIssuer: z.string().url().optional(),
   oidcClientId: z.string().min(1).optional(),
   oidcClientSecret: z.string().min(1).optional(),
@@ -457,6 +458,14 @@ export const CONFIG_VARIABLES: readonly ConfigVariable[] = [
     defaultText: 'true',
     secret: false,
     description: 'Offer local accounts (email and password).',
+  },
+  {
+    env: 'WIREBENCH_SERVER_REQUIRE_TWO_FACTOR',
+    key: 'requireTwoFactor',
+    required: false,
+    defaultText: 'false',
+    secret: false,
+    description: 'Require two-step sign-in for password sign-in (self-hosted; a hosted team sets it in Team settings).',
   },
   {
     env: 'WIREBENCH_SERVER_OIDC_ISSUER',
