@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- **Browser: a server restart no longer closes the workspace (#884).** While the server stops, the tab keeps the
+  workspace, its tabs and what is being typed on screen under the reconnecting bar, instead of dropping to the
+  workspace list.
+
 ## [7.0.0] - 2026-11-09
 
 ### Added

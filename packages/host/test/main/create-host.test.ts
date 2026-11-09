@@ -148,6 +148,22 @@ describe('createHost', () => {
     expect(caps(theirs)).not.toContain(4321);
   });
 
+  it('does not tell a window its workspace closed while the host shuts down', async () => {
+    const host = await started();
+    const caller = fakeCaller(4);
+    host.attach(caller);
+    await expect(invoke(host, 'workspace.create', { name: 'Kept' }, caller)).resolves.toMatchObject({ ok: true });
+    const opened = caller.sent.filter(([channel]) => channel === 'workspace.changed').length;
+    expect(opened).toBeGreaterThan(0);
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const done = host.shutdown();
+    await vi.advanceTimersByTimeAsync(2_000);
+    await done;
+    hosts.splice(hosts.indexOf(host), 1);
+    const after = caller.sent.filter(([channel]) => channel === 'workspace.changed').slice(opened);
+    expect(after).toEqual([]);
+  });
+
   it('shuts down with no timer left pending', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
     const host = await createHost(createFakePlatform());

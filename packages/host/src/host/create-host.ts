@@ -329,6 +329,12 @@ interface WindowScope {
   closing: Promise<void> | undefined;
   /** Unsubscribes the `caller.onClosed` listener `attach` made; run when the scope is closed. */
   releaseClosed: () => void;
+  /**
+   * Stops this window's own events (its workspace closing, its projects going) from reaching it. The quit path calls
+   * it once the drafts are handed over: a browser tab whose server is stopping keeps its socket until the lease is
+   * given back, and must not be told its workspace closed, or it drops to the picker for a restart of a few seconds.
+   */
+  mute: () => void;
 }
 
 /**
@@ -1049,7 +1055,9 @@ export async function createHost(platform: HostPlatform, embedder: HostOptions =
    * only the launch's first window empties `.joining/`.
    */
   function createWindowScope(target: Caller, sweepJoining: boolean): WindowScope {
+    let muted = false;
     const send = <Payload extends z.ZodType>(event: IpcEvent<Payload>, payload: z.infer<Payload>): void => {
+      if (muted) return;
       emitEvent(target, event, payload);
     };
     const picks = new DialogPicks(appPicks);
@@ -1320,6 +1328,9 @@ export async function createHost(platform: HostPlatform, embedder: HostOptions =
       auditSignedIn: false,
       closing: undefined,
       releaseClosed: () => undefined,
+      mute: () => {
+        muted = true;
+      },
     };
   }
 
@@ -2080,6 +2091,7 @@ export async function createHost(platform: HostPlatform, embedder: HostOptions =
         emitEvent(scope.caller, events.workspace.flushDrafts, {});
         await stashed.catch(() => undefined);
       }
+      scope.mute();
       // Its timers must not hold up the close; what is queued stays in the outbox for the next open.
       scope.audit.dispose();
       try {
