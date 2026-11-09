@@ -76,12 +76,12 @@ describe('Team settings menu (settings split spec §2, rulings 6 and 8)', () => 
     ]);
   });
 
-  it('resolveTeamPage falls back to People, to the first page without a team, and to undefined for a member with no team', () => {
+  it('resolveTeamPage falls back to Overview, to the first page without a team, and to undefined for a member with no team', () => {
     expect(resolveTeamPage('workspaces', facts())).toBe('workspaces');
-    expect(resolveTeamPage(undefined, facts())).toBe('people');
-    expect(resolveTeamPage('nope', facts())).toBe('people');
+    expect(resolveTeamPage(undefined, facts())).toBe('overview');
+    expect(resolveTeamPage('nope', facts())).toBe('overview');
     // Listed only for a server admin.
-    expect(resolveTeamPage('sign-in', facts())).toBe('people');
+    expect(resolveTeamPage('sign-in', facts())).toBe('overview');
     expect(resolveTeamPage('people', facts({ hasTeam: false, serverAdmin: true }))).toBe('license');
     expect(resolveTeamPage('audit', facts({ hasTeam: false, serverAdmin: true }))).toBe('audit');
     expect(resolveTeamPage('people', facts({ hasTeam: false }))).toBeUndefined();

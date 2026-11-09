@@ -271,9 +271,16 @@ workspace when it is shared to that server. A server from an earlier release wit
 the Team dialog in the app. Signing in, choosing a team when you share or open a
 workspace, and sync stay in the desktop app.
 
-Team settings has a team switcher at the top (with **New team…** for a server admin) and a menu in two groups:
+Team settings has a team switcher at the top (with **New team…** for a server admin) and a menu in two groups.
+Picking a team — in that switcher, with **New team…**, from **Manage team…**, or (in a browser tab) in the title
+bar's team switcher — opens that team's **Overview** and makes it the team you are working in. In the desktop app the
+title bar's switcher only changes the team you are working in; **Manage team…** is the way to its Overview.
 
-- **This team** — **Overview** (the team's name, and **Delete team** for a server admin), **People** (everyone on the team and every open
+- **This team** — **Overview** (the team at a glance: its name, which a team admin edits in place, your role and when
+  it was made; tiles for its people, its workspaces and, for a server admin, the server's seats, each opening its
+  page; its workspaces with your role on each; for a team admin, **Add people**, **New workspace…**, the invitations
+  still waiting with **New link**, and while the team is new a short setup list; **Delete team** for a server admin),
+  **People** (everyone on the team and every open
   invitation, with *All*, *Joined* and *Waiting* filters and a search), **Workspaces** (the team's workspaces and who
   can open them) and **What roles can do** (what *Viewer*, *Editor* and *Admin* may do in a workspace). A team
   admin who is not a server admin also has the team's **Audit log** here.
@@ -282,7 +289,7 @@ Team settings has a team switcher at the top (with **New team…** for a server 
   shows its settings read-only, naming the environment variable behind each.
 
 The page's address names the team and the page (`?panel=team&team=…&page=people`), so a reload or a bookmark comes
-back to it. Pages and controls you may not use are not shown; the server checks every change again regardless.
+back to it; an address without a page opens Overview. Pages and controls you may not use are not shown; the server checks every change again regardless.
 
 - **Teams.** A server admin creates a team and adds its first admin. Team admins use **Add people** on the People
   page: someone who already has an account joins at once, and anyone else gets an invitation. The invitation link

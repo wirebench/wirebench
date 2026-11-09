@@ -101,7 +101,7 @@ export function openTeamDeepLink(location: Pick<Location, 'search'> = window.loc
   useUiStore.getState().openTeamSettings({
     ...(teamId !== undefined ? { teamId } : {}),
     ...(workspaceId !== undefined ? { workspaceId } : {}),
-    // A page that is not one is left out, so the page falls back to People.
+    // A page that is not one is left out, so the page falls back to Overview.
     ...(page !== undefined && isTeamSettingsPage(page) ? { page } : {}),
   });
   return true;

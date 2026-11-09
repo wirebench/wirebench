@@ -5,6 +5,7 @@ import type { TeamWire, TeamWorkspaceWire, WorkspaceSummaryWire } from '@wireben
 import { switchTeam, TitleTeamSwitcher } from '../../src/renderer/features/team/team-switcher.js';
 import { WorkspacePicker } from '../../src/renderer/features/workspace/picker-screen.js';
 import { inOtherTeam, useActiveTeamStore } from '../../src/renderer/state/active-team.js';
+import { useUiStore } from '../../src/renderer/state/ui.js';
 import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 
@@ -97,6 +98,8 @@ describe('the active team', () => {
 
     expect(useActiveTeamStore.getState().teamId).toBe('t2');
     expect(screen.getByTestId('title-team-switcher').textContent).toContain('CaaS');
+    // The desktop only switches: Team settings is the browser client's.
+    expect(useUiStore.getState().preferences.open).toBe(false);
   });
 
   it('switching team moves off another team’s workspace: to the new team’s latest, else to the list', async () => {
@@ -162,6 +165,21 @@ describe('the start screen in a browser tab (#898)', () => {
   afterEach(() => {
     cleanup();
     useWorkspaceStore.setState({ workspace: null, workspaces: [] });
+  });
+
+  it('picking a team in the title bar switches to it and opens its Overview', async () => {
+    await useActiveTeamStore.getState().load({ url: URL_A, userId: USER });
+    render(<TitleTeamSwitcher />);
+    await userEvent.click(screen.getByTestId('title-team-switcher'));
+    const items = await screen.findAllByTestId('title-team-switcher-item');
+    await userEvent.click(items[1]!);
+    await vi.waitFor(() => expect(useUiStore.getState().preferences.open).toBe(true));
+    expect(useActiveTeamStore.getState().teamId).toBe('t2');
+    expect(useUiStore.getState().preferences).toMatchObject({
+      area: 'team',
+      team: { teamId: 't2', page: 'overview' },
+    });
+    useUiStore.getState().setPreferencesOpen(false);
   });
 
   it('says how many of the active team’s workspaces can be opened, and where, when none is open here', async () => {

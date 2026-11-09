@@ -1,6 +1,8 @@
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { Check, ChevronDown, Users } from 'lucide-react';
+import { isBrowserTab } from '../../lib/capabilities.js';
 import { activeTeam, inTeam, ofOtherTeam, useActiveTeamStore } from '../../state/active-team.js';
+import { useUiStore } from '../../state/ui.js';
 import { useWorkspaceStore } from '../../state/workspace.js';
 import { workspaceActions } from '../workspace/workspace-actions.js';
 import { manageTeam } from './team-link.js';
@@ -26,6 +28,16 @@ export async function switchTeam(teamId: string): Promise<void> {
 
 const ITEM_CLASS =
   'flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm text-fg-default outline-none data-[highlighted]:bg-accent-muted';
+
+/**
+ * A team picked in the title bar: it becomes the active team, and in a browser tab Team settings opens on its
+ * Overview (*Back to workspace* returns to the team's workspace). The desktop only switches: Team settings is the
+ * browser client's, and *Manage team…* is the way there.
+ */
+export async function pickTeam(teamId: string): Promise<void> {
+  await switchTeam(teamId);
+  if (isBrowserTab()) useUiStore.getState().openTeamSettings({ teamId, page: 'overview' });
+}
 
 /**
  * The title bar's team switcher: the team you are working in, before the workspace's name. Its menu lists the
@@ -66,7 +78,7 @@ export function TitleTeamSwitcher() {
               data-team-id={team.id}
               className={ITEM_CLASS}
               onSelect={() => {
-                void switchTeam(team.id);
+                void pickTeam(team.id);
               }}
             >
               <Check

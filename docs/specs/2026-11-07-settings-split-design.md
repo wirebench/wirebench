@@ -40,17 +40,26 @@ Settings page of #396 (its Account and Server groups move out) · Plan: `docs/pl
 ### 3.1 Team switcher
 
 - A button at the top of the menu: the team's initial in a square, its name, a chevron. It opens a list of
-  the caller's teams on this server; picking one keeps the page and changes the team.
+  the caller's teams on this server; picking one opens that team's *Overview* and makes it the title bar's team when
+  this is the active account's server (team overview landing, 2026-11-09).
 - Server admins also see *New team…* at the end of the list. It asks for a name in a small dialog, creates
-  the team (`POST /api/v1/teams`) and switches to it on *People*.
+  the team (`POST /api/v1/teams`) and switches to it on *Overview*, where a setup list waits.
 - With no team: a server admin lands on an empty state, "Create your first team", with *New team…*; anyone
   else sees "You're not on a team on this server yet. A server admin can add you." The Server group still
   shows to a server admin.
 
 ### 3.2 Overview
 
-- Team name (editable by team admins, saved on blur or Enter, `PATCH /api/v1/teams/:id`); member and
-  workspace counts; the date it was created.
+- Where picking a team lands (the switcher above, *New team…*, *Manage team…*, and the browser tab's title-bar
+  team switcher; the desktop's title-bar switcher only changes the team you work in).
+- The team's initial and name (editable by team admins, saved on blur or Enter, `PATCH /api/v1/teams/:id`), your
+  role and the date it was created.
+- Tiles that open their page: People (joined and waiting), Workspaces, and for a server admin the server's seats
+  (`GET /api/v1/license`).
+- The team's workspaces with your role on each and an *Open now* mark on the open one; no Open button (owner
+  ruling): opening stays with the workspace list.
+- Team admins: *Add people*, *New workspace…*, the invitations still waiting with *New link*, and — until the team has
+  a second person (joined or invited) and a workspace — a three-step setup list.
 - *Delete this team* in a danger zone at the bottom, server admins only, behind a confirm dialog that
   names the team (`DELETE /api/v1/teams/:id`).
 
@@ -97,9 +106,9 @@ Settings page of #396 (its Account and Server groups move out) · Plan: `docs/pl
 - In the browser client each Team settings page has an address that reload and bookmarks keep:
   `/?panel=team&team=<id>&page=<page>`, written with `history.replaceState` as the page changes.
   `<page>` is one of `overview`, `people`, `workspaces`, `roles` or a Server page id. The existing
-  `panel=team[&team][&workspace]` link opens *People*.
+  `panel=team[&team][&workspace]` link opens *Overview*.
 - Ids follow the browser deep-link rule (1–64 characters of `[A-Za-z0-9_-]`); an unknown team falls back to
-  the first, an unknown page to *People*.
+  the first, an unknown page to *Overview*.
 
 ## 6. Server changes
 

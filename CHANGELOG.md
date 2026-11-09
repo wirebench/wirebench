@@ -6,6 +6,14 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- **Picking a team opens its Overview.** The team switcher in Team settings, *New team…*, *Manage team…* and, in a
+  browser tab, the title bar's team switcher all land on the team's Overview, and a team picked in Team settings
+  becomes the team you work in. The Overview now shows the team at a glance: your role, tiles for its people,
+  workspaces and (for a server admin) seats, its workspaces with your role on each, and for a team admin *Add
+  people*, *New workspace…*, the invitations still waiting and a setup list while the team is new.
+
 ### Fixed
 
 - **Browser: a server restart no longer closes the workspace (#884).** While the server stops, the tab keeps the

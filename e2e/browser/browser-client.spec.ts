@@ -103,9 +103,9 @@ test('the team deep link the desktop opens shows Team settings on the tab’s se
   const settings = page.getByTestId('team-settings');
   await expect(settings).toBeVisible({ timeout: 60_000 });
   await expect(settings.getByTestId('team-switcher')).toContainText(seed.teamName);
-  await expect(settings.getByTestId('team-settings-nav-people')).toHaveAttribute('aria-current', 'page');
+  await expect(settings.getByTestId('team-settings-nav-overview')).toHaveAttribute('aria-current', 'page');
   // The address stays and names the page, so a reload lands on it again (settings split ruling 17).
-  await expect(page).toHaveURL(/\?panel=team&team=[A-Za-z0-9_-]+&page=people$/);
+  await expect(page).toHaveURL(/\?panel=team&team=[A-Za-z0-9_-]+&page=overview$/);
   await page.keyboard.press('Escape');
   await expect(settings).toBeHidden();
   await expect(page).toHaveURL(/\/$/);

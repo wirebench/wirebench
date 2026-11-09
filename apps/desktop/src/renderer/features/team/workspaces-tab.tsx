@@ -321,6 +321,57 @@ function FeaturePolicyEditor({
   );
 }
 
+/** *New workspace…*'s form: a name and a default role. The Workspaces page and the Overview both show it. */
+export function NewWorkspaceForm({ onDone }: { readonly onDone: () => void }) {
+  const createWorkspace = useTeamStore((state) => state.createWorkspace);
+  const [name, setName] = useState('');
+  const [defaultRole, setDefaultRole] = useState<DefaultRoleWire>('viewer');
+
+  const submitNew = async (): Promise<void> => {
+    if (name.trim().length === 0) return;
+    if (await createWorkspace(name.trim(), defaultRole)) onDone();
+  };
+
+  return (
+    <form
+      className="flex flex-wrap items-center gap-2 rounded-lg border border-hairline bg-surface-raised p-3"
+      onSubmit={(event) => {
+        event.preventDefault();
+        void submitNew();
+      }}
+    >
+      <input
+        data-testid="workspace-new-name"
+        aria-label="Workspace name"
+        placeholder="Workspace name"
+        autoFocus
+        className={`${INPUT_CLASS} min-w-40 flex-1`}
+        value={name}
+        onChange={(event) => {
+          setName(event.target.value);
+        }}
+      />
+      <select
+        data-testid="workspace-new-default"
+        aria-label="Default role"
+        className={SELECT_CLASS}
+        value={defaultRole}
+        onChange={(event) => {
+          setDefaultRole(event.target.value as DefaultRoleWire);
+        }}
+      >
+        {defaultOptions}
+      </select>
+      <Button type="submit" variant="primary" data-testid="workspace-new-submit">
+        Create
+      </Button>
+      <Button variant="ghost" onClick={onDone}>
+        Cancel
+      </Button>
+    </form>
+  );
+}
+
 /**
  * The Workspaces page (teams-access §3.5): the team's workspaces the caller can see, one card each with the
  * caller's role and its source. Admins of a workspace manage it in its card; any member can create one.
@@ -334,69 +385,21 @@ export function WorkspacesTab() {
     [allWorkspaces, teamId],
   );
   const accessId = useTeamStore((state) => state.access?.workspaceId);
-  const createWorkspace = useTeamStore((state) => state.createWorkspace);
   const deleteWorkspace = useTeamStore((state) => state.deleteWorkspace);
   const [creating, setCreating] = useState(false);
-  const [name, setName] = useState('');
-  const [defaultRole, setDefaultRole] = useState<DefaultRoleWire>('viewer');
   const [deleting, setDeleting] = useState<TeamWorkspaceWire | undefined>(undefined);
 
   const inAccess = workspaces.find((workspace) => workspace.id === accessId);
   if (inAccess !== undefined) return <AccessPanel workspaceName={inAccess.name} />;
 
-  const submitNew = async (): Promise<void> => {
-    if (name.trim().length === 0) return;
-    if (await createWorkspace(name.trim(), defaultRole)) {
-      setCreating(false);
-      setName('');
-      setDefaultRole('viewer');
-    }
-  };
-
   return (
     <div data-testid="workspaces-tab" className="flex flex-col gap-3">
       {creating ? (
-        <form
-          className="flex flex-wrap items-center gap-2 rounded-lg border border-hairline bg-surface-raised p-3"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void submitNew();
+        <NewWorkspaceForm
+          onDone={() => {
+            setCreating(false);
           }}
-        >
-          <input
-            data-testid="workspace-new-name"
-            aria-label="Workspace name"
-            placeholder="Workspace name"
-            autoFocus
-            className={`${INPUT_CLASS} min-w-40 flex-1`}
-            value={name}
-            onChange={(event) => {
-              setName(event.target.value);
-            }}
-          />
-          <select
-            data-testid="workspace-new-default"
-            aria-label="Default role"
-            className={SELECT_CLASS}
-            value={defaultRole}
-            onChange={(event) => {
-              setDefaultRole(event.target.value as DefaultRoleWire);
-            }}
-          >
-            {defaultOptions}
-          </select>
-          <Button type="submit" variant="primary" data-testid="workspace-new-submit">
-            Create
-          </Button>
-          <Button
-            variant="ghost"
-            onClick={() => {
-              setCreating(false);
-            }}
-          >
-            Cancel
-          </Button>
-        </form>
+        />
       ) : (
         <div className="flex justify-end">
           <Button

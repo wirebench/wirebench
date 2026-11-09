@@ -80,24 +80,33 @@ function invitationRow(email: string): Locator {
   return settings().locator('[data-testid^="invitation-row-"]').filter({ hasText: email });
 }
 
-test('the team link opens Team settings on People and keeps the address', async () => {
+test('the team link opens Team settings on Overview and keeps the address', async () => {
   await page.goto('/?panel=team');
   await expect(settings()).toBeVisible({ timeout: 60_000 });
-  await expect(settings().getByTestId('team-settings-nav-people')).toHaveAttribute('aria-current', 'page');
-  await expect(page).toHaveURL(/[?&]panel=team&team=[A-Za-z0-9_-]+&page=people/);
+  await expect(settings().getByTestId('team-settings-nav-overview')).toHaveAttribute('aria-current', 'page');
+  await expect(settings().getByTestId('team-overview')).toBeVisible();
+  await expect(page).toHaveURL(/[?&]panel=team&team=[A-Za-z0-9_-]+&page=overview/);
 });
 
-test('switching team keeps the page and the address follows', async () => {
+test('picking a team lands on its Overview, the title bar follows, and the address too', async () => {
   await switchTo(seed.teamId, seed.teamName);
   await settings().getByTestId('team-settings-nav-workspaces').click();
   await expect(page).toHaveURL(new RegExp(`[?&]team=${seed.teamId}&page=workspaces`));
   await switchTo(seed.secondTeamId, seed.secondTeamName);
-  await expect(settings().getByTestId('team-settings-nav-workspaces')).toHaveAttribute('aria-current', 'page');
-  await expect(page).toHaveURL(new RegExp(`[?&]team=${seed.secondTeamId}&page=workspaces`));
+  await expect(settings().getByTestId('team-settings-nav-overview')).toHaveAttribute('aria-current', 'page');
+  await expect(page).toHaveURL(new RegExp(`[?&]team=${seed.secondTeamId}&page=overview`));
+  await expect(page.getByTestId('title-team-switcher')).toContainText(seed.secondTeamName);
 
-  // Back to the first team, on People, for the steps that follow.
-  await switchTo(seed.teamId, seed.teamName);
-  await settings().getByTestId('team-settings-nav-people').click();
+  // The title bar's switcher lands on the picked team's Overview too.
+  await page.getByTestId('title-team-switcher').click();
+  await page.locator(`[data-testid="title-team-switcher-item"][data-team-id="${seed.teamId}"]`).click();
+  await expect(settings().getByTestId('team-switcher')).toContainText(seed.teamName);
+  await expect(settings().getByTestId('team-settings-nav-overview')).toHaveAttribute('aria-current', 'page');
+  await expect(page).toHaveURL(new RegExp(`[?&]team=${seed.teamId}&page=overview`));
+
+  // A tile opens its page; People for the steps that follow.
+  await settings().getByTestId('team-overview-members').click();
+  await expect(settings().getByTestId('team-settings-nav-people')).toHaveAttribute('aria-current', 'page');
   await expect(page).toHaveURL(new RegExp(`[?&]team=${seed.teamId}&page=people`));
 });
 
@@ -162,6 +171,7 @@ test('Revoke removes the invitation', async () => {
 // People list, and the team stays in the switcher, with its other admin still on it.
 test('leaving a team takes you off its People list; a server admin still sees the team', async () => {
   await switchTo(seed.secondTeamId, seed.secondTeamName);
+  await settings().getByTestId('team-settings-nav-people').click();
   await expect(settings().getByTestId('team-settings-nav-people')).toHaveAttribute('aria-current', 'page');
   await settings().getByTestId('member-leave').click();
   await expect(page.getByText(`Leave ${seed.secondTeamName}?`)).toBeVisible();
