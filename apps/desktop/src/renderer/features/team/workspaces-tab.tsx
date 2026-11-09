@@ -44,7 +44,7 @@ interface WorkspaceRowProps {
  * One workspace as a card: its name (editable by its admins), your role in it, Access… and Delete in the header;
  * below, for its admins, who may open it by default, what is recorded and which features are off.
  */
-function WorkspaceRow({ workspace, onDelete }: WorkspaceRowProps) {
+export function WorkspaceRow({ workspace, onDelete }: WorkspaceRowProps) {
   const updateWorkspace = useTeamStore((state) => state.updateWorkspace);
   const openAccess = useTeamStore((state) => state.openAccess);
   const desktopActivity = useTeamStore((state) => state.desktopActivity);

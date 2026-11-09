@@ -38,7 +38,7 @@ describeDb('server-sync routes (§3.2)', () => {
     expect(meta.body.capabilities).toEqual(['feature-policy', 'identity', 'sync', 'teams']);
   });
 
-  it("an empty workspace: a null head, no commits, an empty snapshot and log, and each caller's role", async () => {
+  it("an empty workspace: a null head, no commits, an empty snapshot and log, each caller's role and the names", async () => {
     for (const [user, role] of [
       [f.viewer, 'viewer'],
       [f.editor, 'editor'],
@@ -53,11 +53,23 @@ describeDb('server-sync routes (§3.2)', () => {
           recordDesktopActivity: false,
           recordSessionLogs: false,
           disabledFeatures: [],
+          name: 'Staging',
+          teamName: 'Payments QA',
         },
       });
     }
     expect(await get(f.viewer, 'snapshot')).toEqual({ status: 200, body: { head: null, files: [] } });
     expect(await get(f.viewer, 'log')).toEqual({ status: 200, body: [] });
+  });
+
+  it("the head carries the server's name after a rename, whatever workspace.yaml says", async () => {
+    expect((await call(f.h, f.admin, 'PATCH', `/workspaces/${f.workspaceId}`, { name: ' Staging EU ' })).status).toBe(
+      200,
+    );
+    expect((await get<SyncHeadResponse>(f.viewer, 'head')).body).toMatchObject({
+      name: 'Staging EU',
+      teamName: 'Payments QA',
+    });
   });
 
   it('a push round-trips through head, snapshot, changes and log, authored by the signed-in editor', async () => {
@@ -80,6 +92,8 @@ describeDb('server-sync routes (§3.2)', () => {
       recordDesktopActivity: false,
       recordSessionLogs: false,
       disabledFeatures: [],
+      name: 'Staging',
+      teamName: 'Payments QA',
     });
     expect((await get<SyncSnapshotResponse>(f.viewer, 'snapshot')).body).toEqual({
       head,

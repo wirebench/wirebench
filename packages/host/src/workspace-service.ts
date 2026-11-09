@@ -132,9 +132,9 @@ import type { SecretUse, TeamSecretsService } from './team-secrets-service.js';
 import type { SecretStore } from './secrets.js';
 import type { AccountService } from './account-service.js';
 import type { AuditTarget } from './audit/reporter.js';
-import type { TokenSource } from './server-token.js';
+import { withToken, type TokenSource } from './server-token.js';
 import type { ConflictSides } from './sync/backend.js';
-import { createSyncBackend, type ServerSyncServices } from './sync/create-backend.js';
+import { createSyncBackend, SERVER_SYNC_UNAVAILABLE_ERROR, type ServerSyncServices } from './sync/create-backend.js';
 import { HeldChanges } from './sync/held-changes.js';
 import type { HeldBatch } from './sync/held-changes.js';
 import { fillConflictProjectIds, planPull } from './sync/pull-plan.js';
@@ -683,6 +683,46 @@ function withoutActiveEnvironment(workspace: Workspace): Workspace {
 }
 
 /**
+ * The name a workspace is shown under: a server share's name on the server when it is known (the
+ * server's name wins), else `workspace.yaml`'s.
+ */
+function shownName(share: WorkspaceShare | undefined, workspace: Workspace): string {
+  return serverNameOf(share) ?? workspace.name;
+}
+
+/** A server share's name on the server, when it is known. */
+function serverNameOf(share: WorkspaceShare | undefined): string | undefined {
+  return share?.kind === 'server' ? share.server?.name : undefined;
+}
+
+/**
+ * `share` with a server share's `name` and `teamName` set from `names`, or `undefined` when it is not
+ * a server share or nothing changes. A name `names` does not carry is left as it is.
+ */
+function withServerNames(
+  share: WorkspaceShare | undefined,
+  names: { readonly name?: string | undefined; readonly teamName?: string | undefined },
+): WorkspaceShare | undefined {
+  const server = share?.kind === 'server' ? share.server : undefined;
+  if (share === undefined || server === undefined) {
+    return undefined;
+  }
+  const name = names.name ?? server.name;
+  const teamName = names.teamName ?? server.teamName;
+  if (name === server.name && teamName === server.teamName) {
+    return undefined;
+  }
+  return {
+    ...share,
+    server: {
+      ...server,
+      ...(name !== undefined ? { name } : {}),
+      ...(teamName !== undefined ? { teamName } : {}),
+    },
+  };
+}
+
+/**
  * `WorkspaceWire.share`/`WorkspaceSummaryWire.share` from `resolveTree`'s result. `managed` is
  * true when the tree lives inside app data — a git or server share never sets `share.path` (its
  * tree is the managed `<dir>/tree`); a folder share always does (an external, user-picked folder).
@@ -916,7 +956,7 @@ export class WorkspaceService implements ProjectRouter {
         const { workspace } = await loadWorkspace(tree, this.fsOption());
         rows.push({
           id: workspace.id,
-          name: workspace.name,
+          name: shownName(share, workspace),
           dir,
           projectCount: workspace.projects.length,
           internalProjectCount: workspace.projects.filter((ref) => ref.source === 'internal').length,
@@ -1969,7 +2009,63 @@ export class WorkspaceService implements ProjectRouter {
       open.recording = recording;
       this.deps.hooks?.onChanged?.(this.snapshot());
     }
+    if (withServerNames(open.share, flags) !== undefined) {
+      void this.enqueueWorkspaceOp(() => this.keepServerNames(open, flags)).catch(() => undefined);
+    }
     this.deps.hooks?.onAuditTarget?.(this.auditTargetOf(open), true);
+  }
+
+  /**
+   * Keeps the server's names in `share.yaml`, where the list and the snapshot read them, and tells the
+   * renderer, so the title bar changes without a reopen. `workspace.yaml` is left alone: rewriting it
+   * would be a local change to commit. Runs as a workspace op, the only writer of `share.yaml`.
+   */
+  private async keepServerNames(
+    open: OpenWorkspace,
+    names: { readonly name?: string | undefined; readonly teamName?: string | undefined },
+  ): Promise<void> {
+    if (this.stale(open)) {
+      return;
+    }
+    const next = withServerNames(open.share, names);
+    if (next === undefined) {
+      return;
+    }
+    await saveShare(open.dir, next, this.fsOption());
+    if (this.stale(open)) {
+      return;
+    }
+    open.share = next;
+    this.deps.hooks?.onChanged?.(this.snapshot());
+  }
+
+  /**
+   * Renames a server-shared workspace on the server, before anything changes here, and returns the
+   * share with the name the server kept (it trims), or `undefined` for any other share. Only a
+   * workspace admin may; the server's refusal (or a signed-out account) is thrown as it is.
+   *
+   * @throws WirebenchError `sync-not-supported` when this host has no server services.
+   */
+  private async renameOnServer(
+    dir: string,
+    share: WorkspaceShare | undefined,
+    name: string,
+  ): Promise<WorkspaceShare | undefined> {
+    const server = share?.kind === 'server' ? share.server : undefined;
+    if (share === undefined || server === undefined) {
+      return undefined;
+    }
+    const services = this.deps.server;
+    if (services === undefined) {
+      throw new WirebenchError(SERVER_SYNC_UNAVAILABLE_ERROR.code, SERVER_SYNC_UNAVAILABLE_ERROR.message);
+    }
+    // As the account this copy syncs as, once a sync has recorded it (switch accounts ruling 5).
+    const { userId } = await readRecordingFlags(join(dir, SERVER_STATE_DIR));
+    const target = userId !== undefined ? { url: server.url, userId } : server.url;
+    const row = await withToken(services, target, (origin, token) =>
+      services.client.updateWorkspace(origin, token, server.workspaceId, { name }),
+    );
+    return withServerNames(share, { name: row.name, teamName: row.teamName }) ?? share;
   }
 
   /** Where the open workspace's desktop audit events go; `undefined` unless it is shared to a server. */
@@ -2144,8 +2240,16 @@ export class WorkspaceService implements ProjectRouter {
         if (this.stale(open)) {
           return;
         }
+        const named = await this.renameOnServer(open.dir, open.share, name);
+        if (this.stale(open)) {
+          return;
+        }
+        if (named !== undefined) {
+          await saveShare(open.dir, named, this.fsOption());
+          open.share = named;
+        }
         const previousWorkspace = open.workspace;
-        open.workspace = { ...open.workspace, name };
+        open.workspace = { ...open.workspace, name: serverNameOf(named) ?? name };
         const candidates = candidateWorkspacePaths(previousWorkspace, open.workspace);
         await saveWorkspaceAnnounced(open.watcher, open.workspace, open.tree, candidates, this.fsOption());
         if (this.stale(open)) {
@@ -2156,10 +2260,14 @@ export class WorkspaceService implements ProjectRouter {
       });
     } else {
       const dir = workspaceDir(this.deps.userDataDir, requireWorkspaceId(id));
-      const { tree } = await this.resolveTree(dir);
+      const { share, tree } = await this.resolveTree(dir);
+      const named = await this.renameOnServer(dir, share, name);
+      if (named !== undefined) {
+        await saveShare(dir, named, this.fsOption());
+      }
       const { workspace, legacy } = await loadWorkspace(tree, this.fsOption());
       await keepLegacyActiveEnvironment(dir, workspace, legacy, this.fsOption());
-      await saveWorkspace({ ...workspace, name }, tree, this.fsOption());
+      await saveWorkspace({ ...workspace, name: serverNameOf(named) ?? name }, tree, this.fsOption());
     }
     return await this.list();
   }
@@ -2990,9 +3098,17 @@ export class WorkspaceService implements ProjectRouter {
       let commitHint: { readonly path: string; readonly message: string } | undefined;
 
       switch (change.kind) {
-        case 'rename-workspace':
-          open.workspace = { ...open.workspace, name: change.name };
+        case 'rename-workspace': {
+          const named = await this.renameOnServer(open.dir, open.share, change.name);
+          this.requireStillOpen(open);
+          if (named !== undefined) {
+            await saveShare(open.dir, named, this.fsOption());
+            this.requireStillOpen(open);
+            open.share = named;
+          }
+          open.workspace = { ...open.workspace, name: serverNameOf(named) ?? change.name };
           break;
+        }
         case 'set-workspace-property':
           open.workspace = {
             ...open.workspace,
@@ -3356,7 +3472,7 @@ export class WorkspaceService implements ProjectRouter {
     const workspace = open.workspace;
     return {
       id: workspace.id,
-      name: workspace.name,
+      name: shownName(open.share, workspace),
       ...(workspace.description !== undefined ? { description: workspace.description } : {}),
       dir: open.dir,
       properties: { ...workspace.properties },

@@ -465,6 +465,22 @@ describe('LiveHub — accessChanged (§3.2, §3.3)', () => {
     expect(ben.take()).toEqual([head(WS_A)]);
   });
 
+  it("a settings change tells every subscriber of the workspace once, and only that workspace's", async () => {
+    const f = fixture();
+    const laptop = await joined(f, ANA, 'tok-ana-laptop', WS_A);
+    const ben = await joined(f, BEN, 'tok-ben', WS_A, 'editor');
+    f.grant(BEN, WS_B, 'viewer');
+    await f.hub.subscribe(ben, WS_B);
+    settle(laptop, ben);
+
+    // Ana's role changes in the same event: she still hears one `access`, not two.
+    f.grant(ANA, WS_A, 'editor');
+    f.hub.accessChanged({ ...IN_TENANT, workspaceId: WS_A, settings: true });
+    await f.hub.idle();
+    expect(laptop.take()).toEqual([access(WS_A)]);
+    expect(ben.take()).toEqual([access(WS_A)]);
+  });
+
   it('scopes a team change with one query, intersected with what is subscribed, and to the user named', async () => {
     const f = fixture();
     f.team(TEAM, [WS_A, WS_B, WS_D]);

@@ -25,6 +25,8 @@ export interface SettingsAddress {
   readonly page?: string;
   /** Team settings only: the team shown. */
   readonly team?: string;
+  /** Team settings' Workspace overview only: the workspace shown. */
+  readonly workspace?: string;
 }
 
 export interface Address {
@@ -78,12 +80,16 @@ export function parseAddress(pathname: string, search: string): Address {
   const panel = params.get('panel');
   const page = name(params, 'page');
   const team = segment(params.get('team') ?? undefined);
+  const settingsWorkspace = segment(params.get('workspace') ?? undefined);
   let settings: SettingsAddress | undefined;
   if (panel === 'app' || panel === 'user' || panel === 'team') {
     settings = {
       area: panel,
       ...(page !== undefined ? { page } : {}),
       ...(panel === 'team' && team !== undefined ? { team } : {}),
+      ...(panel === 'team' && page === 'workspace' && settingsWorkspace !== undefined
+        ? { workspace: settingsWorkspace }
+        : {}),
     };
   }
   return {
@@ -114,6 +120,7 @@ export function formatAddress(address: Address, search = ''): string {
     params.append('panel', settings.area);
     if (settings.team !== undefined) params.append('team', settings.team);
     if (settings.page !== undefined) params.append('page', settings.page);
+    if (settings.workspace !== undefined) params.append('workspace', settings.workspace);
   }
   if (address.view !== undefined) params.append('view', address.view);
   if (address.sidebarHidden === true) params.append('sidebar', 'off');
@@ -146,6 +153,7 @@ export function isNewPlace(from: Address, to: Address): boolean {
     from.view !== to.view ||
     from.settings?.area !== to.settings?.area ||
     differs(from.settings?.page, to.settings?.page) ||
-    differs(from.settings?.team, to.settings?.team)
+    differs(from.settings?.team, to.settings?.team) ||
+    differs(from.settings?.workspace, to.settings?.workspace)
   );
 }

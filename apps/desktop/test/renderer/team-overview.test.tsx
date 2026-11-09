@@ -29,6 +29,9 @@ const workspace = (id: string, teamId: string): TeamWorkspaceWire => ({
   myRole: 'admin',
   source: 'team-admin',
   createdAt: '2026-09-25T10:00:00.000Z',
+  createdBy: 'u-dana',
+  createdByName: 'Dana',
+  grantCount: 2,
   recordDesktopActivity: false,
 });
 const ok = <T,>(value: T) => vi.fn().mockResolvedValue({ ok: true, value });
@@ -80,10 +83,17 @@ describe('Team settings › Overview (settings split spec §3.2, team overview l
     expect(screen.getByTestId('team-overview-members').textContent).toContain('3 joined');
     expect(screen.getByTestId('team-overview-workspaces').textContent).toContain('2');
     expect(screen.getByTestId('team-overview-role').textContent).toContain('You’re a member · created ');
-    expect(screen.getAllByTestId('team-overview-workspace').map((row) => row.textContent)).toEqual([
-      'W1Admin',
-      'W2Admin',
-    ]);
+    const rows = screen.getAllByTestId('team-workspace-row');
+    expect(rows.map((row) => row.dataset.workspaceId)).toEqual(['W1', 'W2']);
+    const created = new Date('2026-09-25T10:00:00.000Z').toLocaleDateString(undefined, {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+    });
+    expect(screen.getAllByTestId('team-workspace-row-detail')[0]?.textContent).toBe(
+      `Created ${created} by Dana · Viewer by default · 2 with a grant`,
+    );
+    expect(rows[0]?.textContent).toContain('Admin');
     // A member gets no admin actions, setup list or seats.
     expect(screen.queryByTestId('team-overview-add-people')).toBeNull();
     expect(screen.queryByTestId('team-overview-setup')).toBeNull();
@@ -96,6 +106,12 @@ describe('Team settings › Overview (settings split spec §3.2, team overview l
     expect(useTeamStore.getState().page).toBe('workspaces');
     fireEvent.click(screen.getByTestId('team-overview-members'));
     expect(useTeamStore.getState().page).toBe('people');
+  });
+
+  it('a workspace row opens that workspace’s overview', async () => {
+    await open('member');
+    fireEvent.click(screen.getAllByTestId('team-workspace-row')[1]!);
+    expect(useTeamStore.getState()).toMatchObject({ page: 'workspace', workspaceId: 'W2' });
   });
 
   it('a team admin of a new team gets the setup list, whose steps act', async () => {

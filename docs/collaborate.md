@@ -281,9 +281,14 @@ title bar's switcher only changes the team you are working in; **Manage team…*
   page; its workspaces with your role on each; for a team admin, **Add people**, **New workspace…**, the invitations
   still waiting with **New link**, and while the team is new a short setup list; **Delete team** for a server admin),
   **People** (everyone on the team and every open
-  invitation, with *All*, *Joined* and *Waiting* filters and a search), **Workspaces** (the team's workspaces and who
-  can open them) and **What roles can do** (what *Viewer*, *Editor* and *Admin* may do in a workspace). A team
+  invitation, with *All*, *Joined* and *Waiting* filters and a search), **Workspaces** (the team's workspaces as
+  rows — when and by whom each was made, its default access and how many have a grant, your role — and **New
+  workspace…**) and **What roles can do** (what *Viewer*, *Editor* and *Admin* may do in a workspace). A team
   admin who is not a server admin also has the team's **Audit log** here.
+
+  A workspace row, on Overview or Workspaces, opens that workspace's own overview: its name (a workspace admin
+  renames it), your role, **Access…** and **Delete**, its default access, recording and features, when and by whom
+  it was made, and **Who can open it** with each person's role, which anyone who may share it can change.
 - **Server**, for server admins — License and seats, Sign-in, Provisioning, Domain, Email, Audit log, Audit
   forwarding, Retention and Export, plus Billing and **Close this account** on a hosted team. A self-hosted server
   shows its settings read-only, naming the environment variable behind each.
@@ -304,7 +309,7 @@ back to it; an address without a page opens Overview. Pages and controls you may
   3. the workspace's default role, which starts as *viewer* and can be *none*.
 
   Whoever creates a workspace gets an *admin* grant on it.
-- **Access.** On the **Workspaces** page, **Access…** lists everyone on the team, the role they end up with, and
+- **Access.** On a workspace's overview, **Who can open it** lists everyone on the team, the role they end up with, and
   where it comes from. A workspace admin sets a grant per person, or **Use default** to remove it. A team admin's
   role cannot be lowered by a grant.
 

@@ -1,6 +1,7 @@
 /**
  * `GET /workspaces/:workspaceId/sync/head` (spec §3.2): the head, the commit counts and the caller's
- * role, which the app refreshes on every fetch (the viewer badge, R2).
+ * role, which the app refreshes on every fetch (the viewer badge, R2), with the workspace's settings
+ * and its name and team name: the server's names are what every client shows.
  */
 import {
   syncHeadQuerySchema,
@@ -44,6 +45,7 @@ export const headRoutes =
             recordDesktopActivity: workspace?.recordDesktopActivity ?? false,
             recordSessionLogs: workspace?.recordSessionLogs ?? false,
             disabledFeatures: [...(workspace?.disabledFeatures ?? [])],
+            ...(workspace !== undefined ? { name: workspace.name, teamName: workspace.teamName } : {}),
           };
         });
       },

@@ -57,8 +57,13 @@ export interface ServerShareSettings extends SyncSettings {
   readonly url: string;
   /** A ULID (TEAMS_ID_PATTERN); equals workspace.yaml's id. */
   readonly workspaceId: string;
-  /** The team's name when shared or joined; display only. */
+  /** The team's name when shared or joined, then as the last fetch reported it; display only. */
   readonly teamName?: string;
+  /**
+   * The workspace's name on the server, as the last fetch (or a rename from this app) reported it;
+   * shown in place of `workspace.yaml`'s name. Absent until a server that reports it was fetched.
+   */
+  readonly name?: string;
 }
 
 /** `share.yaml`, as loaded (or about to be saved). */
@@ -143,6 +148,7 @@ export async function loadShare(dir: string, options?: ShareOptions): Promise<Wo
             commitOnSave: parsed.server.commitOnSave,
             pushOnSave: parsed.server.pushOnSave,
             ...(parsed.server.teamName !== undefined ? { teamName: parsed.server.teamName } : {}),
+            ...(parsed.server.name !== undefined ? { name: parsed.server.name } : {}),
           },
         }
       : {}),

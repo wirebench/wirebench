@@ -64,6 +64,12 @@ export interface AccessChanged {
   readonly workspaceId?: string;
   readonly teamId?: string;
   readonly userId?: string;
+  /**
+   * The workspace's own settings changed too (its name, recording switches or feature policy): every
+   * subscriber of `workspaceId` hears `access`, whether its role changed or not, so each client re-reads
+   * them. Only meaningful with `workspaceId`.
+   */
+  readonly settings?: true;
 }
 
 /**

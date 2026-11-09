@@ -19,7 +19,10 @@ export const SERVER_GROUP_PAGES = [
   'billing',
   'close-account',
 ] as const;
-export type TeamSettingsPageId = (typeof TEAM_PAGES)[number] | (typeof SERVER_GROUP_PAGES)[number];
+/** One workspace's overview: reached from a workspace row, under Workspaces in the menu; not a menu entry itself. */
+export const WORKSPACE_PAGE = 'workspace';
+export type TeamSettingsPageId =
+  (typeof TEAM_PAGES)[number] | (typeof SERVER_GROUP_PAGES)[number] | typeof WORKSPACE_PAGE;
 
 export interface TeamNavFacts {
   readonly hasTeam: boolean;
@@ -69,6 +72,8 @@ export const DEFAULT_TEAM_PAGE: TeamSettingsPageId = 'overview';
 
 /** A page `teamNav(facts)` lists, else Overview, else the first listed page when there is no team. */
 export function resolveTeamPage(page: string | undefined, facts: TeamNavFacts): TeamSettingsPageId | undefined {
+  // A workspace's overview is a team member's page wherever Workspaces is; whether the workspace exists is the page's.
+  if (page === WORKSPACE_PAGE && facts.hasTeam) return WORKSPACE_PAGE;
   const listed = teamNav(facts).flatMap((group) => group.pages);
   return listed.find((id) => id === page) ?? listed.find((id) => id === DEFAULT_TEAM_PAGE) ?? listed[0];
 }
@@ -89,9 +94,14 @@ export const TEAM_PAGE_LABELS: Readonly<Record<TeamSettingsPageId, string>> = {
   export: 'Export',
   billing: 'Billing',
   'close-account': 'Close this account',
+  workspace: 'Workspace',
 };
 
 /** Whether `page` names a Team settings page at all; whether this caller may see it is {@link resolveTeamPage}'s. */
 export function isTeamSettingsPage(page: string): page is TeamSettingsPageId {
-  return (TEAM_PAGES as readonly string[]).includes(page) || (SERVER_GROUP_PAGES as readonly string[]).includes(page);
+  return (
+    page === WORKSPACE_PAGE ||
+    (TEAM_PAGES as readonly string[]).includes(page) ||
+    (SERVER_GROUP_PAGES as readonly string[]).includes(page)
+  );
 }

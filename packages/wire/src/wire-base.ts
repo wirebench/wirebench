@@ -3291,6 +3291,11 @@ export const teamWorkspaceWireSchema = z.object({
   recordSessionLogs: z.boolean().optional(),
   /** The workspace's team feature policy: the ids that are off (ADR-0029); absent from an older server. */
   disabledFeatures: z.array(z.string()).optional(),
+  /** Who created it: their user id and display name; absent from an older server, `null` when unknown. */
+  createdBy: z.string().nullable().optional(),
+  createdByName: z.string().nullable().optional(),
+  /** How many people have a grant of their own on it; absent from an older server. */
+  grantCount: z.number().int().min(0).optional(),
 });
 export type TeamWorkspaceWire = z.infer<typeof teamWorkspaceWireSchema>;
 export const accessEntryWireSchema = z.object({

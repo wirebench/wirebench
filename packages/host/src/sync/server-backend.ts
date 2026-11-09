@@ -309,6 +309,9 @@ export class ServerBackend implements SyncBackend {
       recordDesktopActivity: answer.recordDesktopActivity === true,
       recordSessionLogs: answer.recordSessionLogs === true,
       disabledFeatures: [...(answer.disabledFeatures ?? [])],
+      // An older server reports no names: the ones already kept stay.
+      ...(answer.name !== undefined && answer.name !== '' ? { name: answer.name } : {}),
+      ...(answer.teamName !== undefined && answer.teamName !== '' ? { teamName: answer.teamName } : {}),
       lastSyncAt: this.now().toISOString(),
       ...(merging
         ? {}

@@ -9,14 +9,20 @@ export interface SettingsPlace {
   readonly page: string | undefined;
   /** Team settings: the team shown. */
   readonly team: string | undefined;
+  /** Team settings' Workspace overview: the workspace shown. */
+  readonly workspace?: string | undefined;
 }
 
-export const useSettingsPlaceStore = create<SettingsPlace>()(() => ({ page: undefined, team: undefined }));
+export const useSettingsPlaceStore = create<SettingsPlace>()(() => ({
+  page: undefined,
+  team: undefined,
+  workspace: undefined,
+}));
 
-/** Reports the page (and team) a settings page shows while it is mounted; `page` stays unset until it settles. */
-export function useReportSettingsPlace(page: string | undefined, team?: string): void {
+/** Reports the page (and team, and workspace) a settings page shows while mounted; `page` stays unset until it settles. */
+export function useReportSettingsPlace(page: string | undefined, team?: string, workspace?: string): void {
   useEffect(() => {
-    useSettingsPlaceStore.setState({ page, team });
-  }, [page, team]);
-  useEffect(() => () => useSettingsPlaceStore.setState({ page: undefined, team: undefined }), []);
+    useSettingsPlaceStore.setState({ page, team, workspace });
+  }, [page, team, workspace]);
+  useEffect(() => () => useSettingsPlaceStore.setState({ page: undefined, team: undefined, workspace: undefined }), []);
 }

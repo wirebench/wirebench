@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { createdLabel, peopleDetail, setupSteps } from '../../src/renderer/features/team/settings/overview.js';
+import {
+  accessSummary,
+  createdLabel,
+  createdSummary,
+  peopleDetail,
+  setupSteps,
+} from '../../src/renderer/features/team/settings/overview.js';
 
 describe('Overview’s setup list and labels (team overview landing)', () => {
   it('a new team has the name done and two steps to go', () => {
@@ -31,6 +37,15 @@ describe('Overview’s setup list and labels (team overview landing)', () => {
   it('says how many joined and how many wait', () => {
     expect(peopleDetail({ members: 3, invitations: 0, workspaces: 0 })).toBe('3 joined');
     expect(peopleDetail({ members: 3, invitations: 1, workspaces: 0 })).toBe('3 joined · 1 waiting');
+  });
+
+  it('sums up who may open a workspace and who made it', () => {
+    expect(accessSummary('viewer', 2)).toBe('Viewer by default · 2 with a grant');
+    expect(accessSummary('none', undefined)).toBe('No access by default');
+    const now = new Date('2026-11-09T15:00:00');
+    expect(createdSummary(new Date('2026-11-09T08:00:00').toISOString(), 'Dana', now)).toBe('Created today by Dana');
+    expect(createdSummary(new Date('2026-11-09T08:00:00').toISOString(), null, now)).toBe('Created today');
+    expect(createdSummary('bad', 'Dana', now)).toBe('Created by Dana');
   });
 
   it('says today for a team made today, else the date, and nothing for a date it cannot read', () => {

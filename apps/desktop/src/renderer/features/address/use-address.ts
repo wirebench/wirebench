@@ -55,6 +55,7 @@ export function currentAddress(): Address {
         area: preferences.area,
         ...(place.page !== undefined ? { page: place.page } : {}),
         ...(preferences.area === 'team' && place.team !== undefined ? { team: place.team } : {}),
+        ...(preferences.area === 'team' && place.workspace !== undefined ? { workspace: place.workspace } : {}),
       }
     : undefined;
   const workspace = workspaceKey(useWorkspaceStore.getState().workspace);
@@ -165,7 +166,8 @@ function showSettings(target: Address, search: string): void {
   const place = useSettingsPlaceStore.getState();
   const samePage = settings.page === undefined || settings.page === place.page;
   const sameTeam = settings.team === undefined || settings.team === place.team;
-  if (ui.preferences.open && ui.preferences.area === settings.area && samePage && sameTeam) return;
+  const sameWorkspace = settings.workspace === undefined || settings.workspace === place.workspace;
+  if (ui.preferences.open && ui.preferences.area === settings.area && samePage && sameTeam && sameWorkspace) return;
   const page = settings.page;
   if (settings.area === 'app') {
     ui.openPreferences(page as SettingsSectionRequest | undefined);

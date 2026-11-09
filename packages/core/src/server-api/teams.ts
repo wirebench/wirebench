@@ -120,6 +120,11 @@ export const teamWorkspaceSchema = z.object({
   recordSessionLogs: z.boolean().default(false),
   /** The feature ids a workspace admin switched off for the workspace; `[]` from an older server. */
   disabledFeatures: disabledFeaturesSchema.default([]),
+  /** Who created it: their user id and display name; absent from an older server, `null` when unknown. */
+  createdBy: z.string().nullable().optional(),
+  createdByName: z.string().nullable().optional(),
+  /** How many people have a grant of their own on it; absent from an older server. */
+  grantCount: z.number().int().min(0).optional(),
   createdAt: z.string(),
 });
 export type TeamWorkspace = z.infer<typeof teamWorkspaceSchema>;

@@ -646,6 +646,7 @@ export class LiveHub {
   }
 
   private async recheck(event: AccessChangedEvent): Promise<void> {
+    const told = new Set<LiveSocket>();
     try {
       const pairs = new Map<
         string,
@@ -672,10 +673,16 @@ export class LiveHub {
         const found = await this.deps.effectiveRole(pair.userId, pair.workspaceId, pair.tenant);
         results.push({ room: keyOf(pair.tenant.tenantId, pair.workspaceId), userId: pair.userId, role: found.role });
       }
-      this.applyRoles(results);
+      this.applyRoles(results, told);
     } catch (error) {
       // The desktop's safety-net fetch still converges (§3.3).
       this.deps.log.warn({ err: error, ...event }, 'live access re-check failed');
+    }
+    if (event.settings === true && event.workspaceId !== undefined && !this.closed) {
+      // Settings changed for everyone on the workspace: the subscribers the role check did not already tell.
+      const room = keyOf(event.tenantId, event.workspaceId);
+      const rest = [...(this.byWorkspace.get(room) ?? [])].filter((socket) => !told.has(socket));
+      this.deliver(rest, { type: 'access', workspaceId: event.workspaceId });
     }
   }
 
@@ -705,6 +712,7 @@ export class LiveHub {
    */
   private applyRoles(
     results: readonly { readonly room: Room; readonly userId: string; readonly role: WorkspaceRole | 'none' }[],
+    told: Set<LiveSocket>,
   ): void {
     const left: Pair[] = [];
     const dead: LiveSocket[] = [];
@@ -719,6 +727,7 @@ export class LiveHub {
           dead.push(socket);
           continue;
         }
+        told.add(socket);
         if (role === 'none') {
           state.subs.delete(workspaceId);
           removeFrom(this.byWorkspace, room, socket);

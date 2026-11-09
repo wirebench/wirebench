@@ -76,6 +76,11 @@ describe('server-api sync schemas', () => {
     ).toBe(2);
     // An older server omits the flag: it reads as off.
     expect(syncHeadResponseSchema.parse({ head: null, commits: 0, role: 'viewer' }).recordDesktopActivity).toBe(false);
+    // The server's names ride along; an older server sends none, and the head still parses.
+    expect(
+      syncHeadResponseSchema.parse({ head: null, commits: 0, role: 'viewer', name: 'Staging', teamName: 'Payments' }),
+    ).toMatchObject({ name: 'Staging', teamName: 'Payments' });
+    expect(syncHeadResponseSchema.parse({ head: null, commits: 0, role: 'viewer' })).not.toHaveProperty('name');
     for (const bad of [
       { head: null, commits: -1, role: 'viewer', recordDesktopActivity: false },
       { head: null, commits: 0, behind: 1.5, role: 'viewer', recordDesktopActivity: false },

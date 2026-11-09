@@ -39,6 +39,25 @@ describe('the browser client’s address', () => {
     );
   });
 
+  it('names the workspace a Workspace overview shows, and only there', () => {
+    const url = '/?panel=team&team=T1&page=workspace&workspace=W9';
+    expect(parseAddress('/', '?panel=team&team=T1&page=workspace&workspace=W9')).toEqual({
+      settings: { area: 'team', team: 'T1', page: 'workspace', workspace: 'W9' },
+    });
+    expect(formatAddress({ settings: { area: 'team', team: 'T1', page: 'workspace', workspace: 'W9' } })).toBe(url);
+    // On another page `workspace=` only picks the team on the way in; the address does not keep it.
+    expect(parseAddress('/', '?panel=team&page=people&workspace=W9').settings).toEqual({
+      area: 'team',
+      page: 'people',
+    });
+    expect(
+      isNewPlace(
+        { settings: { area: 'team', page: 'workspace', workspace: 'W1' } },
+        { settings: { area: 'team', page: 'workspace', workspace: 'W2' } },
+      ),
+    ).toBe(true);
+  });
+
   it('keeps parameters it does not own, and the passkey prompt only in User settings', () => {
     expect(formatAddress({ workspace: 'W' }, '?keep=1&view=history&add=passkey')).toBe('/workspaces/W?keep=1');
     expect(formatAddress({ settings: { area: 'user', page: 'password' } }, '?add=passkey')).toBe(

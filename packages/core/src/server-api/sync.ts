@@ -73,6 +73,10 @@ export const syncHeadResponseSchema = z.object({
   recordSessionLogs: z.boolean().default(false),
   /** The workspace's feature policy (ADR-0029), refreshed on every fetch; `[]` from an older server. */
   disabledFeatures: z.array(z.string()).default([]),
+  /** The workspace's name on the server, which every client shows; absent from an older server. */
+  name: z.string().optional(),
+  /** The name of the team that owns the workspace; absent from an older server. */
+  teamName: z.string().optional(),
 });
 export type SyncHeadResponse = z.infer<typeof syncHeadResponseSchema>;
 

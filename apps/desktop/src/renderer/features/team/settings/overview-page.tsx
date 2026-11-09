@@ -6,18 +6,18 @@
  * a setup list. A server admin also gets *Delete this team*.
  */
 import { useEffect, useState, type ReactNode } from 'react';
-import { ChevronRight, Circle, CircleCheck, FolderKanban, Mail, Plus, UserPlus } from 'lucide-react';
+import { ChevronRight, Circle, CircleCheck, Mail, Plus, UserPlus } from 'lucide-react';
 import { Button } from '../../../components/button.js';
 import { ConfirmDialog } from '../../../components/confirm-dialog.js';
 import { useLicenseStore } from '../../../state/license.js';
 import { selectedTeam, teamWorkspaces, useTeamStore } from '../../../state/team.js';
-import { useWorkspaceStore } from '../../../state/workspace.js';
 import { INPUT_CLASS, ROLE_LABELS } from '../roles.js';
 import type { TeamSettingsPageId } from '../team-settings-model.js';
 import { NewWorkspaceForm } from '../workspaces-tab.js';
 import { AddPeopleDialog } from './add-people-dialog.js';
 import { createdLabel, peopleDetail, setupSteps, type SetupStepId, type TeamCounts } from './overview.js';
 import { peopleRows } from './people.js';
+import { WorkspaceList } from './workspace-list.js';
 
 const days = (count: number): string => (count === 1 ? '1 day' : `${String(count)} days`);
 
@@ -118,7 +118,6 @@ export function OverviewPage() {
   const store = useTeamStore();
   const team = selectedTeam(store);
   const seats = useLicenseStore((s) => s.state?.seats);
-  const share = useWorkspaceStore((s) => s.workspace?.share);
   const [name, setName] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [dialog, setDialog] = useState<'add' | 'renewed' | undefined>(undefined);
@@ -142,7 +141,6 @@ export function OverviewPage() {
   const waiting = peopleRows([], store.invitations, undefined, new Date()).flatMap((row) =>
     row.kind === 'invitation' ? [row] : [],
   );
-  const openNow = share?.kind === 'server' ? share.server?.workspaceId : undefined;
   const created = createdLabel(team.createdAt, new Date());
   const submitRename = (): void => {
     if (isAdmin && name.trim().length > 0 && name.trim() !== team.name) void store.renameTeam(name.trim());
@@ -255,24 +253,7 @@ export function OverviewPage() {
             {isAdmin ? 'No workspaces yet.' : 'No workspaces you can open in this team yet.'}
           </p>
         ) : (
-          <ul className="overflow-hidden rounded-lg border border-hairline bg-surface-raised">
-            {workspaces.map((workspace, index) => (
-              <li
-                key={workspace.id}
-                data-testid="team-overview-workspace"
-                className={`flex items-center gap-2 px-3 py-2 text-sm ${index > 0 ? 'border-t border-hairline' : ''}`}
-              >
-                <FolderKanban size={14} aria-hidden="true" className="shrink-0 text-fg-subtle" />
-                <span className="min-w-0 flex-1 truncate text-fg-default">{workspace.name}</span>
-                {workspace.id === openNow && (
-                  <span className="rounded-full bg-accent-muted px-2 text-xs text-fg-default">Open now</span>
-                )}
-                <span className="rounded-full bg-surface-hover px-2 text-xs text-fg-subtle">
-                  {ROLE_LABELS[workspace.myRole]}
-                </span>
-              </li>
-            ))}
-          </ul>
+          <WorkspaceList workspaces={workspaces} />
         )}
       </section>
 

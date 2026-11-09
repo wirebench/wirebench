@@ -13,16 +13,18 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   createWorkspace,
   DEFAULT_SYNC_SETTINGS,
   loadShare,
+  loadWorkspace,
   saveShare,
   saveWorkspace,
   workspaceDir,
 } from '@wirebench/engine';
 import type { HttpExchange, HttpRequest, ServerAccount } from '@wirebench/engine';
+import type { LiveEvent } from '../src/live/live-client.js';
 import { EngineService } from '../src/engine-service.js';
 import { HistoryService } from '../src/history-service.js';
 import { ServerClient } from '../src/server-client.js';
@@ -77,13 +79,25 @@ function json(status: number, body: unknown): HttpExchange {
 function scriptedServer(
   role: 'viewer' | 'editor' = 'editor',
   recordDesktopActivity = false,
+  more: {
+    /** The names the head reports; none, as an older server. */
+    readonly names?: { name?: string; teamName?: string };
+    /** Answers anything else first; `undefined` falls through. */
+    readonly answer?: (request: HttpRequest, path: string) => HttpExchange | undefined;
+  } = {},
 ): { sent: HttpRequest[]; client: ServerClient } {
   const sent: HttpRequest[] = [];
   const send = (request: HttpRequest): Promise<HttpExchange> => {
     sent.push(request);
     const path = new URL(request.url).pathname;
+    const answered = more.answer?.(request, path);
+    if (answered !== undefined) {
+      return Promise.resolve(answered);
+    }
     if (path.endsWith('/sync/head')) {
-      return Promise.resolve(json(200, { head: HEAD, commits: 1, behind: 0, role, recordDesktopActivity }));
+      return Promise.resolve(
+        json(200, { head: HEAD, commits: 1, behind: 0, role, recordDesktopActivity, ...more.names }),
+      );
     }
     if (path.endsWith('/sync/log')) {
       return Promise.resolve(json(200, []));
@@ -388,4 +402,176 @@ it('close waits for a push already in flight, so a reopen never shares the sync 
   const state = new ServerState(join(dir, SERVER_STATE_DIR));
   expect(await state.pending()).toEqual([]);
   expect((await state.read()).base.head).toBe(PUSHED);
+});
+
+describe("the server's name wins", () => {
+  /** The team workspace row a `PATCH /workspaces/:id` answers, under `name`. */
+  const row = (id: string, name: string): unknown => ({
+    id,
+    name,
+    teamId: '01J8Z0000000000000000000TT',
+    teamName: 'Payments',
+    defaultRole: 'viewer',
+    myRole: 'admin',
+    source: 'team-admin',
+    createdAt: '2026-09-25T00:00:00.000Z',
+  });
+  const bodyOf = (request: HttpRequest): unknown => JSON.parse(new TextDecoder().decode(request.body)) as unknown;
+  const manifestName = async (dir: string): Promise<string> => (await loadWorkspace(join(dir, 'tree'))).workspace.name;
+
+  it('a fetch that reports new names reaches the snapshot, the list and share.yaml, and never workspace.yaml', async () => {
+    const server = scriptedServer('editor', false, { names: { name: 'Payments EU', teamName: 'Payments Team' } });
+    const changed: (WorkspaceWire | null)[] = [];
+    const service = newService(
+      { client: server.client, accounts: fakeAccounts().accounts },
+      { onChanged: (workspace) => changed.push(workspace) },
+    );
+    const { id, dir } = await seedServerWorkspace();
+
+    await service.open(id);
+    expect(service.snapshot()?.name).toBe('Payments QA');
+
+    await vi.waitFor(() => expect(service.snapshot()?.name).toBe('Payments EU'), WAIT);
+    expect(service.snapshot()?.share?.server?.teamName).toBe('Payments Team');
+    // The renderer hears of it, so the title bar changes without a reopen.
+    expect(changed.at(-1)).toMatchObject({ name: 'Payments EU', share: { server: { teamName: 'Payments Team' } } });
+    expect((await loadShare(dir))?.server).toMatchObject({ name: 'Payments EU', teamName: 'Payments Team' });
+    expect((await new ServerState(join(dir, SERVER_STATE_DIR)).read()).name).toBe('Payments EU');
+    expect((await service.list()).find((summary) => summary.id === id)?.name).toBe('Payments EU');
+    expect(await manifestName(dir)).toBe('Payments QA');
+  });
+
+  it("a live access after a rename elsewhere fetches the new name into the open window's snapshot", async () => {
+    const names: { name?: string; teamName?: string } = {};
+    const server = scriptedServer('editor', false, { names });
+    const listeners: ((event: LiveEvent) => void)[] = [];
+    const live = {
+      subscribe: (_url: string, _workspaceId: string, listener: (event: LiveEvent) => void) => {
+        listeners.push(listener);
+        return () => undefined;
+      },
+    };
+    const changed: (WorkspaceWire | null)[] = [];
+    const service = newService(
+      { client: server.client, accounts: fakeAccounts().accounts, live },
+      { onChanged: (workspace) => changed.push(workspace) },
+    );
+    const { id } = await seedServerWorkspace();
+    await service.open(id);
+    await vi.waitFor(() => expect(service.syncStatus()).toMatchObject({ state: 'clean' }), WAIT);
+    await vi.waitFor(() => expect(listeners).toHaveLength(1), WAIT);
+    const heads = (): number => pathsOf(server.sent).filter((path) => path === headPath(id)).length;
+    const before = heads();
+
+    // Renamed in Team settings: no timer runs (autoFetchSeconds 0), only the live nudge.
+    names.name = 'Payments renamed';
+    for (const listener of listeners) listener({ kind: 'message', message: { type: 'access', workspaceId: id } });
+
+    await vi.waitFor(() => expect(service.snapshot()?.name).toBe('Payments renamed'), WAIT);
+    expect(heads()).toBe(before + 1);
+    expect(changed.at(-1)?.name).toBe('Payments renamed');
+  });
+
+  it("an older server's head names nothing: the tree's name stays", async () => {
+    const server = scriptedServer();
+    const service = newService({ client: server.client, accounts: fakeAccounts().accounts });
+    const { id, dir } = await seedServerWorkspace();
+
+    await service.open(id);
+    await vi.waitFor(() => expect(service.syncStatus()).toMatchObject({ state: 'clean' }), WAIT);
+    await settle();
+
+    expect(service.snapshot()?.name).toBe('Payments QA');
+    expect((await loadShare(dir))?.server?.name).toBeUndefined();
+  });
+
+  it('the list shows a closed server workspace under the name its share keeps', async () => {
+    const service = newService({ client: scriptedServer().client, accounts: fakeAccounts().accounts });
+    const { id, dir } = await seedServerWorkspace();
+    const share = (await loadShare(dir))!;
+    await saveShare(dir, { ...share, server: { ...share.server!, name: 'Payments EU' } });
+
+    expect((await service.list()).find((summary) => summary.id === id)?.name).toBe('Payments EU');
+  });
+
+  it('renaming the open workspace renames it on the server first, and keeps the name the server answers', async () => {
+    let id = '';
+    const server = scriptedServer('editor', false, {
+      answer: (request, path) =>
+        request.method === 'PATCH' && path === `/api/v1/workspaces/${id}`
+          ? json(200, row(id, 'Payments EU'))
+          : undefined,
+    });
+    const changed: (WorkspaceWire | null)[] = [];
+    const service = newService(
+      { client: server.client, accounts: fakeAccounts().accounts },
+      { onChanged: (workspace) => changed.push(workspace) },
+    );
+    const seeded = await seedServerWorkspace();
+    id = seeded.id;
+    await service.open(id);
+
+    await service.rename(id, ' Payments EU ');
+
+    const patch = server.sent.find((request) => request.method === 'PATCH');
+    expect(bodyOf(patch!)).toEqual({ name: ' Payments EU ' });
+    expect(patch?.headers.authorization).toBe(`Bearer ${TOKEN}`);
+    expect(service.snapshot()?.name).toBe('Payments EU');
+    expect(changed.at(-1)?.name).toBe('Payments EU');
+    expect((await loadShare(seeded.dir))?.server?.name).toBe('Payments EU');
+    // The tree follows, for anything that reads workspace.yaml alone.
+    expect(await manifestName(seeded.dir)).toBe('Payments EU');
+  });
+
+  it('the rename-workspace change renames it on the server too', async () => {
+    let id = '';
+    const server = scriptedServer('editor', false, {
+      answer: (request, path) =>
+        request.method === 'PATCH' && path === `/api/v1/workspaces/${id}` ? json(200, row(id, 'Renamed')) : undefined,
+    });
+    const service = newService({ client: server.client, accounts: fakeAccounts().accounts });
+    const seeded = await seedServerWorkspace();
+    id = seeded.id;
+    await service.open(id);
+
+    const { workspace } = await service.mutate({ kind: 'rename-workspace', name: 'Renamed' });
+
+    expect(workspace.name).toBe('Renamed');
+    expect(server.sent.filter((request) => request.method === 'PATCH')).toHaveLength(1);
+    expect((await loadShare(seeded.dir))?.server?.name).toBe('Renamed');
+  });
+
+  it("a rename the server refuses throws the server's error and changes nothing", async () => {
+    const forbidden = { code: 'teams-forbidden', message: 'Only a workspace admin can do that.' };
+    const server = scriptedServer('editor', false, {
+      answer: (request) => (request.method === 'PATCH' ? json(403, forbidden) : undefined),
+    });
+    const service = newService({ client: server.client, accounts: fakeAccounts().accounts });
+    const { id, dir } = await seedServerWorkspace();
+    await service.open(id);
+
+    await expect(service.rename(id, 'Mine now')).rejects.toMatchObject(forbidden);
+    await expect(service.mutate({ kind: 'rename-workspace', name: 'Mine now' })).rejects.toMatchObject(forbidden);
+
+    expect(service.snapshot()?.name).toBe('Payments QA');
+    expect(await manifestName(dir)).toBe('Payments QA');
+    expect((await loadShare(dir))?.server?.name).toBeUndefined();
+  });
+
+  it('renaming a closed server workspace renames it on the server too', async () => {
+    let id = '';
+    const server = scriptedServer('editor', false, {
+      answer: (request, path) =>
+        request.method === 'PATCH' && path === `/api/v1/workspaces/${id}` ? json(200, row(id, 'Closed EU')) : undefined,
+    });
+    const service = newService({ client: server.client, accounts: fakeAccounts().accounts });
+    const seeded = await seedServerWorkspace();
+    id = seeded.id;
+
+    const rows = await service.rename(id, 'Closed EU');
+
+    expect(rows.find((summary) => summary.id === id)?.name).toBe('Closed EU');
+    expect((await loadShare(seeded.dir))?.server?.name).toBe('Closed EU');
+    expect(await manifestName(seeded.dir)).toBe('Closed EU');
+  });
 });
