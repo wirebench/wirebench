@@ -6,119 +6,10 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
-### Added
-- **Switch accounts.** Sign in as several people at once — on different servers, or two on the same one — and switch
-  between them from the account menu at the top right. One account is active: the menu, User settings, Manage team…,
-  Team settings, Open a team workspace… and sharing to a team all follow it, while an open workspace keeps syncing as
-  the account it was opened with. The menu now holds your photo, name, `@username` and email, **View profile**,
-  **Settings**, **Sign out**, **Switch accounts** (dimmed with **Sign in** for an account that is signed out) and
-  **Add account**; User settings' server picker and the share form's server choice are gone. A browser holds up to
-  five accounts on its server: switching reloads the tab as that person, **Add account** signs someone in without
-  signing the current person out, signing out carries on as the next account, and **Sign out of all accounts in this
-  browser** ends them all. On the server, `POST /sign-in/switch`, `GET /api/v1/me/accounts`, `/sign-in?add=1` and
-  `POST /sign-out?all=1`; switching is audited as `user.session.switched`.
-- **Profiles: photo, cover, username and about.** User settings → Profile lets you add a photo and a cover image
-  (cropped and resized in the app, saved as WebP), a username that is unique on the server and can be typed in place
-  of your email to sign in with your password, and up to 500 characters about yourself. Your photo shows in the
-  account menu and on People, and clicking a person on People opens their profile card. The server re-checks every
-  image, refuses ones carrying location or camera details, and rate-limits profile changes and uploads; people who
-  share no team with you cannot open your profile.
-- **Two-step sign-in.** A Wirebench Server account with a password can add a second step: an authenticator app
-  (6-digit codes) or passkeys, with ten one-use recovery codes. Set it up on **User settings → Password**; after the
-  password, the sign-in page and the desktop's Sign in dialog ask for a code, a recovery code or a passkey (the
-  desktop finishes a passkey in your browser). A server admin can require it for everyone who signs in with a
-  password (**Team settings → Server → Sign-in**, or `WIREBENCH_SERVER_REQUIRE_TWO_FACTOR` on a self-hosted server),
-  sees who has it on in **People**, and can reset it for someone who lost their device. Single sign-on leaves the
-  second step to the identity provider.
-- **Accept an invitation in the browser.** An invitation link's page lets the invitee
-  choose a password (typed twice) and their name, or continue with the team's single sign-on, and lands them signed
-  in on the browser app. A password-reset link sets the new password the same way. The page still shows the code
-  for the desktop app, which keeps working as before.
-- **User settings.** You, on every server you sign in to, in one place: **Profile** (edit your name, see your email
-  and how you sign in), **Password**, **Servers you're signed in to**, **Signed-in devices** (sign any other device
-  out) and **CI tokens**. Open it with **Settings** in the account menu at the top right or **Account: Account
-  settings** in the palette. The account menu moved from the status bar to the title bar's top right. The pages show
-  the active account (see **Switch accounts**). Team settings' Workspaces page shows each workspace as a card: its name, your
-  role, Access… and Delete, then labelled rows for default access, recording and features.
-- **Team settings in the browser.** The browser client manages a team on a settings page of its own, in place of
-  the Team dialog: a team switcher, then **This team** (Overview, People, Workspaces, What roles can do) and, for
-  server admins, **Server** (License and seats, Sign-in, Provisioning, Domain, Email, Audit log, Audit forwarding,
-  Retention, Export, and Billing and Close this account on a hosted team). People lists members and open
-  invitations together, with filters and a search. The address names the team and the page, so a reload or a
-  bookmark comes back to it; leaving the page clears it.
-- **Renew an invitation (server).** `POST /api/v1/teams/:teamId/invitations/:id/renew` revokes an open invitation and
-  makes a new link for the same email and role in one transaction, so the old link stops working at once and the
-  person is never left without one. Team settings offers it as **New link** on a waiting invitation.
-- **Edit your name (server).** `PATCH /api/v1/me` changes your own display name (1–120 characters after trimming),
-  recorded in the audit log as `user.updated` with the field's name and never its value. A name your identity
-  provider sets over SCIM is replaced by its next update.
-
-### Changed
-- **The account button shows only your photo (desktop and browser).** The top right of the title bar no longer shows
-  the email and arrow beside the photo; hover it to see the email. Its menu holds **View profile**, **App settings**
-  and **Manage team…** again (Manage team had left it when Switch accounts came in).
-- **The browser client is always on (server).** Every server serves the app in a browser tab at `/`, with the
-  `/sign-in` page, cookie sessions, `/api/v1/host`, the invitation page's browser form and local-agent pairing.
-  `WIREBENCH_SERVER_BROWSER_CLIENT` is removed: a server that still sets it starts as usual and logs once that the
-  variable is no longer used, so it can be dropped. Register the browser's OIDC redirect URI and second SAML ACS URL
-  at the identity provider if you have not (`config check` prints the OIDC one). A server run from a checkout needs
-  the browser build (`pnpm --filter @wirebench/desktop build:browser`, then `pnpm --filter @wirebench/server
-  copy-browser`); the image carries it.
-- **The server makes its own secrets key (server).** A server not given `WIREBENCH_SERVER_SECRETS_KEY` generates
-  one at its first start, 32 random bytes in base64, and stores it in `secrets-key` in the data directory (mode 0600,
-  written once and never replaced), then reads it at every later start. It logs once that it made a key and where:
-  back that file up with the data directory, since without it the secrets users stored on the server cannot be
-  opened. The variable, when set, wins over the file. A key file that cannot be read, is not a 32-byte key, or is
-  readable by the group or others fails the start. Hosted mode and `WIREBENCH_SERVER_INSTANCES=multi` still require
-  the variable, since every instance needs the same key. `migrate` and `admin tenancy` read the stored key and never
-  make one.
-- **Team management moves to the browser.** The desktop app's **Manage team…** (the palette's *Account: Manage team…*, the
-  status bar's account menu and User settings → Servers you're signed in to) opens the server's team page in your default browser, on the
-  same server and, when the open workspace is shared there, on its team. Members, workspaces, invitations, access,
-  the license, the audit log, provisioning and the domain are managed there. Signing in, choosing a team when you
-  share or open a workspace, and sync stay in the desktop. A server from an earlier release without the browser
-  client keeps the dialog in the app. `GET /api/v1/meta` lists `browser-client`.
-- **Settings is three areas.** App settings (<kbd>⌘,</kbd> / <kbd>Ctrl+,</kbd>) is now this app on this machine,
-  in four groups: General, Protocols, Network and tools, and This computer. Its search finds App settings only. The
-  Account group moved to User settings, with the **Show sign-in in the status bar** switch, and the Server group
-  moved to Team settings.
-- **Delete team is now Close this account** on a hosted team's Server pages, so it is not mistaken for deleting one
-  team; the banner while it is pending reads *This account is being closed*. Deleting one team stays on its
-  Overview page.
-- **The status bar's account menu** has **Account settings…** (was *Manage accounts…*) and **Signed-in devices…** (was
-  *Devices & tokens…*), both opening User settings. *Account: Sign out…* with several servers signed in opens
-  Servers you're signed in to.
-
-### Removed
-- **Settings → Server in the desktop app.** A server admin manages the server's own settings in Team settings in the
-  browser client; the desktop's **Manage team…** opens it there.
-
-### Fixed
-- **The browser client opens a team workspace it just created (#878).** **Open a team workspace…** in a browser tab
-  now lists an empty workspace you can edit, and opening it starts it: the tab writes the workspace's first file and
-  pushes it, so a team that only uses the browser no longer needs the desktop app to put something in a workspace.
-- **A browser tab reopens its workspace after a reload (#879)**, as the desktop does after a restart. A second tab
-  beside one that holds the workspace starts at the workspace list.
-- **The browser client no longer shows the server's folders (#880)** in the workspace list or Manage Workspaces.
-- **The browser client reports the app's version (#875)**, in the status bar and in its requests' `User-Agent`,
-  rather than the server package's.
-- **Closing a browser tab no longer logs "There is no window to do this in" on the server (#876).**
-- **A team switcher in the title bar.** Signed in to a Wirebench Server, the title bar shows the team you are working
-  in before the workspace's name (*Platform ▾ / Payments*), with or without a workspace open. Its menu lists your
-  teams and *Manage team…* for the active one. The workspace list, the workspace menu and *Open a team workspace…*
-  show the active team's workspaces (local workspaces always show), *Manage team…* opens on it, and opening another
-  team's workspace makes that team active. Switching team with another team's workspace open moves to the new team's
-  most recently used workspace, or to the workspace list when it has none here yet. The choice is remembered per account. In a browser tab, a workspace held by
-  another tab is now refused as "open in another tab" rather than "another window".
-- **The browser client's address follows where you are.** It names the workspace and the open tab
-  (`/workspaces/<id>/rest-request/<id>`), with the sidebar area, the console, the side panels and the settings page
-  in the query, so a reload or a bookmark lands back there, and a teammate's link opens the same team workspace and
-  request. Back and Forward move between workspaces, tabs, sidebar areas and settings pages; showing or hiding a panel
-  is not a step of its own. A reload no longer lands on the workspace list while another tab is signed in.
-
-## [7.0.0] - 2026-11-06
+## [7.0.0] - 2026-11-09
 
 ### Added
+
 - **Hosted mode (server, #829).** `WIREBENCH_SERVER_MODE=hosted` runs the server as a service for many teams.
   Wirebench does not offer a hosted service yet: this is the server code for one, not a place to sign up today. In
   hosted mode, a team signs up at `app.<app-domain>/signup`, pays per seat through Paddle (the merchant of record;
@@ -226,8 +117,54 @@ All notable changes to this project are documented here. The format follows
   install, set `WIREBENCH_VERSION` to the release you came from, such as `6.1.0`, and fetch that release's
   `docker-compose.yml`), never `latest`, which would start this version and upgrade again; it needs its old
   single URL, the owner's, again, and the unused `wirebench_app` role can be dropped as the README says.
+- **Switch accounts.** Sign in as several people at once — on different servers, or two on the same one — and switch
+  between them from the account menu at the top right. One account is active: the menu, User settings, Manage team…,
+  Team settings, Open a team workspace… and sharing to a team all follow it, while an open workspace keeps syncing as
+  the account it was opened with. The menu now holds your photo, name, `@username` and email, **View profile**,
+  **Settings**, **Sign out**, **Switch accounts** (dimmed with **Sign in** for an account that is signed out) and
+  **Add account**; User settings' server picker and the share form's server choice are gone. A browser holds up to
+  five accounts on its server: switching reloads the tab as that person, **Add account** signs someone in without
+  signing the current person out, signing out carries on as the next account, and **Sign out of all accounts in this
+  browser** ends them all. On the server, `POST /sign-in/switch`, `GET /api/v1/me/accounts`, `/sign-in?add=1` and
+  `POST /sign-out?all=1`; switching is audited as `user.session.switched`.
+- **Profiles: photo, cover, username and about.** User settings → Profile lets you add a photo and a cover image
+  (cropped and resized in the app, saved as WebP), a username that is unique on the server and can be typed in place
+  of your email to sign in with your password, and up to 500 characters about yourself. Your photo shows in the
+  account menu and on People, and clicking a person on People opens their profile card. The server re-checks every
+  image, refuses ones carrying location or camera details, and rate-limits profile changes and uploads; people who
+  share no team with you cannot open your profile.
+- **Two-step sign-in.** A Wirebench Server account with a password can add a second step: an authenticator app
+  (6-digit codes) or passkeys, with ten one-use recovery codes. Set it up on **User settings → Password**; after the
+  password, the sign-in page and the desktop's Sign in dialog ask for a code, a recovery code or a passkey (the
+  desktop finishes a passkey in your browser). A server admin can require it for everyone who signs in with a
+  password (**Team settings → Server → Sign-in**, or `WIREBENCH_SERVER_REQUIRE_TWO_FACTOR` on a self-hosted server),
+  sees who has it on in **People**, and can reset it for someone who lost their device. Single sign-on leaves the
+  second step to the identity provider.
+- **Accept an invitation in the browser.** An invitation link's page lets the invitee
+  choose a password (typed twice) and their name, or continue with the team's single sign-on, and lands them signed
+  in on the browser app. A password-reset link sets the new password the same way. The page still shows the code
+  for the desktop app, which keeps working as before.
+- **User settings.** You, on every server you sign in to, in one place: **Profile** (edit your name, see your email
+  and how you sign in), **Password**, **Servers you're signed in to**, **Signed-in devices** (sign any other device
+  out) and **CI tokens**. Open it with **Settings** in the account menu at the top right or **Account: Account
+  settings** in the palette. The account menu moved from the status bar to the title bar's top right. The pages show
+  the active account (see **Switch accounts**). Team settings' Workspaces page shows each workspace as a card: its name, your
+  role, Access… and Delete, then labelled rows for default access, recording and features.
+- **Team settings in the browser.** The browser client manages a team on a settings page of its own, in place of
+  the Team dialog: a team switcher, then **This team** (Overview, People, Workspaces, What roles can do) and, for
+  server admins, **Server** (License and seats, Sign-in, Provisioning, Domain, Email, Audit log, Audit forwarding,
+  Retention, Export, and Billing and Close this account on a hosted team). People lists members and open
+  invitations together, with filters and a search. The address names the team and the page, so a reload or a
+  bookmark comes back to it; leaving the page clears it.
+- **Renew an invitation (server).** `POST /api/v1/teams/:teamId/invitations/:id/renew` revokes an open invitation and
+  makes a new link for the same email and role in one transaction, so the old link stops working at once and the
+  person is never left without one. Team settings offers it as **New link** on a waiting invitation.
+- **Edit your name (server).** `PATCH /api/v1/me` changes your own display name (1–120 characters after trimming),
+  recorded in the audit log as `user.updated` with the field's name and never its value. A name your identity
+  provider sets over SCIM is replaced by its next update.
 
 ### Changed
+
 - **Default's editor colours match the rest of the window (#803).** Monaco's comment, hint and
   line-number greys, and in light mode its accent, success and warning colours, now equal the
   Default tokens the app's chrome already uses; they had kept older values.
@@ -296,6 +233,69 @@ All notable changes to this project are documented here. The format follows
   fails after the upgrade. Address an internal service by a name that resolves to a non-loopback address
   instead. Private ranges (10/8, 172.16/12, 192.168/16, 100.64/10, fc00::/7) stay reachable unless
   `WIREBENCH_SERVER_EGRESS_DENY_PRIVATE=true`, which refuses them too.
+- **The account button shows only your photo (desktop and browser).** The top right of the title bar no longer shows
+  the email and arrow beside the photo; hover it to see the email. Its menu holds **View profile**, **App settings**
+  and **Manage team…** again (Manage team had left it when Switch accounts came in).
+- **The browser client is always on (server).** Every server serves the app in a browser tab at `/`, with the
+  `/sign-in` page, cookie sessions, `/api/v1/host`, the invitation page's browser form and local-agent pairing.
+  `WIREBENCH_SERVER_BROWSER_CLIENT` is removed: a server that still sets it starts as usual and logs once that the
+  variable is no longer used, so it can be dropped. Register the browser's OIDC redirect URI and second SAML ACS URL
+  at the identity provider if you have not (`config check` prints the OIDC one). A server run from a checkout needs
+  the browser build (`pnpm --filter @wirebench/desktop build:browser`, then `pnpm --filter @wirebench/server
+  copy-browser`); the image carries it.
+- **The server makes its own secrets key (server).** A server not given `WIREBENCH_SERVER_SECRETS_KEY` generates
+  one at its first start, 32 random bytes in base64, and stores it in `secrets-key` in the data directory (mode 0600,
+  written once and never replaced), then reads it at every later start. It logs once that it made a key and where:
+  back that file up with the data directory, since without it the secrets users stored on the server cannot be
+  opened. The variable, when set, wins over the file. A key file that cannot be read, is not a 32-byte key, or is
+  readable by the group or others fails the start. Hosted mode and `WIREBENCH_SERVER_INSTANCES=multi` still require
+  the variable, since every instance needs the same key. `migrate` and `admin tenancy` read the stored key and never
+  make one.
+- **Team management moves to the browser.** The desktop app's **Manage team…** (the palette's *Account: Manage team…*, the
+  status bar's account menu and User settings → Servers you're signed in to) opens the server's team page in your default browser, on the
+  same server and, when the open workspace is shared there, on its team. Members, workspaces, invitations, access,
+  the license, the audit log, provisioning and the domain are managed there. Signing in, choosing a team when you
+  share or open a workspace, and sync stay in the desktop. A server from an earlier release without the browser
+  client keeps the dialog in the app. `GET /api/v1/meta` lists `browser-client`.
+- **Settings is three areas.** App settings (<kbd>⌘,</kbd> / <kbd>Ctrl+,</kbd>) is now this app on this machine,
+  in four groups: General, Protocols, Network and tools, and This computer. Its search finds App settings only. The
+  Account group moved to User settings, with the **Show sign-in in the status bar** switch, and the Server group
+  moved to Team settings.
+- **Delete team is now Close this account** on a hosted team's Server pages, so it is not mistaken for deleting one
+  team; the banner while it is pending reads *This account is being closed*. Deleting one team stays on its
+  Overview page.
+- **The status bar's account menu** has **Account settings…** (was *Manage accounts…*) and **Signed-in devices…** (was
+  *Devices & tokens…*), both opening User settings. *Account: Sign out…* with several servers signed in opens
+  Servers you're signed in to.
+
+### Removed
+
+- **Settings → Server in the desktop app.** A server admin manages the server's own settings in Team settings in the
+  browser client; the desktop's **Manage team…** opens it there.
+
+### Fixed
+
+- **The browser client opens a team workspace it just created (#878).** **Open a team workspace…** in a browser tab
+  now lists an empty workspace you can edit, and opening it starts it: the tab writes the workspace's first file and
+  pushes it, so a team that only uses the browser no longer needs the desktop app to put something in a workspace.
+- **A browser tab reopens its workspace after a reload (#879)**, as the desktop does after a restart. A second tab
+  beside one that holds the workspace starts at the workspace list.
+- **The browser client no longer shows the server's folders (#880)** in the workspace list or Manage Workspaces.
+- **The browser client reports the app's version (#875)**, in the status bar and in its requests' `User-Agent`,
+  rather than the server package's.
+- **Closing a browser tab no longer logs "There is no window to do this in" on the server (#876).**
+- **A team switcher in the title bar.** Signed in to a Wirebench Server, the title bar shows the team you are working
+  in before the workspace's name (*Platform ▾ / Payments*), with or without a workspace open. Its menu lists your
+  teams and *Manage team…* for the active one. The workspace list, the workspace menu and *Open a team workspace…*
+  show the active team's workspaces (local workspaces always show), *Manage team…* opens on it, and opening another
+  team's workspace makes that team active. Switching team with another team's workspace open moves to the new team's
+  most recently used workspace, or to the workspace list when it has none here yet. The choice is remembered per account. In a browser tab, a workspace held by
+  another tab is now refused as "open in another tab" rather than "another window".
+- **The browser client's address follows where you are.** It names the workspace and the open tab
+  (`/workspaces/<id>/rest-request/<id>`), with the sidebar area, the console, the side panels and the settings page
+  in the query, so a reload or a bookmark lands back there, and a teammate's link opens the same team workspace and
+  request. Back and Forward move between workspaces, tabs, sidebar areas and settings pages; showing or hiding a panel
+  is not a step of its own. A reload no longer lands on the workspace list while another tab is signed in.
 
 ## [6.1.0] - 2026-10-23
 
@@ -2850,8 +2850,8 @@ contract, send it with whatever the service demands, and read the answer.
 - English only.
 
 <!-- 1.0.0 was never published; its tag and draft release were withdrawn in favour of 1.1.0. The links resolve once `v1.1.0` is pushed (see docs/release.md). -->
-[Unreleased]: https://github.com/wirebench/wirebench/compare/v7.0.0-rc.1...HEAD
-[7.0.0]: https://github.com/wirebench/wirebench/compare/v6.1.0...v7.0.0-rc.1
+[Unreleased]: https://github.com/wirebench/wirebench/compare/v7.0.0-rc.3...HEAD
+[7.0.0]: https://github.com/wirebench/wirebench/compare/v6.1.0...v7.0.0-rc.3
 [6.1.0]: https://github.com/wirebench/wirebench/compare/v6.0.0-rc.1...v6.1.0-rc.7
 [6.0.0]: https://github.com/wirebench/wirebench/compare/v5.0.0...v6.0.0
 [5.0.0]: https://github.com/wirebench/wirebench/compare/v4.0.0...v5.0.0

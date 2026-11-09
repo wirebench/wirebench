@@ -60,7 +60,10 @@ a tenant column under forced row-level security with a database role of its own,
 behind a balancer with per-team budgets and metrics, and hosted mode itself with Paddle billing, team
 settings in the desktop app and custom domains. Wirebench does not run a hosted service yet. On the desktop
 side it adds nine colour themes, overview pages for APIs and folders, complete documentation for a REST
-API and a Preview update channel. It is a major release because the server now needs PostgreSQL 15 or
+API and a Preview update channel. For people it adds switching between several accounts, profiles with a
+photo and a username, two-step sign-in with an authenticator app or a passkey, Settings in three areas (the app,
+you, your team) with team management in the browser, and a team switcher in the title bar; the browser tab's
+address follows the workspace and request it shows. It is a major release because the server now needs PostgreSQL 15 or
 later and the team install's compose file needs a second database password; the project format stays
 at version 11.
 Everything below is what is still open, and
