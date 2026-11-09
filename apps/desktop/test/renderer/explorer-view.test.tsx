@@ -712,6 +712,43 @@ describe('ExplorerView with APIs', () => {
       expect(seen).not.toHaveBeenCalled();
     });
 
+    it('leaves keys typed in an open row menu to the menu', async () => {
+      seedRest();
+      mount();
+      const item = (text: string): HTMLElement => screen.getByText(text).closest('[role="treeitem"]') as HTMLElement;
+      // A selection Backspace would delete, and focus type-ahead would move.
+      fireEvent.click(screen.getByText('At root'));
+      act(() => {
+        item('Petstore').focus();
+      });
+      fireEvent.contextMenu(screen.getByText('At root').closest('[data-tree-id]')!);
+      const entry = await screen.findByRole('menuitem', { name: 'Duplicate' });
+
+      fireEvent.keyDown(entry, { key: 'i' });
+      fireEvent.keyDown(entry, { key: 'F', ctrlKey: true, shiftKey: true });
+      fireEvent.keyDown(entry, { key: 'Backspace' });
+
+      expect(document.activeElement?.closest('[role="treeitem"]')).not.toBe(item('In folder'));
+      expect(useExplorerFilterStore.getState().open).toBe(false);
+      expect(useUiStore.getState().confirmDeleteNode).toBeUndefined();
+    });
+
+    it('empties the filter when another workspace opens', async () => {
+      seedRest();
+      mount();
+      act(() => {
+        useExplorerFilterStore.getState().focus();
+        useExplorerFilterStore.getState().setText('fold');
+      });
+      expect(await screen.findByTestId('explorer-filter')).toBeTruthy();
+
+      act(() => {
+        useWorkspaceStore.setState({ workspace: workspaceWire({ id: 'w2', projects: [wireProject()] }) });
+      });
+      await waitFor(() => expect(screen.queryByTestId('explorer-filter')).toBeNull());
+      expect(useExplorerFilterStore.getState().text).toBe('');
+    });
+
     it('moves focus to the next row whose name starts with the letters typed, wrapping round', async () => {
       seedRest();
       mount();
@@ -752,6 +789,8 @@ describe('ExplorerView with APIs', () => {
 
       const hint = screen.getByTestId('explorer-empty-hint');
       expect(hint.textContent).toBe('No requests yet·New request');
+      // Not part of the row's accessible name; the row's menu is the keyboard's way to the same New.
+      expect(hint.getAttribute('aria-hidden')).toBe('true');
       // Inside the API's own treeitem, not a row of its own: there is no treeitem for it to stop on.
       expect(hint.closest('[role="treeitem"]')?.querySelector('[data-testid="api-row"]')).not.toBeNull();
       expect(screen.getAllByRole('treeitem')).toHaveLength(2);
@@ -797,6 +836,50 @@ describe('ExplorerView with APIs', () => {
       expect(
         screen.getAllByTestId('rest-request-row')[0]!.querySelector('[data-testid="explorer-row-actions"]'),
       ).toBeNull();
+    });
+
+    it('keeps a click in the gap between the row actions from folding or opening the row', () => {
+      seedRest();
+      mount();
+      const apiRow = screen.getByTestId('api-row');
+      fireEvent.click(apiRow.querySelector('[data-testid="explorer-row-actions"]')!);
+      expect(apiRow.closest('[role="treeitem"]')?.getAttribute('aria-expanded')).toBe('true');
+      expect(useEditorsStore.getState().tabs).toEqual([]);
+    });
+
+    it('re-measures an empty API’s row once it gets a request, and once the filter clears', async () => {
+      seedEmptyApi();
+      mount();
+      const apiItem = (): HTMLElement => screen.getByTestId('api-row').closest('[role="treeitem"]') as HTMLElement;
+      expect(apiItem().style.height).toBe('46px');
+
+      act(() => {
+        useProjectStore.setState({
+          rest: {
+            p1: { apis: [restApiWire()], folders: [], requests: [restRequestWire({ id: 'rest-1', name: 'One' })] },
+          },
+          restRequests: { 'rest-1': restRequestWire({ id: 'rest-1', name: 'One' }) },
+        });
+      });
+      await waitFor(() => expect(apiItem().style.height).toBe('26px'));
+      // The request's row starts where the API's single-line row ends.
+      const requestItem = screen.getByText('One').closest('[role="treeitem"]') as HTMLElement;
+      expect(Number.parseFloat(requestItem.style.top)).toBe(
+        Number.parseFloat(apiItem().style.top) + Number.parseFloat(apiItem().style.height),
+      );
+
+      // Filtering hides the hint; clearing it brings the two-line row back with the row below in step.
+      act(() => {
+        useProjectStore.setState({
+          rest: { p1: { apis: [restApiWire()], folders: [], requests: [] } },
+          restRequests: {},
+        });
+      });
+      await waitFor(() => expect(apiItem().style.height).toBe('46px'));
+      act(() => useExplorerFilterStore.getState().setText('pet'));
+      await waitFor(() => expect(apiItem().style.height).toBe('26px'));
+      act(() => useExplorerFilterStore.getState().clear());
+      await waitFor(() => expect(apiItem().style.height).toBe('46px'));
     });
 
     it('makes the header’s New request in the API of the selected request', () => {

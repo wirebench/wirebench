@@ -43,6 +43,7 @@ import type {
   RestRequestPatchWire,
 } from '@wirebench/wire/kinds/rest/wire';
 import type { WebhookSigningWire } from '@wirebench/wire/wire-base';
+import { copyEndpointKey } from '../../endpoint-renames.js';
 import { notFound, takenApiSlugs, toEngineAuthConfig, toEngineRows } from '../../project-api-mutations.js';
 import type { KindMutations } from '../kind-main.js';
 
@@ -436,7 +437,11 @@ function without<T extends object, K extends keyof T>(value: T, ...keys: readonl
  */
 export function duplicateApi(project: Project, apiId: string, newId: () => string = generateId): RestMutationResult {
   const original = requireApi(project, apiId);
-  const copyRequest = (request: RestRequestDef): RestRequestDef => ({ ...without(request, 'hook'), id: newId() });
+  // An orphaned mark says the definition lost the operation; the copy has no definition to lose it from.
+  const copyRequest = (request: RestRequestDef): RestRequestDef => ({
+    ...without(request, 'hook', 'orphaned'),
+    id: newId(),
+  });
   const copyFolder = (folder: RestFolder): RestFolder => ({
     ...folder,
     id: newId(),
@@ -454,8 +459,17 @@ export function duplicateApi(project: Project, apiId: string, newId: () => strin
     folders: original.folders.map(copyFolder),
     requests: original.requests.map(copyRequest),
   };
+  // The project environments' base-URL overrides are keyed by slug: the copy is given the original's.
+  const environments = project.environments.map((environment) => {
+    const endpoints = copyEndpointKey(environment.endpoints, original.slug, copy.slug);
+    return endpoints === environment.endpoints ? environment : { ...environment, endpoints };
+  });
   return {
-    project: { ...project, containers: { ...project.containers, rest: [...restApisOf(project), copy] } },
+    project: {
+      ...project,
+      environments,
+      containers: { ...project.containers, rest: [...restApisOf(project), copy] },
+    },
     createdId: copy.id,
   };
 }

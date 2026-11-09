@@ -112,6 +112,24 @@ describe('duplicate-api', () => {
     expect(copy.requests[0]?.hook).toBeUndefined();
   });
 
+  it('gives the copy the original’s project environment overrides, and drops a stale orphaned mark', () => {
+    const source = seeded();
+    const orphan: RestApi = { ...api(source), requests: [{ ...api(source).requests[0]!, orphaned: true }] };
+    const environment = {
+      id: 'e1',
+      name: 'dev',
+      endpoints: { Petstore: 'https://dev.test' },
+    } as unknown as Project['environments'][number];
+    const withEnv: Project = { ...source, environments: [environment], containers: { rest: [orphan] } };
+    const { project, createdId } = duplicateApi(withEnv, 'api-1');
+    const copy = restApisOf(project).find((entry) => entry.id === createdId)!;
+    expect(project.environments[0]?.endpoints).toEqual({
+      Petstore: 'https://dev.test',
+      'Petstore copy': 'https://dev.test',
+    });
+    expect(copy.requests[0]?.orphaned).toBeUndefined();
+  });
+
   it('gives a second copy a slug of its own', () => {
     const once = duplicateApi(seeded(), 'api-1').project;
     const twice = duplicateApi(once, 'api-1').project;

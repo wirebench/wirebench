@@ -55,6 +55,11 @@ describe('type-ahead', () => {
     expect(typeAheadIndex(names, 0, 'z')).toBeUndefined();
   });
 
+  it('steps through the rows starting with one letter pressed again and again', () => {
+    expect(typeAheadIndex(names, 3, 'ss')).toBe(4);
+    expect(typeAheadIndex(names, 4, 'sss')).toBe(3);
+  });
+
   it('keeps to the current row while the word typed still fits it', () => {
     expect(typeAheadIndex(names, 3, 'su')).toBe(3);
     expect(typeAheadIndex(names, 3, 'sum')).toBe(4);

@@ -535,6 +535,8 @@ export function ExplorerContextMenu({ node, children, selection, onOpenChange, o
           // Portalled, yet React bubbles its clicks through the component tree to the tree's row
           // wrapper, which would select and open the row over the tab an item just opened.
           onClick={(event) => event.stopPropagation()}
+          // Keys typed in the menu stay in it: React would bubble them to the tree, which moves and types ahead.
+          onKeyDown={(event) => event.stopPropagation()}
           onCloseAutoFocus={(event) => {
             if (isRenamingRef.current) {
               event.preventDefault();
@@ -558,6 +560,7 @@ export function ExplorerContextMenu({ node, children, selection, onOpenChange, o
                       <ContextMenu.SubContent
                         className="z-dropdown min-w-40 rounded-md border border-hairline bg-surface-raised p-1 shadow-lg"
                         onClick={(event) => event.stopPropagation()}
+                        onKeyDown={(event) => event.stopPropagation()}
                       >
                         {item.children.map((child) => (
                           <ContextMenu.Item key={child.key} className={ITEM_CLASS} onSelect={() => run(child)}>

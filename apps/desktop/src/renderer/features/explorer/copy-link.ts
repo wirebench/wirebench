@@ -57,8 +57,11 @@ async function copyLink(tab: AddressTab): Promise<void> {
   } else {
     const server = sharedServer(workspace);
     if (server === undefined) return;
-    const probe = await ipc().account.probe({ url: server });
-    if (!probe.ok || !probe.value.meta.capabilities.includes(BROWSER_CLIENT_CAPABILITY)) {
+    // A server that cannot be asked is one whose browser client cannot be vouched for.
+    const probe = await ipc()
+      .account.probe({ url: server })
+      .catch(() => undefined);
+    if (probe?.ok !== true || !probe.value.meta.capabilities.includes(BROWSER_CLIENT_CAPABILITY)) {
       showToast('This workspace’s server has no browser client to link to');
       return;
     }

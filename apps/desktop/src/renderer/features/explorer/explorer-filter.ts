@@ -58,12 +58,16 @@ export const TYPE_AHEAD_MS = 500;
 /**
  * The index of the row type-ahead moves to: the first row after `current`, wrapping round, whose name starts with
  * `buffer`. A longer buffer starts at `current` itself, so typing "su" after "s" stays on "Subtract" rather than
- * skipping to the next row that starts with "su". `undefined` when no row's name starts with it.
+ * skipping to the next row that starts with "su"; one letter repeated ("ss") moves on to the next row starting
+ * with that letter. `undefined` when no row's name starts with it.
  */
 export function typeAheadIndex(names: readonly string[], current: number, buffer: string): number | undefined {
   if (names.length === 0 || buffer === '') return undefined;
-  const prefix = buffer.toLocaleLowerCase();
-  const start = buffer.length === 1 ? current + 1 : Math.max(current, 0);
+  const typed = buffer.toLocaleLowerCase();
+  // One letter pressed again and again ("sss") steps through the rows starting with it, as a file tree does.
+  const repeated = [...typed].every((letter) => letter === typed[0]);
+  const prefix = repeated ? typed.slice(0, 1) : typed;
+  const start = repeated ? current + 1 : Math.max(current, 0);
   for (let step = 0; step < names.length; step += 1) {
     const index = (((start + step) % names.length) + names.length) % names.length;
     if (names[index]?.toLocaleLowerCase().startsWith(prefix) === true) return index;
@@ -107,6 +111,10 @@ interface ExplorerFilterState {
   readonly focus: () => void;
   /** Empties the field and hides it. */
   readonly clear: () => void;
+  /** The workspace the filter was typed in. */
+  readonly workspaceId: string | undefined;
+  /** Empties and hides the field when the open workspace is another one than the filter was typed in. */
+  readonly forWorkspace: (workspaceId: string | undefined) => void;
 }
 
 export const useExplorerFilterStore = create<ExplorerFilterState>((set) => ({
@@ -116,6 +124,9 @@ export const useExplorerFilterStore = create<ExplorerFilterState>((set) => ({
   setText: (text) => set({ text }),
   focus: () => set((state) => ({ open: true, focusRequest: state.focusRequest + 1 })),
   clear: () => set({ open: false, text: '' }),
+  workspaceId: undefined,
+  forWorkspace: (workspaceId) =>
+    set((state) => (state.workspaceId === workspaceId ? state : { workspaceId, open: false, text: '' })),
 }));
 
 /** Brings the Explorer into the sidebar and puts focus in its filter field: the filter command and its button. */

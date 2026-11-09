@@ -192,6 +192,9 @@ const FocusableListOuter = forwardRef<HTMLDivElement, React.ComponentProps<typeo
         // `explorer.delete` command's own Delete key the only one they dispatch.
         onKeyDown={(event) => {
           const target = event.target;
+          // React bubbles keys from portalled content (a row's open context menu) through here too; only keys
+          // pressed in the tree itself are the tree's.
+          if (!(target instanceof Node) || !event.currentTarget.contains(target)) return;
           if (target instanceof Element && target.closest('input, textarea, select, [contenteditable]') !== null)
             return;
           // The filter's chord is Format Document's elsewhere: taken here, the window's keybindings never see it.
@@ -687,6 +690,7 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
               node.isSelected ? 'bg-accent-muted' : 'bg-surface-raised'
             }`}
             onMouseDown={(event) => event.stopPropagation()}
+            onClick={(event) => event.stopPropagation()}
             onDoubleClick={(event) => event.stopPropagation()}
           >
             {primary !== undefined && (
@@ -729,7 +733,9 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
     <>
       {row}
       {/* Under the row's treeitem rather than a row of its own, so the arrow keys pass over it. */}
+      {/* Hidden from assistive tech so its text does not join the row's name; the row's menu offers the same New. */}
       <div
+        aria-hidden="true"
         data-testid="explorer-empty-hint"
         style={{ paddingLeft: indent + ROW_PADDING_LEFT + EMPTY_HINT_OFFSET }}
         className="flex h-5 items-center gap-1 text-xs text-fg-subtle"
@@ -862,6 +868,11 @@ export function ExplorerView() {
     mcp,
   );
   const data = schedules === undefined ? tree : [...tree, schedulesNode(schedules)];
+
+  // The filter belongs to the workspace it was typed in: another workspace's tree starts unfiltered.
+  useEffect(() => {
+    useExplorerFilterStore.getState().forWorkspace(workspaceId);
+  }, [workspaceId]);
 
   useEffect(() => {
     registerExplorerTree(treeRef ?? null);

@@ -241,6 +241,24 @@ describe('Copy link', () => {
     expect(writeText).not.toHaveBeenCalled();
   });
 
+  it('says it cannot when the server cannot be asked at all', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+    const probe = vi.fn().mockRejectedValue(new Error('offline'));
+    installWirebenchApi({ account: { probe } });
+    useWorkspaceStore.setState({ workspace: workspaceWire({ id: 'w1', share: { kind: 'server', server } as never }) });
+
+    explorerMenuGroups(node({ kind: 'api', apiId: 'a1' }))
+      .flat()
+      .find((item) => item.key === 'copy-link')
+      ?.run();
+
+    await waitFor(() =>
+      expect(showToast).toHaveBeenCalledWith('This workspace’s server has no browser client to link to'),
+    );
+    expect(writeText).not.toHaveBeenCalled();
+  });
+
   it('uses the page’s own origin in a browser tab', async () => {
     browserTab.value = true;
     const writeText = vi.fn().mockResolvedValue(undefined);
