@@ -15,7 +15,7 @@ import type {
   PreferencesStoredSectionWire,
   PreferencesWire,
 } from '@shared/wire-base.js';
-import { hasAgent, hasCapability, type Capability } from '../../lib/capabilities.js';
+import { hasAgent, hasCapability, isBrowserTab, type Capability } from '../../lib/capabilities.js';
 
 /** A section of the Settings page. */
 export type SettingsSectionId =
@@ -59,8 +59,10 @@ type SectionKeys =
 export interface SettingsSection {
   readonly id: SettingsSectionId;
   readonly label: string;
-  /** The one line under the section's title. */
+  /** The one line under the section's title. Read it through {@link subtitleOf}. */
   readonly subtitle: string;
+  /** The line in a browser tab, where the setting is the user's on the server rather than this machine's. */
+  readonly browserSubtitle?: string;
   readonly keys: SectionKeys;
   /** Whether the search renders this section's rows; the others are found by name only. */
   readonly searchable: boolean;
@@ -129,6 +131,7 @@ export const SETTINGS_NAV: readonly SettingsNavGroup[] = [
         id: 'features',
         label: 'Features',
         subtitle: 'Turn protocols and optional features off on this machine.',
+        browserSubtitle: 'Turn protocols and optional features off for you on this server.',
         keys: stored('features'),
         searchable: true,
         keywords: ['switch', 'protocol', 'experimental', 'policy', 'grpc', 'soap', 'rest', 'websocket', 'scripts'],
@@ -268,6 +271,11 @@ export const SETTINGS_NAV: readonly SettingsNavGroup[] = [
     ],
   },
 ];
+
+/** The line under `section`'s title: its browser wording in a browser tab, where it has one (#901). */
+export function subtitleOf(section: Pick<SettingsSection, 'subtitle' | 'browserSubtitle'>): string {
+  return isBrowserTab() ? (section.browserSubtitle ?? section.subtitle) : section.subtitle;
+}
 
 /** Whether the connected host can do what `section` needs; see {@link SettingsSection.capability}. */
 export function sectionAvailable(section: SettingsSection): boolean {

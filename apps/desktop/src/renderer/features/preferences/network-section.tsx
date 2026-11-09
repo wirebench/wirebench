@@ -30,16 +30,28 @@ import type { SectionProps } from './sections/section-props.js';
 import { PREFERENCE_LIMITS } from '../../state/preference-limits.js';
 import { DEFAULT_PREFERENCES_WIRE } from '../../state/preferences-defaults.js';
 import { proxyHostProblem } from './validators.js';
-import { hasCapability, secretKeptHint } from '../../lib/capabilities.js';
+import { hasCapability, isBrowserTab, secretKeptHint } from '../../lib/capabilities.js';
 
 /** Proxy preferences, applied to every send. */
 export function ProxySection({ preferences, update, locked = () => false }: SectionProps) {
   const proxy = preferences.proxy;
   const manual = proxy.mode === 'manual';
+  // A browser tab's sends leave from the server, which has no system proxy of the user's: there "system" means
+  // direct, so it is not offered, and a mode already stored as `system` reads as what it does (#901).
+  const browser = isBrowserTab();
+  const systemOption = browser
+    ? proxy.mode === 'system'
+      ? [{ value: 'system' as const, label: 'No proxy (direct)' }]
+      : []
+    : [{ value: 'system' as const, label: 'System proxy' }];
   return (
     <SettingsGroup
       title="Proxy"
-      hint="Applied to every send. Excluded hosts always go direct, including under a system proxy."
+      hint={
+        browser
+          ? 'Yours on this server, applied to every send. Excluded hosts always go direct.'
+          : 'Applied to every send. Excluded hosts always go direct, including under a system proxy.'
+      }
     >
       <EnumSetting
         label="Mode"
@@ -47,11 +59,7 @@ export function ProxySection({ preferences, update, locked = () => false }: Sect
         value={proxy.mode}
         testId="proxy-mode"
         locked={locked('proxy.mode')}
-        options={[
-          { value: 'none', label: 'No proxy' },
-          { value: 'system', label: 'System proxy' },
-          { value: 'manual', label: 'Manual' },
-        ]}
+        options={[{ value: 'none', label: 'No proxy' }, ...systemOption, { value: 'manual', label: 'Manual' }]}
         onChange={(mode) => update({ proxy: { mode } })}
       />
       <TextSetting
