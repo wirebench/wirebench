@@ -19,6 +19,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Button } from './button.js';
 import { SecretField } from './secret-field.js';
 import { DEFAULT_JWT_AUTH, JwtAuthFields } from './jwt-auth-fields.js';
+import { isBrowserTab } from '../lib/capabilities.js';
 import { useKerberosAvailability } from '../lib/use-kerberos-availability.js';
 import { ipc } from '../state/ipc-client.js';
 import { useProjectStore } from '../state/project.js';
@@ -144,6 +145,37 @@ const KEY_ALGS: readonly AssertionAlg[] = [
   'ES384',
   'ES512',
 ];
+
+const OAUTH2_GRANTS: readonly { readonly value: OAuth2Grant; readonly label: string }[] = [
+  { value: 'client-credentials', label: 'Client credentials' },
+  { value: 'authorization-code', label: 'Authorization code' },
+  { value: 'password', label: 'Password' },
+  { value: 'device-code', label: 'Device code' },
+];
+
+/**
+ * The grants that sign in through a browser window the host opens. The host needs its platform's shell
+ * for that, which no capability names; the browser client's server has none (`browserFlows: false`).
+ */
+function browserGrant(grant: OAuth2Grant | undefined): boolean {
+  return grant === 'authorization-code' || grant === 'device-code';
+}
+
+/** Whether `grant` cannot get a token on this host: a browser grant where the host cannot open a browser. */
+export function browserGrantRefused(grant: OAuth2Grant | undefined): boolean {
+  return browserGrant(grant) && isBrowserTab();
+}
+
+/**
+ * The grants offered for a configuration that uses `current`. In a browser tab, whose host cannot open a browser,
+ * the two browser grants are left out, except the one a configuration already uses, which keeps its value.
+ */
+export function oauth2GrantOptions(
+  current: OAuth2Grant | undefined,
+): readonly { readonly value: OAuth2Grant; readonly label: string }[] {
+  if (!isBrowserTab()) return OAUTH2_GRANTS;
+  return OAUTH2_GRANTS.filter((option) => !browserGrant(option.value) || option.value === current);
+}
 
 /** Whether the client authenticates with a keystore rather than its secret. */
 function keyBased(clientAuth: OAuth2ClientAuth | undefined): boolean {
@@ -575,12 +607,18 @@ export function AuthFields({
                 patch({ grant: event.target.value as OAuth2Grant });
               }}
             >
-              <option value="client-credentials">Client credentials</option>
-              <option value="authorization-code">Authorization code</option>
-              <option value="password">Password</option>
-              <option value="device-code">Device code</option>
+              {oauth2GrantOptions(auth.grant).map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
             </select>
           </label>
+          {browserGrantRefused(auth.grant) && (
+            <p className="text-xs text-fg-subtle" data-testid={`${scope}-oauth2-grant-refused`}>
+              This grant signs in through a browser window, so it gets a token in the desktop app only.
+            </p>
+          )}
           {text('tokenUrl', 'Token URL', 'https://issuer.example.com/oauth/token')}
           {auth.grant === 'authorization-code' &&
             text('authorizationUrl', 'Authorize URL', 'https://issuer.example.com/oauth/authorize')}
