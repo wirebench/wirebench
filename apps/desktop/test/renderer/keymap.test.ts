@@ -61,6 +61,11 @@ describe('keymapRows', () => {
     });
   });
 
+  it('lists App settings once: the palette-hidden twin shows only once bound (#904)', () => {
+    expect(keymapRows({}).filter((row) => row.label === 'App settings')).toHaveLength(1);
+    expect(keymapRows({ 'preferences.open': 'Mod+Alt+,' }).some((row) => row.id === 'preferences.open')).toBe(true);
+  });
+
   it('shows an override as the chord in force, and marks the row customized', () => {
     const row = rowFor(keymapRows({ 'request.send': 'Mod+Shift+Enter' }), 'request.send');
 

@@ -102,7 +102,12 @@ export function keymapRows(overrides: Readonly<Record<string, string>>): readonl
     byIdentity.set(identity, [...(byIdentity.get(identity) ?? []), command]);
   }
 
-  return commands.map((command) => {
+  // A command the palette hides is a twin of one it lists (App settings, a menu's argument-taking variant): its row
+  // would read as a duplicate, so it shows only once someone has bound it (#904).
+  const listed = commands.filter(
+    (command) => command.paletteHidden !== true || effective(command, overrides) !== undefined,
+  );
+  return listed.map((command) => {
     const chord = effective(command, overrides);
     const sharing = chord === undefined ? [] : (byIdentity.get(safeIdentity(chord)) ?? []);
     // `listAllCommands` is already in dispatch order, and this preserves it, so `clashing[0]`
