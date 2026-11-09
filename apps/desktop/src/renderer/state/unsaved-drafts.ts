@@ -89,12 +89,31 @@ function fileLabel(path: string): string {
   return base.replace(/\.ya?ml$/i, '');
 }
 
-/** The sentence one project's restore notice reads as. */
-export function noticeMessage(notice: UnsavedRestoreNoticeWire): string {
+/** Request names as a sentence lists them: `A`, `A and B`, `A, B and C`, `A, B, C and 2 more`. */
+function nameList(names: readonly string[]): string {
+  const shown = names.length > 3 ? names.slice(0, 3) : names.slice(0, -1);
+  const last = names.length > 3 ? `${String(names.length - 3)} more` : names[names.length - 1];
+  return shown.length === 0 ? (last ?? '') : `${shown.join(', ')} and ${last ?? ''}`;
+}
+
+/**
+ * The sentence one project's restore notice reads as, given the requests whose drafts were laid back in it; or
+ * `undefined` when there is nothing to tell. A project main restored with no request edit laid back, nothing changed
+ * on disk and nothing dropped leaves no mark on any tab, so it is not announced: its project tab still says
+ * *Unsaved changes*.
+ */
+export function noticeMessage(notice: UnsavedRestoreNoticeWire, requests: readonly string[] = []): string | undefined {
   if (notice.status === 'failed') {
     return `Couldn't restore unsaved changes in ${notice.projectName}${notice.message !== undefined ? `: ${notice.message}` : ''}`;
   }
-  const parts = [`Restored unsaved changes in ${notice.projectName}`];
+  if (requests.length === 0 && notice.conflicts.length === 0 && notice.dropped.length === 0) {
+    return undefined;
+  }
+  const parts = [
+    requests.length > 0
+      ? `Restored unsaved changes to ${nameList(requests)} in ${notice.projectName}`
+      : `Restored unsaved changes in ${notice.projectName}`,
+  ];
   if (notice.conflicts.length > 0) {
     parts.push(`also changed on disk, kept yours: ${notice.conflicts.map(fileLabel).join(', ')}`);
   }
@@ -102,6 +121,23 @@ export function noticeMessage(notice: UnsavedRestoreNoticeWire): string {
     parts.push(`deleted on disk, dropped: ${notice.dropped.map(fileLabel).join(', ')}`);
   }
   return parts.join(' — ');
+}
+
+/** `null` in a patch clears a field the mirror then holds as absent. */
+function sameValue(current: unknown, next: unknown): boolean {
+  return JSON.stringify(current ?? null) === JSON.stringify(next ?? null);
+}
+
+/**
+ * Whether laying `patch` over `entity` changes anything: a draft equal to what is saved (one stashed after the
+ * edit was saved, or typed back to the saved text) leaves no unsaved mark, so it is not laid back or announced.
+ * A patch field the entity does not hold by that name counts as a change.
+ */
+export function patchChanges(entity: object, patch: object): boolean {
+  const current = entity as Record<string, unknown>;
+  return Object.entries(patch).some(
+    ([key, value]) => value !== undefined && (!Object.hasOwn(current, key) || !sameValue(current[key], value)),
+  );
 }
 
 /**
@@ -124,58 +160,51 @@ export function applyRestored(workspaceId: string, restored: WorkspaceRestoredRe
     return;
   }
   const projects = useProjectStore.getState();
-  let restoredDrafts = 0;
+  /** The names of the requests a draft was laid back onto, by project id (`''` when the project is unknown). */
+  const laidBack = new Map<string, string[]>();
   let droppedDrafts = 0;
-  for (const [requestId, patch] of Object.entries(restored.drafts)) {
-    if (projects.requests[requestId] === undefined) {
-      droppedDrafts += 1;
-      continue;
+  const layBack = <E extends { readonly name: string }, P extends object>(
+    entities: Readonly<Record<string, E>>,
+    drafts: Readonly<Record<string, P>>,
+    edit: (requestId: string, patch: P) => void,
+  ): void => {
+    for (const [requestId, patch] of Object.entries(drafts)) {
+      const entity = entities[requestId];
+      if (entity === undefined) {
+        droppedDrafts += 1;
+        continue;
+      }
+      if (!patchChanges(entity, patch)) {
+        continue;
+      }
+      edit(requestId, patch);
+      const projectId = projects.projectOf[requestId] ?? '';
+      // A staged rename is the name the tab shows.
+      const renamed = (patch as { readonly name?: unknown }).name;
+      const name = typeof renamed === 'string' ? renamed : entity.name;
+      laidBack.set(projectId, [...(laidBack.get(projectId) ?? []), name]);
     }
-    projects.editRequest(requestId, patch);
-    restoredDrafts += 1;
-  }
-  // The REST half, counted into the same totals: to the user these are one kind of thing — the
-  // edits they had not saved — and one notice for all of them is what they expect to read.
-  for (const [requestId, patch] of Object.entries(restored.restDrafts)) {
-    if (projects.restRequests[requestId] === undefined) {
-      droppedDrafts += 1;
-      continue;
-    }
-    projects.editRestRequest(requestId, patch);
-    restoredDrafts += 1;
-  }
-  for (const [requestId, patch] of Object.entries(restored.grpcDrafts)) {
-    if (projects.grpcRequests[requestId] === undefined) {
-      droppedDrafts += 1;
-      continue;
-    }
-    projects.editGrpcRequest(requestId, patch);
-    restoredDrafts += 1;
-  }
-  for (const [requestId, patch] of Object.entries(restored.wsDrafts)) {
-    if (projects.wsRequests[requestId] === undefined) {
-      droppedDrafts += 1;
-      continue;
-    }
-    projects.editWsRequest(requestId, patch);
-    restoredDrafts += 1;
-  }
-  for (const [requestId, patch] of Object.entries(restored.mcpDrafts)) {
-    if (projects.mcpRequests[requestId] === undefined) {
-      droppedDrafts += 1;
-      continue;
-    }
-    projects.editMcpRequest(requestId, patch);
-    restoredDrafts += 1;
-  }
+  };
+  // Every protocol's drafts count into the same notices: to the user these are one kind of thing — the edits
+  // they had not saved.
+  layBack(projects.requests, restored.drafts, projects.editRequest);
+  layBack(projects.restRequests, restored.restDrafts, projects.editRestRequest);
+  layBack(projects.grpcRequests, restored.grpcDrafts, projects.editGrpcRequest);
+  layBack(projects.wsRequests, restored.wsDrafts, projects.editWsRequest);
+  layBack(projects.mcpRequests, restored.mcpDrafts, projects.editMcpRequest);
   for (const notice of restored.notices) {
-    showToast(noticeMessage(notice));
+    const message = noticeMessage(notice, laidBack.get(notice.projectId) ?? []);
+    laidBack.delete(notice.projectId);
+    if (message !== undefined) {
+      showToast(message);
+    }
   }
-  if (restoredDrafts > 0 && restored.notices.length === 0) {
+  for (const [projectId, names] of laidBack) {
+    const projectName = projects.projects[projectId]?.name;
     showToast(
-      restoredDrafts === 1
-        ? 'Restored an unsaved request edit'
-        : `Restored ${String(restoredDrafts)} unsaved request edits`,
+      projectName === undefined
+        ? `Restored unsaved changes to ${nameList(names)}`
+        : `Restored unsaved changes to ${nameList(names)} in ${projectName}`,
     );
   }
   if (droppedDrafts > 0) {
