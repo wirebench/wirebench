@@ -21,9 +21,12 @@ export const MAIN_WINDOW_WEB_PREFERENCES = {
  * Content-Security-Policy applied both via the `onHeadersReceived` response header and as
  * a `<meta http-equiv>` tag in the renderer's `index.html` (for the electron-vite dev
  * server, which serves the page directly). `style-src 'unsafe-inline'` is required for
- * Monaco's inline styles (Task 12/15); everything else stays same-origin only.
+ * Monaco's inline styles (Task 12/15); `img-src blob:` for a response's image preview, which is
+ * drawn from a blob URL the renderer makes itself (the browser client's policy allows it too).
+ * Everything else stays same-origin only.
  */
-export const CONTENT_SECURITY_POLICY = "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:";
+export const CONTENT_SECURITY_POLICY =
+  "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:";
 
 /**
  * The custom scheme the packaged renderer is served from (`app://wirebench/...`), instead of

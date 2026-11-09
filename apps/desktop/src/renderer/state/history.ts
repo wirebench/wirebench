@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { create } from 'zustand';
 import type { HistoryAppendedEvent, HistoryEntryWire } from '@shared/wire-types.js';
 import { ipc } from './ipc-client.js';
@@ -155,4 +156,30 @@ export function subscribeToHistory(): () => void {
     offWorkspaceChanged();
     offHistoryChanged();
   };
+}
+
+/**
+ * One History entry by id, for an open entry tab. The sidebar's search and project filter narrow
+ * `entries`, so an entry that falls outside them is fetched by id instead (and the last one seen
+ * is kept meanwhile): only an entry that is gone from History reads as `undefined`.
+ */
+export function useHistoryEntry(id: string): HistoryEntryWire | undefined {
+  const listed = useHistoryStore((state) => state.entries.find((entry) => entry.id === id));
+  const [kept, setKept] = useState<HistoryEntryWire | undefined>(listed);
+  useEffect(() => {
+    if (listed !== undefined) {
+      setKept(listed);
+      return;
+    }
+    let live = true;
+    void ipc()
+      .history.get({ id })
+      .then((result) => {
+        if (live) setKept(result.ok ? result.value.entry : undefined);
+      });
+    return () => {
+      live = false;
+    };
+  }, [id, listed]);
+  return listed ?? (kept?.id === id ? kept : undefined);
 }

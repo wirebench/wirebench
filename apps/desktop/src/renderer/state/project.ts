@@ -257,6 +257,13 @@ export interface ProjectStore extends ProjectSnapshot {
    * draft in place. A no-op (true) when the request is clean.
    */
   readonly commitRequest: (requestId: string) => Promise<boolean>;
+  /**
+   * Lends one request's staged edit to main for a routed send (the server routes, and builds the agent's
+   * bundle, from the model it holds) without saving it: the draft stays staged, so the tab keeps its unsaved
+   * mark. Answers the function that takes the edit back out of main's model once the send is done, so
+   * "Don't save" still reverts to the saved version; `undefined` when the edit could not be lent.
+   */
+  readonly lendRequestDraft: (requestId: string) => Promise<(() => Promise<void>) | undefined>;
   /** Writes one request's staged edits and saves its project. A no-op when it is clean. */
   readonly saveRequest: (requestId: string, options?: SaveOptions) => Promise<void>;
   /**
@@ -355,6 +362,8 @@ export interface ProjectStore extends ProjectSnapshot {
    * derives from its own model sees them. False when the mutation failed, leaving the draft.
    */
   readonly commitRestRequest: (requestId: string) => Promise<boolean>;
+  /** The REST counterpart of {@link ProjectStore.lendRequestDraft}. */
+  readonly lendRestDraft: (requestId: string) => Promise<(() => Promise<void>) | undefined>;
   /** Writes one REST request's staged edits and saves its project. A no-op when it is clean. */
   readonly saveRestRequest: (requestId: string, options?: SaveOptions) => Promise<void>;
   readonly removeRestRequest: (requestId: string) => Promise<void>;
@@ -698,6 +707,18 @@ type Indexes = Pick<
  * projects, so removing one project means removing exactly its entries — and recomputing is
  * both shorter and impossible to get subtly wrong.
  */
+/**
+ * The patch that puts back, in main's model, what `staged` changed on `saved`: each staged field's saved
+ * value, and `null` for one the saved request does not set (every optional patch field takes `null` to clear).
+ */
+function restorePatchOf<P extends object>(saved: object, staged: P): P {
+  const restore: Record<string, unknown> = {};
+  for (const key of Object.keys(staged)) {
+    restore[key] = (saved as Record<string, unknown>)[key] ?? null;
+  }
+  return restore as P;
+}
+
 /** One request's staged-but-unsaved patch, or `undefined` when the request is clean. */
 function draftPatchOf(requestId: string): RequestPatchWire | undefined {
   return useDraftsStore.getState().peekRequest(requestId);
@@ -1322,6 +1343,39 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     }
   };
 
+  /**
+   * Hands `staged` to main as an ordinary mutation and keeps it staged, answering what takes it back out. The
+   * take-back is skipped once the edit stopped being unsaved: a save while the send ran (the project is
+   * clean again, or the draft is gone) wrote it for real, and main must keep it.
+   */
+  const lendDraft = async <P extends object>(
+    requestId: string,
+    staged: P | undefined,
+    saved: object | undefined,
+    change: (patch: P) => ProjectChange,
+    stillStaged: () => boolean,
+  ): Promise<(() => Promise<void>) | undefined> => {
+    if (staged === undefined) {
+      return () => Promise.resolve();
+    }
+    const projectId = ownerOf(requestId);
+    const result = await ipc().project.mutate({ projectId, change: change(staged) });
+    if (!result.ok) {
+      showToast(asError(result.error).message);
+      return undefined;
+    }
+    apply(projectId, result.value.project);
+    return async () => {
+      if (saved === undefined || !stillStaged() || get().projects[projectId]?.dirty === false) {
+        return;
+      }
+      const back = await ipc().project.mutate({ projectId, change: change(restorePatchOf(saved, staged)) });
+      if (back.ok) {
+        apply(projectId, back.value.project);
+      }
+    };
+  };
+
   return {
     ...EMPTY,
 
@@ -1504,6 +1558,15 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       useDraftsStore.getState().clearRequestIfUnchanged(requestId, staged);
       return true;
     },
+
+    lendRequestDraft: async (requestId) =>
+      await lendDraft(
+        requestId,
+        useDraftsStore.getState().peekRequest(requestId),
+        get().projects[get().projectOf[requestId] ?? '']?.requests.find((request) => request.id === requestId),
+        (patch) => ({ kind: 'update-request', requestId, patch }),
+        () => useDraftsStore.getState().isRequestDirty(requestId),
+      ),
 
     saveRequest: async (requestId, options) => {
       if (hasScriptEditors()) {
@@ -2182,6 +2245,15 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       useDraftsStore.getState().clearRestRequestIfUnchanged(requestId, staged);
       return true;
     },
+
+    lendRestDraft: async (requestId) =>
+      await lendDraft(
+        requestId,
+        useDraftsStore.getState().peekRestRequest(requestId),
+        get().projects[get().projectOf[requestId] ?? '']?.restRequests.find((request) => request.id === requestId),
+        (patch) => ({ kind: 'update-rest-request', requestId, patch }),
+        () => useDraftsStore.getState().isRestRequestDirty(requestId),
+      ),
 
     saveRestRequest: async (requestId, options) => {
       if (hasScriptEditors()) {

@@ -184,6 +184,7 @@ export const COMMAND_IDS = [
   'editor.closeTabsToRight',
   'editor.closeSavedTabs',
   'editor.closeAllTabs',
+  'editor.reopenClosedTab',
   'editor.moveTabLeft',
   'editor.moveTabRight',
   'editor.nextValue',
@@ -254,6 +255,7 @@ export type CommandCategory =
 export const COMMAND_WHEN_SCOPES = {
   editor: 'an editor tab is open',
   workspace: 'a workspace is open',
+  closedTabs: 'a closed tab can be reopened',
   'editor.request': 'a request tab is active',
   'editor.rest': 'a REST request tab is active',
   'editor.grpc': 'a gRPC request tab is active',

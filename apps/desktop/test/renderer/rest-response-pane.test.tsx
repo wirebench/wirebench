@@ -13,6 +13,8 @@ import { RestResponsePane } from '../../src/renderer/features/rest-editor/respon
 import { emptyBodyMessage, hexLines } from '../../src/renderer/features/rest-editor/response/body-view.js';
 import { elapsedText, statusToneClass } from '../../src/renderer/features/rest-editor/response/status-line.js';
 import { useEditorsStore } from '../../src/renderer/state/editors.js';
+import { useHistoryStore } from '../../src/renderer/state/history.js';
+import type { HistoryEntryWire } from '@wirebench/wire/wire-types';
 import { usePreferencesStore } from '../../src/renderer/state/preferences.js';
 import { DEFAULT_PREFERENCES_WIRE } from '../../src/renderer/state/preferences-defaults.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
@@ -69,6 +71,60 @@ describe('statusToneClass', () => {
     expect(statusToneClass(302)).toContain('info');
     expect(statusToneClass(404)).toContain('warning');
     expect(statusToneClass(500)).toContain('danger');
+  });
+});
+
+/** A REST History entry of `rest-1`, as History recorded it. */
+function historyEntry(overrides: Partial<HistoryEntryWire> = {}): HistoryEntryWire {
+  return {
+    id: 'h-1',
+    kind: 'rest',
+    at: '2026-11-09T10:00:00.000Z',
+    projectId: 'p1',
+    requestId: 'rest-1',
+    requestName: 'List pets',
+    interfaceName: 'Pets',
+    operationName: '',
+    endpoint: 'https://api.example.test/pets',
+    soapVersion: '1.1',
+    method: 'GET',
+    status: 200,
+    durationMs: 42,
+    ok: true,
+    request: { envelopeXml: '', headers: [] },
+    response: { envelopeXml: '{"pets":[]}', rawHeaders: [], status: 200, statusText: 'OK' },
+    sizeBytes: 11,
+    ...overrides,
+  };
+}
+
+describe('the last recorded response (#915)', () => {
+  afterEach(() => {
+    useHistoryStore.setState({ entries: [] });
+  });
+
+  it('shows the newest response History holds for the request, marked as History’s, when nothing was sent here yet', () => {
+    useHistoryStore.setState({
+      entries: [
+        historyEntry({ id: 'other', requestId: 'rest-2' }),
+        // A failed send recorded no response: the one before it is the last response there is.
+        historyEntry({ id: 'failed', response: undefined, ok: false, status: undefined }),
+        historyEntry(),
+        historyEntry({ id: 'older', response: { envelopeXml: 'old', rawHeaders: [], status: 500, statusText: 'x' } }),
+      ],
+    });
+    mount();
+
+    expect(screen.getByTestId('rest-response-recorded-note').textContent).toContain('Last response, from History');
+    expect(screen.getByTestId('rest-response-recorded').textContent).toContain('200 OK');
+    expect(screen.queryByText('Send the request to see its response.')).toBeNull();
+  });
+
+  it('gives way to a send made in this tab', () => {
+    useHistoryStore.setState({ entries: [historyEntry()] });
+    mount(makeRestExchange());
+
+    expect(screen.queryByTestId('rest-response-recorded')).toBeNull();
   });
 });
 

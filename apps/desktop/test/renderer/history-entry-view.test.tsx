@@ -3,7 +3,7 @@
  * line, and a banner worded from the record itself when the transcript was cut.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { HistoryEntryView } from '../../src/renderer/features/history/history-entry-view.js';
 import { useHistoryStore } from '../../src/renderer/state/history.js';
@@ -277,5 +277,38 @@ describe('a plain REST entry (N04)', () => {
     const request = screen.getByTestId('history-request-headers');
     expect(request.textContent).toContain('Accept');
     expect(request.textContent).not.toContain('X-Off');
+  });
+});
+
+describe('an open entry while the History search leaves it out (#910)', () => {
+  it('keeps showing the entry, fetched by id', async () => {
+    const entry = sseEntry();
+    const get = vi.fn().mockResolvedValue({ ok: true, value: { entry } });
+    installWirebenchApi({ history: { get } });
+    useHistoryStore.setState({ entries: [], total: 0, query: 'nothing matches' });
+    render(<HistoryEntryView historyId="h-sse" />);
+    expect(await screen.findByTestId('sse-history-status')).toBeTruthy();
+    expect(get).toHaveBeenCalledWith({ id: 'h-sse' });
+    expect(screen.queryByText('This entry is no longer available.')).toBeNull();
+  });
+
+  it('keeps the entry on screen when a search narrows the list after it opened', async () => {
+    const entry = sseEntry();
+    installWirebenchApi({ history: { get: vi.fn().mockResolvedValue({ ok: true, value: { entry } }) } });
+    useHistoryStore.setState({ entries: [entry], total: 1, query: '' });
+    render(<HistoryEntryView historyId="h-sse" />);
+    await screen.findByTestId('sse-history-status');
+    act(() => useHistoryStore.setState({ entries: [], total: 0, query: 'zzz' }));
+    expect(screen.queryByText('This entry is no longer available.')).toBeNull();
+    expect(await screen.findByTestId('sse-history-status')).toBeTruthy();
+  });
+
+  it('says the entry is gone once History no longer has it', async () => {
+    installWirebenchApi({ history: { get: vi.fn().mockResolvedValue({ ok: true, value: {} }) } });
+    useHistoryStore.setState({ entries: [sseEntry()], total: 1, query: '' });
+    render(<HistoryEntryView historyId="h-sse" />);
+    await screen.findByTestId('sse-history-status');
+    act(() => useHistoryStore.setState({ entries: [], total: 0 }));
+    expect(await screen.findByText('This entry is no longer available.')).toBeTruthy();
   });
 });

@@ -4,7 +4,7 @@
  * agent-cookies need only the tab can see; Settings → This machine. And the desktop, which has no
  * `env.agent`, asks nothing and shows nothing.
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import type { AgentEnv, AgentPairingView, AgentStatus } from '../../src/preload/build-api.js';
 import { useDraftsStore } from '../../src/renderer/state/drafts.js';
@@ -97,6 +97,7 @@ interface Calls {
   readonly agentSend: ReturnType<typeof vi.fn>;
   readonly agentCancel: ReturnType<typeof vi.fn>;
   readonly domains: ReturnType<typeof vi.fn>;
+  readonly mutate: ReturnType<typeof vi.fn>;
 }
 
 function install(agent: AgentEnv | undefined, capabilities: readonly string[] = ['send:public']): Calls {
@@ -112,6 +113,7 @@ function install(agent: AgentEnv | undefined, capabilities: readonly string[] = 
     agentSend: vi.fn().mockResolvedValue({ ok: true, value: { ...makeRestExchange(), sentFrom: 'agent' } }),
     agentCancel: vi.fn().mockResolvedValue({ ok: true, value: { cancelled: true } }),
     domains: vi.fn().mockResolvedValue({ ok: true, value: { domains: [] } }),
+    mutate: vi.fn(),
   };
   const api = installWirebenchApi({
     request: {
@@ -125,6 +127,7 @@ function install(agent: AgentEnv | undefined, capabilities: readonly string[] = 
       preflight: vi.fn().mockResolvedValue({ ok: false, error: { code: 'x', message: 'x' } }),
     },
     exchanges: { recordAgentSend: calls.record, recordAgentFailure: calls.recordFailure },
+    project: { mutate: calls.mutate },
   } as never);
   Object.assign(api, {
     env: { e2e: false, osTheme: 'dark', host: 'browser', capabilities, ...(agent ? { agent } : {}) },
@@ -353,23 +356,76 @@ describe('a browser send', () => {
     },
   );
 
-  it('stops a send cancelled while its unsaved edit is committed', async () => {
+  it('stops a send cancelled while its unsaved edit is lent to the model, and takes the edit back', async () => {
     const calls = install(fakeAgent().env);
-    let release: (value: boolean) => void = () => undefined;
-    const commit = vi.spyOn(useProjectStore.getState(), 'commitRestRequest').mockReturnValue(
+    let release: (value: () => Promise<void>) => void = () => undefined;
+    const restore = vi.fn(() => Promise.resolve());
+    const lend = vi.spyOn(useProjectStore.getState(), 'lendRestDraft').mockReturnValue(
       new Promise((resolve) => {
         release = resolve;
       }),
     );
     const sending = useExchangesStore.getState().sendRest('rest-1');
-    await vi.waitFor(() => expect(commit).toHaveBeenCalled());
+    await vi.waitFor(() => expect(lend).toHaveBeenCalled());
     await useExchangesStore.getState().cancelRest('rest-1');
-    release(true);
+    release(restore);
     await sending;
-    commit.mockRestore();
+    lend.mockRestore();
     expect(calls.route).not.toHaveBeenCalled();
     expect(calls.sendRest).not.toHaveBeenCalled();
+    expect(restore).toHaveBeenCalledTimes(1);
     expect(useExchangesStore.getState().restByRequest['rest-1']?.error?.code).toBe('aborted');
+  });
+
+  it('keeps an unsaved edit on its tab after the send, and Don’t save still goes back to the saved version (#909)', async () => {
+    const calls = install(fakeAgent().env);
+    // main's model, as project.mutate changes it
+    let held = restRequestWire({ url: 'https://api.example.test/saved' });
+    const project = () =>
+      ({
+        id: 'p1',
+        name: 'P1',
+        dirty: true,
+        interfaces: [],
+        requests: [],
+        apis: [restApiWire()],
+        folders: [],
+        restRequests: [held],
+        grpcApis: [],
+        grpcRequests: [],
+        properties: {},
+        disabledProperties: [],
+        environments: [],
+        problems: [],
+        keystores: [],
+        wssOutgoing: [],
+        wssIncoming: [],
+      }) as never;
+    (calls.mutate as Mock<(request: { change: { patch: object } }) => Promise<unknown>>).mockImplementation(
+      ({ change }) => {
+        held = { ...held, ...change.patch };
+        return Promise.resolve({ ok: true, value: { project: project() } });
+      },
+    );
+    let urlRouted: string | undefined;
+    (calls.route as Mock<() => Promise<unknown>>).mockImplementation(() => {
+      urlRouted = held.url;
+      return Promise.resolve({ ok: true, value: { route: 'server', info: INFO } });
+    });
+    useProjectStore.getState().applySnapshot('p1', project());
+    useProjectStore.getState().editRestRequest('rest-1', { url: 'https://api.example.test/edited' });
+
+    await useExchangesStore.getState().sendRest('rest-1');
+
+    // The server routed the edit it is about to send…
+    expect(urlRouted).toBe('https://api.example.test/edited');
+    // …and the edit is still the tab's, unsaved, and out of main's model again.
+    expect(useDraftsStore.getState().isRestRequestDirty('rest-1')).toBe(true);
+    expect(useProjectStore.getState().restRequests['rest-1']?.url).toBe('https://api.example.test/edited');
+    expect(held.url).toBe('https://api.example.test/saved');
+
+    useProjectStore.getState().discardDraft('rest-1');
+    expect(useProjectStore.getState().restRequests['rest-1']?.url).toBe('https://api.example.test/saved');
   });
 
   it('sends to the agent when it holds cookies for the target host, though the server says server', async () => {
@@ -637,23 +693,28 @@ describe('an agent send, further', () => {
     expect(useProblemsStore.getState().items).toEqual([]);
   });
 
-  it('says a host the server cannot resolve may be one only this network knows, and offers to pair', async () => {
+  it('says a host the server cannot resolve was not found, offers pairing second, and raises no toast (#913)', async () => {
     const calls = install(fakeAgent('none').env);
     calls.route.mockResolvedValue({
       ok: true,
-      value: { route: 'agent', needs: ['private-target'], detail: { reason: 'unresolved' }, info: INFO },
+      value: {
+        route: 'agent',
+        needs: ['private-target'],
+        detail: { reason: 'unresolved' },
+        info: { ...INFO, targetHost: 'api.exmaple-typo.invalid' },
+      },
     });
     await useExchangesStore.getState().sendRest('rest-1');
     const error = useExchangesStore.getState().restByRequest['rest-1']?.error;
     expect(error).toMatchObject({
       code: 'send-needs-agent',
-      details: { needs: ['private-target'], reason: 'unresolved' },
+      details: { needs: ['private-target'], reason: 'unresolved', host: 'api.exmaple-typo.invalid' },
     });
-    expect(error?.message).toContain('does not resolve from the server');
-    expect(error?.message).toContain('only your network knows');
-    const [message, action] = vi.mocked(showToast).mock.calls.at(-1) ?? [];
-    expect(message).toContain('does not resolve from the server');
-    expect(action?.label).toBe('Pair this machine…');
+    expect(error?.message).toBe(
+      'api.exmaple-typo.invalid does not resolve from the server. If it is a name only your network knows, pair this machine, or start the paired agent, and send again.',
+    );
+    // The response pane is the one place it is said.
+    expect(showToast).not.toHaveBeenCalled();
   });
 
   it('uploads a 30 MiB response trimmed as History trims it, and shows the whole of it', async () => {

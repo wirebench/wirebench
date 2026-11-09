@@ -4,6 +4,7 @@ import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 import { browserDocumentTitle, useBrowserDocumentTitle } from '../../src/renderer/shell/document-title.js';
 import { TitleBar } from '../../src/renderer/shell/title-bar.js';
 import { useEditorsStore } from '../../src/renderer/state/editors.js';
+import { useProjectStore } from '../../src/renderer/state/project.js';
 
 vi.mock('../../src/renderer/features/environments/env-switcher.js', () => ({
   EnvSwitcher: () => <div data-testid="env-switcher-stub" />,
@@ -50,6 +51,22 @@ describe('browser tab title (#903)', () => {
       useEditorsStore.getState().showStart();
     });
     expect(document.title).toBe('wtest1 · Wirebench');
+  });
+
+  it('follows a rename of the tab in front (#916)', () => {
+    asBrowserTab(true);
+    const folder = (name: string) =>
+      ({ id: 'f1', name }) as unknown as ReturnType<typeof useProjectStore.getState>['folders'][string];
+    act(() => {
+      useProjectStore.setState({ folders: { f1: folder('Orders') } });
+      useEditorsStore.getState().open({ id: 'folder:f1', kind: 'folder', title: 'Orders', folderId: 'f1' });
+    });
+    render(<Probe workspace="wtest1" />);
+    expect(document.title).toBe('Orders · wtest1 · Wirebench');
+    act(() => {
+      useProjectStore.setState({ folders: { f1: folder('Create order') } });
+    });
+    expect(document.title).toBe('Create order · wtest1 · Wirebench');
   });
 
   it('leaves the desktop window title alone', () => {

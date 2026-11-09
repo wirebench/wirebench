@@ -131,6 +131,11 @@ test.describe('Preview tabs', () => {
     // A middle-click closes the last one.
     await editorTab(page, 'List items').click({ button: 'middle' });
     await expect(editorTabs(page)).toHaveCount(0);
+
+    // Reopen Closed Tab brings it back (#912).
+    await page.keyboard.press('ControlOrMeta+Shift+T');
+    await expect(editorTab(page, 'List items')).toBeVisible();
+    await expect(page.getByTestId('rest-breadcrumb-name')).toHaveText('List items');
   });
 
   test('a double-click keeps the tab, and the setting turns previews off', async () => {

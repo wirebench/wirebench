@@ -113,6 +113,9 @@ function offerSecretAction(requestId: string, error: IpcError): void {
  */
 function offerAgentAction(error: IpcError): void {
   if (error.code !== 'send-needs-agent') return;
+  // A host the server cannot resolve is most likely mistyped: the response pane says so, and no toast
+  // repeats it with a pairing offer first (#913).
+  if (error.details?.['reason'] === 'unresolved') return;
   showToast(error.message, {
     label: 'Pair this machine…',
     onClick: () => {
@@ -121,31 +124,32 @@ function offerAgentAction(error: IpcError): void {
   });
 }
 
+type RouteAnswer = { readonly kind: 'server' | 'agent' } | { readonly kind: 'error'; readonly error: IpcError };
+
 /**
  * Where a browser tab's send goes (hosted edition spec §18.4): `server` as today, `agent` through the paired
  * agent, or a failure to show (no agent connected, or the server refused the route). The desktop has no
- * `env.agent` ({@link routingActive}) and answers `server` without asking anything. An unsaved edit is committed to the
- * model first, since the server routes, and builds the agent's bundle, from the model it holds.
+ * `env.agent` ({@link routingActive}) and answers `server` without asking anything. An unsaved edit is lent to the
+ * model first, since the server routes, and builds the agent's bundle, from the model it holds; it stays staged, so
+ * the tab keeps its unsaved mark, and `restore` takes it back out of the model once the send is done.
  */
 async function sendRouteFor(
   requestId: string,
   sendId: string,
-  commit: (requestId: string) => Promise<boolean>,
-): Promise<{ readonly kind: 'server' | 'agent' } | { readonly kind: 'error'; readonly error: IpcError }> {
+  lend: (requestId: string) => Promise<(() => Promise<void>) | undefined>,
+): Promise<RouteAnswer & { readonly restore?: () => Promise<void> }> {
   const agent = agentEnv();
   if (agent === undefined || !routingActive()) return { kind: 'server' };
   // Tracked before the first await: a cancel during the commit, the route or the bundle stops the send.
   trackRoutedSend(sendId);
-  const settle = (
-    answer: { readonly kind: 'server' | 'agent' } | { readonly kind: 'error'; readonly error: IpcError },
-  ): typeof answer => {
+  const restore = await lend(requestId);
+  const settle = (answer: RouteAnswer): RouteAnswer & { readonly restore?: () => Promise<void> } => {
     // Only an agent send stays tracked: a server send's cancel goes to the server, as before.
     if (answer.kind !== 'agent') releaseRoutedSend(sendId);
-    return answer;
+    return restore === undefined ? answer : { ...answer, restore };
   };
-  const committed = await commit(requestId);
   if (routedSendCancelled(sendId)) return settle({ kind: 'error', error: ABORTED });
-  if (!committed) {
+  if (restore === undefined) {
     return settle({
       kind: 'error',
       error: { code: 'commit-failed', message: 'The unsaved edit could not be applied' },
@@ -160,7 +164,10 @@ async function sendRouteFor(
   const selection = await agent.selectFor(agentCapabilitiesFor(route.value.needs));
   if (routedSendCancelled(sendId)) return settle({ kind: 'error', error: ABORTED });
   if (!selection.connected) {
-    return settle({ kind: 'error', error: sendNeedsAgentError(route.value.needs, route.value.unresolved === true) });
+    return settle({
+      kind: 'error',
+      error: sendNeedsAgentError(route.value.needs, route.value.unresolved === true, route.value.info?.targetHost),
+    });
   }
   if (selection.missing.includes('team-secrets'))
     return settle({ kind: 'error', error: teamSecretNeedsDesktopError() });
@@ -1224,7 +1231,7 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
         };
       });
 
-      const route = await sendRouteFor(requestId, sendId, (id) => useProjectStore.getState().commitRestRequest(id));
+      const route = await sendRouteFor(requestId, sendId, (id) => useProjectStore.getState().lendRestDraft(id));
 
       // The draft, not a resolved URL: main owns the environment, the model and the keychain, so it
       // is main that decides where this goes and what it carries.
@@ -1256,6 +1263,8 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
                       ...(confirmed ? { confirmed: true } : {}),
                     }),
               );
+      // The lent edit leaves main's model again: it is still the tab's, unsaved.
+      await route.restore?.();
 
       // A cancel may already have cleared this send; only settle it if it is still ours.
       if (get().restByRequest[requestId]?.sendId !== sendId) {
@@ -1457,9 +1466,10 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
         return;
       }
 
-      const route = await sendRouteFor(requestId, sendId, (id) => useProjectStore.getState().commitRequest(id));
+      const route = await sendRouteFor(requestId, sendId, (id) => useProjectStore.getState().lendRequestDraft(id));
       // A cancel while the route was asked for has already settled this send.
       if (get().byRequest[requestId]?.sendId !== sendId) {
+        await route.restore?.();
         return;
       }
       const result =
@@ -1483,6 +1493,8 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
                       ...(confirmed ? { confirmed: true } : {}),
                     }),
               );
+      // The lent edit leaves main's model again: it is still the tab's, unsaved.
+      await route.restore?.();
 
       // A cancel may have already cleared/overwritten this send; only settle it if it's still ours.
       if (get().byRequest[requestId]?.sendId !== sendId) {

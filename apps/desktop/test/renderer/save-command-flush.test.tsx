@@ -159,6 +159,31 @@ describe('item.save, invoked the way the application menu invokes it', () => {
   });
 });
 
+describe('item.save with a tab that has nothing of its own to save (#917)', () => {
+  it('saves the projects, as Save All does, with the Start page in front', async () => {
+    useEditorsStore.setState({ activeId: undefined });
+
+    await expect(runCommand('item.save', context)).resolves.toBe(true);
+
+    await waitFor(() => {
+      expect(save).toHaveBeenCalled();
+    });
+  });
+
+  it('saves the projects with a History entry tab in front', async () => {
+    useEditorsStore.setState({
+      tabs: [{ id: 'history:e1', kind: 'history', title: 'GET /orders', historyId: 'e1' }],
+      activeId: 'history:e1',
+    });
+
+    await expect(runCommand('item.save', context)).resolves.toBe(true);
+
+    await waitFor(() => {
+      expect(save).toHaveBeenCalled();
+    });
+  });
+});
+
 describe('Save All', () => {
   it('commits every staged edit before writing, rather than saving a model that never saw them', async () => {
     render(<RequestEditor requestId="req-1" />);

@@ -50,20 +50,23 @@ export function isTabDirty(tab: EditorTab): boolean {
   return id !== undefined && contribution?.dirty?.(id, useDraftsStore.getState()) === true;
 }
 
-/** A tab's current name, read the way the strip reads it, falling back to the title it opened with. */
-export function tabName(tab: EditorTab): string {
+/** A tab's entity's current name, read the way the strip reads it, or `undefined` when it has none (or is gone). */
+function liveTitle(tab: EditorTab): string | undefined {
   const contribution = TAB_KINDS[tab.kind];
   const id = contribution === undefined ? undefined : entityIdOf(tab, contribution);
-  const live =
-    id === undefined
-      ? undefined
-      : contribution?.title(id, {
-          project: useProjectStore.getState(),
-          workspaceEnvironments: useWorkspaceStore.getState().workspace?.environments ?? [],
-          hookNames: {},
-          scheduleNames: {},
-        });
-  return live ?? tab.title;
+  return id === undefined
+    ? undefined
+    : contribution?.title(id, {
+        project: useProjectStore.getState(),
+        workspaceEnvironments: useWorkspaceStore.getState().workspace?.environments ?? [],
+        hookNames: {},
+        scheduleNames: {},
+      });
+}
+
+/** A tab's current name, read the way the strip reads it, falling back to the title it opened with. */
+export function tabName(tab: EditorTab): string {
+  return liveTitle(tab) ?? tab.title;
 }
 
 export type UnsavedAnswer = 'save' | 'discard' | 'cancel';
@@ -205,7 +208,7 @@ export async function closeTabs(ids: readonly string[]): Promise<void> {
         useProjectStore.getState().discardDraft(requestId);
       }
     }
-    useEditorsStore.getState().close(id);
+    useEditorsStore.getState().close(id, { remember: true });
   }
 }
 
@@ -213,4 +216,28 @@ export async function closeTabs(ids: readonly string[]): Promise<void> {
 export async function closeTabsIn(scope: CloseScope, id?: string): Promise<void> {
   const { tabs, displayedSet, activeId } = useEditorsStore.getState();
   await closeTabs(closeTargets(tabsInSet(tabs, displayedSet), id ?? activeId, scope, isTabDirty));
+}
+
+/**
+ * Whether a closed tab can come back: a tab that names a saved thing (a request, an API, an environment…)
+ * only while that thing still exists; any other tab (a History entry, a diff, a Run tab) as it was.
+ */
+function stillThere(tab: EditorTab): boolean {
+  const contribution = TAB_KINDS[tab.kind];
+  return contribution?.persisted !== true || liveTitle(tab) !== undefined;
+}
+
+/**
+ * Reopens the tab closed last whose thing still exists, skipping (and forgetting) those whose request or API
+ * was deleted since, or that are open again already. Returns whether a tab came back.
+ */
+export function reopenClosedTab(): boolean {
+  const editors = useEditorsStore.getState();
+  for (let tab = editors.takeClosed(); tab !== undefined; tab = editors.takeClosed()) {
+    // One open again already (from the Explorer, say) is not brought back twice.
+    if (!stillThere(tab) || useEditorsStore.getState().tabs.some((open) => open.id === tab.id)) continue;
+    editors.open({ ...tab, title: liveTitle(tab) ?? tab.title });
+    return true;
+  }
+  return false;
 }

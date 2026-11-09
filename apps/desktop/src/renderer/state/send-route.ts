@@ -243,17 +243,22 @@ export function teamSecretNeedsDesktopError(): IpcError {
 
 /**
  * The error a send that needs the agent answers when none is connected. `unresolved` says the target's host
- * does not resolve from the server, so it may be a name only the person's network knows.
+ * does not resolve from the server: most likely a typo, so the message leads with the host not being found,
+ * and only then offers pairing for a name only the person's network knows. `host` names it when known.
  */
-export function sendNeedsAgentError(needs: readonly SendNeed[], unresolved = false): IpcError {
+export function sendNeedsAgentError(needs: readonly SendNeed[], unresolved = false, host?: string): IpcError {
   const named = needs.map((need) => SEND_NEED_LABELS[need]).join(', ');
   const why = unresolved
-    ? 'The host this request goes to does not resolve from the server: it may be a name only your network knows, which only your machine can send to. No Wirebench agent is connected. Pair this machine, or start the paired agent, and send again.'
+    ? `${host ?? 'The host'} does not resolve from the server. If it is a name only your network knows, pair this machine, or start the paired agent, and send again.`
     : `This request must be sent from your machine (it needs ${named}), and no Wirebench agent is connected. Pair this machine, or start the paired agent, and send again.`;
   return {
     code: 'send-needs-agent',
     message: why,
-    details: { needs: [...needs], ...(unresolved ? { reason: 'unresolved' } : {}) },
+    details: {
+      needs: [...needs],
+      ...(unresolved ? { reason: 'unresolved' } : {}),
+      ...(unresolved && host !== undefined ? { host } : {}),
+    },
   };
 }
 

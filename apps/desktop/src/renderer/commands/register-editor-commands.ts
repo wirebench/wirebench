@@ -12,7 +12,7 @@ import { tabsInSet } from '../state/tab-sets.js';
 import { useEditorsStore } from '../state/editors.js';
 import { usePreferencesStore } from '../state/preferences.js';
 import { useProjectStore } from '../state/project.js';
-import { closeTabsIn } from '../shell/tab-close.js';
+import { closeTabsIn, reopenClosedTab } from '../shell/tab-close.js';
 import { activeRequestId, ui } from './command-helpers.js';
 
 /** Registers the `editor.*` commands, which act on the mounted request editor and its tab. */
@@ -159,6 +159,16 @@ export function registerEditorCommands(): void {
       },
     });
   }
+
+  // ⌘⇧T (⌥⇧T in a browser tab): brings back the tabs closed last, newest first (#912).
+  registerCommand({
+    ...catalogEntry('editor.reopenClosedTab'),
+    when: () => useEditorsStore.getState().closed.length > 0,
+    whenScope: 'closedTabs',
+    run: () => {
+      reopenClosedTab();
+    },
+  });
 
   // ⌘⇧PageUp/PageDown. Shifts the active tab one place along the strip; the Start tab is not
   // in the store, so it always stays first.
