@@ -127,6 +127,7 @@ import { panelDragStep } from './panel-drag.js';
 import { SlideOver } from './slide-over.js';
 import { StatusBar } from './status-bar.js';
 import { TitleBar } from './title-bar.js';
+import { NarrowWindowNote, useNarrowWindow } from './narrow-window.js';
 import { subscribeToMocks } from '../state/mock-runs.js';
 import { subscribeToRunnerProgress } from '../state/runner.js';
 import { subscribeToSequenceProgress } from '../state/sequence-runs.js';
@@ -553,6 +554,8 @@ export function AppShell() {
   }, [openPalette, openWorkspaceId]);
 
   useTheme(theme, palette);
+  // A browser tab narrower than the workbench can lay out shows a note instead; the workbench stays mounted, hidden.
+  const narrow = useNarrowWindow();
 
   const context: CommandContext = useMemo(
     () => ({
@@ -587,7 +590,8 @@ export function AppShell() {
 
   return (
     <TooltipPrimitive.Provider delayDuration={400}>
-      <div className="flex h-full flex-col bg-surface-base text-fg-default">
+      {narrow && <NarrowWindowNote />}
+      <div className={`${narrow ? 'hidden' : 'flex'} h-full flex-col bg-surface-base text-fg-default`}>
         <TitleBar
           platform={platform}
           workspaceName={workspace?.name ?? null}
