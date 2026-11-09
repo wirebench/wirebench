@@ -11,6 +11,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Group, Panel, Separator } from 'react-resizable-panels';
 import { Breadcrumb } from '../../components/breadcrumb.js';
+import { requestLocation, useRequestTrail } from '../explorer/request-trail.js';
 import { Tabs } from '../../components/tabs.js';
 import { shortcutFor } from '../../lib/keybindings.js';
 import { detectPlatform } from '../../lib/platform.js';
@@ -64,19 +65,11 @@ export interface WsEditorProps {
 /** The path line for one WebSocket request. */
 function WsBreadcrumb({ requestId }: { readonly requestId: string }) {
   const request = useProjectStore((state) => state.wsRequests[requestId]);
-  const projectName = useProjectStore((state) => {
-    const projectId = state.projectOf[requestId];
-    return projectId === undefined ? undefined : state.projects[projectId]?.name;
-  });
-  const apiName = useProjectStore((state) => (request === undefined ? undefined : state.wsApis[request.apiId]?.name));
-  const folderMap = useProjectStore((state) => state.folders);
-  const folders = useMemo(() => folderChainOf(folderMap, request?.folderId), [folderMap, request?.folderId]);
+  const projectId = useProjectStore((state) => state.projectOf[requestId]);
+  const trail = useRequestTrail(requestLocation(request, projectId));
   if (request === undefined) {
     return null;
   }
-  const trail = [projectName, apiName, ...folders.map((folder) => folder.name)].filter(
-    (segment): segment is string => segment !== undefined && segment.length > 0,
-  );
   return (
     <Breadcrumb
       label="Request path"

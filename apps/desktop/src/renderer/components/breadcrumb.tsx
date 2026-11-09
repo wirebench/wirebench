@@ -14,23 +14,34 @@ import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
  */
 const FOLD_FROM = 4;
 
+/** One segment of a trail: its text, and what a click on it does (open that part's tab), if anything. */
+export interface TrailSegment {
+  readonly text: string;
+  readonly open?: () => void;
+}
+
 /** One part of a drawn trail: a segment, or the middle segments folded behind "…". */
 export type TrailPart =
-  | { readonly kind: 'segment'; readonly text: string; readonly whole: boolean }
-  | { readonly kind: 'folded'; readonly segments: readonly string[] };
+  | { readonly kind: 'segment'; readonly segment: TrailSegment; readonly whole: boolean }
+  | { readonly kind: 'folded'; readonly segments: readonly TrailSegment[] };
+
+function segmentOf(entry: string | TrailSegment): TrailSegment {
+  return typeof entry === 'string' ? { text: entry } : entry;
+}
 
 /**
  * The trail as drawn. A short one is every segment, each free to truncate. From {@link FOLD_FROM}
  * segments on, the first stays whole and the rest fold into one "…" whose menu lists them, so a
  * request four folders down reads "Payments / … / Name" rather than "Pay… / Swa… / v2… / le… / le…".
  */
-export function foldedTrail(trail: readonly string[]): readonly TrailPart[] {
-  if (trail.length < FOLD_FROM) {
-    return trail.map((text) => ({ kind: 'segment', text, whole: false }));
+export function foldedTrail(trail: readonly (string | TrailSegment)[]): readonly TrailPart[] {
+  const segments = trail.map(segmentOf);
+  if (segments.length < FOLD_FROM) {
+    return segments.map((segment) => ({ kind: 'segment', segment, whole: false }));
   }
-  const [first = '', ...rest] = trail;
+  const [first = { text: '' }, ...rest] = segments;
   return [
-    { kind: 'segment', text: first, whole: true },
+    { kind: 'segment', segment: first, whole: true },
     { kind: 'folded', segments: rest },
   ];
 }
@@ -40,7 +51,7 @@ function FoldedSegments({
   segments,
   testidPrefix,
 }: {
-  readonly segments: readonly string[];
+  readonly segments: readonly TrailSegment[];
   readonly testidPrefix: string;
 }) {
   return (
@@ -50,7 +61,7 @@ function FoldedSegments({
           type="button"
           data-testid={`${testidPrefix}-folded`}
           aria-label={`Show the ${String(segments.length)} folded path segments`}
-          title={segments.join(' / ')}
+          title={segments.map((segment) => segment.text).join(' / ')}
           className="rounded px-1 text-fg-subtle hover:bg-surface-hover hover:text-fg-default"
         >
           …
@@ -68,8 +79,9 @@ function FoldedSegments({
               // Indented one step per level, so the menu reads as the path it folds.
               style={{ paddingLeft: `${String(8 + index * 12)}px` }}
               className="truncate rounded py-1.5 pr-2 text-sm text-fg-default outline-none data-[highlighted]:bg-accent-muted"
+              {...(segment.open !== undefined ? { onSelect: segment.open } : {})}
             >
-              {segment}
+              {segment.text}
             </DropdownMenu.Item>
           ))}
         </DropdownMenu.Content>
@@ -81,8 +93,11 @@ function FoldedSegments({
 export interface BreadcrumbProps {
   /** Accessible name of the nav landmark, e.g. `Request path`. */
   readonly label: string;
-  /** The segments before the name, outermost first. Empty segments are the caller's to filter. */
-  readonly trail: readonly string[];
+  /**
+   * The segments before the name, outermost first. A segment that can `open` is a button: a click opens that
+   * part's tab. Empty segments are the caller's to filter.
+   */
+  readonly trail: readonly (string | TrailSegment)[];
   /** The name of the thing being edited, shown last and renameable. */
   readonly name: string;
   /** Called with a trimmed, changed, non-empty name. Omit to make the name read-only. */
@@ -113,9 +128,20 @@ export function Breadcrumb({ label, trail, name, onRename, badge, testidPrefix }
             {part.kind === 'segment' ? (
               <li
                 className={`${part.whole ? 'max-w-64 shrink-0' : 'min-w-0'} truncate text-fg-subtle`}
-                title={part.text}
+                title={part.segment.text}
               >
-                {part.text}
+                {part.segment.open === undefined ? (
+                  part.segment.text
+                ) : (
+                  <button
+                    type="button"
+                    data-testid={`${testidPrefix}-segment`}
+                    onClick={part.segment.open}
+                    className="max-w-full truncate rounded hover:text-fg-default hover:underline"
+                  >
+                    {part.segment.text}
+                  </button>
+                )}
               </li>
             ) : (
               <li className="shrink-0">

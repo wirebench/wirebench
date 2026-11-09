@@ -11,12 +11,13 @@
 import { lazy, Suspense, useCallback, useMemo, useState } from 'react';
 import { Group, Panel, Separator } from 'react-resizable-panels';
 import { Breadcrumb } from '../../components/breadcrumb.js';
+import { requestLocation, useRequestTrail } from '../explorer/request-trail.js';
 import { Tabs } from '../../components/tabs.js';
 import { shortcutFor } from '../../lib/keybindings.js';
 import { detectPlatform } from '../../lib/platform.js';
 import { useExchangesStore } from '../../state/exchanges.js';
 import type { McpExchangeState } from '../../state/exchanges.js';
-import { folderChainOf, useProjectStore } from '../../state/project.js';
+import { useProjectStore } from '../../state/project.js';
 import { assertionsBadge, AssertionsTab } from '../assertions/assertions-tab.js';
 import { REQUEST_KINDS } from '../assertions/assertion-table.js';
 import { groupOrientation, useEditorLayout } from '../request-editor/layout.js';
@@ -47,21 +48,11 @@ export interface McpEditorProps {
 /** The path line for one MCP request. */
 function McpBreadcrumb({ requestId }: { readonly requestId: string }) {
   const request = useProjectStore((state) => state.mcpRequests[requestId]);
-  const projectName = useProjectStore((state) => {
-    const projectId = state.projectOf[requestId];
-    return projectId === undefined ? undefined : state.projects[projectId]?.name;
-  });
-  const serverName = useProjectStore((state) =>
-    request === undefined ? undefined : state.mcpServers[request.apiId]?.name,
-  );
-  const folderMap = useProjectStore((state) => state.folders);
-  const folders = useMemo(() => folderChainOf(folderMap, request?.folderId), [folderMap, request?.folderId]);
+  const projectId = useProjectStore((state) => state.projectOf[requestId]);
+  const trail = useRequestTrail(requestLocation(request, projectId));
   if (request === undefined) {
     return null;
   }
-  const trail = [projectName, serverName, ...folders.map((folder) => folder.name)].filter(
-    (segment): segment is string => segment !== undefined && segment.length > 0,
-  );
   return (
     <Breadcrumb
       label="Request path"
