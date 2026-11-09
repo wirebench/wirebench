@@ -1,4 +1,5 @@
 import { MAX_DISPLAY_NAME_LENGTH, MIN_PASSWORD_LENGTH } from '@wirebench/engine';
+import { SERVER_PAGE_STYLE } from './page-style.js';
 
 /**
  * The invitation page (§3.1): static text, no script, no external asset, and the
@@ -55,11 +56,7 @@ export const INVITE_FORM_CSP =
 /** The shortest password the server takes (identity spec §3.1), said on the form before it is refused. */
 const PASSWORD_HINT = `At least ${MIN_PASSWORD_LENGTH} characters.`;
 
-const STYLE =
-  'body{font:15px/1.5 system-ui,sans-serif;margin:3rem auto;max-width:36rem;padding:0 1rem;color:#222}code{word-break:break-all}' +
-  'label{display:block;margin:.75rem 0 .25rem}input{box-sizing:border-box;width:100%;padding:.4rem;font:inherit}' +
-  'button,a.method{display:block;box-sizing:border-box;width:100%;margin-top:1rem;padding:.5rem;font:inherit;text-align:center}' +
-  '.message{color:#a00}.hint{color:#555;font-size:13px;margin:.25rem 0 0}';
+const STYLE = SERVER_PAGE_STYLE;
 
 function desktopSteps(serverUrl: string, secret: string): string {
   return `<ol>
@@ -122,12 +119,12 @@ ${desktopSteps(input.serverUrl, input.secret)}`
 <p>This invitation has expired or was already used. Ask a server admin for a new one.</p>`;
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Wirebench Server</title>
 <style>${STYLE}</style>
-</head><body><h1>Wirebench Server</h1>${body}</body></html>`;
+</head><body><main class="wide"><h1>Wirebench Server</h1>${body}</main></body></html>`;
 }
 
 /** What the browser sees after the IdP redirect: one line, then it is the desktop's turn. */
 export function renderReturnPage(message: string): string {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Wirebench Server</title>
-<style>body{font:15px/1.5 system-ui,sans-serif;margin:3rem auto;max-width:36rem;padding:0 1rem;color:#222}</style>
-</head><body><h1>Wirebench Server</h1><p>${escapeHtml(message)}</p></body></html>`;
+<style>${STYLE}</style>
+</head><body><main class="wide"><h1>Wirebench Server</h1><p>${escapeHtml(message)}</p></main></body></html>`;
 }

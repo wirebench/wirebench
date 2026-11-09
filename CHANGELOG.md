@@ -17,6 +17,8 @@ All notable changes to this project are documented here. The format follows
 - **No more false "changed on disk" banner after creating a project (#886).** On macOS the project's own first write
   could reach its new folder watcher and be reported as an outside change, offering *Discard and reload* over real
   unsaved edits.
+- **Server: the sign-in, add account, second-step and invitation pages look like Wirebench (#887).** They use the
+  app's colours in dark and light instead of a bare white form.
 
 ## [7.0.0] - 2026-11-09
 
