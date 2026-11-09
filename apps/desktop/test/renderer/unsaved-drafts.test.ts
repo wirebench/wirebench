@@ -18,7 +18,11 @@ describe('unsaved request drafts across sessions', () => {
   beforeEach(() => {
     showToast.mockClear();
     useDraftsStore.getState().reset();
-    useProjectStore.setState({ requests: { r1: makeDraft({ id: 'r1', envelopeXml: '<saved/>' }) } });
+    useProjectStore.setState({
+      requests: { r1: makeDraft({ id: 'r1', envelopeXml: '<saved/>' }) },
+      projectOf: { r1: 'p1' },
+      projects: { p1: { id: 'p1', name: 'Calculator' } as never },
+    });
   });
 
   afterEach(() => {
@@ -103,7 +107,7 @@ describe('unsaved request drafts across sessions', () => {
     expect(useProjectStore.getState().requests['r1']?.envelopeXml).toBe('<restored/>');
     expect(useDraftsStore.getState().isRequestDirty('r1')).toBe(true);
     expect(useDraftsStore.getState().isRequestDirty('gone')).toBe(false);
-    expect(showToast).toHaveBeenCalledWith('Restored an unsaved request edit');
+    expect(showToast).toHaveBeenCalledWith('Restored unsaved changes to Request 1 in Calculator');
     expect(showToast).toHaveBeenCalledWith("Dropped an unsaved request edit: its request doesn't exist anymore");
   });
 
@@ -122,10 +126,10 @@ describe('unsaved request drafts across sessions', () => {
     expect(showToast).not.toHaveBeenCalled();
   });
 
-  it('shows one notice per restored project, naming what changed on disk or was dropped', () => {
+  it('shows one notice per restored project, naming its requests and what changed on disk or was dropped', () => {
     applyRestored('w1', {
       workspaceId: 'w1',
-      drafts: {},
+      drafts: { r1: { envelopeXml: '<restored/>' } },
       restDrafts: {},
       grpcDrafts: {},
       wsDrafts: {},
@@ -143,8 +147,24 @@ describe('unsaved request drafts across sessions', () => {
 
     expect(showToast).toHaveBeenCalledTimes(1);
     expect(showToast).toHaveBeenCalledWith(
-      'Restored unsaved changes in Calculator — also changed on disk, kept yours: Add — deleted on disk, dropped: Old',
+      'Restored unsaved changes to Request 1 in Calculator — also changed on disk, kept yours: Add — deleted on disk, dropped: Old',
     );
+  });
+
+  it('says nothing when no restored change leaves a mark on a request (#899)', () => {
+    applyRestored('w1', {
+      workspaceId: 'w1',
+      // A draft equal to what is saved: laid back, it would mark nothing.
+      drafts: { r1: { envelopeXml: '<saved/>' } },
+      restDrafts: {},
+      grpcDrafts: {},
+      wsDrafts: {},
+      mcpDrafts: {},
+      notices: [{ projectId: 'p1', projectName: 'Calculator', status: 'restored', conflicts: [], dropped: [] }],
+    });
+
+    expect(useDraftsStore.getState().isRequestDirty('r1')).toBe(false);
+    expect(showToast).not.toHaveBeenCalled();
   });
 
   it('says plainly when a project’s unsaved changes could not be restored', () => {
@@ -160,6 +180,21 @@ describe('unsaved request drafts across sessions', () => {
     ).toBe("Couldn't restore unsaved changes in Calculator: bad yaml");
     expect(
       noticeMessage({ projectId: 'p1', projectName: 'Calculator', status: 'restored', conflicts: [], dropped: [] }),
-    ).toBe('Restored unsaved changes in Calculator');
+    ).toBeUndefined();
+    expect(
+      noticeMessage({ projectId: 'p1', projectName: 'Calculator', status: 'restored', conflicts: [], dropped: [] }, [
+        'Add',
+        'Subtract',
+        'Multiply',
+        'Divide',
+        'Modulo',
+      ]),
+    ).toBe('Restored unsaved changes to Add, Subtract, Multiply and 2 more in Calculator');
+    expect(
+      noticeMessage({ projectId: 'p1', projectName: 'Calculator', status: 'restored', conflicts: [], dropped: [] }, [
+        'Add',
+        'Subtract',
+      ]),
+    ).toBe('Restored unsaved changes to Add and Subtract in Calculator');
   });
 });

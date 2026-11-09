@@ -39,14 +39,12 @@ import {
 import { signIn } from './sessions.js';
 import { sendSignInPage } from './sign-in-page.js';
 import { hashSecret, hashToken, mintSecret, newId } from './tokens.js';
+import { browserDeviceName } from './device-name.js';
 import type { TenantQuerier } from '../tenancy/tenant-db.js';
 import { primaryUrl, tenantUrl, type UrlConfig } from '../tenancy/urls.js';
 
 /** §2 of the identity spec: a pending flow lives ten minutes. */
 export const BROWSER_FLOW_TTL_MS = 10 * 60 * 1000;
-
-/** What a browser token's row is called on the user's device list. */
-export const BROWSER_DEVICE_NAME = 'Web browser';
 
 const MAX_REDIRECT_LENGTH = 2048;
 
@@ -278,7 +276,8 @@ export async function finishBrowserSignIn(
   // `replace`, or an `add` by the person already active: the presented session ends, as before accounts.
   if (endActive) await endPresentedSession(env, request, source);
   for (const session of end) await revokeSession(env, request, session, source);
-  const { token } = await signIn(env, request.tenant, user, method, BROWSER_DEVICE_NAME, source, 'browser');
+  const deviceName = browserDeviceName(request.headers['user-agent']);
+  const { token } = await signIn(env, request.tenant, user, method, deviceName, source, 'browser');
   setSessionCookie(reply, url, token, Math.floor(identitySettings(config).tokenMaxMs / 1000));
   if (presented.presented || keep.length > 0) writeRemembered(env, request, reply, keep);
   return reply
@@ -340,7 +339,8 @@ export async function handOffAddedSignIn(
   redirectTo: string,
 ): Promise<FastifyReply> {
   const url = tenantUrl(env.ctx.config, request);
-  const { token } = await signIn(env, request.tenant, user, 'saml', BROWSER_DEVICE_NAME, source, 'browser');
+  const deviceName = browserDeviceName(request.headers['user-agent']);
+  const { token } = await signIn(env, request.tenant, user, 'saml', deviceName, source, 'browser');
   setAddedCookie(reply, url, token);
   const onward = safeRedirectPath(redirectTo, url);
   return reply

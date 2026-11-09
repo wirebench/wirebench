@@ -34,9 +34,24 @@ describe('AccountStatusItem', () => {
     cleanup();
   });
 
-  it('renders nothing while no server is known, and nothing when the preference is off', () => {
+  it('with no server known shows Sign in, which opens the dialog asking for a server (#897)', () => {
+    render(<AccountStatusItem />);
+    const item = screen.getByTestId('status-bar-account');
+    expect(item.getAttribute('data-state')).toBe('signed-out');
+    expect(item.textContent).toContain('Sign in');
+    fireEvent.click(item);
+    expect(useUiStore.getState().signInDialog).toEqual({ open: true, url: undefined });
+  });
+
+  it('renders nothing with no server known where the window cannot sign in, nor when the preference is off', () => {
+    const api = installWirebenchApi();
+    Object.defineProperty(api, 'env', {
+      configurable: true,
+      value: { e2e: false, osTheme: 'dark', host: 'electron', capabilities: ['send:public'] },
+    });
     const { rerender } = render(<AccountStatusItem />);
     expect(screen.queryByTestId('status-bar-account')).toBeNull();
+    installWirebenchApi();
     useAccountStore.setState({ servers: [account('https://wb.test')] });
     usePreferencesStore.setState({
       preferences: { ...DEFAULT_PREFERENCES_WIRE, accounts: { showInStatusBar: false } },

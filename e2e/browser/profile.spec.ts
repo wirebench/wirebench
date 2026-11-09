@@ -105,7 +105,7 @@ async function signIn(identifier: string): Promise<void> {
 }
 
 async function openProfile(): Promise<Locator> {
-  await runCommand(page, 'Account: Account settings');
+  await runCommand(page, 'Account: View profile');
   const user = page.getByTestId('user-settings');
   await expect(user).toBeVisible({ timeout: 20_000 });
   await expect(user.getByTestId('user-profile-email')).toHaveValue(seed.email);

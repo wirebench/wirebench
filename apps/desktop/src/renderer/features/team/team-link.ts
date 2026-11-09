@@ -7,7 +7,7 @@
  */
 import { isBrowserTab } from '../../lib/capabilities.js';
 import { activeAccount, useAccountStore } from '../../state/account.js';
-import { useActiveTeamStore } from '../../state/active-team.js';
+import { activeTeamIdOn } from '../../state/active-team.js';
 import { ipc } from '../../state/ipc-client.js';
 import { useUiStore, type TeamDialogTarget } from '../../state/ui.js';
 import { useWorkspaceStore } from '../../state/workspace.js';
@@ -129,17 +129,11 @@ function chooseServer(
   const shared = share?.kind === 'server' ? share.server : undefined;
   const chosen = url ?? activeAccount(servers, active)?.url;
   if (chosen === undefined) return undefined;
-  const team = teamId ?? activeTeamOn(chosen);
+  const team = teamId ?? activeTeamIdOn(chosen);
   if (team !== undefined) return { url: chosen, target: { teamId: team } };
   return shared !== undefined && sameServer(shared.url, chosen)
     ? { url: chosen, target: { workspaceId: shared.workspaceId } }
     : { url: chosen };
-}
-
-/** The title bar's active team, when it is `url`'s: *Manage team…* opens on it. */
-function activeTeamOn(url: string): string | undefined {
-  const state = useActiveTeamStore.getState();
-  return state.url !== undefined && sameServer(state.url, url) ? state.teamId : undefined;
 }
 
 /**
@@ -152,7 +146,7 @@ export async function manageTeam(url?: string, teamId?: string): Promise<void> {
   const ui = useUiStore.getState();
   if (isBrowserTab()) {
     // Team settings opens on the asked team, else the title bar's active one.
-    const team = teamId ?? activeTeamOn(url ?? window.location.origin);
+    const team = teamId ?? activeTeamIdOn(url ?? window.location.origin);
     ui.openTeamSettings({ ...(url !== undefined ? { url } : {}), ...(team !== undefined ? { teamId: team } : {}) });
     return;
   }

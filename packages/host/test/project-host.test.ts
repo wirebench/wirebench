@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { createHash } from 'node:crypto';
-import { existsSync, mkdtempSync, readdirSync, rmSync, symlinkSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, join, relative } from 'node:path';
@@ -644,6 +644,30 @@ paths:
     const open = (host as unknown as { open: { watcher: { record(name: string): void } } }).open;
     open.watcher.record(relative(dir, path).split('\\').join('/'));
   }
+
+  it('does not report a write made before the watcher started when its event arrives after (#886)', async () => {
+    const dir = join(tempDir('project'), 'Late Event');
+    const writer = newService();
+    await writer.create({ dir, name: 'Late Event' });
+    await writer.close();
+    const changed: string[][] = [];
+    const service = new ProjectHost(
+      new EngineService(),
+      testHooks({ onChangedOnDisk: (paths) => changed.push([...paths]) }),
+    );
+    await service.openProject(dir);
+    // FSEvents delivers the earlier write once the new watch is up.
+    raise(service, dir, join(dir, 'wirebench.yaml'));
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    expect(changed).toEqual([]);
+    // An edit made outside still is reported.
+    writeFileSync(join(dir, 'wirebench.yaml'), `${readFileSync(join(dir, 'wirebench.yaml'), 'utf8')}\n# outside\n`);
+    raise(service, dir, join(dir, 'wirebench.yaml'));
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    expect(changed).toEqual([['wirebench.yaml']]);
+    await service.close();
+    rmSync(dir, { recursive: true, force: true });
+  }, 60_000);
 
   it('does not report the next save’s own write when its event lands before the save ends (#289)', async () => {
     const dir = join(tempDir('project'), 'Back To Back');

@@ -144,3 +144,46 @@ describe('the active team', () => {
     expect(ids).toEqual(['w1', 'l1']);
   });
 });
+
+describe('the start screen in a browser tab (#898)', () => {
+  beforeEach(() => {
+    const api = installWirebenchApi({
+      team: {
+        list: vi.fn().mockResolvedValue({ ok: true, value: { teams: TEAMS, serverAdmin: false } }),
+        listWorkspaces: vi.fn().mockResolvedValue({ ok: true, value: { workspaces: SPACES } }),
+      },
+    });
+    Object.defineProperty(api, 'env', {
+      configurable: true,
+      value: { e2e: false, osTheme: 'dark', host: 'browser', capabilities: ['send:public'] },
+    });
+    useActiveTeamStore.setState({ url: undefined, userId: undefined, teams: [], workspaces: [], teamId: undefined });
+  });
+  afterEach(() => {
+    cleanup();
+    useWorkspaceStore.setState({ workspace: null, workspaces: [] });
+  });
+
+  it('says how many of the active team’s workspaces can be opened, and where, when none is open here', async () => {
+    await useActiveTeamStore.getState().load({ url: URL_A, userId: USER });
+    useActiveTeamStore.getState().setTeam('t2');
+    useWorkspaceStore.setState({
+      workspace: null,
+      workspaces: [serverRow('w1', 'wtest1', 's1')],
+      list: vi.fn().mockResolvedValue(undefined),
+    });
+    render(<WorkspacePicker />);
+
+    expect((await screen.findByTestId('workspace-picker-empty')).textContent).toBe(
+      'CaaS has 1 workspace you can open. Open it with Open a team workspace… above.',
+    );
+  });
+
+  it('says so when the active team has none', async () => {
+    useActiveTeamStore.setState({ url: URL_A, userId: USER, teams: TEAMS, workspaces: [], teamId: 't2' });
+    useWorkspaceStore.setState({ workspace: null, workspaces: [], list: vi.fn().mockResolvedValue(undefined) });
+    render(<WorkspacePicker />);
+
+    expect((await screen.findByTestId('workspace-picker-empty')).textContent).toBe('CaaS has no workspaces yet.');
+  });
+});

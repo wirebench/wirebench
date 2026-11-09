@@ -62,7 +62,7 @@ export function ActivityBar({ platform }: { readonly platform: Platform }) {
       <IconButton
         label="Settings"
         data-testid="activity-settings"
-        shortcut={shortcutFor('preferences.open', platform)}
+        shortcut={shortcutFor('view.showSettings', platform)}
         onClick={() => {
           openPreferences();
         }}

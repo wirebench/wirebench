@@ -4,7 +4,7 @@
  * as it ends, grouped by iteration, and reopen the target's past runs. Everything shown arrived from
  * main masked; the data file is known by its name, columns and row count only.
  */
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { ArrowDown, ArrowUp } from 'lucide-react';
 import {
   BooleanSetting,
@@ -16,7 +16,8 @@ import {
 import { useHistoryStore } from '../../state/history.js';
 import { useRunnerStore } from '../../state/runner.js';
 import { useUiStore } from '../../state/ui.js';
-import { useProjectStore } from '../../state/project.js';
+import { useProjectStore, type SaveOptions } from '../../state/project.js';
+import { draftKindOf, useDraftsStore, type DraftKind, type DraftsState } from '../../state/drafts.js';
 import { useActiveEnvironment } from '../../state/workspace.js';
 import { MethodBadge } from '../rest-api/method-badge.js';
 import { pathDisplayName } from '../rest-api/request-display-name.js';
@@ -137,6 +138,61 @@ function RequestOrder({
   );
 }
 
+/**
+ * The requests a run would send that have an unsaved edit open in a tab (#895), as `id\tname` lines
+ * so a selector can return one string. A run reads main's model, which an unsaved edit has not
+ * reached, so these would go out as last saved.
+ */
+function unsavedInRun(drafts: DraftsState, state: RunnerState | undefined): string {
+  if (state === undefined) return '';
+  let candidates: { readonly id: string; readonly name: string }[];
+  if (state.kind === 'sequence') {
+    const steps = useProjectStore.getState().sequences[state.targetId]?.steps ?? [];
+    candidates = steps
+      .filter((step) => step.enabled)
+      .map((step) => ({
+        id: step.requestId,
+        name: state.requests.find((request) => request.id === step.id)?.name ?? step.name ?? step.requestId,
+      }));
+  } else {
+    const excluded = new Set(state.settings.excluded);
+    candidates = state.requests.filter((request) => !excluded.has(request.id));
+  }
+  const lines = new Map<string, string>();
+  for (const request of candidates) {
+    if (draftKindOf(drafts, request.id) !== undefined && !lines.has(request.id)) {
+      lines.set(request.id, `${request.id}\t${request.name}`);
+    }
+  }
+  return [...lines.values()].join('\n');
+}
+
+/** Saves one request's unsaved edit with its project, through the save its kind has. */
+async function saveDraft(requestId: string, kind: DraftKind): Promise<void> {
+  const project = useProjectStore.getState();
+  const options: SaveOptions = { manual: true };
+  const save = {
+    soap: project.saveRequest,
+    rest: project.saveRestRequest,
+    grpc: project.saveGrpcRequest,
+    ws: project.saveWsRequest,
+    mcp: project.saveMcpRequest,
+  }[kind];
+  await save(requestId, options);
+}
+
+/** Saves every listed request's edit, then runs; a save declined or failed leaves the run unstarted. */
+async function saveAndRun(targetId: string, requestIds: readonly string[]): Promise<boolean> {
+  for (const requestId of requestIds) {
+    const kind = draftKindOf(useDraftsStore.getState(), requestId);
+    if (kind !== undefined) await saveDraft(requestId, kind);
+  }
+  const drafts = useDraftsStore.getState();
+  if (requestIds.some((requestId) => draftKindOf(drafts, requestId) !== undefined)) return false;
+  void useRunnerStore.getState().start(targetId);
+  return true;
+}
+
 export interface RunnerTabProps {
   readonly targetId: string;
 }
@@ -151,6 +207,8 @@ export function RunnerTab({ targetId }: RunnerTabProps) {
   // The run resolves under its target's project's active environment (#468).
   const projectId = useProjectStore((store) => store.projectOf[targetId]);
   const environment = useActiveEnvironment(projectId)?.name;
+  const unsavedLines = useDraftsStore((drafts) => unsavedInRun(drafts, state));
+  const [askUnsaved, setAskUnsaved] = useState(false);
 
   useEffect(() => {
     const store = useRunnerStore.getState();
@@ -171,6 +229,17 @@ export function RunnerTab({ targetId }: RunnerTabProps) {
   const { settings, data } = state;
   const running = run?.status === 'running';
   const shown = viewing ?? run?.result;
+  // A data file is picked in a native dialog and read by the host from its path, so a host without
+  // dialogs (a browser tab's) has none to give: the rows that only mean something with one go too.
+  const dataOffered = hasCapability('dialogs') || data !== undefined;
+  const unsaved = unsavedLines === '' ? [] : unsavedLines.split('\n').map((line) => line.split('\t'));
+  const onRun = (): void => {
+    if (unsaved.length > 0) {
+      setAskUnsaved(true);
+      return;
+    }
+    void store.start(targetId);
+  };
 
   return (
     <section aria-label={`Runner ${state.name}`} data-testid="runner-tab" className="h-full overflow-auto p-3">
@@ -218,9 +287,13 @@ export function RunnerTab({ targetId }: RunnerTabProps) {
                 ? ` — ${data.error.message}`
                 : ` — ${data.rows} row${data.rows === 1 ? '' : 's'}: ${data.columns.join(', ')}`}
             </span>
-          ) : (
+          ) : hasCapability('dialogs') ? (
             <span data-testid="runner-data-none" className="text-fg-subtle">
               None
+            </span>
+          ) : (
+            <span data-testid="runner-data-desktop" className="text-fg-subtle">
+              Data files are chosen in the desktop app.
             </span>
           )}
           {/* A data file picked in a native dialog. */}
@@ -245,13 +318,15 @@ export function RunnerTab({ targetId }: RunnerTabProps) {
             </button>
           )}
         </div>
-        <EnumSetting
-          label="More iterations than rows"
-          testId="runner-overrun"
-          value={settings.overrun}
-          options={OVERRUN_OPTIONS}
-          onChange={(overrun) => onSettings({ ...settings, overrun: overrun as RunnerSettings['overrun'] })}
-        />
+        {dataOffered && (
+          <EnumSetting
+            label="More iterations than rows"
+            testId="runner-overrun"
+            value={settings.overrun}
+            options={OVERRUN_OPTIONS}
+            onChange={(overrun) => onSettings({ ...settings, overrun: overrun as RunnerSettings['overrun'] })}
+          />
+        )}
         <BooleanSetting
           label="Stop on first failure"
           testId="runner-bail"
@@ -273,16 +348,65 @@ export function RunnerTab({ targetId }: RunnerTabProps) {
               type="button"
               data-testid="runner-run"
               className="h-row rounded-md bg-accent px-3 text-md text-fg-on-accent disabled:opacity-50"
-              onClick={() => void store.start(targetId)}
+              onClick={onRun}
             >
               Run
             </button>
           )}
-          <span className="text-xs text-fg-subtle">
-            A request reads a row’s column as <code className="font-mono">{'${#Data#column}'}</code>; a script as{' '}
-            <code className="font-mono">iteration.data.get("column")</code>.
-          </span>
+          {dataOffered && (
+            <span data-testid="runner-data-hint" className="text-xs text-fg-subtle">
+              A request reads a row’s column as <code className="font-mono">{'${#Data#column}'}</code>; a script as{' '}
+              <code className="font-mono">iteration.data.get("column")</code>.
+            </span>
+          )}
         </div>
+        {askUnsaved && unsaved.length > 0 && !running && (
+          <div
+            role="alert"
+            data-testid="runner-unsaved"
+            className="my-1 flex flex-wrap items-center gap-2 rounded-md border border-status-warning bg-surface-raised px-3 py-2 text-sm text-fg-default"
+          >
+            <span className="min-w-0 flex-1">
+              {unsaved.length === 1
+                ? `${unsaved[0]![1]} has unsaved edits. A run sends saved requests.`
+                : `${unsaved.length} requests have unsaved edits. A run sends saved requests.`}
+            </span>
+            <button
+              type="button"
+              data-testid="runner-unsaved-save"
+              className="h-row rounded-md bg-accent px-3 text-md text-fg-on-accent"
+              onClick={() =>
+                void saveAndRun(
+                  targetId,
+                  unsaved.map(([id]) => id!),
+                ).then((started) => {
+                  if (started) setAskUnsaved(false);
+                })
+              }
+            >
+              Save and run
+            </button>
+            <button
+              type="button"
+              data-testid="runner-unsaved-run"
+              className={BUTTON}
+              onClick={() => {
+                setAskUnsaved(false);
+                void store.start(targetId);
+              }}
+            >
+              Run saved versions
+            </button>
+            <button
+              type="button"
+              data-testid="runner-unsaved-cancel"
+              className="text-fg-muted hover:underline"
+              onClick={() => setAskUnsaved(false)}
+            >
+              Cancel
+            </button>
+          </div>
+        )}
       </SettingsGroup>
 
       <SettingsGroup

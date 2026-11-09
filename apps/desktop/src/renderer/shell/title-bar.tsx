@@ -3,6 +3,7 @@ import type { Platform } from '../lib/platform.js';
 import { formatKeybinding, shortcutFor } from '../lib/keybindings.js';
 import { TERMINAL_PALETTE_CHORD, useTerminalFocused } from '../lib/terminal-focus.js';
 import { IconButton } from '../components/icon-button.js';
+import { isBrowserTab } from '../lib/capabilities.js';
 import { useUiStore } from '../state/ui.js';
 import { AccountStatusItem } from '../features/account/account-status-item.js';
 import { EnvSwitcher } from '../features/environments/env-switcher.js';
@@ -38,10 +39,11 @@ export function TitleBar({ platform, workspaceName, dirty = false, onOpenPalette
     <header
       data-testid="title-bar"
       data-chrome=""
-      className="wb-drag flex h-title-bar shrink-0 items-center gap-3 border-b border-hairline bg-surface-chrome px-3"
+      className="wb-drag flex h-title-bar min-w-0 shrink-0 items-center gap-3 overflow-hidden border-b border-hairline bg-surface-chrome px-3 whitespace-nowrap"
     >
-      {platform === 'mac' && <div className="w-[68px] shrink-0" aria-hidden="true" />}
-      <span className="flex shrink-0 items-center gap-1 text-sm text-fg-muted">
+      {/* A browser tab has no traffic lights to make room for, whatever the OS. */}
+      {platform === 'mac' && !isBrowserTab() && <div className="w-[68px] shrink-0" aria-hidden="true" />}
+      <span className="flex min-w-0 shrink items-center gap-1 text-sm text-fg-muted">
         wirebench
         {/* The team you are working in, then the workspace: "Platform / Payments". */}
         {hasTeam && (
@@ -65,15 +67,19 @@ export function TitleBar({ platform, workspaceName, dirty = false, onOpenPalette
         )}
       </span>
 
-      <div className="flex flex-1 justify-center">
+      {/* Narrower than the desktop's minimum (a browser tab), the search box shrinks and drops its hint; it never wraps. */}
+      <div className="flex min-w-0 flex-1 justify-center">
         <button
           type="button"
           onClick={onOpenPalette}
-          className="wb-no-drag inline-flex h-row w-full max-w-md items-center gap-2 rounded-md border border-hairline bg-surface-raised px-2 text-sm text-fg-subtle transition-colors hover:border-hairline-strong hover:text-fg-muted"
+          className="wb-no-drag inline-flex h-row w-full max-w-md min-w-0 items-center gap-2 rounded-md border border-hairline bg-surface-raised px-2 text-sm whitespace-nowrap text-fg-subtle transition-colors hover:border-hairline-strong hover:text-fg-muted"
         >
-          <Search size={13} aria-hidden="true" />
-          <span>Search or run a command</span>
-          <span data-testid="title-bar-palette-shortcut" className="ml-auto font-mono text-xs text-fg-faint">
+          <Search size={13} aria-hidden="true" className="shrink-0" />
+          <span className="min-w-0 truncate">Search or run a command</span>
+          <span
+            data-testid="title-bar-palette-shortcut"
+            className="ml-auto shrink-0 font-mono text-xs text-fg-faint max-[879px]:hidden"
+          >
             {paletteShortcut}
           </span>
         </button>
@@ -84,9 +90,11 @@ export function TitleBar({ platform, workspaceName, dirty = false, onOpenPalette
             it is the one piece of state worth carrying at the top right. Settings has no Send, so
             the switcher steps aside while it is open. */}
         {workspaceName !== null && !settingsOpen && <EnvSwitcher />}
+        {/* Secondary, and in Settings and the palette too: it steps aside where a browser tab is narrower than the desktop's minimum. */}
         <IconButton
           label={theme === 'light' ? 'Switch to dark theme' : 'Switch to light theme'}
           onClick={onToggleTheme}
+          className="max-[879px]:hidden"
         >
           {theme === 'light' ? <Moon size={15} aria-hidden="true" /> : <Sun size={15} aria-hidden="true" />}
         </IconButton>

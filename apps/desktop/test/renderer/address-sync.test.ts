@@ -76,6 +76,34 @@ describe('the address sync', () => {
     replace.mockRestore();
   });
 
+  it('a workspace opened here starts on the Explorer, not the view of the one left (#906)', async () => {
+    await sync.start();
+    useWorkspaceStore.setState({ workspace: opened(W1) });
+    notifyTabsRestored('w1');
+    await Promise.resolve();
+    useUiStore.getState().setSidebarView('history');
+    expect(window.location.search).toBe('?view=history');
+
+    useWorkspaceStore.setState({ workspace: opened(W2) });
+
+    expect(useUiStore.getState().sidebar.view).toBe('explorer');
+    expect(window.location.pathname).toBe('/workspaces/s2');
+    expect(window.location.search).toBe('');
+  });
+
+  it('a workspace that remembers a view of its own keeps it', async () => {
+    await sync.start();
+    useUiStore.setState((state) => ({
+      workspaces: { ...state.workspaces, w2: { tabs: [], sidebarView: 'history' } as never },
+    }));
+    useUiStore.getState().setSidebarView('history');
+    useWorkspaceStore.setState({ workspace: opened(W2) });
+    expect(useUiStore.getState().sidebar.view).toBe('history');
+    useUiStore.setState((state) => ({
+      workspaces: Object.fromEntries(Object.entries(state.workspaces).filter(([id]) => id !== 'w2')),
+    }));
+  });
+
   it('a load names the workspace to open, and its view', async () => {
     window.history.replaceState(null, '', '/workspaces/s2?view=history');
     await sync.start();

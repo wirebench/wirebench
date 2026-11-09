@@ -56,3 +56,15 @@ describe('script.convertAll', () => {
     expect(getCommand('script.convertAll')).toBeDefined();
   });
 });
+
+describe('settings names (#904)', () => {
+  it('names the settings commands as the account menu does, with one App settings in the palette', () => {
+    expect(COMMAND_CATALOG['account.settings'].label).toBe('Account: View profile');
+    expect(COMMAND_CATALOG['view.showSettings'].label).toBe('App settings');
+    expect(COMMAND_CATALOG['preferences.open'].paletteHidden).toBe(true);
+    const listed = Object.values(COMMAND_CATALOG).filter(
+      (entry) => entry.paletteHidden !== true && entry.label === 'App settings',
+    );
+    expect(listed.map((entry) => entry.id)).toEqual(['view.showSettings']);
+  });
+});

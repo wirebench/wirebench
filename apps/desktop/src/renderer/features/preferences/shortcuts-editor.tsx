@@ -103,6 +103,11 @@ export function ShortcutsEditor({ context }: ShortcutsEditorProps) {
                       {row.conflictNote}
                     </span>
                   )}
+                  {row.browserReserved && (
+                    <span data-testid="shortcut-browser-reserved" className="ml-2 text-xs text-status-warning">
+                      The browser keeps this key.
+                    </span>
+                  )}
                   {refused?.id === row.id && (
                     <span data-testid="shortcut-refused" role="alert" className="ml-2 text-xs text-status-danger">
                       {refused.message}

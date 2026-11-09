@@ -191,11 +191,34 @@ export function createAddressSync(): { start: () => Promise<void>; stop: () => v
   /** While a just-opened workspace restores its tabs: what that restore changes replaces the entry it opened. */
   let settling = false;
 
+  /**
+   * A workspace opened here, not from an address (the picker, *Open a team workspace…*), starts on the first area
+   * unless it remembers a view of its own: the window's sidebar view belongs to the workspace left behind, and
+   * carrying it over opened a new workspace on History. `true` when it moved the view.
+   */
+  const startsOnFirstArea = (): boolean => {
+    const workspace = useWorkspaceStore.getState().workspace;
+    const ui = useUiStore.getState();
+    const first = ui.enabledAreas[0];
+    if (workspace === null || first === undefined || ui.sidebar.view === first) return false;
+    if (ui.workspaces[workspace.id]?.sidebarView !== undefined) return false;
+    applying += 1;
+    try {
+      ui.setSidebarView(first);
+    } finally {
+      applying -= 1;
+    }
+    return true;
+  };
+
   const write = (): void => {
     if (!started || applying > 0) return;
     const { pathname, search, hash } = window.location;
     const was = parseAddress(pathname, search);
-    const next = currentAddress();
+    let next = currentAddress();
+    if (was.workspace !== next.workspace && next.workspace !== undefined && startsOnFirstArea()) {
+      next = currentAddress();
+    }
     const url = formatAddress(next, search);
     if (url === `${pathname}${search}`) return;
     const workspaceChanged = was.workspace !== next.workspace;

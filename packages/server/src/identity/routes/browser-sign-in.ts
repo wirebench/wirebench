@@ -30,7 +30,7 @@ import { mintSecret, pkceChallenge } from '../tokens.js';
 import { checkLocalCredentials } from './auth-local.js';
 import { browserInviteRoutes } from './browser-invite.js';
 import { browserTwoFactorRoutes, sendTwoFactorStep } from './browser-two-factor.js';
-import { BROWSER_DEVICE_NAME } from '../browser-flows.js';
+import { browserDeviceName } from '../device-name.js';
 import { twoFactorGate } from '../two-factor/gate.js';
 
 /** An email and a password with room to spare; anything bigger is not a sign-in. */
@@ -122,7 +122,7 @@ export const browserSignInRoutes =
           });
         // Two-step sign-in (spec §4.1): the code page instead of a session, its challenge in the `wb_2fa` cookie.
         const challenge = await twoFactorGate(env, request.tenant, checked.user, {
-          deviceName: BROWSER_DEVICE_NAME,
+          deviceName: browserDeviceName(request.headers['user-agent']),
           kind: 'browser',
         });
         const mode = add ? 'add' : 'replace';

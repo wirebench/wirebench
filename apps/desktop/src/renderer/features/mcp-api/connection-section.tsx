@@ -11,6 +11,7 @@ import { Trash2 } from 'lucide-react';
 import { AuthFields } from '../../components/auth-fields.js';
 import { IconButton } from '../../components/icon-button.js';
 import { KV_INPUT_CLASS, KvTable, useCommittedDraft } from '../../components/kv-table.js';
+import { hasCapability } from '../../lib/capabilities.js';
 import { EnumSetting, SettingsGroup, SettingsRow, TextSetting } from '../../components/settings-grid.js';
 import { OAuth2StatusPanel } from '../rest-editor/oauth2-status.js';
 import type { AuthConfigWire } from '@shared/wire-base.js';
@@ -24,6 +25,17 @@ const TRANSPORT_OPTIONS = [
   { value: 'http', label: 'Streamable HTTP' },
   { value: 'sse', label: 'HTTP+SSE' },
 ] as const;
+
+/**
+ * The transports offered for `current`: without `processes` (a browser tab's host) a local process
+ * cannot start, so stdio is offered only to a server that already uses it, which keeps its value.
+ */
+export function transportOptions(
+  current: TransportType,
+): readonly { readonly value: TransportType; readonly label: string }[] {
+  if (hasCapability('processes') || current === 'stdio') return TRANSPORT_OPTIONS;
+  return TRANSPORT_OPTIONS.filter((option) => option.value !== 'stdio');
+}
 
 /** The transport after picking `type`: the fields the two HTTP transports share carry over. */
 export function switchTransport(current: McpTransportWire, type: TransportType): McpTransportWire {
@@ -48,7 +60,10 @@ export function ConnectionSection({ apiId, transport, onChange }: ConnectionSect
           testId="mcp-api-transport"
           display="select"
           value={transport.type}
-          options={TRANSPORT_OPTIONS}
+          options={transportOptions(transport.type)}
+          {...(transport.type === 'stdio' && !hasCapability('processes')
+            ? { hint: 'Local processes run in the desktop app.' }
+            : {})}
           onChange={(type) => {
             onChange(switchTransport(transport, type as TransportType));
           }}

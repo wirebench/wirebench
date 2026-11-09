@@ -69,10 +69,11 @@ export function WorkspacePicker() {
   const status = useWorkspaceStore((state) => state.status);
   const error = useWorkspaceStore((state) => state.error);
   const lastError = useWorkspaceStore((state) => state.lastError);
+  const movedAway = useWorkspaceStore((state) => state.movedAway);
   const list = useWorkspaceStore((state) => state.list);
   const setJoinDialogOpen = useUiStore((state) => state.setJoinDialogOpen);
   const setTeamWorkspaceDialogOpen = useUiStore((state) => state.setTeamWorkspaceDialogOpen);
-  // Shown only once a server is known: without one the app shows no account UI at all.
+  // Shown only once a server is known: without one the only account UI is the title bar's Sign in (#897).
   const knowsServer = useAccountStore((state) => state.servers.length > 0);
   const [name, setName] = useState('');
   const localFiles = hasCapability('files');
@@ -94,6 +95,24 @@ export function WorkspacePicker() {
     void workspaceActions.create(trimmed);
   };
 
+  /**
+   * Why the list is empty. A browser tab lists only the workspaces opened in it, so with none of the active team's
+   * here it says how many that team has to open and where; the desktop keeps its wording for its local list.
+   */
+  const emptyMessage = (): string => {
+    if (team === undefined) return 'No workspaces yet.';
+    if (!localFiles) {
+      const openable = teamState.workspaces.filter((workspace) => workspace.teamId === team.id).length;
+      if (openable === 0) return `${team.name} has no workspaces yet.`;
+      return openable === 1
+        ? `${team.name} has 1 workspace you can open. Open it with Open a team workspace… above.`
+        : `${team.name} has ${String(openable)} workspaces you can open. Open one with Open a team workspace… above.`;
+    }
+    return workspaces.length > 0
+      ? `No workspaces of ${team.name} here yet. Switch team in the title bar to see the others.`
+      : 'No workspaces yet.';
+  };
+
   // A failed action's error is the newer news; the launch-time failure is shown until then.
   const banner = error?.message ?? lastError;
 
@@ -110,6 +129,24 @@ export function WorkspacePicker() {
           <p role="alert" className="mt-4 rounded-md border border-status-danger px-3 py-2 text-sm text-status-danger">
             {banner}
           </p>
+        )}
+
+        {movedAway !== undefined && (
+          <div
+            data-testid="workspace-moved-away"
+            role="status"
+            className="mt-4 flex flex-wrap items-center gap-3 rounded-md border border-hairline-strong px-3 py-2 text-sm text-fg-default"
+          >
+            <span className="min-w-0 flex-1">{movedAway.name || 'This workspace'} is open in another tab now.</span>
+            <Button
+              data-testid="workspace-moved-away-open"
+              onClick={() => {
+                void workspaceActions.open(movedAway.workspaceId);
+              }}
+            >
+              Open here
+            </Button>
+          </div>
         )}
 
         <div className="mt-5 flex flex-wrap items-center gap-2">
@@ -177,11 +214,7 @@ export function WorkspacePicker() {
         <h2 className="mt-8 text-sm font-medium text-fg-muted">Workspaces</h2>
         {shown.length === 0 ? (
           <p data-testid="workspace-picker-empty" className="mt-1 text-sm text-fg-subtle">
-            {status === 'loading'
-              ? 'Loading…'
-              : team !== undefined && workspaces.length > 0
-                ? `No workspaces of ${team.name} here yet. Switch team in the title bar to see the others.`
-                : 'No workspaces yet.'}
+            {status === 'loading' ? 'Loading…' : emptyMessage()}
           </p>
         ) : (
           <ul className="mt-1 flex flex-col">

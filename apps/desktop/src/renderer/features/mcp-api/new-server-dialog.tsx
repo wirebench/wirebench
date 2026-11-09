@@ -7,6 +7,7 @@ import { useEffect, useId, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import type { McpTransportWire } from '@shared/kinds/mcp/wire.js';
 import { Button } from '../../components/button.js';
+import { hasCapability } from '../../lib/capabilities.js';
 import { useProjectStore } from '../../state/project.js';
 import { openMcpApiTab } from './mcp-api-actions.js';
 import { useNewMcpServerDialog } from './new-server-dialog-state.js';
@@ -24,6 +25,14 @@ const TRANSPORTS: readonly { readonly type: McpTransportType; readonly label: st
   { type: 'http', label: 'Streamable HTTP' },
   { type: 'sse', label: 'HTTP+SSE (legacy)' },
 ];
+
+/**
+ * The transports this host can make: a local process needs `processes`, which a browser tab's host
+ * lacks, so there only the HTTP transports are offered and Streamable HTTP is the default.
+ */
+export function offeredTransports(): readonly { readonly type: McpTransportType; readonly label: string }[] {
+  return hasCapability('processes') ? TRANSPORTS : TRANSPORTS.filter((transport) => transport.type !== 'stdio');
+}
 
 /** What the form holds. Arguments are one per line, so an argument may hold spaces. */
 export interface NewServerForm {
@@ -58,17 +67,19 @@ export function NewMcpServerDialog() {
   const suggestedName = useNewMcpServerDialog((state) => state.suggestedName);
   const close = useNewMcpServerDialog((state) => state.close);
   const open = projectId !== undefined;
-  const [form, setForm] = useState<NewServerForm>({ name: '', type: 'stdio', command: '', args: '', url: '' });
+  const transports = offeredTransports();
+  const defaultType = transports[0]?.type ?? 'http';
+  const [form, setForm] = useState<NewServerForm>({ name: '', type: defaultType, command: '', args: '', url: '' });
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
   const ids = { name: useId(), command: useId(), args: useId(), url: useId() };
 
   useEffect(() => {
     if (!open) return;
-    setForm({ name: suggestedName, type: 'stdio', command: '', args: '', url: '' });
+    setForm({ name: suggestedName, type: defaultType, command: '', args: '', url: '' });
     setError(undefined);
     setBusy(false);
-  }, [open, suggestedName]);
+  }, [open, suggestedName, defaultType]);
 
   const change = (patch: Partial<NewServerForm>): void => {
     setForm((current) => ({ ...current, ...patch }));
@@ -115,7 +126,9 @@ export function NewMcpServerDialog() {
         <Dialog.Content className={CONTENT_CLASS} data-testid="new-mcp-server-dialog">
           <Dialog.Title className="text-md font-medium text-fg-default">New MCP server</Dialog.Title>
           <Dialog.Description className="mt-1 text-sm text-fg-subtle">
-            A local process this machine starts, or a server reached over HTTP.
+            {defaultType === 'stdio'
+              ? 'A local process this machine starts, or a server reached over HTTP.'
+              : 'A server reached over HTTP.'}
           </Dialog.Description>
           <form
             className="mt-3 flex flex-col gap-3"
@@ -139,7 +152,7 @@ export function NewMcpServerDialog() {
             </label>
             <fieldset className="flex flex-col gap-1 text-xs text-fg-subtle">
               <legend className="mb-1">Transport</legend>
-              {TRANSPORTS.map((transport) => (
+              {transports.map((transport) => (
                 <label key={transport.type} className="flex items-center gap-2 text-sm text-fg-default">
                   <input
                     type="radio"

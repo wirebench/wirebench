@@ -7,6 +7,7 @@ import { Button } from '../../../components/button.js';
 import { ConfirmDialog } from '../../../components/confirm-dialog.js';
 import { SettingsGroup, SettingsItem } from '../../../components/settings-grid.js';
 import { useUserSettingsStore } from '../../../state/user-settings.js';
+import { isBrowserTab } from '../../../lib/capabilities.js';
 
 const when = (iso: string): string => new Date(iso).toLocaleString();
 
@@ -32,7 +33,7 @@ export function DevicesPage() {
                     </p>
                   </div>
                   {device.current ? (
-                    <span className="text-xs text-fg-subtle">This device</span>
+                    <span className="text-xs text-fg-subtle">{isBrowserTab() ? 'This browser' : 'This device'}</span>
                   ) : (
                     <Button
                       data-testid={`user-device-sign-out-${device.id}`}

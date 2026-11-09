@@ -22,6 +22,7 @@ import { registerShellCommands } from '../commands/register-shell-commands.js';
 import type { CommandContext } from '../lib/commands.js';
 import { runCommand } from '../lib/commands.js';
 import { useKeybindings } from '../lib/keybindings.js';
+import { useUnloadGuard } from '../lib/unload-guard.js';
 import { detectPlatform } from '../lib/platform.js';
 import { useTheme } from '../lib/theme.js';
 import { hydrateUi, useUiStore } from '../state/ui.js';
@@ -126,6 +127,8 @@ import { panelDragStep } from './panel-drag.js';
 import { SlideOver } from './slide-over.js';
 import { StatusBar } from './status-bar.js';
 import { TitleBar } from './title-bar.js';
+import { NarrowWindowNote, useNarrowWindow } from './narrow-window.js';
+import { useBrowserDocumentTitle } from './document-title.js';
 import { subscribeToMocks } from '../state/mock-runs.js';
 import { subscribeToRunnerProgress } from '../state/runner.js';
 import { subscribeToSequenceProgress } from '../state/sequence-runs.js';
@@ -552,6 +555,9 @@ export function AppShell() {
   }, [openPalette, openWorkspaceId]);
 
   useTheme(theme, palette);
+  // A browser tab narrower than the workbench can lay out shows a note instead; the workbench stays mounted, hidden.
+  const narrow = useNarrowWindow();
+  useBrowserDocumentTitle(workspace?.name ?? null);
 
   const context: CommandContext = useMemo(
     () => ({
@@ -562,6 +568,7 @@ export function AppShell() {
     [platform, sidebar, consoleState, slideOver, theme, palette, editorLineNumbers, editorLayout, selection],
   );
   useKeybindings(context);
+  useUnloadGuard();
 
   // `command.invoke` outlives every context change, so the subscription reads the latest
   // context through a ref rather than re-subscribing on each selection or panel toggle.
@@ -585,7 +592,8 @@ export function AppShell() {
 
   return (
     <TooltipPrimitive.Provider delayDuration={400}>
-      <div className="flex h-full flex-col bg-surface-base text-fg-default">
+      {narrow && <NarrowWindowNote />}
+      <div className={`${narrow ? 'hidden' : 'flex'} h-full flex-col bg-surface-base text-fg-default`}>
         <TitleBar
           platform={platform}
           workspaceName={workspace?.name ?? null}

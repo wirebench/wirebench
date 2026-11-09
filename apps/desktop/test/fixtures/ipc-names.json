@@ -547,6 +547,7 @@
     "workspace.changed",
     "workspace.changedOnDisk",
     "workspace.flushDrafts",
+    "workspace.movedAway",
     "ws.live"
   ]
 }

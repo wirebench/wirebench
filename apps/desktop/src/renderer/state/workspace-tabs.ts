@@ -12,6 +12,7 @@ import type { WorkspaceWire } from '@shared/wire-base.js';
 import type { PersistedTab, PersistedWorkspaceUi } from './ui-state.js';
 import { useEditorsStore, type EditorTab } from './editors.js';
 import { useProjectStore } from './project.js';
+import { tabSetOf, tabsInSet } from './tab-sets.js';
 import { fixedLayout, useUiStore } from './ui.js';
 import { useWorkspaceStore } from './workspace.js';
 
@@ -93,6 +94,25 @@ export function whenTabsRestored(workspaceId: string, timeoutMs = 10_000): Promi
 }
 
 /**
+ * The tab to bring back in front for `active`: itself when it survives, else its nearest neighbour on the strip
+ * that does, the right one first as a close would pick (#907). A Run tab, a History entry or a diff in front then
+ * gives way to the request beside it rather than to the Start tab.
+ */
+function frontTabToRemember(tabs: readonly EditorTab[], active: EditorTab): PersistedTab | undefined {
+  const own = persist(active);
+  if (own !== undefined) return own;
+  const strip = tabsInSet(tabs, tabSetOf(active));
+  const index = strip.indexOf(active);
+  for (let distance = 1; distance < strip.length; distance += 1) {
+    for (const neighbour of [strip[index + distance], strip[index - distance]]) {
+      const kept = neighbour === undefined ? undefined : persist(neighbour);
+      if (kept !== undefined) return kept;
+    }
+  }
+  return undefined;
+}
+
+/**
  * Records the open tabs and the sidebar view of `workspaceId`. Called just before a workspace
  * is replaced or closed, while the editors store still holds its tabs.
  */
@@ -100,7 +120,7 @@ export function saveWorkspaceTabs(workspaceId: string): void {
   const { tabs, activeId } = useEditorsStore.getState();
   const persisted = tabs.map(persist).filter((tab): tab is PersistedTab => tab !== undefined);
   const active = tabs.find((tab) => tab.id === activeId);
-  const activeEntity = active === undefined ? undefined : persist(active);
+  const activeEntity = active === undefined ? undefined : frontTabToRemember(tabs, active);
   // The explorer's fold state is written as it changes, not here; carry it over untouched.
   const explorerOpen = useUiStore.getState().workspaces[workspaceId]?.explorerOpen;
   useUiStore.getState().setWorkspaceUi(workspaceId, {

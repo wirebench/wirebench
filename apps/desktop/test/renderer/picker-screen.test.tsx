@@ -45,9 +45,25 @@ describe('WorkspacePicker', () => {
       status: 'idle',
       error: undefined,
       lastError: undefined,
+      movedAway: undefined,
     });
   });
   afterEach(cleanup);
+
+  it('says a workspace moved to another tab and opens it here again', async () => {
+    const open = vi.fn().mockResolvedValue({ ok: true, value: { workspace: workspaceWire() } });
+    installWirebenchApi({ workspace: { list: listing(ROWS), open } });
+    useWorkspaceStore.setState({ movedAway: { workspaceId: 'w1', name: 'Payments' } });
+    render(<WorkspacePicker />);
+
+    expect((await screen.findByTestId('workspace-moved-away')).textContent).toContain(
+      'Payments is open in another tab now.',
+    );
+    await userEvent.click(screen.getByTestId('workspace-moved-away-open'));
+
+    await waitFor(() => expect(open).toHaveBeenCalledWith({ workspaceId: 'w1' }));
+    await waitFor(() => expect(useWorkspaceStore.getState().movedAway).toBeUndefined());
+  });
 
   it('lists the workspaces, disabling one whose manifest cannot be read', async () => {
     installWirebenchApi({ workspace: { list: listing(ROWS) } });

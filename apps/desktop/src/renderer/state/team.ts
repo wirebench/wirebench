@@ -18,6 +18,7 @@ import type {
   WorkspaceRoleWire,
 } from '@shared/wire-base.js';
 import { showToast } from '../components/toast.js';
+import { activeTeamIdOn } from './active-team.js';
 import { ipc } from './ipc-client.js';
 import { resolveTeamPage, type TeamSettingsPageId } from '../features/team/team-settings-model.js';
 import type { TeamSettingsTarget } from './ui.js';
@@ -260,12 +261,13 @@ export const useTeamStore = create<TeamStore>((set, get) => {
         set({ loading: false });
         return;
       }
-      // A target is used once, on the first load after `open`: a team id, else the team owning a workspace.
+      // A target is used once, on the first load after `open`: a team id, else the team owning a workspace,
+      // else the title bar's active team (an address with no `team=`), before falling back to the first.
       const wanted =
         preferred?.teamId ??
         (preferred?.workspaceId !== undefined
           ? (spaces?.workspaces ?? []).find((workspace) => workspace.id === preferred?.workspaceId)?.teamId
-          : undefined);
+          : activeTeamIdOn(url));
       preferred = undefined;
       const current = get().teamId ?? wanted;
       const teamId = list.teams.some((team) => team.id === current) ? current : list.teams[0]?.id;

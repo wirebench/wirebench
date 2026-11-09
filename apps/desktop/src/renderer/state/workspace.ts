@@ -13,6 +13,7 @@ import type { WirebenchApi } from '../../preload/build-api.js';
 import type {
   WorkspaceChange,
   WorkspaceChangedEvent,
+  WorkspaceMovedAwayEvent,
   WorkspaceEnvironmentPatchWire,
   WorkspaceEnvironmentWire,
   WorkspaceSummaryWire,
@@ -71,6 +72,8 @@ export interface WorkspaceSnapshot {
    * when the workspace closes or another one opens; see `useCurrentProjectId`.
    */
   readonly lastProjectId?: string | undefined;
+  /** The workspace another tab of the same user took over from this one (browser only); cleared once one opens here. */
+  readonly movedAway?: { readonly workspaceId: string; readonly name: string } | undefined;
 }
 
 /** `workspace.shareToServer`'s request: the server, the team, and a new or an existing empty workspace there. */
@@ -249,6 +252,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => {
       status: 'idle',
       error: undefined,
       ...(leaving || workspace === null ? { lastProjectId: undefined } : {}),
+      ...(workspace === null ? {} : { movedAway: undefined }),
     });
     if (workspace === null) {
       return;
@@ -570,9 +574,13 @@ export function subscribeToWorkspace(): () => void {
   const off = window.wirebench.on('workspace.changed', ((payload: WorkspaceChangedEvent) => {
     useWorkspaceStore.getState().applySnapshot(payload.workspace);
   }) as (payload: unknown) => void);
+  const offMoved = window.wirebench.on('workspace.movedAway', ((payload: WorkspaceMovedAwayEvent) => {
+    useWorkspaceStore.setState({ movedAway: { workspaceId: payload.workspaceId, name: payload.name } });
+  }) as (payload: unknown) => void);
   const offStash = subscribeToDraftStash(() => useWorkspaceStore.getState().workspace?.id);
   return () => {
     off();
+    offMoved();
     offStash();
   };
 }

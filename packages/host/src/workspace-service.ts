@@ -316,6 +316,12 @@ export interface WorkspaceServiceDeps {
    */
   readonly heldElsewhere?: (workspaceId: string) => boolean;
   /**
+   * Takes `workspaceId` over from the window that holds it: that window hands over its drafts and closes it, and
+   * resolves `true` once it has. Only a host whose callers are browser tabs passes it (opening a link in a new tab is
+   * routine there); without it, or when it resolves `false`, an open of a held workspace is refused as before.
+   */
+  readonly takeOver?: (workspaceId: string) => Promise<boolean>;
+  /**
    * Closes every WebSocket session belonging to `projectId` — all of them when it is omitted —
    * and resolves once each has written its History entry.
    *
@@ -1003,6 +1009,9 @@ export class WorkspaceService implements ProjectRouter {
     id: string,
     options: { readonly initialCommitMessage?: string; readonly teamSecrets?: boolean },
   ): Promise<WorkspaceWire> {
+    if (this.deps.takeOver !== undefined && this.deps.heldElsewhere?.(id) === true) {
+      await this.deps.takeOver(id);
+    }
     this.refuseHeldElsewhere(id);
     if (this.deps.machineFiles === false) {
       // Read before the open workspace closes, so a refusal leaves it open.

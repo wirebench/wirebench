@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, renderHook, screen, waitFor, within } from '@testing-library/react';
 import { ALL_CAPABILITIES, type Capability } from '@wirebench/wire/capabilities';
 import type { AccountWire, AppFeaturesWire, WorkspaceSummaryWire } from '@wirebench/wire/wire-base';
 import type { WirebenchApi } from '../../src/preload/build-api.js';
@@ -164,6 +164,19 @@ describe('the import dialog by capability', () => {
     expect(screen.getByText('Drop an OpenAPI, Postman, WSDL or .proto file here')).toBeTruthy();
   });
 
+  it('reads a file chosen with Choose file… like a drop, without files and dialogs (#893)', async () => {
+    install(BROWSER, stubs);
+    render(<ImportDialog open onOpenChange={vi.fn()} />);
+    fireEvent.click(screen.getByRole('tab', { name: 'File' }));
+
+    expect(screen.getByTestId('import-choose-file')).toBeTruthy();
+    const file = new File(['{"openapi":"3.0.0"}'], 'spec.json', { type: 'application/json' });
+    fireEvent.change(screen.getByTestId('import-choose-file-input'), { target: { files: [file] } });
+    await waitFor(() => {
+      expect(screen.getByText('Loaded: spec.json')).toBeTruthy();
+    });
+  });
+
   it('says nothing of Folder… for a folder format without dialogs', () => {
     install(BROWSER, stubs);
     render(<ImportDialog open onOpenChange={vi.fn()} initialFormat="postman-v3" />);
@@ -185,6 +198,7 @@ describe('the import dialog by capability', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'File' }));
     expect(screen.getByTestId('import-browse')).toBeTruthy();
     expect(screen.getByTestId('import-file-input')).toBeTruthy();
+    expect(screen.queryByTestId('import-choose-file')).toBeNull();
   });
 });
 
@@ -272,6 +286,20 @@ describe('secret hints and Kerberos by capability', () => {
     });
     expect(result.current?.reason).toMatch(/^Kerberos is not available here/);
     expect(kerberosAvailability).not.toHaveBeenCalled();
+  });
+
+  it('gives the import dialog’s disabled Kerberos its reason as a title, and no note with None (#902)', async () => {
+    install(BROWSER, {
+      definition: { cancelImport: vi.fn().mockResolvedValue({ ok: true, value: { cancelled: true } }) },
+    });
+    render(<ImportDialog open onOpenChange={vi.fn()} />);
+    const select = screen.getByLabelText('Definition authentication');
+    const option = within(select).getByRole('option', { name: 'Kerberos (signed-in ticket)' });
+    await waitFor(() => {
+      expect(option.getAttribute('title')).toMatch(/^Kerberos is not available here/);
+    });
+    expect(select).toHaveProperty('value', 'none');
+    expect(screen.queryByText(/^Kerberos is not available here/)).toBeNull();
   });
 
   it('asks the host with every capability', async () => {

@@ -748,6 +748,10 @@ export class ProjectHost {
     for (const entry of this.expectedOnDisk) {
       watcher.expect(entry.paths, { snapshot: false });
     }
+    // What is on disk now is what this host just read or wrote. A write made before the watch began (the project's
+    // creation, the last save of a reload) can still reach the new watch: macOS replays recent FSEvents to it. Its
+    // content is what we hold, so it is not an outside edit; an edit made after this still differs and is reported.
+    watcher.expect(watcher.managedOnDisk());
     watcher.start();
   }
 

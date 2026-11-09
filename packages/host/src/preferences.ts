@@ -189,10 +189,17 @@ export class PreferencesService {
     this.policyValue = noPolicy(options.policyFile ?? '');
   }
 
-  /** Reads the file into memory. Safe to call more than once; concurrent calls share one read. */
+  /**
+   * Reads the file into memory. Safe to call more than once; concurrent calls share one read.
+   *
+   * Answers the document in force *now*, not the one the first read produced: a host outlives a
+   * browser tab's reload, and `preferences.get` answering the startup document would repaint the
+   * reloaded tab with a theme changed since.
+   */
   async load(): Promise<Preferences> {
     this.loadPromise ??= this.doLoad();
-    return this.loadPromise;
+    await this.loadPromise;
+    return this.preferences;
   }
 
   private async doLoad(): Promise<Preferences> {
@@ -221,7 +228,7 @@ export class PreferencesService {
     return this.policyValue.locked.includes(key);
   }
 
-  /** Resolves once the initial {@link load} has completed. */
+  /** Resolves once the initial {@link load} has completed, with the current document. */
   ready(): Promise<Preferences> {
     return this.load();
   }

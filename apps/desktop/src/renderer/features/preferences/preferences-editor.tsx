@@ -67,6 +67,7 @@ import {
   sectionById,
   sectionKeys,
   sectionModified,
+  subtitleOf,
   type SettingsSectionId,
   type SettingsSectionRequest,
 } from './settings-model.js';
@@ -262,7 +263,7 @@ export function PreferencesEditor({ initialSection }: PreferencesEditorProps) {
             <>
               <SettingsPageHeader
                 title={section.label}
-                subtitle={section.subtitle}
+                subtitle={subtitleOf(section)}
                 actions={
                   section.keys.kind !== 'none' && (
                     <DropdownMenu.Root>
@@ -383,7 +384,7 @@ function SearchResults({
               {section.searchable ? (
                 <SectionBody id={section.id} props={props} context={context} />
               ) : (
-                <SettingsRow label={section.label} hint={section.subtitle}>
+                <SettingsRow label={section.label} hint={subtitleOf(section)}>
                   <Button
                     variant="secondary"
                     data-testid={`settings-search-open-${section.id}`}

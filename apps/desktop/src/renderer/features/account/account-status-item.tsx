@@ -3,7 +3,7 @@ import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { CircleUser, LogOut, Settings, UserPlus, UserRound, Users } from 'lucide-react';
 import type { AccountWire } from '@shared/wire-base.js';
 import { PersonAvatar } from '../../components/person-avatar.js';
-import { tabAddAccount, tabSignOut } from '../../lib/capabilities.js';
+import { hasCapability, tabAddAccount, tabSignOut } from '../../lib/capabilities.js';
 import { activeAccount, hostOf, otherAccounts, serversDiffer, useAccountStore } from '../../state/account.js';
 import { usePreferencesStore } from '../../state/preferences.js';
 import { manageTeam } from '../team/team-link.js';
@@ -18,9 +18,10 @@ function handleOf(account: AccountWire): string {
 }
 
 /**
- * The account menu at the top right of the title bar (identity spec §3.8, switch accounts spec §3). Hidden until an
- * account is known and while `accounts.showInStatusBar` is off (the setting keeps its stored name). With none signed
- * in it shows *Sign in*, which reopens the dialog on the last server. Signed in, the trigger is the active account's
+ * The account menu at the top right of the title bar (identity spec §3.8, switch accounts spec §3). Hidden while
+ * `accounts.showInStatusBar` is off (the setting keeps its stored name). With none signed in it shows *Sign in*, which
+ * reopens the dialog on the last server, or, with no server known yet, asks for one where the window can sign in
+ * (`accounts`). Signed in, the trigger is the active account's
  * photo alone (the email is its tooltip), and the menu holds, in order: a header (photo, name, `@username · email`,
  * and the host when your accounts are on more than one server), *View profile* (User settings), *App settings*,
  * *Manage team…* for the active account's server, *Sign out* of the active account, then *Switch accounts* — every
@@ -37,20 +38,22 @@ export function AccountStatusItem() {
   const setActive = useAccountStore((state) => state.setActive);
   const [open, setOpen] = useState(false);
 
-  if (!show || servers.length === 0) return null;
+  if (!show) return null;
 
   const current = activeAccount(servers, activeRef);
   if (current === undefined) {
-    const known = servers[0]!;
+    // With no server known yet, Sign in asks for one: the only account UI a window that can sign in shows then (#897).
+    const known = servers[0];
+    if (known === undefined && !hasCapability('accounts')) return null;
     return (
       <button
         type="button"
         data-testid="status-bar-account"
         data-state="signed-out"
-        title={`Sign in to ${known.url}`}
+        title={known === undefined ? 'Sign in to a team server' : `Sign in to ${known.url}`}
         className="flex h-row items-center gap-1.5 rounded-md px-2 text-sm text-fg-muted hover:bg-surface-hover hover:text-fg-default focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none"
         onClick={() => {
-          openSignInDialog(known.url);
+          openSignInDialog(known?.url);
         }}
       >
         <UserRound size={14} aria-hidden="true" />

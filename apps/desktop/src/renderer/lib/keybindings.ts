@@ -4,6 +4,7 @@ import type { Platform } from './platform.js';
 import { formatKeybinding, parseKeybinding, type Keybinding } from '@shared/keybinding-format.js';
 import { getCommand, listCommands, runCommand } from './commands.js';
 import type { CommandContext } from './commands.js';
+import { isBrowserTab } from './capabilities.js';
 
 export { formatKeybinding, parseKeybinding, type Keybinding } from '@shared/keybinding-format.js';
 
@@ -207,13 +208,43 @@ export function keybindingOverrides(): Readonly<Record<string, string>> {
 }
 
 /**
+ * Chords Chrome, Edge and Firefox keep for themselves and never pass to a page: close, new and
+ * reopen tab, new window, new private window. Bound in a browser tab, they never run.
+ */
+const BROWSER_RESERVED_CHORDS: ReadonlySet<string> = new Set(
+  ['Mod+W', 'Mod+T', 'Mod+N', 'Mod+Shift+N', 'Mod+Shift+T', 'Mod+Shift+W'].map(chordKey),
+);
+
+function chordKey(chord: string): string {
+  const parsed = parseKeybinding(chord);
+  return `${parsed.key}|${String(parsed.mod)}|${String(parsed.shift)}|${String(parsed.alt)}`;
+}
+
+/** True when the browser keeps `chord` and a browser tab never sees it (see {@link BROWSER_RESERVED_CHORDS}). */
+export function isBrowserReservedChord(chord: string): boolean {
+  try {
+    return BROWSER_RESERVED_CHORDS.has(chordKey(chord));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The chord `definition` ships with here: its browser default in a browser tab, where the browser keeps
+ * its usual one (`CommandCatalogEntry.browserShortcut`), its registered default otherwise.
+ */
+export function defaultShortcut(definition: CommandDefinition<CommandContext>): string | undefined {
+  return isBrowserTab() && definition.browserShortcut !== undefined ? definition.browserShortcut : definition.shortcut;
+}
+
+/**
  * The chord that actually runs `definition` right now: the user's override when they set one,
- * the registered default otherwise, and `undefined` when either says "unbound" (`''`).
+ * the default otherwise ({@link defaultShortcut}), and `undefined` when either says "unbound" (`''`).
  */
 export function effectiveShortcut(definition: CommandDefinition<CommandContext>): string | undefined {
   const override = overrides[definition.id];
   if (override === undefined) {
-    return definition.shortcut;
+    return defaultShortcut(definition);
   }
   return override === '' ? undefined : override;
 }

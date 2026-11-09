@@ -320,6 +320,8 @@ export interface CommandDefinition<Ctx = unknown> {
    * rebound — these are fixed aliases.
    */
   readonly extraShortcuts?: readonly string[];
+  /** The default chord in a browser tab, where the browser keeps `shortcut` (see `CommandCatalogEntry`). */
+  readonly browserShortcut?: string;
   /** Kept out of the palette; menus and keybindings still run it (see `CommandCatalogEntry`). */
   readonly paletteHidden?: boolean;
   /** Where its shortcut fires from (see `CommandCatalogEntry.keyScope`). */

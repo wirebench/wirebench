@@ -525,8 +525,13 @@ function MultipartParts({
             </li>
           ))}
         </ul>
-        {/* A file part is a path picked in a native dialog. */}
-        {hasCapability('dialogs') && (
+        {/* A file part is a path picked in a native dialog, and read by the host when the request is sent. */}
+        {!filesAttachable() && (
+          <p data-testid="rest-multipart-files-desktop" className="text-xs text-fg-subtle">
+            {FILES_IN_DESKTOP}
+          </p>
+        )}
+        {filesAttachable() && (
           <div>
             <Button
               variant="secondary"
@@ -555,21 +560,37 @@ function MultipartParts({
   );
 }
 
+/** What a body says where its files cannot be picked: a browser tab's host has no files or dialogs. */
+const FILES_IN_DESKTOP = 'Files are attached in the desktop app.';
+
+/** Whether this host can pick a file (a native dialog) and read it when the request is sent. */
+function filesAttachable(): boolean {
+  return hasCapability('dialogs') && hasCapability('files');
+}
+
 type BinaryBody = Extract<RestBodyWire, { kind: 'binary' }>;
 
-/** The binary body: one file and its content type. */
-function BinaryBody({ body, onSet }: { readonly body: BinaryBody; readonly onSet: (body: RestBodyWire) => void }) {
+/** The binary body: one file and its content type. Exported for its tests. */
+export function BinaryBody({
+  body,
+  onSet,
+}: {
+  readonly body: BinaryBody;
+  readonly onSet: (body: RestBodyWire) => void;
+}) {
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center gap-2 text-sm">
         <span data-testid="rest-binary-path" className="min-w-0 flex-1 truncate font-mono text-xs text-fg-subtle">
           {body.source.kind === 'path'
             ? body.source.path === ''
-              ? 'No file chosen.'
+              ? filesAttachable()
+                ? 'No file chosen.'
+                : FILES_IN_DESKTOP
               : body.source.path
             : `cached ${body.source.sha256.slice(0, 12)}`}
         </span>
-        {hasCapability('dialogs') && (
+        {filesAttachable() && (
           <Button
             variant="secondary"
             data-testid="rest-binary-choose"

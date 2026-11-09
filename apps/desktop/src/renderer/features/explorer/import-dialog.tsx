@@ -270,6 +270,7 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
   }, [kerberosUnavailable]);
   const [username, setUsername] = useState('');
   const [passwordRef, setPasswordRef] = useState<string | undefined>(undefined);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const passwordFlushRef = useRef<(() => Promise<string | undefined>) | undefined>(undefined);
   const registerPasswordFlush = useCallback((flush: (() => Promise<string | undefined>) | undefined) => {
     passwordFlushRef.current = flush;
@@ -654,7 +655,11 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
 
   async function onDrop(event: React.DragEvent<HTMLDivElement>): Promise<void> {
     event.preventDefault();
-    const file = event.dataTransfer.files[0];
+    await readPickedFile(event.dataTransfer.files[0]);
+  }
+
+  /** A file dropped on the zone or chosen with Choose file…: read here as text, as a host without files needs. */
+  async function readPickedFile(file: File | undefined): Promise<void> {
     if (file === undefined) {
       return;
     }
@@ -1636,12 +1641,21 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
                           >
                             <option value="none">None</option>
                             <option value="basic">Basic</option>
-                            <option value="kerberos" disabled={kerberosAvailability?.available === false}>
+                            <option
+                              value="kerberos"
+                              disabled={kerberosAvailability?.available === false}
+                              {...(kerberosAvailability?.available === false &&
+                              kerberosAvailability.reason !== undefined
+                                ? { title: kerberosAvailability.reason }
+                                : {})}
+                            >
                               Kerberos (signed-in ticket)
                             </option>
                           </select>
                         </label>
-                        {kerberosAvailability?.available === false &&
+                        {/* The note is about the Kerberos choice; with None or Basic the option's title says it. */}
+                        {authMode === 'kerberos' &&
+                          kerberosAvailability?.available === false &&
                           kerberosAvailability.reason !== undefined &&
                           kerberosAvailability.reason !== '' && (
                             <p className="text-xs text-fg-subtle">{kerberosAvailability.reason}</p>
@@ -1744,6 +1758,27 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
                             Folder…
                           </Button>
                         )}
+                      </div>
+                    )}
+                    {!(hasCapability('files') && hasCapability('dialogs')) && (
+                      <div className="flex items-center gap-2">
+                        <input
+                          ref={fileInputRef}
+                          type="file"
+                          hidden
+                          data-testid="import-choose-file-input"
+                          onChange={(e) => {
+                            const input = e.currentTarget;
+                            void readPickedFile(input.files?.[0]).finally(() => {
+                              // Choosing the same file again fires a change too.
+                              input.value = '';
+                            });
+                          }}
+                        />
+                        <Button data-testid="import-choose-file" onClick={() => fileInputRef.current?.click()}>
+                          Choose file…
+                        </Button>
+                        <span className="text-xs text-fg-subtle">or drop one below</span>
                       </div>
                     )}
                     <div

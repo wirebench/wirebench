@@ -12,6 +12,11 @@ export interface CommandCatalogEntry {
   readonly shortcut?: string;
   readonly extraShortcuts?: readonly string[];
   /**
+   * The default chord in a browser tab, for a command whose {@link shortcut} the browser keeps for
+   * itself (⌘W closes the tab, ⌘⇧N opens a private window) and never passes to the page.
+   */
+  readonly browserShortcut?: string;
+  /**
    * Left out of the palette and the command reference: a command menus run with an argument
    * (a host, a snippet), whose bare form a palette twin already covers. Keybindings still reach it.
    */
@@ -350,7 +355,8 @@ export const COMMAND_CATALOG: Readonly<Record<CommandId, CommandCatalogEntry>> =
   },
   'view.showSettings': {
     id: 'view.showSettings',
-    label: 'Show Settings',
+    // The account menu's name for it (#904).
+    label: 'App settings',
     category: 'View',
     shortcut: 'Mod+Comma',
   },
@@ -366,8 +372,10 @@ export const COMMAND_CATALOG: Readonly<Record<CommandId, CommandCatalogEntry>> =
   },
   'preferences.open': {
     id: 'preferences.open',
-    label: 'Open Preferences',
+    label: 'App settings',
     category: 'General',
+    // The same page as App settings (view.showSettings), which the palette lists (#904).
+    paletteHidden: true,
   },
   'preferences.keyboardShortcuts': {
     id: 'preferences.keyboardShortcuts',
@@ -423,6 +431,7 @@ export const COMMAND_CATALOG: Readonly<Record<CommandId, CommandCatalogEntry>> =
     label: 'New Project…',
     category: 'Workspace',
     shortcut: 'Mod+Shift+N',
+    browserShortcut: 'Alt+Shift+N',
   },
   'workspace.newWindow': {
     id: 'workspace.newWindow',
@@ -960,6 +969,7 @@ export const COMMAND_CATALOG: Readonly<Record<CommandId, CommandCatalogEntry>> =
     label: 'Close Tab',
     category: 'Editor',
     shortcut: 'Mod+W',
+    browserShortcut: 'Alt+W',
   },
   // The tab menu's close actions (#679), for the palette and a user's own chords.
   'editor.closeOtherTabs': {
@@ -1158,7 +1168,7 @@ export const COMMAND_CATALOG: Readonly<Record<CommandId, CommandCatalogEntry>> =
   },
   'account.settings': {
     id: 'account.settings',
-    label: 'Account: Account settings',
+    label: 'Account: View profile',
     category: 'Account',
     aliases: ['profile', 'display name', 'password', 'devices', 'user settings'],
   },

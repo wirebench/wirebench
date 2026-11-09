@@ -93,7 +93,11 @@ describe('the import dialog with Kerberos', () => {
     await waitFor(() =>
       expect(screen.getByRole('option', { name: 'Kerberos (signed-in ticket)' }).hasAttribute('disabled')).toBe(true),
     );
-    expect(screen.getByText('No Kerberos library here.')).toBeTruthy();
+    // The reason rides on the option; the note below is for a Kerberos choice, not for None (#902).
+    expect(screen.getByRole('option', { name: 'Kerberos (signed-in ticket)' }).getAttribute('title')).toBe(
+      'No Kerberos library here.',
+    );
+    expect(screen.queryByText('No Kerberos library here.')).toBeNull();
   });
 
   it('falls back to no authentication when Kerberos turns out to be unavailable after it was picked', async () => {

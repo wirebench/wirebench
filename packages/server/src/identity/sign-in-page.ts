@@ -9,6 +9,7 @@ import type { ServerContext } from '../context.js';
 import type { SuspendedReason } from '../tenancy/directory.js';
 import { tenantUrl } from '../tenancy/urls.js';
 import { escapeHtml } from './invite-page.js';
+import { SERVER_PAGE_STYLE } from './page-style.js';
 
 /** The invitation page's policy, plus `form-action 'self'` for the form and no framing (clickjacking). */
 export const SIGN_IN_PAGE_CSP =
@@ -36,11 +37,7 @@ export interface SignInPageInput {
 /** The page's heading in *Add an account* mode (switch accounts spec §5.3). */
 const ADD_HEADING = 'Add an account';
 
-const STYLE =
-  'body{font:15px/1.5 system-ui,sans-serif;margin:3rem auto;max-width:24rem;padding:0 1rem;color:#222}' +
-  'label{display:block;margin:.75rem 0 .25rem}input{box-sizing:border-box;width:100%;padding:.4rem;font:inherit}' +
-  'button,a.method{display:block;box-sizing:border-box;width:100%;margin-top:1rem;padding:.5rem;font:inherit;text-align:center}' +
-  '.message{color:#a00}code{word-break:break-all}';
+const STYLE = SERVER_PAGE_STYLE;
 
 /**
  * Why a suspended tenant's page says no one signs in (hosted edition spec §22.7): one paragraph per reason, and the
@@ -69,7 +66,7 @@ export function renderSuspendedSignInPage(input: {
 export function signInFrame(serverUrl: string, body: string, heading = 'Sign in'): string {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(heading)} · Wirebench Server</title>
 <style>${STYLE}</style>
-</head><body><h1>${escapeHtml(heading)}</h1><p>Wirebench Server at <code>${escapeHtml(serverUrl)}</code></p>${body}</body></html>`;
+</head><body><main><h1>${escapeHtml(heading)}</h1><p>Wirebench Server at <code>${escapeHtml(serverUrl)}</code></p>${body}</main></body></html>`;
 }
 
 /** Sends {@link renderSuspendedSignInPage} with the sign-in page's headers. */

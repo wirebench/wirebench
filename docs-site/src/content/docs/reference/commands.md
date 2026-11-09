@@ -16,7 +16,6 @@ Windows and Linux). The first shortcut listed for a command can be changed in
 | Check for Updates… | — | — |
 | Show All Commands | <kbd>⌘K</kbd> or <kbd>⌘⇧P</kbd> | <kbd>Ctrl+K</kbd> or <kbd>Ctrl+Shift+P</kbd> |
 | Go to Operation or Request… | <kbd>⌘P</kbd> | <kbd>Ctrl+P</kbd> |
-| Open Preferences | — | — |
 | Preferences: Keyboard Shortcuts | — | — |
 
 ## View
@@ -35,7 +34,7 @@ Windows and Linux). The first shortcut listed for a command can be changed in
 | Show Port Forwarding | — | — |
 | Show Snippets | — | — |
 | Show Cookies | — | — |
-| Show Settings | <kbd>⌘,</kbd> | <kbd>Ctrl+,</kbd> |
+| App settings | <kbd>⌘,</kbd> | <kbd>Ctrl+,</kbd> |
 | Cycle Theme (Dark, Light, System) | — | — |
 | Theme: choose colour theme… | — | — |
 | Show HTTP Log | — | — |
@@ -288,5 +287,5 @@ Windows and Linux). The first shortcut listed for a command can be changed in
 | Account: Sign in to a server… | — | — |
 | Pair this machine… | — | — |
 | Account: Sign out… | — | — |
-| Account: Account settings | — | — |
+| Account: View profile | — | — |
 | Account: Manage team… | — | — |
