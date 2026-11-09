@@ -4,7 +4,7 @@ import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   loadLocalState,
   loadWorkspace,
@@ -349,6 +349,27 @@ describe('WorkspaceService across windows', () => {
     await expect(service.delete(created.id)).rejects.toMatchObject({ code: 'workspace-open-elsewhere' });
     expect(service.snapshot()).toBeNull();
     expect((await service.list()).map((summary) => summary.name)).toEqual(['Held']);
+  });
+
+  it('takes a held workspace over when it can, and opens it here', async () => {
+    const bootstrap = newService();
+    const created = await bootstrap.create('Moved');
+    await bootstrap.close();
+    let held = true;
+    const takeOver = vi.fn((id: string) => {
+      expect(id).toBe(created.id);
+      held = false;
+      return Promise.resolve(true);
+    });
+    const service = newService({ heldElsewhere: () => held, takeOver });
+
+    await expect(service.open(created.id)).resolves.toMatchObject({ id: created.id });
+    expect(takeOver).toHaveBeenCalledTimes(1);
+    // Rename and delete never take over: they stay refused while another window holds it.
+    held = true;
+    await expect(service.rename(created.id, 'Renamed')).rejects.toMatchObject({ code: 'workspace-open-elsewhere' });
+    expect(takeOver).toHaveBeenCalledTimes(1);
+    await service.close();
   });
 
   it("closing one window's workspace keeps a project the other window has open in History", async () => {

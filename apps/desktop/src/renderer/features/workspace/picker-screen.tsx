@@ -69,6 +69,7 @@ export function WorkspacePicker() {
   const status = useWorkspaceStore((state) => state.status);
   const error = useWorkspaceStore((state) => state.error);
   const lastError = useWorkspaceStore((state) => state.lastError);
+  const movedAway = useWorkspaceStore((state) => state.movedAway);
   const list = useWorkspaceStore((state) => state.list);
   const setJoinDialogOpen = useUiStore((state) => state.setJoinDialogOpen);
   const setTeamWorkspaceDialogOpen = useUiStore((state) => state.setTeamWorkspaceDialogOpen);
@@ -110,6 +111,24 @@ export function WorkspacePicker() {
           <p role="alert" className="mt-4 rounded-md border border-status-danger px-3 py-2 text-sm text-status-danger">
             {banner}
           </p>
+        )}
+
+        {movedAway !== undefined && (
+          <div
+            data-testid="workspace-moved-away"
+            role="status"
+            className="mt-4 flex flex-wrap items-center gap-3 rounded-md border border-hairline-strong px-3 py-2 text-sm text-fg-default"
+          >
+            <span className="min-w-0 flex-1">{movedAway.name || 'This workspace'} is open in another tab now.</span>
+            <Button
+              data-testid="workspace-moved-away-open"
+              onClick={() => {
+                void workspaceActions.open(movedAway.workspaceId);
+              }}
+            >
+              Open here
+            </Button>
+          </div>
         )}
 
         <div className="mt-5 flex flex-wrap items-center gap-2">

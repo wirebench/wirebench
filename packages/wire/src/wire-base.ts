@@ -2939,6 +2939,13 @@ export type UnsavedRestoreNoticeWire = z.infer<typeof unsavedRestoreNoticeSchema
 /** Payload for `workspace.flushDrafts`: main is about to close; stash drafts now. */
 export const workspaceFlushDraftsEventSchema = z.object({});
 
+/**
+ * Payload for `workspace.movedAway`: another tab of the same browser user opened this window's workspace, so this
+ * window handed over its drafts and closed it. The window says so and offers to take it back.
+ */
+export const workspaceMovedAwayEventSchema = z.object({ workspaceId: z.string(), name: z.string() });
+export type WorkspaceMovedAwayEvent = z.infer<typeof workspaceMovedAwayEventSchema>;
+
 /** User profile spec §6.2: a stored image, named by its version (a sha256 prefix), so a new one reads as new. */
 export const accountImageRefWireSchema = z.object({ version: z.string() });
 export type AccountImageRefWire = z.infer<typeof accountImageRefWireSchema>;

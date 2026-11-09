@@ -11,6 +11,9 @@ All notable changes to this project are documented here. The format follows
 - **Browser: a server restart no longer closes the workspace (#884).** While the server stops, the tab keeps the
   workspace, its tabs and what is being typed on screen under the reconnecting bar, instead of dropping to the
   workspace list.
+- **Browser: a link opened in a new tab opens there (#885).** A second tab of the same workspace takes it over instead
+  of being refused; the first tab keeps your unsaved edits, says the workspace is open in another tab now, and offers
+  *Open here* to take it back.
 
 ## [7.0.0] - 2026-11-09
 

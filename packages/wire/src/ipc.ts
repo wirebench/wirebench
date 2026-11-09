@@ -435,6 +435,7 @@ import {
   workspaceExportCollectionResponseSchema,
   workspaceExportProjectResponseSchema,
   workspaceFlushDraftsEventSchema,
+  workspaceMovedAwayEventSchema,
   workspaceIdRequestSchema,
   workspaceImportSuggestionRequestSchema,
   workspaceImportSuggestionResponseSchema,
@@ -1629,6 +1630,8 @@ export const events = {
     flushDrafts: defineEvent('workspace.flushDrafts', workspaceFlushDraftsEventSchema),
     /** A T4 reload found `workspace.yaml`/`environments/*.yaml` unreadable; `changed` was not fired. */
     changedOnDisk: defineEvent('workspace.changedOnDisk', workspaceChangedOnDiskEventSchema),
+    /** Another tab of the same user took this window's workspace over (browser hosts only). */
+    movedAway: defineEvent('workspace.movedAway', workspaceMovedAwayEventSchema),
   },
   project: {
     changed: defineEvent('project.changed', projectChangedEventSchema),
