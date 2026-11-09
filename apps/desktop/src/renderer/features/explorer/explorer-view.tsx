@@ -18,6 +18,8 @@ import {
   Link,
   Link2,
   Loader2,
+  MoreHorizontal,
+  Plus,
   Search,
   UnfoldVertical,
   Webhook,
@@ -60,6 +62,8 @@ import {
   useExplorerFilterStore,
 } from './explorer-filter.js';
 import { ExplorerFilterField } from './filter-field.js';
+import { NewRequestButton } from './new-request-button.js';
+import { emptyHint, isCreatingContainer, primaryNewItem, type EmptyHint } from './row-actions.js';
 import { keybindingOverrides, matchesEvent, parseKeybinding, shortcutFor } from '../../lib/keybindings.js';
 import { COMMAND_CATALOG } from '@shared/command-catalog.js';
 import { detectPlatform } from '../../lib/platform.js';
@@ -252,6 +256,24 @@ const ROW_PADDING_LEFT = 6;
 /** A row's height, and the two-line height of the row that says a linked project's folder is gone (#685 E17). */
 const ROW_HEIGHT = 26;
 const MISSING_ROW_HEIGHT = 46;
+/** An unfolded container with nothing in it: its row, and the line under it that names the next step. */
+const EMPTY_ROW_HEIGHT = ROW_HEIGHT + 20;
+
+/** The line an empty container shows under itself while unfolded; none while the tree is filtered. */
+function openEmptyHint(node: NodeApi<ExplorerNode>): EmptyHint | undefined {
+  return node.isOpen && !node.tree.isFiltered ? emptyHint(node.data) : undefined;
+}
+
+/** Opens a row's context menu from a button inside it, where the button is, as a right-click there would. */
+function openRowMenu(button: HTMLElement): void {
+  const box = button.getBoundingClientRect();
+  button.dispatchEvent(
+    new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: box.left, clientY: box.bottom }),
+  );
+}
+
+const ROW_ACTION_CLASS =
+  'inline-flex size-5 items-center justify-center rounded text-fg-subtle hover:bg-surface-hover hover:text-fg-default';
 
 /** A row's name with the letters the filter matched in a `<mark>`. */
 function FilterMarks({ name, term }: { readonly name: string; readonly term: string }) {
@@ -294,6 +316,9 @@ function ExplorerRowWrapper({ node, attrs, innerRef, children }: RowRendererProp
     </div>
   );
 }
+
+/** Lines an empty container's hint up under its children's names: past the chevron, the gutter and a level. */
+const EMPTY_HINT_OFFSET = 10 + 24 + 12 + 4;
 
 /** A mock row's marker while it runs: where it listens, as its tooltip. */
 function MockRunningBadge({ mockId }: { readonly mockId: string }) {
@@ -362,7 +387,9 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
     node.data.kind === 'schedule' ||
     node.data.kind === 'sequence' ||
     node.data.kind === 'mock';
-  return (
+  const hint = openEmptyHint(node);
+  const primary = isCreatingContainer(node.data) ? primaryNewItem(node.data) : undefined;
+  const row = (
     <ExplorerContextMenu
       node={node.data}
       // A right-click on one of several selected rows gets the selection's menu (#681).
@@ -428,7 +455,7 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
           node.activate();
         }}
         {...(node.willReceiveDrop ? { 'data-drop-target': 'true' } : {})}
-        className={`@container flex h-full items-center pr-1 text-sm ${
+        className={`@container relative flex ${hint === undefined ? 'h-full' : 'h-[26px]'} items-center pr-1 text-sm ${
           node.willReceiveDrop
             ? 'bg-accent-muted text-fg-default ring-1 ring-accent ring-inset'
             : node.isSelected
@@ -650,8 +677,82 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
             {`${String(node.data.unseen)}${node.data.unseenMore === true ? '+' : ''}`}
           </span>
         )}
+        {/* A container's own New and its menu, on hover and while the row has keyboard focus. Clicks stop
+            here: they must not open or fold the row. */}
+        {isCreatingContainer(node.data) && !node.isEditing && (
+          <span
+            data-testid="explorer-row-actions"
+            className={`absolute top-1/2 right-1 hidden -translate-y-1/2 items-center gap-0.5 rounded group-hover/row:flex group-focus/row:flex ${
+              node.isSelected ? 'bg-accent-muted' : 'bg-surface-raised'
+            }`}
+            onMouseDown={(event) => event.stopPropagation()}
+            onDoubleClick={(event) => event.stopPropagation()}
+          >
+            {primary !== undefined && (
+              <button
+                type="button"
+                tabIndex={-1}
+                aria-label={primary.label}
+                title={primary.label}
+                data-testid="explorer-row-new"
+                className={ROW_ACTION_CLASS}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  primary.run();
+                }}
+              >
+                <Plus size={12} aria-hidden="true" />
+              </button>
+            )}
+            <button
+              type="button"
+              tabIndex={-1}
+              aria-label={`More actions for ${label}`}
+              title="More actions"
+              data-testid="explorer-row-more"
+              className={ROW_ACTION_CLASS}
+              onClick={(event) => {
+                event.stopPropagation();
+                openRowMenu(event.currentTarget);
+              }}
+            >
+              <MoreHorizontal size={12} aria-hidden="true" />
+            </button>
+          </span>
+        )}
       </div>
     </ExplorerContextMenu>
+  );
+  if (hint === undefined) return row;
+  return (
+    <>
+      {row}
+      {/* Under the row's treeitem rather than a row of its own, so the arrow keys pass over it. */}
+      <div
+        data-testid="explorer-empty-hint"
+        style={{ paddingLeft: indent + ROW_PADDING_LEFT + EMPTY_HINT_OFFSET }}
+        className="flex h-5 items-center gap-1 text-xs text-fg-subtle"
+        onClick={(event) => event.stopPropagation()}
+        onDoubleClick={(event) => event.stopPropagation()}
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <span>{hint.text}</span>
+        {hint.action !== undefined && (
+          <>
+            <span aria-hidden="true">·</span>
+            <button
+              type="button"
+              tabIndex={-1}
+              data-testid="explorer-empty-hint-action"
+              className="rounded text-accent hover:underline"
+              onClick={() => hint.action?.run()}
+            >
+              {hint.action.label}
+            </button>
+          </>
+        )}
+      </div>
+    </>
   );
 }
 
@@ -815,6 +916,7 @@ export function ExplorerView() {
         >
           <FolderPlus size={14} aria-hidden="true" />
         </IconButton>
+        <NewRequestButton />
         <IconButton label="Import…" onClick={() => openImportDialog()}>
           <FileDown size={14} aria-hidden="true" />
         </IconButton>
@@ -893,7 +995,14 @@ export function ExplorerView() {
               width={size.width}
               height={size.height}
               // A missing linked project's row takes two lines (#685 E17); every other row one.
-              rowHeight={(node) => (node.data.kind === 'project-missing' ? MISSING_ROW_HEIGHT : ROW_HEIGHT)}
+              // An unfolded empty container takes two lines too: its row, and the next step under it.
+              rowHeight={(node) =>
+                node.data.kind === 'project-missing'
+                  ? MISSING_ROW_HEIGHT
+                  : openEmptyHint(node) === undefined
+                    ? ROW_HEIGHT
+                    : EMPTY_ROW_HEIGHT
+              }
               // Half react-arborist's 24px default: enough that a subfolder reads as sitting inside
               // its folder at a glance, without the four levels of this tree — project › API ›
               // folder › request — marching a request off to the right.
@@ -905,7 +1014,7 @@ export function ExplorerView() {
               // "DELETE /pets/{id}" past the edge behind a horizontal scrollbar. Held to the
               // tree's width, a row's name truncates with an ellipsis and its title says it in full.
               className="overflow-x-hidden!"
-              rowClassName="min-w-0!"
+              rowClassName="group/row min-w-0!"
               openByDefault={false}
               initialOpenState={{ ...Object.fromEntries(data.map((root) => [root.id, true])), ...storedOpen() }}
               // Matching rows and the rows above them stay; react-arborist keeps the ancestors and unfolds them.

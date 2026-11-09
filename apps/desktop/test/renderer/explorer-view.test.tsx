@@ -1,9 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 import { ExplorerView, sameProject } from '../../src/renderer/features/explorer/explorer-view.js';
 import { startRenamingNode } from '../../src/renderer/features/explorer/explorer-api.js';
+import { explorerActions } from '../../src/renderer/features/explorer/explorer-actions.js';
+import { newRequestInChoice, requestApiChoices } from '../../src/renderer/features/explorer/new-request-button.js';
 import { useEditorsStore } from '../../src/renderer/state/editors.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
 import { useSyncStore } from '../../src/renderer/state/sync.js';
@@ -724,6 +726,102 @@ describe('ExplorerView with APIs', () => {
       await new Promise((resolve) => setTimeout(resolve, 520));
       fireEvent.keyDown(item('In folder'), { key: 'd' });
       await waitFor(() => expect(document.activeElement).toBe(item('Demo')));
+    });
+  });
+
+  describe('empty containers, row actions and the header’s New request', () => {
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    /** One REST API with nothing in it, unfolded. */
+    function seedEmptyApi(): void {
+      useProjectStore.setState({
+        order: [{ projectId: 'p1', interfaceIds: [] }],
+        rest: { p1: { apis: [restApiWire()], folders: [], requests: [] } },
+        apis: { 'api-1': restApiWire() },
+        projectOf: { p1: 'p1', 'api-1': 'p1' },
+      });
+      useUiStore.setState({ workspaces: { w1: { tabs: [], explorerOpen: { 'api:api-1': true } } } });
+    }
+
+    it('shows an unfolded empty API the next step under it, which the arrow keys pass over', () => {
+      const newRestRequest = vi.spyOn(explorerActions, 'newRestRequest').mockImplementation(() => undefined);
+      seedEmptyApi();
+      mount();
+
+      const hint = screen.getByTestId('explorer-empty-hint');
+      expect(hint.textContent).toBe('No requests yet·New request');
+      // Inside the API's own treeitem, not a row of its own: there is no treeitem for it to stop on.
+      expect(hint.closest('[role="treeitem"]')?.querySelector('[data-testid="api-row"]')).not.toBeNull();
+      expect(screen.getAllByRole('treeitem')).toHaveLength(2);
+
+      fireEvent.click(screen.getByTestId('explorer-empty-hint-action'));
+      expect(newRestRequest).toHaveBeenCalledWith('api-1');
+      // The click stayed with the hint: the API's tab did not open over it.
+      expect(useEditorsStore.getState().tabs).toEqual([]);
+    });
+
+    it('drops the hint while the API is folded, or once it has a request', () => {
+      seedEmptyApi();
+      useUiStore.setState({ workspaces: { w1: { tabs: [], explorerOpen: { 'api:api-1': false } } } });
+      mount();
+      expect(screen.queryByTestId('explorer-empty-hint')).toBeNull();
+      cleanup();
+
+      seedRest();
+      mount();
+      expect(screen.queryByTestId('explorer-empty-hint')).toBeNull();
+    });
+
+    it('gives a container row a + for its New and a ⋯ for its menu, neither opening or folding the row', async () => {
+      const newRestRequest = vi.spyOn(explorerActions, 'newRestRequest').mockImplementation(() => undefined);
+      seedRest();
+      mount();
+
+      const apiRow = screen.getByTestId('api-row');
+      const actions = apiRow.querySelector('[data-testid="explorer-row-actions"]')!;
+      expect(actions.className).toContain('group-hover/row:flex');
+      expect(actions.className).toContain('group-focus/row:flex');
+      expect(apiRow.closest('[role="treeitem"]')?.className).toContain('group/row');
+
+      fireEvent.click(within(apiRow).getByRole('button', { name: 'New request' }));
+      expect(newRestRequest).toHaveBeenCalledWith('api-1');
+      expect(useEditorsStore.getState().tabs).toEqual([]);
+      expect(apiRow.closest('[role="treeitem"]')?.getAttribute('aria-expanded')).toBe('true');
+
+      fireEvent.click(screen.getByRole('button', { name: 'More actions for Petstore' }));
+      expect(await screen.findByRole('menuitem', { name: 'Rename…' })).toBeTruthy();
+      expect(useEditorsStore.getState().tabs).toEqual([]);
+      // A request row is not a container: it has neither.
+      expect(
+        screen.getAllByTestId('rest-request-row')[0]!.querySelector('[data-testid="explorer-row-actions"]'),
+      ).toBeNull();
+    });
+
+    it('makes the header’s New request in the API of the selected request', () => {
+      const newRestRequest = vi.spyOn(explorerActions, 'newRestRequest').mockImplementation(() => undefined);
+      seedRest();
+      mount();
+
+      fireEvent.click(screen.getByText('In folder'));
+      fireEvent.click(screen.getByTestId('explorer-new-request'));
+      expect(newRestRequest).toHaveBeenCalledWith('api-1', 'folder-1');
+    });
+
+    it('offers the workspace’s APIs to choose from when nothing says which', () => {
+      const newRestRequest = vi.spyOn(explorerActions, 'newRestRequest').mockImplementation(() => undefined);
+      seedRest();
+      mount();
+
+      // With no API selected or open, the button opens a chooser rather than making a request somewhere.
+      const trigger = screen.getByTestId('explorer-new-request');
+      expect(trigger.getAttribute('aria-label')).toBe('New request…');
+      expect(trigger.getAttribute('aria-haspopup')).toBe('menu');
+      const choices = requestApiChoices(useProjectStore.getState());
+      expect(choices.map((choice) => [choice.kind, choice.name])).toEqual([['rest', 'Petstore']]);
+      newRequestInChoice(choices[0]!);
+      expect(newRestRequest).toHaveBeenCalledWith('api-1', undefined);
     });
   });
 
