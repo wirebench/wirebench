@@ -39,7 +39,8 @@ test.describe('server accounts', () => {
     server = await startFakeServer({ users: [ALICE] });
     launched = await launchApp({ userDataDir, keepUserDataDir: true });
     let page = launched.window;
-    await expect(page.getByTestId('status-bar-account')).toHaveCount(0);
+    // Signed out with no server known: the title bar offers Sign in (#897).
+    await expect(page.getByTestId('status-bar-account')).toHaveAttribute('data-state', 'signed-out');
 
     await openSignIn(page, server.url);
     const dialog = page.getByTestId('sign-in-dialog');

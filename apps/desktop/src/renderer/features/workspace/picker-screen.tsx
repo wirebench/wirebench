@@ -73,7 +73,7 @@ export function WorkspacePicker() {
   const list = useWorkspaceStore((state) => state.list);
   const setJoinDialogOpen = useUiStore((state) => state.setJoinDialogOpen);
   const setTeamWorkspaceDialogOpen = useUiStore((state) => state.setTeamWorkspaceDialogOpen);
-  // Shown only once a server is known: without one the app shows no account UI at all.
+  // Shown only once a server is known: without one the only account UI is the title bar's Sign in (#897).
   const knowsServer = useAccountStore((state) => state.servers.length > 0);
   const [name, setName] = useState('');
   const localFiles = hasCapability('files');
