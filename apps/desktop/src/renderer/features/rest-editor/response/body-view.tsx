@@ -410,8 +410,8 @@ function PreviewView({ exchange, tooLarge }: { readonly exchange: BodyViewExchan
     if (!image) {
       return;
     }
-    // A blob URL rather than a `data:` one: the CSP allows `img-src 'self' data:` but a multi-megabyte
-    // data URI would be built as a string first. The URL is revoked on unmount, so nothing leaks.
+    // A blob URL rather than a `data:` one: a multi-megabyte data URI would be built as a string first.
+    // Both clients' CSP allow `img-src blob:` for this (#911). The URL is revoked on unmount.
     const url = URL.createObjectURL(new Blob([bytesOf(exchange.http.bodyBase64)], { type: contentType }));
     setObjectUrl(url);
     return () => {

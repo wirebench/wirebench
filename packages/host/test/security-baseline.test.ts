@@ -29,7 +29,7 @@ describe('security baseline', () => {
 
   it('sets a strict content security policy', () => {
     expect(CONTENT_SECURITY_POLICY).toMatchInlineSnapshot(
-      `"default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:"`,
+      `"default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:"`,
     );
   });
 

@@ -128,6 +128,26 @@ test.describe('REST: make an API, send a request, read the response', () => {
     await expect(page.getByTestId('status-bar-last')).toContainText('200');
   });
 
+  test('previews an image response', async () => {
+    server = await startTestRestServer();
+    launched = await launchApp();
+    const page = launched.window;
+
+    await createWorkspace(page, 'REST');
+    await createProject(page, 'Pets');
+    await createApi(page, 'Petstore', server.url);
+    await createRestRequest(page, 'Petstore', 'Picture');
+    await setMethodAndUrl(page, 'GET', '/image.png');
+    await sendRest(page);
+
+    await expect(responseStatus(page)).toContainText('200');
+    // The preview is drawn from a blob: URL; the page's content policy must allow it, or the image
+    // is blocked and shows as broken (#911). A loaded image has a natural width.
+    const image = page.getByTestId('rest-response-image');
+    await expect(image).toBeVisible({ timeout: 20_000 });
+    await expect.poll(() => image.evaluate((element: HTMLImageElement) => element.naturalWidth)).toBeGreaterThan(0);
+  });
+
   test('shows the cookies a response set and the redirects it followed', async () => {
     server = await startTestRestServer();
     launched = await launchApp();
