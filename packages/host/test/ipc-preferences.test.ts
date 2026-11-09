@@ -60,6 +60,17 @@ describe('preferences.* IPC', () => {
     expect(result.value.preferences.ui.theme).toBe('light');
   });
 
+  /** A server host outlives a browser tab's reload: the reloaded tab must get the theme chosen since (#889). */
+  it('answers preferences.get after an update with the updated document', async () => {
+    writeFileSync(join(dir, PREFERENCES_FILE), 'version: 1\nui:\n  theme: dark\n', 'utf8');
+    registerPreferencesChannels(table, new PreferencesService(dir));
+    await invoke('preferences.get', undefined);
+    await invoke('preferences.update', { patch: { ui: { theme: 'light' } } });
+
+    const result = (await invoke('preferences.get', undefined)) as { value: { preferences: PreferencesWire } };
+    expect(result.value.preferences.ui.theme).toBe('light');
+  });
+
   it('merges an update, persists it and notifies the broadcaster', async () => {
     const changed: PreferencesWire[] = [];
     registerPreferencesChannels(table, new PreferencesService(dir), (next) => changed.push(next));

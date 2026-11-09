@@ -45,6 +45,15 @@ describe('PreferencesService', () => {
     expect((await new PreferencesService(dir).ready()).http.userAgent).toBe('Custom/2');
   });
 
+  it('answers ready() with the document in force after an update, not the one first loaded (#889)', async () => {
+    writeFileSync(file(), 'version: 1\nui:\n  theme: dark\n', 'utf8');
+    const service = new PreferencesService(dir);
+    expect((await service.ready()).ui.theme).toBe('dark');
+    await service.update({ ui: { theme: 'light' } });
+    expect((await service.ready()).ui.theme).toBe('light');
+    expect((await service.load()).ui.theme).toBe('light');
+  });
+
   it('serialises overlapping updates instead of losing one', async () => {
     const service = new PreferencesService(dir);
     await Promise.all([
