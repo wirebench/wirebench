@@ -1,4 +1,5 @@
 import type { TreeApi } from 'react-arborist';
+import { useUiStore } from '../../state/ui.js';
 import type { ExplorerNode } from './tree-nodes.js';
 
 /**
@@ -86,10 +87,21 @@ export interface RevealOptions {
  * after {@link REVEAL_FRAMES}.
  */
 export function revealNode(nodeId: string, options: RevealOptions = {}): void {
+  // A rename needs its row on screen: an item made from the palette while History or Environments fills the
+  // sidebar would otherwise keep its default name, and what the user types next would go nowhere (#914).
+  if (options.rename === true) {
+    const ui = useUiStore.getState();
+    if (!ui.sidebar.visible || ui.sidebar.view !== 'explorer') ui.showSidebarView('explorer');
+  }
   let frames = 0;
   const attempt = (): void => {
     const tree = treeApi;
-    if (tree === null) return;
+    // A tree that is not mounted yet (the Explorer just brought into the sidebar) is waited for as a row is.
+    if (tree === null) {
+      frames += 1;
+      if (options.rename === true && frames < REVEAL_FRAMES) nextFrame(attempt);
+      return;
+    }
     // A collapsed ancestor keeps the row out of the visible list, where `get` looks.
     tree.openParents(nodeId);
     const node = tree.get(nodeId);
