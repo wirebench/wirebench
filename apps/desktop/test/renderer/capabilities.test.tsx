@@ -164,6 +164,19 @@ describe('the import dialog by capability', () => {
     expect(screen.getByText('Drop an OpenAPI, Postman, WSDL or .proto file here')).toBeTruthy();
   });
 
+  it('reads a file chosen with Choose file… like a drop, without files and dialogs (#893)', async () => {
+    install(BROWSER, stubs);
+    render(<ImportDialog open onOpenChange={vi.fn()} />);
+    fireEvent.click(screen.getByRole('tab', { name: 'File' }));
+
+    expect(screen.getByTestId('import-choose-file')).toBeTruthy();
+    const file = new File(['{"openapi":"3.0.0"}'], 'spec.json', { type: 'application/json' });
+    fireEvent.change(screen.getByTestId('import-choose-file-input'), { target: { files: [file] } });
+    await waitFor(() => {
+      expect(screen.getByText('Loaded: spec.json')).toBeTruthy();
+    });
+  });
+
   it('says nothing of Folder… for a folder format without dialogs', () => {
     install(BROWSER, stubs);
     render(<ImportDialog open onOpenChange={vi.fn()} initialFormat="postman-v3" />);
@@ -185,6 +198,7 @@ describe('the import dialog by capability', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'File' }));
     expect(screen.getByTestId('import-browse')).toBeTruthy();
     expect(screen.getByTestId('import-file-input')).toBeTruthy();
+    expect(screen.queryByTestId('import-choose-file')).toBeNull();
   });
 });
 
