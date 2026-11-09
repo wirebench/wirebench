@@ -11,6 +11,7 @@ import { useUiStore } from '../../src/renderer/state/ui.js';
 import { useWebhooksStore } from '../../src/renderer/state/webhooks.js';
 import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
 import { usePreferencesStore } from '../../src/renderer/state/preferences.js';
+import { useExplorerFilterStore } from '../../src/renderer/features/explorer/explorer-filter.js';
 import type { InterfaceWire } from '@wirebench/wire/kinds/soap/wire';
 import type { WorkspaceProjectWire, WorkspaceWire } from '@wirebench/wire/wire-base';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
@@ -653,6 +654,77 @@ describe('ExplorerView with APIs', () => {
     // Whatever is cut, the tooltip says in full.
     expect(name?.getAttribute('title')).toBe('Shop · Shop');
     expect(detail?.getAttribute('title')).toBe('Shop · Shop');
+  });
+
+  describe('filter and type-ahead', () => {
+    afterEach(() => {
+      useExplorerFilterStore.getState().clear();
+    });
+
+    it('opens the filter from its header button and keeps only the matching rows and their parents', async () => {
+      seedRest();
+      mount();
+
+      fireEvent.click(screen.getByTestId('explorer-filter-button'));
+      const field = await screen.findByTestId('explorer-filter');
+      await waitFor(() => expect(document.activeElement).toBe(field));
+      fireEvent.change(field, { target: { value: 'fold' } });
+
+      await waitFor(() => expect(screen.queryByText('At root')).toBeNull());
+      // The match and the API and project above it stay; the matched letters are marked.
+      expect(screen.getByTestId('api-row')).toBeTruthy();
+      const mark = screen.getAllByTestId('explorer-filter-mark')[0]!;
+      expect(mark.tagName).toBe('MARK');
+      expect(mark.textContent?.toLowerCase()).toBe('fold');
+      expect(mark.closest('[data-testid="rest-request-row"]')?.textContent).toContain('In folder');
+      expect(screen.queryByTestId('explorer-no-matches')).toBeNull();
+    });
+
+    it('says No matches when nothing matches, and Escape empties the field and goes back to the tree', async () => {
+      seedRest();
+      mount();
+
+      act(() => useExplorerFilterStore.getState().focus());
+      const field = await screen.findByTestId('explorer-filter');
+      fireEvent.change(field, { target: { value: 'zebra' } });
+      expect(await screen.findByText('No matches')).toBeTruthy();
+
+      fireEvent.keyDown(field, { key: 'Escape' });
+      expect(screen.queryByTestId('explorer-filter')).toBeNull();
+      expect(useExplorerFilterStore.getState().text).toBe('');
+      expect(await screen.findByText('At root')).toBeTruthy();
+      await waitFor(() => expect(document.activeElement?.closest('[role="tree"]')).not.toBeNull());
+    });
+
+    it('opens the filter on its chord with focus in the tree, without letting the window see it', async () => {
+      seedRest();
+      mount();
+      const seen = vi.fn();
+      window.addEventListener('keydown', seen);
+      const row = screen.getAllByTestId('rest-request-row')[0]!.closest('[role="treeitem"]') as HTMLElement;
+      // jsdom's user agent is not a Mac's, so Mod is Ctrl.
+      fireEvent.keyDown(row, { key: 'F', ctrlKey: true, shiftKey: true });
+      window.removeEventListener('keydown', seen);
+
+      expect(await screen.findByTestId('explorer-filter')).toBeTruthy();
+      expect(seen).not.toHaveBeenCalled();
+    });
+
+    it('moves focus to the next row whose name starts with the letters typed, wrapping round', async () => {
+      seedRest();
+      mount();
+      const item = (text: string): HTMLElement => screen.getByText(text).closest('[role="treeitem"]') as HTMLElement;
+      act(() => {
+        item('Petstore').focus();
+      });
+
+      fireEvent.keyDown(item('Petstore'), { key: 'i' });
+      await waitFor(() => expect(document.activeElement).toBe(item('In folder')));
+      // A letter typed later starts a new word; the search wraps past the end to the top.
+      await new Promise((resolve) => setTimeout(resolve, 520));
+      fireEvent.keyDown(item('In folder'), { key: 'd' });
+      await waitFor(() => expect(document.activeElement).toBe(item('Demo')));
+    });
   });
 
   it('opens a project tab on a single click and leaves the project unfolded (#680)', () => {

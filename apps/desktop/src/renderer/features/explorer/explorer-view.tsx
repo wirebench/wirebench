@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import type { NodeApi, NodeRendererProps, RowRendererProps } from 'react-arborist';
 import { forwardRef } from 'react';
 import { ListOuterElement, Tree } from 'react-arborist';
@@ -18,6 +18,7 @@ import {
   Link,
   Link2,
   Loader2,
+  Search,
   UnfoldVertical,
   Webhook,
   XCircle,
@@ -47,6 +48,21 @@ import { openFolderTab } from '../folder/folder-actions.js';
 import { isContainerRow, isDropDisabled, planContainerDrop, planMoves } from './drag-drop.js';
 import { dropApiOnProject } from './move-api-dialog.js';
 import { getExplorerTree, registerExplorerTree, revealNode } from './explorer-api.js';
+import {
+  countMatches,
+  createTypeAhead,
+  highlightParts,
+  isTypeAheadKey,
+  matchesFilter,
+  rowName,
+  showExplorerFilter,
+  typeAheadIndex,
+  useExplorerFilterStore,
+} from './explorer-filter.js';
+import { ExplorerFilterField } from './filter-field.js';
+import { keybindingOverrides, matchesEvent, parseKeybinding, shortcutFor } from '../../lib/keybindings.js';
+import { COMMAND_CATALOG } from '@shared/command-catalog.js';
+import { detectPlatform } from '../../lib/platform.js';
 import {
   activeTabTreeNodeId,
   deleteExplorerNodes,
@@ -119,6 +135,43 @@ const NODE_ICON: Partial<Record<ExplorerNode['kind'], React.ComponentType<{ size
  * focusable generic sitting between the `tree` and its `treeitem`s, and `group` is a child the
  * `tree` role is allowed to own.
  */
+/** The letters typed into the tree in one go, for type-ahead. */
+const typeAhead = createTypeAhead();
+
+/** Whether a keystroke is the chord the filter command is bound to now, rebinds included. */
+function isFilterChord(event: React.KeyboardEvent): boolean {
+  // Read off the catalog and the overrides rather than the registry, so the tree answers to it however early.
+  const override = keybindingOverrides()['explorer.filter'];
+  const chord =
+    override === undefined ? COMMAND_CATALOG['explorer.filter'].shortcut : override === '' ? undefined : override;
+  if (chord === undefined) return false;
+  try {
+    return matchesEvent(parseKeybinding(chord), event.nativeEvent, detectPlatform());
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Type-ahead: focus moves to the next shown row, wrapping round, whose name starts with the letters typed within
+ * half a second of each other. Space, the arrows, Enter, F2 and Delete keep their meaning; they never reach here.
+ */
+function typeAheadTo(key: string): boolean {
+  const tree = getExplorerTree();
+  if (tree === null) return false;
+  const rows = tree.visibleNodes;
+  const current = tree.focusedNode === null ? -1 : rows.findIndex((row) => row.id === tree.focusedNode?.id);
+  const index = typeAheadIndex(
+    rows.map((row) => rowName(row.data)),
+    current,
+    typeAhead(key),
+  );
+  const target = index === undefined ? undefined : rows[index];
+  if (target === undefined) return false;
+  tree.focus(target, { scroll: true });
+  return true;
+}
+
 const FocusableListOuter = forwardRef<HTMLDivElement, React.ComponentProps<typeof ListOuterElement>>(
   function FocusableListOuter(props, ref) {
     return (
@@ -133,10 +186,24 @@ const FocusableListOuter = forwardRef<HTMLDivElement, React.ComponentProps<typeo
         // a-time Backspace never runs as well; the window's keybindings see none of it either, which keeps the
         // `explorer.delete` command's own Delete key the only one they dispatch.
         onKeyDown={(event) => {
-          if (event.key !== 'Backspace' || event.altKey || event.shiftKey) return;
           const target = event.target;
           if (target instanceof Element && target.closest('input, textarea, select, [contenteditable]') !== null)
             return;
+          // The filter's chord is Format Document's elsewhere: taken here, the window's keybindings never see it.
+          if (isFilterChord(event)) {
+            event.preventDefault();
+            event.stopPropagation();
+            showExplorerFilter();
+            return;
+          }
+          if (isTypeAheadKey(event)) {
+            if (typeAheadTo(event.key)) {
+              event.preventDefault();
+              event.stopPropagation();
+            }
+            return;
+          }
+          if (event.key !== 'Backspace' || event.altKey || event.shiftKey) return;
           const tree = getExplorerTree();
           if (tree === null || tree.selectedIds.size === 0) return;
           event.preventDefault();
@@ -185,6 +252,23 @@ const ROW_PADDING_LEFT = 6;
 /** A row's height, and the two-line height of the row that says a linked project's folder is gone (#685 E17). */
 const ROW_HEIGHT = 26;
 const MISSING_ROW_HEIGHT = 46;
+
+/** A row's name with the letters the filter matched in a `<mark>`. */
+function FilterMarks({ name, term }: { readonly name: string; readonly term: string }) {
+  return (
+    <>
+      {highlightParts(name, term).map((part, index) =>
+        part.match ? (
+          <mark key={index} data-testid="explorer-filter-mark" className="rounded-sm bg-accent-muted text-fg-default">
+            {part.text}
+          </mark>
+        ) : (
+          <Fragment key={index}>{part.text}</Fragment>
+        ),
+      )}
+    </>
+  );
+}
 
 /** A row's tooltip: its name, and the muted detail after it when it has one. */
 function rowTitle(label: string, detail: string | undefined): string {
@@ -455,7 +539,7 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
               className={`min-w-[4ch] shrink truncate pl-1 ${node.data.kind === 'placeholder' ? 'text-fg-faint' : ''}`}
               title={node.data.kind === 'placeholder' ? node.data.message : rowTitle(label, detail)}
             >
-              {label}
+              <FilterMarks name={label} term={node.tree.searchTerm} />
             </span>
             {detail !== undefined && (
               <span
@@ -613,6 +697,7 @@ export function ExplorerView() {
   const schedulesError = useSchedulesStore((state) => state.error);
   const scheduleList = useSchedulesStore((state) => state.schedules);
 
+  const filter = useExplorerFilterStore((state) => state.text);
   const [containerRef, size] = useElementSize<HTMLDivElement>();
   const [treeRef, setTreeRef] = useState<import('react-arborist').TreeApi<ExplorerNode> | null | undefined>(undefined);
 
@@ -714,6 +799,8 @@ export function ExplorerView() {
     // `storedOpen` reads the store directly; it is deliberately not a dependency.
   }, [treeRef, rootIds]);
 
+  const noMatches = filter.trim() !== '' && countMatches(data, filter) === 0;
+
   const requestPendingDeletion = confirmDeleteRequestId !== undefined ? requests[confirmDeleteRequestId] : undefined;
 
   return (
@@ -748,6 +835,14 @@ export function ExplorerView() {
             <Link2 size={14} aria-hidden="true" />
           </IconButton>
         )}
+        <IconButton
+          data-testid="explorer-filter-button"
+          label="Filter"
+          shortcut={shortcutLabel('explorer.filter')}
+          onClick={() => showExplorerFilter()}
+        >
+          <Search size={14} aria-hidden="true" />
+        </IconButton>
         <IconButton label="Expand all" onClick={() => expandExplorerAll()}>
           <UnfoldVertical size={14} aria-hidden="true" />
         </IconButton>
@@ -758,7 +853,17 @@ export function ExplorerView() {
             offers Reload; a button that re-read every project would discard unsaved edits for nothing. */}
       </div>
 
-      <div ref={containerRef} className="min-h-0 flex-1">
+      <ExplorerFilterField />
+
+      <div ref={containerRef} className="relative min-h-0 flex-1">
+        {noMatches && (
+          <p
+            data-testid="explorer-no-matches"
+            className="absolute inset-x-0 top-3 px-4 text-center text-sm text-fg-subtle"
+          >
+            No matches
+          </p>
+        )}
         {data.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-2 px-4 text-center">
             <p className="text-md text-fg-muted">No projects yet</p>
@@ -803,9 +908,13 @@ export function ExplorerView() {
               rowClassName="min-w-0!"
               openByDefault={false}
               initialOpenState={{ ...Object.fromEntries(data.map((root) => [root.id, true])), ...storedOpen() }}
+              // Matching rows and the rows above them stay; react-arborist keeps the ancestors and unfolds them.
+              searchTerm={filter}
+              searchMatch={(node, term) => matchesFilter(node.data, term)}
               onToggle={(id) => {
                 const tree = getExplorerTree();
-                if (workspaceId !== undefined && tree !== null) {
+                // What is unfolded while filtering is the filter's, not the user's: it is not remembered.
+                if (workspaceId !== undefined && tree !== null && !tree.isFiltered) {
                   setExplorerOpen(workspaceId, id, tree.isOpen(id));
                 }
               }}
@@ -1151,6 +1260,11 @@ export function ExplorerView() {
       />
     </div>
   );
+}
+
+/** A command's bound chord as this platform spells it, for a tooltip; `undefined` while it is unbound. */
+function shortcutLabel(id: 'explorer.filter'): string | undefined {
+  return shortcutFor(id, detectPlatform());
 }
 
 function flatten(node: ExplorerNode): ExplorerNode[] {

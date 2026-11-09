@@ -106,6 +106,7 @@ export const COMMAND_IDS = [
   'explorer.expandAll',
   'explorer.revealActiveTab',
   'explorer.focus',
+  'explorer.filter',
   'explorer.rename',
   'explorer.duplicate',
   'explorer.delete',

@@ -156,6 +156,7 @@ Windows and Linux). The first shortcut listed for a command can be changed in
 | Explorer: Expand All | — | — |
 | Explorer: Reveal Active Tab | — | — |
 | Explorer: Focus Explorer | — | — |
+| Explorer: Filter | <kbd>⌘⇧F</kbd> | <kbd>Ctrl+Shift+F</kbd> |
 | Explorer: Rename | <kbd>F2</kbd> | <kbd>F2</kbd> |
 | Explorer: Duplicate | — | — |
 | Explorer: Delete | <kbd>⌦</kbd> or <kbd>⌘⌫</kbd> | <kbd>Delete</kbd> or <kbd>Ctrl+Backspace</kbd> |
