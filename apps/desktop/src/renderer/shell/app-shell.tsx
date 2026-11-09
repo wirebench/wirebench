@@ -128,6 +128,7 @@ import { SlideOver } from './slide-over.js';
 import { StatusBar } from './status-bar.js';
 import { TitleBar } from './title-bar.js';
 import { NarrowWindowNote, useNarrowWindow } from './narrow-window.js';
+import { useBrowserDocumentTitle } from './document-title.js';
 import { subscribeToMocks } from '../state/mock-runs.js';
 import { subscribeToRunnerProgress } from '../state/runner.js';
 import { subscribeToSequenceProgress } from '../state/sequence-runs.js';
@@ -556,6 +557,7 @@ export function AppShell() {
   useTheme(theme, palette);
   // A browser tab narrower than the workbench can lay out shows a note instead; the workbench stays mounted, hidden.
   const narrow = useNarrowWindow();
+  useBrowserDocumentTitle(workspace?.name ?? null);
 
   const context: CommandContext = useMemo(
     () => ({

@@ -3,6 +3,7 @@ import type { Platform } from '../lib/platform.js';
 import { formatKeybinding, shortcutFor } from '../lib/keybindings.js';
 import { TERMINAL_PALETTE_CHORD, useTerminalFocused } from '../lib/terminal-focus.js';
 import { IconButton } from '../components/icon-button.js';
+import { isBrowserTab } from '../lib/capabilities.js';
 import { useUiStore } from '../state/ui.js';
 import { AccountStatusItem } from '../features/account/account-status-item.js';
 import { EnvSwitcher } from '../features/environments/env-switcher.js';
@@ -40,7 +41,8 @@ export function TitleBar({ platform, workspaceName, dirty = false, onOpenPalette
       data-chrome=""
       className="wb-drag flex h-title-bar min-w-0 shrink-0 items-center gap-3 overflow-hidden border-b border-hairline bg-surface-chrome px-3 whitespace-nowrap"
     >
-      {platform === 'mac' && <div className="w-[68px] shrink-0" aria-hidden="true" />}
+      {/* A browser tab has no traffic lights to make room for, whatever the OS. */}
+      {platform === 'mac' && !isBrowserTab() && <div className="w-[68px] shrink-0" aria-hidden="true" />}
       <span className="flex min-w-0 shrink items-center gap-1 text-sm text-fg-muted">
         wirebench
         {/* The team you are working in, then the workspace: "Platform / Payments". */}
