@@ -218,7 +218,15 @@ export interface EditorsStore {
   /** Like `open`, but replaces an already-open tab's content instead of leaving it stale —
    * what a diff tab needs when "Compare…" is run again with a different pair of entries. */
   readonly openOrReplace: (tab: EditorTab) => void;
-  readonly close: (id: string) => void;
+  /**
+   * Closes the tab `id`. With `remember`, a user's own close (`closeTabs`), the tab goes on
+   * {@link EditorsStore.closed} for Reopen Closed Tab; a tab holding live sessions never does.
+   */
+  readonly close: (id: string, options?: { readonly remember?: boolean }) => void;
+  /** The tabs the user closed, oldest first, at most {@link CLOSED_TABS_KEPT}: what Reopen Closed Tab walks back. */
+  readonly closed: readonly EditorTab[];
+  /** Takes the most recently closed tab off {@link EditorsStore.closed}, or `undefined` when there is none. */
+  readonly takeClosed: () => EditorTab | undefined;
   /**
    * Moves an open tab to `toIndex` among its own set's tabs — the strip the user sees — clamped to
    * the ends, leaving which tab is active untouched. Unknown ids are ignored. What drag-and-drop
@@ -280,6 +288,7 @@ const EMPTY_EDITORS = {
   displayedSet: 'explorer' as TabSet,
   activeBySet: {},
   previewId: undefined,
+  closed: [] as readonly EditorTab[],
   formViewTypes: {},
   requestViewTypes: {},
   responseViewTypes: {},
@@ -289,6 +298,17 @@ const EMPTY_EDITORS = {
   inspectorTabs: {},
   selectedAttachments: {},
 } as const;
+
+/** How many closed tabs Reopen Closed Tab can bring back, per window. */
+export const CLOSED_TABS_KEPT = 20;
+
+/** Tab kinds that hold live sessions: closing one ends them, so there is nothing to reopen. */
+const LIVE_TAB_KINDS: ReadonlySet<EditorTab['kind']> = new Set([
+  'ssh-terminal',
+  'ssh-files',
+  'local-terminal',
+  'terminal-share',
+]);
 
 /** How many {@link previewing} calls are running: while above zero, `open` opens a preview tab. */
 let previewDepth = 0;
@@ -402,8 +422,8 @@ export const useEditorsStore = create<EditorsStore>((set, get) => ({
     });
   },
 
-  close: (id) => {
-    const { tabs, activeId, activeBySet, displayedSet, previewId } = get();
+  close: (id, options) => {
+    const { tabs, activeId, activeBySet, displayedSet, previewId, closed } = get();
     const tab = tabs.find((t) => t.id === id);
     if (tab === undefined || closeGuards.get(id)?.() === true) {
       return;
@@ -428,7 +448,17 @@ export const useEditorsStore = create<EditorsStore>((set, get) => ({
       activeBySet: nextActiveBySet,
       activeId: tabSet === displayedSet ? nextActiveBySet[tabSet] : activeId,
       previewId: previewId === id ? undefined : previewId,
+      ...(options?.remember === true && !LIVE_TAB_KINDS.has(tab.kind)
+        ? { closed: [...closed.filter((t) => t.id !== id), tab].slice(-CLOSED_TABS_KEPT) }
+        : {}),
     });
+  },
+
+  takeClosed: () => {
+    const { closed } = get();
+    const last = closed.at(-1);
+    if (last !== undefined) set({ closed: closed.slice(0, -1) });
+    return last;
   },
 
   move: (id, toIndex) => {

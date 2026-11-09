@@ -992,6 +992,14 @@ export const COMMAND_CATALOG: Readonly<Record<CommandId, CommandCatalogEntry>> =
     label: 'Close All Tabs',
     category: 'Editor',
   },
+  // A browser keeps ⌘⇧T for its own closed tabs, so a browser tab gets ⌥⇧T (#912).
+  'editor.reopenClosedTab': {
+    id: 'editor.reopenClosedTab',
+    label: 'Reopen Closed Tab',
+    category: 'Editor',
+    shortcut: 'Mod+Shift+T',
+    browserShortcut: 'Alt+Shift+T',
+  },
   'editor.moveTabLeft': {
     id: 'editor.moveTabLeft',
     label: 'Move Tab Left',

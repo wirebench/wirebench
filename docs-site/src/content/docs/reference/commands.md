@@ -254,6 +254,7 @@ Windows and Linux). The first shortcut listed for a command can be changed in
 | Close Tabs to the Right | — | — |
 | Close Saved Tabs | — | — |
 | Close All Tabs | — | — |
+| Reopen Closed Tab | <kbd>⌘⇧T</kbd> | <kbd>Ctrl+Shift+T</kbd> |
 | Move Tab Left | <kbd>⌘⇧⇞</kbd> | <kbd>Ctrl+Shift+PageUp</kbd> |
 | Move Tab Right | <kbd>⌘⇧⇟</kbd> | <kbd>Ctrl+Shift+PageDown</kbd> |
 | Go to Next Element Value | <kbd>⌥→</kbd> | <kbd>Alt+Right</kbd> |
