@@ -37,7 +37,8 @@ function SettingRow({
 
 interface WorkspaceRowProps {
   readonly workspace: TeamWorkspaceWire;
-  readonly onDelete: () => void;
+  /** *Delete* in the header; left out where the page has its own danger zone (the Workspace overview). */
+  readonly onDelete?: () => void;
 }
 
 /**
@@ -134,7 +135,7 @@ export function WorkspaceRow({ workspace, onDelete }: WorkspaceRowProps) {
             Access…
           </Button>
         )}
-        {isAdmin && (
+        {isAdmin && onDelete !== undefined && (
           <Button
             variant="ghost"
             data-testid={`workspace-delete-${workspace.id}`}

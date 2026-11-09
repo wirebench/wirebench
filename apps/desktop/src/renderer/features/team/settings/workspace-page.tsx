@@ -1,10 +1,12 @@
 /**
  * Team settings › a workspace's overview, opened from a workspace row: the way back (Overview › Workspaces), its
- * card (name, your role, Access… and Delete, and for its admins who may open it by default, recording and features),
- * when and by whom it was made, and who can open it with which role, which those who may share it can change.
+ * card (name, your role, Access…, and for its admins who may open it by default, recording and features), when and
+ * by whom it was made, who can open it with which role (which those who may share it can change), and for its
+ * admins *Delete this workspace* in a danger zone at the bottom, like the team Overview's.
  */
 import { useEffect, useState } from 'react';
 import { ChevronRight } from 'lucide-react';
+import { Button } from '../../../components/button.js';
 import { ConfirmDialog } from '../../../components/confirm-dialog.js';
 import { teamWorkspaces, useTeamStore } from '../../../state/team.js';
 import { AccessPanel } from '../access-panel.js';
@@ -74,12 +76,7 @@ export function WorkspacePage() {
     <div data-testid="workspace-page" className="flex flex-col gap-5">
       {crumbs}
       <ul>
-        <WorkspaceRow
-          workspace={workspace}
-          onDelete={() => {
-            setDeleting(true);
-          }}
-        />
+        <WorkspaceRow workspace={workspace} />
       </ul>
       <p data-testid="workspace-page-facts" className="text-sm text-fg-subtle">
         {[created, accessSummary(workspace.defaultRole, workspace.grantCount)]
@@ -90,6 +87,28 @@ export function WorkspacePage() {
         <section className="flex flex-col gap-2">
           <h2 className="text-sm font-medium text-fg-default">Who can open it</h2>
           <AccessPanel workspaceName={workspace.name} embedded />
+        </section>
+      )}
+      {roleCan(workspace.myRole, 'manage-workspace') && (
+        <section
+          data-testid="workspace-danger-zone"
+          className="flex items-center justify-between gap-4 rounded-lg border border-status-danger px-4 py-3"
+        >
+          <div className="text-sm">
+            <h2 className="font-medium text-fg-default">Delete this workspace</h2>
+            <p className="text-fg-subtle">
+              Its repository is removed from the server; copies on members’ machines stop syncing.
+            </p>
+          </div>
+          <Button
+            variant="danger"
+            data-testid={`workspace-delete-${workspace.id}`}
+            onClick={() => {
+              setDeleting(true);
+            }}
+          >
+            Delete this workspace
+          </Button>
         </section>
       )}
       <ConfirmDialog

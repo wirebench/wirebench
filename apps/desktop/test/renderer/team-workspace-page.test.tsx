@@ -93,6 +93,7 @@ describe('Team settings › a workspace’s overview and the Workspaces rows', (
     useTeamStore.getState().openWorkspacePage('W2');
     render(<WorkspacePage />);
     expect(screen.queryByTestId('access-panel')).toBeNull();
+    expect(screen.queryByTestId('workspace-danger-zone')).toBeNull();
     expect(api.team.access).not.toHaveBeenCalled();
     cleanup();
     useTeamStore.getState().openWorkspacePage('GONE');
@@ -105,6 +106,10 @@ describe('Team settings › a workspace’s overview and the Workspaces rows', (
     await useTeamStore.getState().open(URL_);
     useTeamStore.getState().openWorkspacePage('W1');
     render(<WorkspacePage />);
+    // Delete sits in the danger zone at the bottom, not in the card's header.
+    const zone = screen.getByTestId('workspace-danger-zone');
+    expect(zone.contains(screen.getByTestId('workspace-delete-W1'))).toBe(true);
+    expect(screen.getByTestId('workspace-row-W1').contains(screen.getByTestId('workspace-delete-W1'))).toBe(false);
     fireEvent.click(screen.getByTestId('workspace-delete-W1'));
     fireEvent.click(await screen.findByTestId('workspace-delete-confirm-ok'));
     await waitFor(() => expect(api.team.deleteWorkspace).toHaveBeenCalledWith({ url: URL_, workspaceId: 'W1' }));
