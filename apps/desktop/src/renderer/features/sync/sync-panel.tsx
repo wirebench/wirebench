@@ -122,6 +122,10 @@ export function SyncPanel() {
   const notice = status.error === undefined ? undefined : syncCodeInfo(status.error.code);
   // Present only on a server share with a live socket; main clears it when the subscription closes.
   const others = status.presence ?? [];
+  // A host without `files` (the browser) keeps no local copy: the server is the store, every save goes
+  // straight to it, and others' changes arrive live. Pull, Push, Fetch, Commit and the save/fetch
+  // settings only steer a local working copy, so the panel shows status and recent changes alone.
+  const localCopy = hasCapability('files');
 
   // Re-syncs the settings controls whenever a new workspace snapshot arrives (a settings save —
   // this panel's own or another window's — always broadcasts one). Deliberately does *not*
@@ -219,63 +223,65 @@ export function SyncPanel() {
               </p>
             )}
 
-            <div className="mt-3 flex gap-2">
-              <Button
-                data-testid="sync-pull"
-                disabled={busy !== undefined}
-                onClick={() => {
-                  run('pull', pull);
-                }}
-              >
-                Pull
-              </Button>
-              <Button
-                data-testid="sync-push"
-                disabled={busy !== undefined || viewer}
-                title={viewer ? VIEWER_PUSH_REASON : undefined}
-                onClick={() => {
-                  run('push', push);
-                }}
-              >
-                Push
-              </Button>
-              <Button
-                data-testid="sync-fetch"
-                disabled={busy !== undefined}
-                onClick={() => {
-                  run('fetch', fetch);
-                }}
-              >
-                Fetch
-              </Button>
-              {!commitOnSave && (
-                <>
-                  <input
-                    data-testid="sync-commit-message"
-                    aria-label="Commit message"
-                    placeholder="Commit message (optional)"
-                    value={commitMessage}
-                    disabled={busy !== undefined}
-                    onChange={(event) => {
-                      setCommitMessage(event.target.value);
-                    }}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter') {
-                        submitCommit();
-                      }
-                    }}
-                    className="h-row min-w-0 flex-1 rounded-md border border-hairline-strong bg-surface-base px-2 text-sm text-fg-default outline-none focus:ring-1 focus:ring-accent disabled:opacity-60"
-                  />
-                  <Button data-testid="sync-commit" disabled={busy !== undefined} onClick={submitCommit}>
-                    Commit
-                  </Button>
-                </>
-              )}
-            </div>
+            {localCopy && (
+              <div className="mt-3 flex gap-2">
+                <Button
+                  data-testid="sync-pull"
+                  disabled={busy !== undefined}
+                  onClick={() => {
+                    run('pull', pull);
+                  }}
+                >
+                  Pull
+                </Button>
+                <Button
+                  data-testid="sync-push"
+                  disabled={busy !== undefined || viewer}
+                  title={viewer ? VIEWER_PUSH_REASON : undefined}
+                  onClick={() => {
+                    run('push', push);
+                  }}
+                >
+                  Push
+                </Button>
+                <Button
+                  data-testid="sync-fetch"
+                  disabled={busy !== undefined}
+                  onClick={() => {
+                    run('fetch', fetch);
+                  }}
+                >
+                  Fetch
+                </Button>
+                {!commitOnSave && (
+                  <>
+                    <input
+                      data-testid="sync-commit-message"
+                      aria-label="Commit message"
+                      placeholder="Commit message (optional)"
+                      value={commitMessage}
+                      disabled={busy !== undefined}
+                      onChange={(event) => {
+                        setCommitMessage(event.target.value);
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter') {
+                          submitCommit();
+                        }
+                      }}
+                      className="h-row min-w-0 flex-1 rounded-md border border-hairline-strong bg-surface-base px-2 text-sm text-fg-default outline-none focus:ring-1 focus:ring-accent disabled:opacity-60"
+                    />
+                    <Button data-testid="sync-commit" disabled={busy !== undefined} onClick={submitCommit}>
+                      Commit
+                    </Button>
+                  </>
+                )}
+              </div>
+            )}
 
             {viewer && (
               <p data-testid="sync-viewer-note" className="mt-2 text-xs text-fg-subtle">
-                {VIEWER_PUSH_REASON}
+                {localCopy ? VIEWER_PUSH_REASON : 'You have viewer access in this workspace.'}
               </p>
             )}
 
@@ -383,71 +389,73 @@ export function SyncPanel() {
               )}
             </SettingsGroup>
 
-            <SettingsGroup title="Settings">
-              <BooleanSetting
-                label="Commit on save"
-                value={commitOnSave}
-                onChange={(value) => {
-                  setCommitOnSave(value);
-                  void updateSettings({ commitOnSave: value });
-                }}
-              />
-              <BooleanSetting
-                label="Push on save"
-                value={pushOnSave}
-                disabled={viewer}
-                {...(viewer ? { hint: VIEWER_PUSH_REASON } : {})}
-                onChange={(value) => {
-                  setPushOnSave(value);
-                  void updateSettings({ pushOnSave: value });
-                }}
-              />
-              <TextSetting label="Auto-fetch every N seconds" value={autoFetchSeconds} onCommit={commitAutoFetch} />
-              {autoFetchError !== undefined && <p className="mt-1 text-xs text-status-danger">{autoFetchError}</p>}
-              {server !== undefined ? (
-                <>
-                  {/* A server share's address and team are fixed for its lifetime (§3.4 Settings). */}
-                  <TextSetting
-                    label="Server"
-                    value={server.url}
-                    readOnly
-                    testId="sync-setting-server"
-                    onCommit={() => undefined}
-                  />
-                  <TextSetting
-                    label="Team"
-                    value={server.teamName ?? ''}
-                    readOnly
-                    testId="sync-setting-team"
-                    onCommit={() => undefined}
-                  />
-                </>
-              ) : (
-                <>
-                  <TextSetting
-                    label="Remote"
-                    value={remote}
-                    onCommit={(value) => {
-                      setRemote(value);
-                      void updateSettings({ remote: value.trim() });
-                    }}
-                  />
-                  <TextSetting
-                    label="Branch"
-                    value={branch}
-                    onCommit={(value) => {
-                      setBranch(value);
-                      void updateSettings({ branch: value.trim() });
-                    }}
-                  />
-                </>
-              )}
-            </SettingsGroup>
+            {localCopy && (
+              <SettingsGroup title="Settings">
+                <BooleanSetting
+                  label="Commit on save"
+                  value={commitOnSave}
+                  onChange={(value) => {
+                    setCommitOnSave(value);
+                    void updateSettings({ commitOnSave: value });
+                  }}
+                />
+                <BooleanSetting
+                  label="Push on save"
+                  value={pushOnSave}
+                  disabled={viewer}
+                  {...(viewer ? { hint: VIEWER_PUSH_REASON } : {})}
+                  onChange={(value) => {
+                    setPushOnSave(value);
+                    void updateSettings({ pushOnSave: value });
+                  }}
+                />
+                <TextSetting label="Auto-fetch every N seconds" value={autoFetchSeconds} onCommit={commitAutoFetch} />
+                {autoFetchError !== undefined && <p className="mt-1 text-xs text-status-danger">{autoFetchError}</p>}
+                {server !== undefined ? (
+                  <>
+                    {/* A server share's address and team are fixed for its lifetime (§3.4 Settings). */}
+                    <TextSetting
+                      label="Server"
+                      value={server.url}
+                      readOnly
+                      testId="sync-setting-server"
+                      onCommit={() => undefined}
+                    />
+                    <TextSetting
+                      label="Team"
+                      value={server.teamName ?? ''}
+                      readOnly
+                      testId="sync-setting-team"
+                      onCommit={() => undefined}
+                    />
+                  </>
+                ) : (
+                  <>
+                    <TextSetting
+                      label="Remote"
+                      value={remote}
+                      onCommit={(value) => {
+                        setRemote(value);
+                        void updateSettings({ remote: value.trim() });
+                      }}
+                    />
+                    <TextSetting
+                      label="Branch"
+                      value={branch}
+                      onCommit={(value) => {
+                        setBranch(value);
+                        void updateSettings({ branch: value.trim() });
+                      }}
+                    />
+                  </>
+                )}
+              </SettingsGroup>
+            )}
 
             <div className="mt-4 flex justify-between gap-2">
               {/* The working copy in the machine's file manager; turning the workspace local again needs a
                   folder of the machine's too. A host without `files` offers neither. */}
-              {hasCapability('files') ? (
+              {localCopy ? (
                 <Button
                   data-testid="sync-reveal-tree"
                   onClick={() => {
@@ -461,7 +469,7 @@ export function SyncPanel() {
                 <span />
               )}
               <div className="flex gap-2">
-                {hasCapability('files') && (
+                {localCopy && (
                   <Button
                     data-testid="sync-stop-sharing"
                     onClick={() => {

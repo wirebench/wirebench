@@ -476,3 +476,42 @@ describe('SyncPanel on a Wirebench Server share (server-sync §3.4, §5.4)', () 
     });
   });
 });
+
+describe('SyncPanel on a host without files (the browser)', () => {
+  beforeEach(() => {
+    const api = installWirebenchApi();
+    Object.defineProperty(api, 'env', {
+      configurable: true,
+      value: { e2e: false, osTheme: 'dark', host: 'browser', capabilities: ['send:public'] },
+    });
+    useUiStore.setState({ syncPanelOpen: false });
+  });
+  afterEach(() => {
+    cleanup();
+    useWorkspaceStore.setState({ workspace: null });
+    useSyncStore.getState().reset();
+    useUiStore.setState({ syncPanelOpen: false });
+  });
+
+  it('shows status and recent changes, and hides the local-copy controls and settings', async () => {
+    openServerShared({ role: 'viewer' });
+    const panel = await showPanel();
+
+    expect(panel.textContent).toContain(SERVER_URL);
+    expect(panel.textContent).toContain('Recent commits');
+    for (const testId of [
+      'sync-pull',
+      'sync-push',
+      'sync-fetch',
+      'sync-commit',
+      'sync-setting-server',
+      'sync-setting-team',
+    ]) {
+      expect(screen.queryByTestId(testId)).toBeNull();
+    }
+    expect(panel.textContent).not.toContain('Commit on save');
+    expect(panel.textContent).not.toContain('Push on save');
+    expect(panel.textContent).not.toContain('Auto-fetch every N seconds');
+    expect(screen.getByTestId('sync-viewer-note').textContent).toBe('You have viewer access in this workspace.');
+  });
+});
