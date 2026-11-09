@@ -14,6 +14,9 @@ All notable changes to this project are documented here. The format follows
 - **Browser: a link opened in a new tab opens there (#885).** A second tab of the same workspace takes it over instead
   of being refused; the first tab keeps your unsaved edits, says the workspace is open in another tab now, and offers
   *Open here* to take it back.
+- **No more false "changed on disk" banner after creating a project (#886).** On macOS the project's own first write
+  could reach its new folder watcher and be reported as an outside change, offering *Discard and reload* over real
+  unsaved edits.
 
 ## [7.0.0] - 2026-11-09
 
