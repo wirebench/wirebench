@@ -3,7 +3,7 @@
  * so the MCP stdio transport, the two browser OAuth grants and the file pickers give way to plain lines.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import type { Capability } from '@wirebench/wire/capabilities';
 
 vi.mock('@monaco-editor/react', async () => await import('../mocks/monaco-editor-react.js'));
@@ -15,6 +15,7 @@ import { transportOptions } from '../../src/renderer/features/mcp-api/connection
 import { NewMcpServerDialog, offeredTransports } from '../../src/renderer/features/mcp-api/new-server-dialog.js';
 import { useNewMcpServerDialog } from '../../src/renderer/features/mcp-api/new-server-dialog-state.js';
 import { BinaryBody } from '../../src/renderer/features/rest-editor/body-tab.js';
+import { resetKerberosAvailability } from '../../src/renderer/lib/use-kerberos-availability.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 
 /** What the server's hello frame lists: a public send and nothing of a machine. */
@@ -113,5 +114,20 @@ describe('the binary body by capability', () => {
     render(<BinaryBody body={body} onSet={vi.fn()} />);
     expect(screen.getByTestId('rest-binary-path').textContent).toBe('Files are attached in the desktop app.');
     expect(screen.queryByTestId('rest-binary-choose')).toBeNull();
+  });
+});
+
+describe('the Kerberos option without kerberos (#902)', () => {
+  it('carries the reason it is disabled as its title', async () => {
+    resetKerberosAvailability();
+    install(BROWSER);
+    render(<AuthFields scope="Request" auth={undefined} onChange={vi.fn()} />);
+    const option = within(screen.getByLabelText('Request authentication type')).getByRole('option', {
+      name: 'Kerberos',
+    });
+    await waitFor(() => {
+      expect(option).toHaveProperty('disabled', true);
+    });
+    expect(option.getAttribute('title')).toMatch(/^Kerberos is not available here/);
   });
 });

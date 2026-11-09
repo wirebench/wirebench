@@ -419,6 +419,10 @@ export function AuthFields({
               key={option.value}
               value={option.value}
               disabled={option.value === 'kerberos' && kerberos?.available === false}
+              // A disabled option says why where it is greyed out, not only once a request uses it.
+              {...(option.value === 'kerberos' && kerberos?.available === false && kerberos.reason !== undefined
+                ? { title: kerberos.reason }
+                : {})}
             >
               {option.label}
             </option>

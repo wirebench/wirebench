@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, renderHook, screen, waitFor, within } from '@testing-library/react';
 import { ALL_CAPABILITIES, type Capability } from '@wirebench/wire/capabilities';
 import type { AccountWire, AppFeaturesWire, WorkspaceSummaryWire } from '@wirebench/wire/wire-base';
 import type { WirebenchApi } from '../../src/preload/build-api.js';
@@ -286,6 +286,20 @@ describe('secret hints and Kerberos by capability', () => {
     });
     expect(result.current?.reason).toMatch(/^Kerberos is not available here/);
     expect(kerberosAvailability).not.toHaveBeenCalled();
+  });
+
+  it('gives the import dialog’s disabled Kerberos its reason as a title, and no note with None (#902)', async () => {
+    install(BROWSER, {
+      definition: { cancelImport: vi.fn().mockResolvedValue({ ok: true, value: { cancelled: true } }) },
+    });
+    render(<ImportDialog open onOpenChange={vi.fn()} />);
+    const select = screen.getByLabelText('Definition authentication');
+    const option = within(select).getByRole('option', { name: 'Kerberos (signed-in ticket)' });
+    await waitFor(() => {
+      expect(option.getAttribute('title')).toMatch(/^Kerberos is not available here/);
+    });
+    expect(select).toHaveProperty('value', 'none');
+    expect(screen.queryByText(/^Kerberos is not available here/)).toBeNull();
   });
 
   it('asks the host with every capability', async () => {

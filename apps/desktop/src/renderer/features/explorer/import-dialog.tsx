@@ -1641,12 +1641,21 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
                           >
                             <option value="none">None</option>
                             <option value="basic">Basic</option>
-                            <option value="kerberos" disabled={kerberosAvailability?.available === false}>
+                            <option
+                              value="kerberos"
+                              disabled={kerberosAvailability?.available === false}
+                              {...(kerberosAvailability?.available === false &&
+                              kerberosAvailability.reason !== undefined
+                                ? { title: kerberosAvailability.reason }
+                                : {})}
+                            >
                               Kerberos (signed-in ticket)
                             </option>
                           </select>
                         </label>
-                        {kerberosAvailability?.available === false &&
+                        {/* The note is about the Kerberos choice; with None or Basic the option's title says it. */}
+                        {authMode === 'kerberos' &&
+                          kerberosAvailability?.available === false &&
                           kerberosAvailability.reason !== undefined &&
                           kerberosAvailability.reason !== '' && (
                             <p className="text-xs text-fg-subtle">{kerberosAvailability.reason}</p>
