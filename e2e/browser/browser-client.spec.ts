@@ -154,6 +154,27 @@ test('a request to the echo service on the server network gets its response', as
   await expect(page.getByTestId('rest-response')).toContainText('/hello');
 });
 
+test('the address names the workspace, the request and the view; a reload and Back go by it', async () => {
+  // The echo request is open (the step before): the path names its team workspace and its tab.
+  await expect(page).toHaveURL(/\/workspaces\/[A-Za-z0-9_-]+\/rest-request\/[^/?]+$/);
+  const rail = page.getByTestId('activity-bar');
+  await rail.getByRole('button', { name: /^History/ }).click();
+  await expect(page).toHaveURL(/\?view=history$/);
+  const here = page.url();
+
+  await page.reload();
+  await expect(page.getByTestId('rest-breadcrumb-name')).toHaveText(seed.echoRequest, { timeout: 60_000 });
+  // The send the step before made is in the History the reload came back to.
+  await expect(page.getByTestId('history-row').first()).toBeVisible();
+  expect(page.url()).toBe(here);
+
+  // A sidebar area is a place of its own: Back returns to the Explorer, on the same request.
+  await page.goBack();
+  await expect(page).not.toHaveURL(/view=/);
+  await expect(projectRow()).toBeVisible();
+  await expect(page.getByTestId('rest-breadcrumb-name')).toHaveText(seed.echoRequest);
+});
+
 test('a request to 127.0.0.1 needs this machine: the tab has no agent, so it offers to pair one', async () => {
   await openRequest(seed.loopbackRequest);
   // The route chip says where the next send goes before it is sent (spec §18.4).

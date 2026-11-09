@@ -30,7 +30,13 @@ import { useExchangesStore } from './exchanges.js';
 import { useProjectStore } from './project.js';
 import { reviewSecrets } from './secret-review.js';
 import { activeEnvironmentFor } from './environment-scope.js';
-import { restoreWorkspaceConsole, restoreWorkspaceTabs, saveWorkspaceTabs } from './workspace-tabs.js';
+import {
+  forgetTabsRestored,
+  notifyTabsRestored,
+  restoreWorkspaceConsole,
+  restoreWorkspaceTabs,
+  saveWorkspaceTabs,
+} from './workspace-tabs.js';
 import { ipc } from './ipc-client.js';
 import { restoreUnsaved, stashDrafts, subscribeToDraftStash } from './unsaved-drafts.js';
 
@@ -211,6 +217,8 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => {
       // replacing it with another one takes them with it.
       saveWorkspaceTabs(tabsOwner);
       tabsOwner = undefined;
+      // Before the store changes: a wait started as the next workspace shows must not see this one's restore.
+      forgetTabsRestored();
     }
     if (leaving || workspace === null) {
       // Order matters only in that all of it happens before the shell rerenders: every one of
@@ -255,6 +263,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => {
       void pulled.then(() => {
         if (useWorkspaceStore.getState().workspace?.id === workspace.id) {
           restoreWorkspaceTabs(workspace.id);
+          notifyTabsRestored(workspace.id);
           // Unsaved request edits from the last session name requests the mirror now holds.
           void restoreUnsaved(workspace.id).catch(() => undefined);
         }

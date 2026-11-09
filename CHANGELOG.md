@@ -110,6 +110,11 @@ All notable changes to this project are documented here. The format follows
   team's workspace makes that team active. Switching team with another team's workspace open moves to the new team's
   most recently used workspace, or to the workspace list when it has none here yet. The choice is remembered per account. In a browser tab, a workspace held by
   another tab is now refused as "open in another tab" rather than "another window".
+- **The browser client's address follows where you are.** It names the workspace and the open tab
+  (`/workspaces/<id>/rest-request/<id>`), with the sidebar area, the console, the side panels and the settings page
+  in the query, so a reload or a bookmark lands back there, and a teammate's link opens the same team workspace and
+  request. Back and Forward move between workspaces, tabs, sidebar areas and settings pages; showing or hiding a panel
+  is not a step of its own. A reload no longer lands on the workspace list while another tab is signed in.
 
 ## [7.0.0] - 2026-11-06
 

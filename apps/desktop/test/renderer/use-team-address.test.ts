@@ -1,28 +1,26 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, renderHook } from '@testing-library/react';
+import { useSettingsPlaceStore } from '../../src/renderer/features/address/settings-place.js';
 import { useTeamAddress } from '../../src/renderer/features/team/settings/use-team-address.js';
 
 describe('useTeamAddress', () => {
   afterEach(() => {
     cleanup();
-    window.history.replaceState(null, '', '/');
   });
 
-  it('writes the team page into the address while Team settings is open', () => {
-    window.history.replaceState(null, '', '/?keep=1');
+  it('reports the team and page shown while Team settings is open', () => {
     renderHook(() => {
       useTeamAddress('T1', 'people');
     });
-    expect(window.location.search).toBe('?keep=1&panel=team&team=T1&page=people');
+    expect(useSettingsPlaceStore.getState()).toMatchObject({ page: 'people', team: 'T1' });
   });
 
-  it('takes the team page out of the address when Team settings closes', () => {
-    window.history.replaceState(null, '', '/?keep=1');
+  it('reports nothing once Team settings closes', () => {
     const { unmount } = renderHook(() => {
       useTeamAddress('T1', 'people');
     });
     unmount();
-    // App settings or View profile from the account menu: a reload must not land back in Team settings.
-    expect(window.location.search).toBe('?keep=1');
+    // App settings or View profile from the account menu: the address must not keep the team page.
+    expect(useSettingsPlaceStore.getState()).toMatchObject({ page: undefined, team: undefined });
   });
 });

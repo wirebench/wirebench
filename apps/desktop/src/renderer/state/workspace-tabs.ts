@@ -21,8 +21,8 @@ function persistedContribution(kind: EditorTab['kind']): TabContribution | undef
   return contribution?.persisted === true ? contribution : undefined;
 }
 
-/** The persisted shape of an open tab, or `undefined` for a kind that does not survive. */
-function persist(tab: EditorTab): PersistedTab | undefined {
+/** The persisted shape of an open tab, or `undefined` for a kind that does not survive (the address names it too). */
+export function persist(tab: EditorTab): PersistedTab | undefined {
   const contribution = persistedContribution(tab.kind);
   const id = contribution === undefined ? undefined : entityIdOf(tab, contribution);
   return id === undefined ? undefined : { kind: tab.kind as PersistedTab['kind'], id };
@@ -35,6 +35,60 @@ function titleFor(contribution: TabContribution, id: string): string | undefined
     workspaceEnvironments: useWorkspaceStore.getState().workspace?.environments ?? [],
     hookNames: {},
     scheduleNames: {},
+  });
+}
+
+/**
+ * Opens (and selects) the tab `tab` names, as {@link restoreWorkspaceTabs} reopens one: its editor-tab id, or
+ * `undefined` for a kind that does not survive or an entity the mirror does not hold. A tab of a kind this run
+ * switched off reopens as a placeholder panel rather than vanishing: its entity is not in the mirror, so it is
+ * named for its kind.
+ */
+export function openPersistedTab(tab: { readonly kind: string; readonly id: string }): string | undefined {
+  const contribution = persistedContribution(tab.kind as EditorTab['kind']);
+  if (contribution === undefined) return undefined;
+  const owner = tabOwner(tab.kind as EditorTab['kind']);
+  const off = owner !== undefined && !useUiStore.getState().enabledKinds.includes(owner);
+  const title = off ? kindLabel(owner) : titleFor(contribution, tab.id);
+  if (title === undefined) return undefined;
+  const id = `${contribution.prefix}${tab.id}`;
+  useEditorsStore.getState().open({ id, kind: tab.kind as EditorTab['kind'], title, [contribution.idField]: tab.id });
+  return id;
+}
+
+/** Waiters for a workspace's tabs to be back on screen, by workspace id. */
+const restoredWaiters = new Map<string, (() => void)[]>();
+/** The open workspace whose tabs are already back, if they are. */
+let restoredId: string | undefined;
+
+/** Called as a workspace starts opening: its tabs are not back yet. */
+export function forgetTabsRestored(): void {
+  restoredId = undefined;
+}
+
+/** Called once a just-opened workspace's tabs are restored (or it had none to restore). */
+export function notifyTabsRestored(workspaceId: string): void {
+  restoredId = workspaceId;
+  const waiters = restoredWaiters.get(workspaceId) ?? [];
+  restoredWaiters.delete(workspaceId);
+  for (const resolve of waiters) resolve();
+}
+
+/**
+ * Resolves once `workspaceId`'s tabs are restored after it opens, so what the address names is put on top of
+ * what was remembered rather than under it. Resolves anyway after `timeoutMs`, so a pull that never settles
+ * cannot hold the address back for good.
+ */
+export function whenTabsRestored(workspaceId: string, timeoutMs = 10_000): Promise<void> {
+  if (restoredId === workspaceId) return Promise.resolve();
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, timeoutMs);
+    const waiters = restoredWaiters.get(workspaceId) ?? [];
+    waiters.push(() => {
+      clearTimeout(timer);
+      resolve();
+    });
+    restoredWaiters.set(workspaceId, waiters);
   });
 }
 
@@ -71,22 +125,10 @@ export function restoreWorkspaceTabs(workspaceId: string): void {
   if (entry === undefined) {
     return;
   }
-  const editors = useEditorsStore.getState();
   let activeTabId: string | undefined;
-  const enabledKinds = useUiStore.getState().enabledKinds;
   for (const tab of entry.tabs) {
-    const contribution = persistedContribution(tab.kind);
-    // A tab of a kind this run switched off reopens as a placeholder panel rather than vanishing: its
-    // entity is not in the mirror, so it is named for its kind.
-    const owner = tabOwner(tab.kind);
-    const off = owner !== undefined && !enabledKinds.includes(owner);
-    const title = contribution === undefined ? undefined : off ? kindLabel(owner) : titleFor(contribution, tab.id);
-    if (contribution === undefined || title === undefined) {
-      continue;
-    }
-    const id = `${contribution.prefix}${tab.id}`;
-    editors.open({ id, kind: tab.kind, title, [contribution.idField]: tab.id });
-    if (tab.id === entry.activeId) {
+    const id = openPersistedTab(tab);
+    if (id !== undefined && tab.id === entry.activeId) {
       activeTabId = id;
     }
   }

@@ -52,6 +52,7 @@ import { SecretsSection } from './sections/secrets-section.js';
 import { MocksSection } from './sections/mocks-section.js';
 import { SshSection } from './sections/ssh-section.js';
 import { TerminalSection } from './sections/terminal-section.js';
+import { useReportSettingsPlace } from '../address/settings-place.js';
 import { ShortcutsSection } from './sections/shortcuts-section.js';
 import { PairedBrowsersSection } from './sections/paired-browsers-section.js';
 import { ThisMachineSection } from './sections/this-machine-section.js';
@@ -157,6 +158,7 @@ export interface PreferencesEditorProps {
  */
 export function PreferencesEditor({ initialSection }: PreferencesEditorProps) {
   const [active, setActive] = useState<SettingsSectionId>(() => resolveSection(initialSection));
+  useReportSettingsPlace(active);
   const [rawQuery, setRawQuery] = useState('');
   const query = rawQuery.trim().toLowerCase();
 
