@@ -10,7 +10,8 @@ import type { CommandDefinition } from '@shared/commands.js';
 import { COMMAND_WHEN_SCOPES, whenScopesOverlap } from '@shared/commands.js';
 import type { CommandContext } from '../../lib/commands.js';
 import { listAllCommands } from '../../lib/commands.js';
-import { parseKeybinding } from '../../lib/keybindings.js';
+import { isBrowserTab } from '../../lib/capabilities.js';
+import { defaultShortcut, isBrowserReservedChord, parseKeybinding } from '../../lib/keybindings.js';
 
 /** One row of the Shortcuts table. */
 export interface KeymapRow {
@@ -23,6 +24,8 @@ export interface KeymapRow {
   readonly chord: string | undefined;
   /** True when the user has set this row to something other than its default. */
   readonly customized: boolean;
+  /** True in a browser tab when {@link chord} is one the browser keeps, so it never reaches the page. */
+  readonly browserReserved: boolean;
   /** Other command labels bound to the very same chord in an overlapping scope; empty when
    * there is no clash. Commands whose `when` conditions can never both hold are not a clash. */
   readonly conflictsWith: readonly string[];
@@ -40,7 +43,7 @@ export function chordIdentity(chord: string): string {
 function effective(definition: CommandDefinition<CommandContext>, overrides: Readonly<Record<string, string>>) {
   const override = overrides[definition.id];
   if (override === undefined) {
-    return definition.shortcut;
+    return defaultShortcut(definition);
   }
   return override === '' ? undefined : override;
 }
@@ -110,9 +113,10 @@ export function keymapRows(overrides: Readonly<Record<string, string>>): readonl
       id: command.id,
       label: command.label,
       category: command.category,
-      defaultChord: command.shortcut,
+      defaultChord: defaultShortcut(command),
       chord,
-      customized: overrides[command.id] !== undefined && chord !== command.shortcut,
+      customized: overrides[command.id] !== undefined && chord !== defaultShortcut(command),
+      browserReserved: chord !== undefined && isBrowserTab() && isBrowserReservedChord(chord),
       conflictsWith,
       ...(conflictsWith.length > 0 ? { conflictNote: conflictNoteFor(command, clashing) } : {}),
     };

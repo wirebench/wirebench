@@ -22,6 +22,7 @@ import { registerShellCommands } from '../commands/register-shell-commands.js';
 import type { CommandContext } from '../lib/commands.js';
 import { runCommand } from '../lib/commands.js';
 import { useKeybindings } from '../lib/keybindings.js';
+import { useUnloadGuard } from '../lib/unload-guard.js';
 import { detectPlatform } from '../lib/platform.js';
 import { useTheme } from '../lib/theme.js';
 import { hydrateUi, useUiStore } from '../state/ui.js';
@@ -562,6 +563,7 @@ export function AppShell() {
     [platform, sidebar, consoleState, slideOver, theme, palette, editorLineNumbers, editorLayout, selection],
   );
   useKeybindings(context);
+  useUnloadGuard();
 
   // `command.invoke` outlives every context change, so the subscription reads the latest
   // context through a ref rather than re-subscribing on each selection or panel toggle.
