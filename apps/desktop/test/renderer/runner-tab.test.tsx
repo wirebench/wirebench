@@ -8,6 +8,8 @@ import { act, cleanup, fireEvent, render, screen, within } from '@testing-librar
 import { RunnerTab, resultMark, summaryText } from '../../src/renderer/features/runner/runner-tab.js';
 import { dataColumnsFor, subscribeToRunnerProgress, useRunnerStore } from '../../src/renderer/state/runner.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
+import { useDraftsStore } from '../../src/renderer/state/drafts.js';
+import { useProjectStore } from '../../src/renderer/state/project.js';
 import type { RunnerRequestResult, RunnerRunResult, RunnerSettings, RunnerState } from '@wirebench/wire/runner-wire';
 
 const SETTINGS: RunnerSettings = { delayMs: 0, overrun: 'stop', bail: false, order: [], excluded: [] };
@@ -354,5 +356,91 @@ describe('the data file without dialogs (#894)', () => {
     expect(screen.getByTestId('runner-data-choose')).toBeTruthy();
     expect(screen.getByText('More iterations than rows')).toBeTruthy();
     expect(screen.getByTestId('runner-data-hint')).toBeTruthy();
+  });
+});
+
+describe('unsaved edits before a run (#895)', () => {
+  const originalSave = useProjectStore.getState().saveRestRequest;
+
+  beforeEach(() => {
+    useDraftsStore.getState().reset();
+  });
+
+  afterEach(() => {
+    useDraftsStore.getState().reset();
+    useProjectStore.setState({ saveRestRequest: originalSave });
+  });
+
+  it('runs at once when nothing in the run is unsaved', async () => {
+    await mount();
+    fireEvent.click(screen.getByTestId('runner-run'));
+    expect(screen.queryByTestId('runner-unsaved')).toBeNull();
+    expect(run).toHaveBeenCalledTimes(1);
+  });
+
+  it('says a request has unsaved edits, and runs the saved version only when asked', async () => {
+    useDraftsStore.getState().stageRestRequest('login', { url: 'https://example.test/edited' });
+    await mount();
+    fireEvent.click(screen.getByTestId('runner-run'));
+    expect(screen.getByTestId('runner-unsaved').textContent).toContain(
+      'Log in has unsaved edits. A run sends saved requests.',
+    );
+    expect(run).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId('runner-unsaved-run'));
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId('runner-unsaved')).toBeNull();
+    expect(useDraftsStore.getState().isRestRequestDirty('login')).toBe(true);
+  });
+
+  it('saves the edit first on Save and run', async () => {
+    const save = vi.fn((requestId: string) => {
+      useDraftsStore.getState().discardRestRequest(requestId);
+      return Promise.resolve();
+    });
+    useProjectStore.setState({ saveRestRequest: save });
+    useDraftsStore.getState().stageRestRequest('login', { url: 'https://example.test/edited' });
+    await mount();
+    fireEvent.click(screen.getByTestId('runner-run'));
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('runner-unsaved-save'));
+      await Promise.resolve();
+    });
+    expect(save).toHaveBeenCalledWith('login', { manual: true });
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId('runner-unsaved')).toBeNull();
+  });
+
+  it('does not run when the save leaves the edit unsaved', async () => {
+    const save = vi.fn(() => Promise.resolve());
+    useProjectStore.setState({ saveRestRequest: save });
+    useDraftsStore.getState().stageRestRequest('login', { url: 'https://example.test/edited' });
+    await mount();
+    fireEvent.click(screen.getByTestId('runner-run'));
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('runner-unsaved-save'));
+      await Promise.resolve();
+    });
+    expect(run).not.toHaveBeenCalled();
+    expect(screen.getByTestId('runner-unsaved')).toBeTruthy();
+  });
+
+  it('ignores an unsaved request left out of the run', async () => {
+    useRunnerStore.setState({ targets: {} });
+    installWirebenchApi({
+      runner: {
+        state: vi
+          .fn()
+          .mockResolvedValue({ ok: true, value: { ...STATE, settings: { ...SETTINGS, excluded: ['login'] } } }),
+        settings: { set: setSettings },
+        run,
+        history: { list: vi.fn().mockResolvedValue({ ok: true, value: { runs: [] } }), get: historyGet },
+      },
+      on: vi.fn().mockReturnValue(vi.fn()),
+    });
+    useDraftsStore.getState().stageRestRequest('login', { url: 'https://example.test/edited' });
+    await mount();
+    fireEvent.click(screen.getByTestId('runner-run'));
+    expect(screen.queryByTestId('runner-unsaved')).toBeNull();
+    expect(run).toHaveBeenCalledTimes(1);
   });
 });

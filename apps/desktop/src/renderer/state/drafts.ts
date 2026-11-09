@@ -252,3 +252,16 @@ export const useDraftsStore = create<DraftsState>((set, get) => ({
     set({ requests: {}, restRequests: {}, grpcRequests: {}, wsRequests: {}, mcpRequests: {} });
   },
 }));
+
+/** The kinds of draft {@link useDraftsStore} keeps apart, by the record that holds each. */
+export type DraftKind = 'soap' | 'rest' | 'grpc' | 'ws' | 'mcp';
+
+/** Which kind of draft `requestId` has pending, or `undefined` when it has nothing unsaved. */
+export function draftKindOf(state: DraftsState, requestId: string): DraftKind | undefined {
+  if (state.requests[requestId] !== undefined) return 'soap';
+  if (state.restRequests[requestId] !== undefined) return 'rest';
+  if (state.grpcRequests[requestId] !== undefined) return 'grpc';
+  if (state.wsRequests[requestId] !== undefined) return 'ws';
+  if (state.mcpRequests[requestId] !== undefined) return 'mcp';
+  return undefined;
+}
