@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { teamWorkspaces, useTeamStore } from '../../src/renderer/state/team.js';
+import { useActiveTeamStore } from '../../src/renderer/state/active-team.js';
 import type { TeamMemberWire, TeamWire, TeamWorkspaceWire } from '@wirebench/wire/wire-base';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 
@@ -53,6 +54,37 @@ describe('useTeamStore (teams-access §3.5)', () => {
     expect(teamWorkspaces(state).map((w) => w.id)).toEqual(['w1']);
     expect(api.team.members).toHaveBeenCalledWith({ url: URL_, teamId: 'A' });
     expect(api.team.invitations).toHaveBeenCalledWith({ url: URL_, teamId: 'A' });
+  });
+
+  it("with no team asked for, opens on the title bar's active team of the same server (#892)", async () => {
+    installWirebenchApi({
+      team: {
+        list: ok({ teams: [team('A'), team('B')], serverAdmin: false }),
+        listWorkspaces: ok({ workspaces: [] }),
+        members: ok({ members: [] }),
+        invitations: ok({ invitations: [] }),
+      },
+    });
+    useActiveTeamStore.setState({
+      url: `${URL_}/`,
+      userId: 'u1',
+      teams: [team('A'), team('B')],
+      workspaces: [],
+      teamId: 'B',
+    });
+    try {
+      await useTeamStore.getState().open(URL_, { page: 'people' });
+      expect(useTeamStore.getState().teamId).toBe('B');
+      // A link naming a team still wins.
+      await useTeamStore.getState().open(URL_, { teamId: 'A' });
+      expect(useTeamStore.getState().teamId).toBe('A');
+      // Another server's active team is not this one's.
+      useActiveTeamStore.setState({ url: 'https://other.test' });
+      await useTeamStore.getState().open(URL_);
+      expect(useTeamStore.getState().teamId).toBe('A');
+    } finally {
+      useActiveTeamStore.setState({ url: undefined, userId: undefined, teams: [], workspaces: [], teamId: undefined });
+    }
   });
 
   it('carries the server desktop-activity capability into the state, false when absent', async () => {

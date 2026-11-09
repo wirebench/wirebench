@@ -117,6 +117,12 @@ export function inTeam(state: ActiveTeamState, row: { readonly share?: Workspace
   return state.workspaces.find((workspace) => workspace.id === server.workspaceId)?.teamId === state.teamId;
 }
 
+/** The title bar's active team id, when the store holds `url`'s teams: what Team settings opens on unasked. */
+export function activeTeamIdOn(url: string): string | undefined {
+  const state = useActiveTeamStore.getState();
+  return state.url !== undefined && sameOrigin(state.url, url) ? state.teamId : undefined;
+}
+
 /** The active team, if any. */
 export function activeTeam(state: ActiveTeamState): TeamWire | undefined {
   return state.teams.find((team) => team.id === state.teamId);
