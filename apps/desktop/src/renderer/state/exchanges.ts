@@ -113,6 +113,9 @@ function offerSecretAction(requestId: string, error: IpcError): void {
  */
 function offerAgentAction(error: IpcError): void {
   if (error.code !== 'send-needs-agent') return;
+  // A host the server cannot resolve is most likely mistyped: the response pane says so, and no toast
+  // repeats it with a pairing offer first (#913).
+  if (error.details?.['reason'] === 'unresolved') return;
   showToast(error.message, {
     label: 'Pair this machine…',
     onClick: () => {
@@ -161,7 +164,10 @@ async function sendRouteFor(
   const selection = await agent.selectFor(agentCapabilitiesFor(route.value.needs));
   if (routedSendCancelled(sendId)) return settle({ kind: 'error', error: ABORTED });
   if (!selection.connected) {
-    return settle({ kind: 'error', error: sendNeedsAgentError(route.value.needs, route.value.unresolved === true) });
+    return settle({
+      kind: 'error',
+      error: sendNeedsAgentError(route.value.needs, route.value.unresolved === true, route.value.info?.targetHost),
+    });
   }
   if (selection.missing.includes('team-secrets'))
     return settle({ kind: 'error', error: teamSecretNeedsDesktopError() });

@@ -693,23 +693,28 @@ describe('an agent send, further', () => {
     expect(useProblemsStore.getState().items).toEqual([]);
   });
 
-  it('says a host the server cannot resolve may be one only this network knows, and offers to pair', async () => {
+  it('says a host the server cannot resolve was not found, offers pairing second, and raises no toast (#913)', async () => {
     const calls = install(fakeAgent('none').env);
     calls.route.mockResolvedValue({
       ok: true,
-      value: { route: 'agent', needs: ['private-target'], detail: { reason: 'unresolved' }, info: INFO },
+      value: {
+        route: 'agent',
+        needs: ['private-target'],
+        detail: { reason: 'unresolved' },
+        info: { ...INFO, targetHost: 'api.exmaple-typo.invalid' },
+      },
     });
     await useExchangesStore.getState().sendRest('rest-1');
     const error = useExchangesStore.getState().restByRequest['rest-1']?.error;
     expect(error).toMatchObject({
       code: 'send-needs-agent',
-      details: { needs: ['private-target'], reason: 'unresolved' },
+      details: { needs: ['private-target'], reason: 'unresolved', host: 'api.exmaple-typo.invalid' },
     });
-    expect(error?.message).toContain('does not resolve from the server');
-    expect(error?.message).toContain('only your network knows');
-    const [message, action] = vi.mocked(showToast).mock.calls.at(-1) ?? [];
-    expect(message).toContain('does not resolve from the server');
-    expect(action?.label).toBe('Pair this machine…');
+    expect(error?.message).toBe(
+      'api.exmaple-typo.invalid does not resolve from the server. If it is a name only your network knows, pair this machine, or start the paired agent, and send again.',
+    );
+    // The response pane is the one place it is said.
+    expect(showToast).not.toHaveBeenCalled();
   });
 
   it('uploads a 30 MiB response trimmed as History trims it, and shows the whole of it', async () => {

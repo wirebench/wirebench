@@ -142,6 +142,14 @@ function detailText(error: SendErrorLike, key: string): string | undefined {
   return typeof value === 'string' && value !== '' ? value : undefined;
 }
 
+/**
+ * A browser send whose host does not resolve from the server: read as the host not being found, as the
+ * desktop's own DNS failure is, since a mistyped name is the likelier cause (#913).
+ */
+function isUnresolvedHost(error: SendErrorLike): boolean {
+  return error.code === 'send-needs-agent' && error.details?.['reason'] === 'unresolved';
+}
+
 /** The heading that names what to check: the host and port refused, the host that did not resolve. */
 function headlineOf(error: SendErrorLike, title: string): string {
   const target = detailText(error, 'target');
@@ -149,7 +157,7 @@ function headlineOf(error: SendErrorLike, title: string): string {
     return `Couldn't connect to ${target}`;
   }
   const host = detailText(error, 'host');
-  if (error.code === 'dns' && host !== undefined) {
+  if ((error.code === 'dns' || isUnresolvedHost(error)) && host !== undefined) {
     return `Host ${host} not found`;
   }
   return title;
@@ -237,6 +245,9 @@ function describeBare(error: SendErrorLike): Omit<SendErrorView, 'headline' | 'd
       tone: 'danger',
       hint: { kind: 'timeout', timeoutMs: typeof limit === 'number' ? limit : undefined },
     };
+  }
+  if (isUnresolvedHost(error)) {
+    return { title: 'Host not found', tone: 'danger', hint: { kind: 'text', text: 'Check the host name’s spelling.' } };
   }
   const known = TEXT_HINTS[error.code];
   return {

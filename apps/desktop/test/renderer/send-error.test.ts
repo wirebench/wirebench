@@ -13,6 +13,23 @@ import {
 } from '../../src/renderer/features/request-editor/send-error.js';
 
 describe('describeSendError', () => {
+  it('reads a host the server cannot resolve as not found, the way the desktop reads a DNS failure (#913)', () => {
+    const view = describeSendError({
+      code: 'send-needs-agent',
+      message:
+        'api.exmaple-typo.invalid does not resolve from the server. If it is a name only your network knows, pair this machine, or start the paired agent, and send again.',
+      details: { needs: ['private-target'], reason: 'unresolved', host: 'api.exmaple-typo.invalid' },
+    });
+    expect(view.title).toBe('Host not found');
+    expect(view.headline).toBe('Host api.exmaple-typo.invalid not found');
+    expect(view.tone).toBe('danger');
+    expect(view.hint).toEqual({ kind: 'text', text: 'Check the host name’s spelling.' });
+    // Any other send that needs this machine still says so.
+    expect(describeSendError({ code: 'send-needs-agent', message: 'x', details: { needs: ['kerberos'] } }).title).toBe(
+      'Needs this machine',
+    );
+  });
+
   it('names every unresolved reference from the details, once each', () => {
     const view = describeSendError({
       code: 'rest-unresolved-properties',
