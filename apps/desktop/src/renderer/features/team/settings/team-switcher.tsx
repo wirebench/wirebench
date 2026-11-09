@@ -1,14 +1,16 @@
 /**
  * Team settings' team switcher (settings split spec §3.1): the team's initial in a square, its name and a chevron,
- * opening the caller's teams on this server; a server admin also gets *New team…*, which creates one and lands on
- * its People page.
+ * opening the caller's teams on this server; a server admin also gets *New team…*, which creates one. Either way the
+ * page lands on that team's Overview, and the title bar's team follows when this is the active account's server.
  */
 import { useEffect, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { Check, ChevronsUpDown, Plus } from 'lucide-react';
 import { Button } from '../../../components/button.js';
+import { useActiveTeamStore } from '../../../state/active-team.js';
 import { selectedTeam, useTeamStore } from '../../../state/team.js';
+import { switchTeam } from '../team-switcher.js';
 import { INPUT_CLASS } from '../roles.js';
 
 /** A team's mark: its first letter, as the switcher and its list draw it. */
@@ -21,6 +23,27 @@ function Initial({ name }: { readonly name: string }) {
       {name.trim().charAt(0).toUpperCase() || '?'}
     </span>
   );
+}
+
+function sameOrigin(a: string, b: string): boolean {
+  try {
+    return new URL(a).origin === new URL(b).origin;
+  } catch {
+    return a === b;
+  }
+}
+
+/**
+ * Makes `teamId` the title bar's team too (one team everywhere), when Team settings shows the active account's
+ * server. A team the title bar does not know yet (one just made) is fetched first.
+ */
+export async function followInTitleBar(url: string | undefined, teamId: string): Promise<void> {
+  const active = useActiveTeamStore.getState();
+  if (url === undefined || active.url === undefined || !sameOrigin(active.url, url)) return;
+  if (!active.teams.some((team) => team.id === teamId) && active.userId !== undefined) {
+    await active.load({ url: active.url, userId: active.userId });
+  }
+  await switchTeam(teamId);
 }
 
 const ITEM_CLASS =
@@ -60,6 +83,7 @@ export function TeamSwitcher({ onNewTeam }: { readonly onNewTeam: () => void }) 
               data-testid={`team-switcher-${item.id}`}
               onSelect={() => {
                 void selectTeam(item.id);
+                void followInTitleBar(useTeamStore.getState().url, item.id);
               }}
               className={ITEM_CLASS}
             >
@@ -84,7 +108,7 @@ export function TeamSwitcher({ onNewTeam }: { readonly onNewTeam: () => void }) 
   );
 }
 
-/** *New team…*: a name, then the team is created and Team settings switches to it on People. */
+/** *New team…*: a name, then the team is created and Team settings switches to it on its Overview. */
 export function NewTeamDialog({
   open,
   onOpenChange,
@@ -108,7 +132,10 @@ export function NewTeamDialog({
     setBusy(true);
     const created = await createTeam(name.trim());
     setBusy(false);
-    if (created) onOpenChange(false);
+    if (!created) return;
+    onOpenChange(false);
+    const { url, teamId } = useTeamStore.getState();
+    if (teamId !== undefined) void followInTitleBar(url, teamId);
   };
 
   return (

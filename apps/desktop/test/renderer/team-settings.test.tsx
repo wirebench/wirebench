@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } fr
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { TeamSettings } from '../../src/renderer/features/team/settings/team-settings.js';
 import { useAccountStore } from '../../src/renderer/state/account.js';
+import { useActiveTeamStore } from '../../src/renderer/state/active-team.js';
 import { useTeamStore } from '../../src/renderer/state/team.js';
 import { useUiStore, type TeamSettingsTarget } from '../../src/renderer/state/ui.js';
 import { useSettingsPlaceStore } from '../../src/renderer/features/address/settings-place.js';
@@ -85,13 +86,13 @@ describe('Team settings (settings split spec §3, §5)', () => {
     window.history.replaceState(null, '', '/');
   });
 
-  it('opens on People for the team in the address', async () => {
+  it('opens on Overview for the team in the address', async () => {
     install(TEAMS);
     show({ teamId: 'T2' });
     await waitFor(() => expect(screen.getByTestId('team-switcher').textContent).toContain('Support'));
-    await waitFor(() => expect(current()).toBe('People'));
-    expect(screen.getByTestId('people-page')).toBeTruthy();
-    expect(useSettingsPlaceStore.getState()).toMatchObject({ team: 'T2', page: 'people' });
+    await waitFor(() => expect(current()).toBe('Overview'));
+    expect(screen.getByTestId('team-overview')).toBeTruthy();
+    expect(useSettingsPlaceStore.getState()).toMatchObject({ team: 'T2', page: 'overview' });
   });
 
   it('opens on the active account’s server when no server is asked for (switch accounts spec §4)', async () => {
@@ -108,40 +109,52 @@ describe('Team settings (settings split spec §3, §5)', () => {
     install(TEAMS);
     show({ teamId: 'NOPE' });
     await waitFor(() => expect(screen.getByTestId('team-switcher').textContent).toContain('Payments QA'));
-    await waitFor(() => expect(useSettingsPlaceStore.getState()).toMatchObject({ team: 'T1', page: 'people' }));
+    await waitFor(() => expect(useSettingsPlaceStore.getState()).toMatchObject({ team: 'T1', page: 'overview' }));
   });
 
-  it('an unknown page falls back to People', async () => {
+  it('an unknown page falls back to Overview', async () => {
     install(TEAMS);
     // `license` is a server admin's; this caller is not one.
     show({ teamId: 'T1', page: 'license' });
-    await waitFor(() => expect(current()).toBe('People'));
+    await waitFor(() => expect(current()).toBe('Overview'));
     expect(screen.queryByTestId('license-tab')).toBeNull();
   });
 
-  it('a workspace link opens People on that workspace’s team', async () => {
+  it('a workspace link opens Overview on that workspace’s team', async () => {
     install(TEAMS);
     show({ workspaceId: 'W2' });
     await waitFor(() => expect(screen.getByTestId('team-switcher').textContent).toContain('Support'));
-    await waitFor(() => expect(useSettingsPlaceStore.getState()).toMatchObject({ team: 'T2', page: 'people' }));
+    await waitFor(() => expect(useSettingsPlaceStore.getState()).toMatchObject({ team: 'T2', page: 'overview' }));
   });
 
-  it('switching team keeps the page and reports the team', async () => {
+  it('switching team lands on its Overview and reports the team', async () => {
     install([team('admin', 'T1', 'Payments QA'), team('admin', 'T2', 'Support')]);
     show({ teamId: 'T1', page: 'workspaces' });
     await waitFor(() => expect(current()).toBe('Workspaces'));
     fireEvent.pointerDown(screen.getByTestId('team-switcher'), { button: 0, ctrlKey: false });
     fireEvent.click(await screen.findByTestId('team-switcher-T2'));
-    await waitFor(() => expect(useSettingsPlaceStore.getState()).toMatchObject({ team: 'T2', page: 'workspaces' }));
-    expect(current()).toBe('Workspaces');
+    await waitFor(() => expect(useSettingsPlaceStore.getState()).toMatchObject({ team: 'T2', page: 'overview' }));
+    expect(current()).toBe('Overview');
     expect(push).not.toHaveBeenCalled();
+  });
+
+  it('a team picked here becomes the title bar’s team too on the same server', async () => {
+    install([team('admin', 'T1', 'Payments QA'), team('admin', 'T2', 'Support')]);
+    await useActiveTeamStore.getState().load({ url: URL_, userId: 'me' });
+    expect(useActiveTeamStore.getState().teamId).toBe('T1');
+    show({ teamId: 'T1' });
+    await waitFor(() => expect(current()).toBe('Overview'));
+    fireEvent.pointerDown(screen.getByTestId('team-switcher'), { button: 0, ctrlKey: false });
+    fireEvent.click(await screen.findByTestId('team-switcher-T2'));
+    await waitFor(() => expect(useActiveTeamStore.getState().teamId).toBe('T2'));
+    useActiveTeamStore.setState({ url: undefined, userId: undefined, teams: [], workspaces: [], teamId: undefined });
   });
 
   it('a page change reports the page', async () => {
     install(TEAMS);
     window.history.replaceState(null, '', '/?keep=1');
     show({ teamId: 'T1' });
-    await waitFor(() => expect(current()).toBe('People'));
+    await waitFor(() => expect(current()).toBe('Overview'));
     fireEvent.click(screen.getByTestId('team-settings-nav-workspaces'));
     await waitFor(() => expect(useSettingsPlaceStore.getState()).toMatchObject({ team: 'T1', page: 'workspaces' }));
     expect(push).not.toHaveBeenCalled();
@@ -156,7 +169,7 @@ describe('Team settings (settings split spec §3, §5)', () => {
     expect(useUiStore.getState().preferences.open).toBe(false);
   });
 
-  it('New team… creates the team and lands on its People page', async () => {
+  it('New team… creates the team and lands on its Overview with the setup list', async () => {
     const created = team('admin', 'T3', 'New');
     const list = vi
       .fn()
@@ -173,8 +186,9 @@ describe('Team settings (settings split spec §3, §5)', () => {
     fireEvent.click(within(dialog).getByTestId('team-new-submit'));
     await vi.waitFor(() => expect(create).toHaveBeenCalledWith({ url: URL_, name: 'New' }));
     await waitFor(() => expect(screen.getByTestId('team-switcher').textContent).toContain('New'));
-    await waitFor(() => expect(current()).toBe('People'));
-    await waitFor(() => expect(useSettingsPlaceStore.getState()).toMatchObject({ team: 'T3', page: 'people' }));
+    await waitFor(() => expect(current()).toBe('Overview'));
+    await waitFor(() => expect(useSettingsPlaceStore.getState()).toMatchObject({ team: 'T3', page: 'overview' }));
+    expect(await screen.findByTestId('team-overview-setup')).toBeTruthy();
     expect(screen.queryByTestId('team-new-dialog')).toBeNull();
   });
 
@@ -206,15 +220,15 @@ describe('Team settings (settings split spec §3, §5)', () => {
     expect(screen.queryByTestId('team-settings-empty')).toBeNull();
   });
 
-  it('switching to a team the caller does not admin leaves Audit log for People', async () => {
+  it('switching to a team the caller does not admin leaves Audit log for its Overview', async () => {
     install(TEAMS);
     show({ teamId: 'T1', page: 'audit' });
     await waitFor(() => expect(current()).toBe('Audit log'));
     fireEvent.pointerDown(screen.getByTestId('team-switcher'), { button: 0, ctrlKey: false });
     fireEvent.click(await screen.findByTestId('team-switcher-T2'));
-    await waitFor(() => expect(current()).toBe('People'));
+    await waitFor(() => expect(current()).toBe('Overview'));
     expect(screen.queryByTestId('team-settings-nav-audit')).toBeNull();
-    await waitFor(() => expect(useSettingsPlaceStore.getState()).toMatchObject({ team: 'T2', page: 'people' }));
+    await waitFor(() => expect(useSettingsPlaceStore.getState()).toMatchObject({ team: 'T2', page: 'overview' }));
   });
 
   it('a signed-out server offers Sign in again', async () => {

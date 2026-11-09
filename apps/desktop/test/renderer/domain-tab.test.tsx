@@ -369,7 +369,7 @@ describe('the Domain tab in the team dialog', () => {
     expect(screen.queryByTestId('domain-tab')).toBeNull();
   });
 
-  it('a server admin who is no longer one leaves the Domain page for People', async () => {
+  it('a server admin who is no longer one leaves the Domain page for Overview', async () => {
     installWirebenchApi({
       team: {
         list: ok({
@@ -381,6 +381,6 @@ describe('the Domain tab in the team dialog', () => {
       },
     });
     await useTeamStore.getState().open(URL_, { page: 'domain' });
-    expect(useTeamStore.getState().page).toBe('people');
+    expect(useTeamStore.getState().page).toBe('overview');
   });
 });

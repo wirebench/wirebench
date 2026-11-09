@@ -73,7 +73,7 @@ const ICONS: Readonly<Record<TeamSettingsPageId, LucideIcon>> = {
 };
 
 const SUBTITLES: Readonly<Partial<Record<TeamSettingsPageId, string>>> = {
-  overview: 'The team’s name, and deleting it.',
+  overview: 'The team at a glance: its people, its workspaces and what’s left to set up.',
   people: 'Everyone on the team, and the invitations still open.',
   workspaces: 'The team’s workspaces and who can open them.',
   roles: 'What Viewer, Editor and Admin may do in a workspace.',

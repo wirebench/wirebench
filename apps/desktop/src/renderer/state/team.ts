@@ -20,7 +20,7 @@ import type {
 import { showToast } from '../components/toast.js';
 import { activeTeamIdOn } from './active-team.js';
 import { ipc } from './ipc-client.js';
-import { resolveTeamPage, type TeamSettingsPageId } from '../features/team/team-settings-model.js';
+import { DEFAULT_TEAM_PAGE, resolveTeamPage, type TeamSettingsPageId } from '../features/team/team-settings-model.js';
 import type { TeamSettingsTarget } from './ui.js';
 
 /** The fallback dialog's tabs; the dialog keeps which one is open itself. */
@@ -287,9 +287,9 @@ export const useTeamStore = create<TeamStore>((set, get) => {
     },
 
     selectTeam: async (teamId) => {
+      // A team picked lands on its Overview (whichever page was showing).
       set({ teamId, members: [], invitations: [], access: undefined });
-      // Keeps the page where the new team allows it: an admin-only page falls back for a member.
-      set({ page: settledPage(get(), get().page) });
+      set({ page: settledPage(get(), DEFAULT_TEAM_PAGE) });
       await loadTeam();
     },
 
@@ -303,7 +303,7 @@ export const useTeamStore = create<TeamStore>((set, get) => {
       const value = await run('create the team', () => ipc().team.create({ url, name }));
       if (value === undefined) return false;
       // Listed at once, so nothing reads a selected team that is not in the list before the reload lands.
-      set({ teams: [...get().teams, value.team], teamId: value.team.id, page: 'people' });
+      set({ teams: [...get().teams, value.team], teamId: value.team.id, page: DEFAULT_TEAM_PAGE });
       await get().refresh();
       return true;
     },

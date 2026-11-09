@@ -64,9 +64,10 @@ export function teamNav(facts: TeamNavFacts): readonly TeamNavGroup[] {
   return groups;
 }
 
-export const DEFAULT_TEAM_PAGE: TeamSettingsPageId = 'people';
+/** Where a team pick, *Manage team…* and a link without a page land: the team's Overview. */
+export const DEFAULT_TEAM_PAGE: TeamSettingsPageId = 'overview';
 
-/** A page `teamNav(facts)` lists, else People, else the first listed page when there is no team. */
+/** A page `teamNav(facts)` lists, else Overview, else the first listed page when there is no team. */
 export function resolveTeamPage(page: string | undefined, facts: TeamNavFacts): TeamSettingsPageId | undefined {
   const listed = teamNav(facts).flatMap((group) => group.pages);
   return listed.find((id) => id === page) ?? listed.find((id) => id === DEFAULT_TEAM_PAGE) ?? listed[0];
