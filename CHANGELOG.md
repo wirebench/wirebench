@@ -19,6 +19,26 @@ All notable changes to this project are documented here. The format follows
   unsaved edits.
 - **Server: the sign-in, add account, second-step and invitation pages look like Wirebench (#887).** They use the
   app's colours in dark and light instead of a bare white form.
+- **Browser: no dead controls (#888, #893, #894, #902).** New MCP servers default to Streamable HTTP (local processes
+  run in the desktop app); the OAuth grants that open a browser window, the Binary body and file parts say they work
+  in the desktop app; the Import dialog's File tab gains *Choose file…*; the runner says data files are chosen in the
+  desktop app; a disabled Kerberos option says why.
+- **Browser: Sync panel, team settings and the picker (#891, #892, #898, #906).** The Sync panel shows status and
+  recent changes only (the server is the store); team settings open on the title bar's team; the picker says how many
+  of the team's workspaces you can open; a newly opened workspace starts on the Explorer.
+- **"Restored unsaved changes" names the requests (#899)** and shows only when a request was given back its edits.
+- **Runs say when requests have unsaved edits (#895),** with *Save and run* or *Run saved versions*.
+- **Browser: shortcuts that work in a browser (#896).** Close Tab is Alt+W and New Project Alt+Shift+N in a browser
+  tab, Keyboard shortcuts marks keys the browser keeps, and the page asks before leaving with unsaved edits.
+- **One name for settings (#904):** the palette says *Account: View profile* and *App settings*, as the account menu
+  does; a palette search for a desktop-only command says it is in the desktop app (#905).
+- **Browser: theme, narrow windows and tab titles (#889, #890, #903).** A reload paints the theme last chosen; the title
+  bar keeps to one line and a window narrower than 640 px says it needs more room; the browser tab is titled after the
+  open tab and workspace, with no gap for window buttons.
+- **Desktop: Sign in in the title bar before any server is known (#897).**
+- **Browser: App settings say they are yours on this server (#901),** and System proxy is no longer offered there.
+- **Signed-in devices name the browser and OS (#900),** such as "Chrome on macOS", and the current one is "This browser".
+- **A relaunch brings back the tab beside a session-only one that was in front (#907),** instead of Start.
 
 ## [7.0.0] - 2026-11-09
 
