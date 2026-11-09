@@ -319,3 +319,40 @@ describe('resultMark (#560)', () => {
     expect(screen.getByTestId('runner-tab').textContent).not.toContain('${column}');
   });
 });
+
+describe('the data file without dialogs (#894)', () => {
+  /** A browser tab's host: a public send and nothing of a machine, and a target with no data file. */
+  function browserTab(): void {
+    const noData: RunnerState = { ...STATE };
+    delete (noData as { data?: unknown }).data;
+    const api = installWirebenchApi({
+      runner: {
+        state: vi.fn().mockResolvedValue({ ok: true, value: noData }),
+        settings: { set: setSettings },
+        run,
+        history: { list: vi.fn().mockResolvedValue({ ok: true, value: { runs: [] } }), get: historyGet },
+      },
+    });
+    Object.defineProperty(api, 'env', {
+      configurable: true,
+      value: { e2e: false, osTheme: 'dark', host: 'browser', capabilities: ['send:public'] },
+    });
+  }
+
+  it('says data files are chosen in the desktop app, and drops the rows that need one', async () => {
+    browserTab();
+    await mount();
+    expect(screen.getByTestId('runner-data-desktop').textContent).toBe('Data files are chosen in the desktop app.');
+    expect(screen.queryByTestId('runner-data-none')).toBeNull();
+    expect(screen.queryByTestId('runner-data-choose')).toBeNull();
+    expect(screen.queryByText('More iterations than rows')).toBeNull();
+    expect(screen.queryByTestId('runner-data-hint')).toBeNull();
+  });
+
+  it('keeps Choose… and the rows on the desktop', async () => {
+    await mount();
+    expect(screen.getByTestId('runner-data-choose')).toBeTruthy();
+    expect(screen.getByText('More iterations than rows')).toBeTruthy();
+    expect(screen.getByTestId('runner-data-hint')).toBeTruthy();
+  });
+});

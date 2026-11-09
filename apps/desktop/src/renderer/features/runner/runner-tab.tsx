@@ -171,6 +171,9 @@ export function RunnerTab({ targetId }: RunnerTabProps) {
   const { settings, data } = state;
   const running = run?.status === 'running';
   const shown = viewing ?? run?.result;
+  // A data file is picked in a native dialog and read by the host from its path, so a host without
+  // dialogs (a browser tab's) has none to give: the rows that only mean something with one go too.
+  const dataOffered = hasCapability('dialogs') || data !== undefined;
 
   return (
     <section aria-label={`Runner ${state.name}`} data-testid="runner-tab" className="h-full overflow-auto p-3">
@@ -218,9 +221,13 @@ export function RunnerTab({ targetId }: RunnerTabProps) {
                 ? ` — ${data.error.message}`
                 : ` — ${data.rows} row${data.rows === 1 ? '' : 's'}: ${data.columns.join(', ')}`}
             </span>
-          ) : (
+          ) : hasCapability('dialogs') ? (
             <span data-testid="runner-data-none" className="text-fg-subtle">
               None
+            </span>
+          ) : (
+            <span data-testid="runner-data-desktop" className="text-fg-subtle">
+              Data files are chosen in the desktop app.
             </span>
           )}
           {/* A data file picked in a native dialog. */}
@@ -245,13 +252,15 @@ export function RunnerTab({ targetId }: RunnerTabProps) {
             </button>
           )}
         </div>
-        <EnumSetting
-          label="More iterations than rows"
-          testId="runner-overrun"
-          value={settings.overrun}
-          options={OVERRUN_OPTIONS}
-          onChange={(overrun) => onSettings({ ...settings, overrun: overrun as RunnerSettings['overrun'] })}
-        />
+        {dataOffered && (
+          <EnumSetting
+            label="More iterations than rows"
+            testId="runner-overrun"
+            value={settings.overrun}
+            options={OVERRUN_OPTIONS}
+            onChange={(overrun) => onSettings({ ...settings, overrun: overrun as RunnerSettings['overrun'] })}
+          />
+        )}
         <BooleanSetting
           label="Stop on first failure"
           testId="runner-bail"
@@ -278,10 +287,12 @@ export function RunnerTab({ targetId }: RunnerTabProps) {
               Run
             </button>
           )}
-          <span className="text-xs text-fg-subtle">
-            A request reads a row’s column as <code className="font-mono">{'${#Data#column}'}</code>; a script as{' '}
-            <code className="font-mono">iteration.data.get("column")</code>.
-          </span>
+          {dataOffered && (
+            <span data-testid="runner-data-hint" className="text-xs text-fg-subtle">
+              A request reads a row’s column as <code className="font-mono">{'${#Data#column}'}</code>; a script as{' '}
+              <code className="font-mono">iteration.data.get("column")</code>.
+            </span>
+          )}
         </div>
       </SettingsGroup>
 
