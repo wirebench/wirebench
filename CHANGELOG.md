@@ -39,6 +39,18 @@ All notable changes to this project are documented here. The format follows
 - **Browser: App settings say they are yours on this server (#901),** and System proxy is no longer offered there.
 - **Signed-in devices name the browser and OS (#900),** such as "Chrome on macOS", and the current one is "This browser".
 - **A relaunch brings back the tab beside a session-only one that was in front (#907),** instead of Start.
+- **Browser: an unsaved edit stays on its tab after a send (#909).** The tab keeps its dot, closing it still asks, and
+  *Don't save* goes back to the saved request.
+- **History: an open entry stays on screen whatever the History search is (#910).**
+- **Desktop: image responses preview again (#911).**
+- **Reopen Closed Tab (#912)** brings back the last closed tabs, newest first: Mod+Shift+T, or Alt+Shift+T in a browser
+  tab.
+- **Browser: a host the server cannot resolve reads "Host not found" (#913),** with pairing offered as the second idea,
+  once, in the response panel.
+- **A new item made from the palette shows the Explorer and starts its rename (#914),** whatever view the sidebar showed.
+- **A request shows its last response from History after a reload or relaunch (#915),** until the next send.
+- **Browser: the tab title follows a rename (#916).**
+- **Mod+S saves the project when the tab in front has nothing of its own to save (#917).**
 
 ## [7.0.0] - 2026-11-09
 
