@@ -6,7 +6,7 @@ import { CodeEditor } from '../../editor/code-editor.js';
 import { prettyPrintBody, sniffLanguage } from './history-format.js';
 import { formatBytes, formatDuration } from '../../lib/format-size.js';
 import { Button } from '../../components/button.js';
-import { useHistoryStore } from '../../state/history.js';
+import { useHistoryEntry } from '../../state/history.js';
 import { canResendHistoryEntry, resendHistoryEntry } from './history-actions.js';
 import { useProjectStore } from '../../state/project.js';
 import { Tabs } from '../../components/tabs.js';
@@ -58,7 +58,7 @@ function HeaderList({
  * The meta line leads with the response status, and a Headers tab lists both sides' headers.
  */
 export function HistoryEntryView({ historyId }: HistoryEntryViewProps) {
-  const entry = useHistoryStore((state) => state.entries.find((e) => e.id === historyId));
+  const entry = useHistoryEntry(historyId);
   const [tab, setTab] = useState<EntryTab>('body');
   const kind = rendererKindOf(entry?.kind);
   const requestExists = useProjectStore((state) =>
