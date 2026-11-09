@@ -1,6 +1,8 @@
 import { useEffect, useRef } from 'react';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { Check, ChevronDown, Folder, GitBranch, Server } from 'lucide-react';
+import { useShallow } from 'zustand/react/shallow';
+import { ofOtherTeam, pickActive, useActiveTeamStore } from '../../state/active-team.js';
 import { useUiStore } from '../../state/ui.js';
 import { hasCapability } from '../../lib/capabilities.js';
 import { useWorkspaceStore } from '../../state/workspace.js';
@@ -9,6 +11,11 @@ import { workspaceActions } from './workspace-actions.js';
 
 const ITEM_CLASS =
   'flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm text-fg-default outline-none data-[highlighted]:bg-accent-muted data-[disabled]:cursor-not-allowed data-[disabled]:opacity-50';
+
+/** The team a server workspace belongs to; `undefined` for a local, folder or git one. */
+function teamOf(workspace: { readonly share?: WorkspaceSummaryWire['share'] }): string | undefined {
+  return workspace.share?.kind === 'server' ? workspace.share.server?.teamName : undefined;
+}
 
 /** A stable empty list, so the switcher does not rerender while the picker is loading. */
 const NO_WORKSPACES: readonly WorkspaceSummaryWire[] = [];
@@ -25,7 +32,9 @@ export function WorkspaceSwitcher() {
   const setOpen = useUiStore((state) => state.setWorkspaceSwitcherOpen);
   const setCreateOpen = useUiStore((state) => state.setWorkspaceCreateOpen);
   const setManageOpen = useUiStore((state) => state.setWorkspaceManageOpen);
+  const setTeamDialogOpen = useUiStore((state) => state.setTeamWorkspaceDialogOpen);
   const contentRef = useRef<HTMLDivElement | null>(null);
+  const activeTeams = useActiveTeamStore(useShallow((state) => pickActive(state)));
 
   // Opened from the command palette, the menu mounts while the palette is still closing, and
   // the palette hands focus back to whatever held it before as it goes — which would leave an
@@ -49,7 +58,11 @@ export function WorkspaceSwitcher() {
   if (workspace === null) {
     return null;
   }
-  const rows = workspaces.length > 0 ? workspaces : NO_WORKSPACES;
+  // The menu follows the title bar's active team: another team's workspaces are one team switch away.
+  const rows = (workspaces.length > 0 ? workspaces : NO_WORKSPACES).filter(
+    (row) => row.id === workspace.id || !ofOtherTeam(activeTeams, row),
+  );
+  const team = teamOf(workspace);
 
   return (
     <DropdownMenu.Root open={open} onOpenChange={setOpen}>
@@ -57,7 +70,9 @@ export function WorkspaceSwitcher() {
         <button
           type="button"
           data-testid="workspace-switcher"
-          aria-label={`Workspace: ${workspace.name}`}
+          aria-label={
+            team === undefined ? `Workspace: ${workspace.name}` : `Workspace: ${workspace.name}, team ${team}`
+          }
           className="wb-no-drag inline-flex items-center gap-1 rounded px-1 text-sm text-fg-default hover:bg-surface-hover"
         >
           {workspace.share !== undefined &&
@@ -68,6 +83,17 @@ export function WorkspaceSwitcher() {
             ) : (
               <GitBranch data-testid="workspace-switcher-share" size={12} aria-hidden="true" />
             ))}
+          {/* A team workspace says whose it is, unless the title bar's team switcher already does. */}
+          {team !== undefined && activeTeams.teamId === undefined && (
+            <>
+              <span data-testid="workspace-switcher-team" className="text-fg-muted">
+                {team}
+              </span>
+              <span className="text-fg-faint" aria-hidden="true">
+                /
+              </span>
+            </>
+          )}
           {workspace.name}
           <ChevronDown size={12} aria-hidden="true" />
         </button>
@@ -85,7 +111,10 @@ export function WorkspaceSwitcher() {
               data-testid="workspace-switcher-item"
               data-workspace-id={row.id}
               disabled={row.unreadable === true}
-              title={row.unreadable === true ? `${row.dir} (unreadable)` : row.dir}
+              // Without the machine's files the folder is the server's own (#880): never shown.
+              title={
+                hasCapability('files') ? (row.unreadable === true ? `${row.dir} (unreadable)` : row.dir) : undefined
+              }
               className={ITEM_CLASS}
               onSelect={() => {
                 if (row.id === workspace.id) {
@@ -100,6 +129,11 @@ export function WorkspaceSwitcher() {
                 className={row.id === workspace.id ? 'text-accent' : 'text-transparent'}
               />
               <span className="min-w-0 flex-1 truncate">{row.name}</span>
+              {teamOf(row) !== undefined && (
+                <span data-testid="workspace-switcher-item-team" className="shrink-0 text-xs text-fg-faint">
+                  {teamOf(row)}
+                </span>
+              )}
             </DropdownMenu.Item>
           ))}
           <DropdownMenu.Separator className="my-1 h-px bg-hairline" />
@@ -113,6 +147,19 @@ export function WorkspaceSwitcher() {
             >
               <span className="w-3" aria-hidden="true" />
               Create workspace…
+            </DropdownMenu.Item>
+          )}
+          {/* The active team's workspaces not opened here yet are a click away. */}
+          {activeTeams.teamId !== undefined && (
+            <DropdownMenu.Item
+              data-testid="workspace-switcher-open-team"
+              className={ITEM_CLASS}
+              onSelect={() => {
+                setTeamDialogOpen(true);
+              }}
+            >
+              <span className="w-3" aria-hidden="true" />
+              Open a team workspace…
             </DropdownMenu.Item>
           )}
           <DropdownMenu.Item

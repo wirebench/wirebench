@@ -18,6 +18,7 @@ import { DevicesPage } from './devices-page.js';
 import { PasswordPage } from './password-page.js';
 import { ProfilePage } from './profile-page.js';
 import { ServersPage } from './servers-page.js';
+import { useReportSettingsPlace } from '../../address/settings-place.js';
 
 const ICONS: Readonly<Record<UserSettingsPageId, LucideIcon>> = {
   profile: CircleUser,
@@ -57,6 +58,7 @@ export function UserSettings({ initialPage }: { readonly initialPage?: UserSetti
   // Password shows once the server says it signs in with passwords; a request for it waits for that answer.
   const facts = { localPasswords: profile?.localPasswords ?? false };
   const page = resolveUserPage(requested, facts);
+  useReportSettingsPlace(page);
   const entry = PAGES.find((candidate) => candidate.id === page)!;
   const serversModified = storedSectionModified(preferences, 'accounts');
 

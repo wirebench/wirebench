@@ -109,4 +109,27 @@ describe('WorkspaceSwitcher', () => {
 
     expect((await screen.findAllByTestId('workspace-switcher-item')).length).toBe(3);
   });
+
+  it('names the team of a team workspace, in the trigger and on its row', async () => {
+    const share = {
+      kind: 'server' as const,
+      managed: true,
+      server: { url: 'https://wb.example.com', workspaceId: 'w1', teamName: 'Platform', recording: false },
+    };
+    useWorkspaceStore.setState({
+      workspace: { ...workspaceWire(), share },
+      workspaces: [summary({ id: 'w1', name: 'Workspace 1', share }), summary({ id: 'w2', name: 'Billing' })],
+    });
+    render(<WorkspaceSwitcher />);
+
+    const trigger = screen.getByTestId('workspace-switcher');
+    expect(screen.getByTestId('workspace-switcher-team').textContent).toBe('Platform');
+    expect(trigger.getAttribute('aria-label')).toBe('Workspace: Workspace 1, team Platform');
+
+    await userEvent.click(trigger);
+
+    expect((await screen.findAllByTestId('workspace-switcher-item-team')).map((team) => team.textContent)).toEqual([
+      'Platform',
+    ]);
+  });
 });

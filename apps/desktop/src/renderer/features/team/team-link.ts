@@ -7,6 +7,7 @@
  */
 import { isBrowserTab } from '../../lib/capabilities.js';
 import { activeAccount, useAccountStore } from '../../state/account.js';
+import { useActiveTeamStore } from '../../state/active-team.js';
 import { ipc } from '../../state/ipc-client.js';
 import { useUiStore, type TeamDialogTarget } from '../../state/ui.js';
 import { useWorkspaceStore } from '../../state/workspace.js';
@@ -119,15 +120,26 @@ function sameServer(a: string, b: string): boolean {
  * The server *Manage team…* is about: the one asked for, else the active account's (switch accounts spec §4). The
  * open workspace's team is carried when it is shared to that server.
  */
-function chooseServer(url: string | undefined): { url: string; target?: TeamDialogTarget } | undefined {
+function chooseServer(
+  url: string | undefined,
+  teamId: string | undefined,
+): { url: string; target?: TeamDialogTarget } | undefined {
   const { servers, active } = useAccountStore.getState();
   const share = useWorkspaceStore.getState().workspace?.share;
   const shared = share?.kind === 'server' ? share.server : undefined;
   const chosen = url ?? activeAccount(servers, active)?.url;
   if (chosen === undefined) return undefined;
+  const team = teamId ?? activeTeamOn(chosen);
+  if (team !== undefined) return { url: chosen, target: { teamId: team } };
   return shared !== undefined && sameServer(shared.url, chosen)
     ? { url: chosen, target: { workspaceId: shared.workspaceId } }
     : { url: chosen };
+}
+
+/** The title bar's active team, when it is `url`'s: *Manage team…* opens on it. */
+function activeTeamOn(url: string): string | undefined {
+  const state = useActiveTeamStore.getState();
+  return state.url !== undefined && sameServer(state.url, url) ? state.teamId : undefined;
 }
 
 /**
@@ -136,13 +148,15 @@ function chooseServer(url: string | undefined): { url: string; target?: TeamDial
  * (`window.open` reaches `shell.openExternal` through the window's open handler and its http(s) allow-list);
  * otherwise, or when the server cannot be asked, it opens the dialog in the window (rulings 1 and 4).
  */
-export async function manageTeam(url?: string): Promise<void> {
+export async function manageTeam(url?: string, teamId?: string): Promise<void> {
   const ui = useUiStore.getState();
   if (isBrowserTab()) {
-    ui.openTeamSettings(url === undefined ? {} : { url });
+    // Team settings opens on the asked team, else the title bar's active one.
+    const team = teamId ?? activeTeamOn(url ?? window.location.origin);
+    ui.openTeamSettings({ ...(url !== undefined ? { url } : {}), ...(team !== undefined ? { teamId: team } : {}) });
     return;
   }
-  const chosen = chooseServer(url);
+  const chosen = chooseServer(url, teamId);
   if (chosen === undefined) {
     ui.openTeamDialog(url);
     return;

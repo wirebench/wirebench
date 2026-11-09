@@ -2,7 +2,9 @@ import { useEffect, useState } from 'react';
 import { Folder, FolderInput, FolderPlus, FolderSearch, GitBranch, Server } from 'lucide-react';
 import { Button } from '../../components/button.js';
 import { remoteHost } from '../sync/remote-host.js';
+import { useShallow } from 'zustand/react/shallow';
 import { useAccountStore } from '../../state/account.js';
+import { activeTeam, ofOtherTeam, pickActive, useActiveTeamStore } from '../../state/active-team.js';
 import { useUiStore } from '../../state/ui.js';
 import { useWorkspaceStore } from '../../state/workspace.js';
 import { hasCapability } from '../../lib/capabilities.js';
@@ -74,6 +76,10 @@ export function WorkspacePicker() {
   const knowsServer = useAccountStore((state) => state.servers.length > 0);
   const [name, setName] = useState('');
   const localFiles = hasCapability('files');
+  // The list follows the title bar's active team; local and other servers' workspaces always show.
+  const teamState = useActiveTeamStore(useShallow(pickActive));
+  const team = activeTeam(teamState);
+  const shown = workspaces.filter((workspace) => !ofOtherTeam(teamState, workspace));
 
   useEffect(() => {
     void list();
@@ -169,11 +175,17 @@ export function WorkspacePicker() {
         </div>
 
         <h2 className="mt-8 text-sm font-medium text-fg-muted">Workspaces</h2>
-        {workspaces.length === 0 ? (
-          <p className="mt-1 text-sm text-fg-subtle">{status === 'loading' ? 'Loading…' : 'No workspaces yet.'}</p>
+        {shown.length === 0 ? (
+          <p data-testid="workspace-picker-empty" className="mt-1 text-sm text-fg-subtle">
+            {status === 'loading'
+              ? 'Loading…'
+              : team !== undefined && workspaces.length > 0
+                ? `No workspaces of ${team.name} here yet. Switch team in the title bar to see the others.`
+                : 'No workspaces yet.'}
+          </p>
         ) : (
           <ul className="mt-1 flex flex-col">
-            {workspaces.map((workspace) => {
+            {shown.map((workspace) => {
               const unreadable = workspace.unreadable === true;
               return (
                 <li key={workspace.id} className="flex items-center gap-1">

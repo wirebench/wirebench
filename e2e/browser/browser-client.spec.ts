@@ -112,11 +112,13 @@ test('the team deep link the desktop opens shows Team settings on the tab’s se
 });
 
 test('opens the seeded server workspace', async () => {
-  const dialog = await openTeamDialog(page);
+  const dialog = await openTeamDialog(page, seed.teamName);
   await dialog.getByTestId('team-workspace-row').filter({ hasText: seed.workspaceName }).click();
   await expect(dialog).toBeHidden({ timeout: 60_000 });
   await expect(page.getByTestId('activity-bar')).toBeVisible();
   await expect(projectRow()).toBeVisible();
+  // The title bar says whose workspace it is: the active team before the workspace's name.
+  await expect(page.getByTestId('title-team-switcher')).toContainText(seed.teamName);
 });
 
 test('a reload reopens the workspace the tab had open (#879)', async () => {
@@ -150,6 +152,27 @@ test('a request to the echo service on the server network gets its response', as
   await sendRest(page);
   await expect(responseStatus(page)).toContainText('200');
   await expect(page.getByTestId('rest-response')).toContainText('/hello');
+});
+
+test('the address names the workspace, the request and the view; a reload and Back go by it', async () => {
+  // The echo request is open (the step before): the path names its team workspace and its tab.
+  await expect(page).toHaveURL(/\/workspaces\/[A-Za-z0-9_-]+\/rest-request\/[^/?]+$/);
+  const rail = page.getByTestId('activity-bar');
+  await rail.getByRole('button', { name: /^History/ }).click();
+  await expect(page).toHaveURL(/\?view=history$/);
+  const here = page.url();
+
+  await page.reload();
+  await expect(page.getByTestId('rest-breadcrumb-name')).toHaveText(seed.echoRequest, { timeout: 60_000 });
+  // The send the step before made is in the History the reload came back to.
+  await expect(page.getByTestId('history-row').first()).toBeVisible();
+  expect(page.url()).toBe(here);
+
+  // A sidebar area is a place of its own: Back returns to the Explorer, on the same request.
+  await page.goBack();
+  await expect(page).not.toHaveURL(/view=/);
+  await expect(projectRow()).toBeVisible();
+  await expect(page.getByTestId('rest-breadcrumb-name')).toHaveText(seed.echoRequest);
 });
 
 test('a request to 127.0.0.1 needs this machine: the tab has no agent, so it offers to pair one', async () => {
@@ -239,7 +262,7 @@ test('the account menu opens Team settings (#877)', async () => {
 });
 
 test('opens an empty team workspace and starts it: its first commit reaches the server (#878)', async () => {
-  const dialog = await openTeamDialog(page);
+  const dialog = await openTeamDialog(page, seed.teamName);
   await dialog.getByTestId('team-workspace-row').filter({ hasText: seed.emptyWorkspaceName }).click();
   await expect(dialog).toBeHidden({ timeout: 60_000 });
   await expect(page.getByTestId('activity-bar')).toBeVisible();

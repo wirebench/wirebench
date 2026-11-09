@@ -52,7 +52,7 @@ import { PeoplePage } from './people-page.js';
 import { RolesPage } from './roles-page.js';
 import { isServerGroupPage, ServerGroupPage } from './server-pages.js';
 import { NewTeamDialog, TeamSwitcher } from './team-switcher.js';
-import { clearTeamAddress, useTeamAddress } from './use-team-address.js';
+import { useTeamAddress } from './use-team-address.js';
 
 const ICONS: Readonly<Record<TeamSettingsPageId, LucideIcon>> = {
   overview: LayoutDashboard,
@@ -201,7 +201,6 @@ export function TeamSettings({ target }: { readonly target: TeamSettingsTarget }
   useTeamAddress(store.teamId, ready ? shown : undefined);
 
   const leave = (): void => {
-    clearTeamAddress();
     useUiStore.getState().setPreferencesOpen(false);
   };
 

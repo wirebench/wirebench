@@ -56,8 +56,22 @@ export async function shareToTeam(
   await waitForSync(page, 'clean');
 }
 
-/** Opens *Open a team workspace…* from the picker and returns the dialog. */
-export async function openTeamDialog(page: Page): Promise<Locator> {
+/** Makes `teamName` the title bar's active team, when the switcher shows another one: the lists follow it. */
+export async function useTeam(page: Page, teamName: string): Promise<void> {
+  const switcher = page.getByTestId('title-team-switcher');
+  await expect(switcher).toBeVisible({ timeout: 30_000 });
+  if ((await switcher.textContent())?.includes(teamName) === true) return;
+  await switcher.click();
+  await page.getByTestId('title-team-switcher-item').filter({ hasText: teamName }).click();
+  await expect(switcher).toContainText(teamName);
+}
+
+/**
+ * Opens *Open a team workspace…* from the picker and returns the dialog. With `teamName`, that team is made active
+ * first, since the dialog lists the active team's workspaces only.
+ */
+export async function openTeamDialog(page: Page, teamName?: string): Promise<Locator> {
+  if (teamName !== undefined) await useTeam(page, teamName);
   // The picker's button, or the palette's command when a workspace is open (a browser tab reopens its last, #879).
   const button = page.getByTestId('workspace-open-team');
   if (await button.isVisible()) await button.click();
