@@ -20,13 +20,14 @@ import { startRun } from '../features/ssh/snippets/run.js';
 import { loadSnippets } from '../features/ssh/snippets/snippet-actions.js';
 import { useSnippetsStore } from '../features/ssh/snippets/snippets-store.js';
 import type { CommandContext } from '../lib/commands.js';
-import { listPaletteCommands, runCommand, type PaletteCommand } from '../lib/commands.js';
+import { listMissingCommands, listPaletteCommands, runCommand, type PaletteCommand } from '../lib/commands.js';
 import { effectiveShortcut, formatKeybinding } from '../lib/keybindings.js';
 import { endPalettePreview, PALETTE_LABEL, previewPalette } from '../lib/theme.js';
 import { choosePalette } from '../lib/theme-actions.js';
 import { useProjectStore } from '../state/project.js';
 import { useUiStore } from '../state/ui.js';
-import { paletteFilter, paletteKeywords } from './palette-filter.js';
+import { paletteFilter, paletteKeywords, paletteNames } from './palette-filter.js';
+import { isBrowserTab } from '../lib/capabilities.js';
 import { recentCommandIds, recordRecentCommand } from './recent-commands.js';
 import type { QuickOpenEntry } from './quick-open.js';
 import {
@@ -216,6 +217,25 @@ export function rankGroups<T, G extends readonly [CommandCategory, readonly T[]]
     .map((group, index) => ({ group, index, score: best(group[1]) }))
     .sort((a, b) => b.score - a.score || a.index - b.index)
     .map(({ group }) => group);
+}
+
+/**
+ * What the command palette says when nothing matches (#905). In a browser tab a search can name commands
+ * the tab leaves out (SSH, a mock's Start), and saying only "No matching command" reads as if they did
+ * not exist: the empty state says where they are instead.
+ */
+export function noCommandText(search: string): string {
+  const words = search
+    .trim()
+    .split(/\s+/u)
+    .filter((word) => word !== '');
+  if (words.length === 0 || !isBrowserTab()) return 'No matching command.';
+  // Each word must name the command ("mock start"), so a stray fuzzy match never points elsewhere.
+  const named = listMissingCommands().filter((entry) =>
+    words.every((word) => paletteNames(`${entry.category} ${entry.label}`, word, paletteKeywords(entry))),
+  );
+  if (named.length === 0) return 'No matching command.';
+  return named.length === 1 ? `${named[0]!.label} is in the desktop app.` : 'These commands are in the desktop app.';
 }
 
 /**
@@ -479,7 +499,7 @@ export function CommandPalette({ open, onOpenChange, context, mode = 'commands' 
                             ? 'No matching host.'
                             : quickOpen
                               ? 'No matching operation or request.'
-                              : 'No matching command.'}
+                              : noCommandText(search)}
               </Command.Empty>
               {palettePicker &&
                 PALETTES.map((palette: Palette) => (

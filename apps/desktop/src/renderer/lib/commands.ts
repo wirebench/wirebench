@@ -1,4 +1,5 @@
 import type { CommandDefinition, CommandId } from '@shared/commands.js';
+import { COMMAND_CATALOG, type CommandCatalogEntry } from '@shared/command-catalog.js';
 import type { UiSnapshot } from '../state/ui-state.js';
 import type { Selection } from '../state/ui.js';
 import type { Platform } from './platform.js';
@@ -170,6 +171,20 @@ export function listPaletteCommands(context: CommandContext): readonly PaletteCo
     .sort(
       (a, b) => a.command.category.localeCompare(b.command.category) || a.command.label.localeCompare(b.command.label),
     );
+}
+
+/**
+ * The palette commands this host leaves out for want of a capability (#905): those whose
+ * {@link COMMAND_CAPABILITIES} entry it lacks, and those never registered because their area or kind
+ * is switched off here (a browser tab has no SSH area). What the palette's empty state points to the
+ * desktop app for.
+ */
+export function listMissingCommands(): readonly CommandCatalogEntry[] {
+  return Object.values(COMMAND_CATALOG).filter((entry) => {
+    if (entry.paletteHidden === true) return false;
+    const command = registry.get(entry.id);
+    return command === undefined || !hostCanRun(command);
+  });
 }
 
 /**

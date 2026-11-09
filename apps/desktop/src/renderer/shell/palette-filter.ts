@@ -103,3 +103,11 @@ export function paletteFilter(value: string, search: string, keywords?: string[]
   }
   return defaultFilter(value, search) * FUZZY_CEILING * (1 - value.length * LENGTH_PENALTY);
 }
+
+/**
+ * True when `search` names a command outright by {@link paletteFilter}: its area, a word of its name or
+ * one of its tags, not just cmdk's fuzzy match.
+ */
+export function paletteNames(value: string, search: string, keywords?: string[]): boolean {
+  return paletteFilter(value, search, keywords) > FUZZY_CEILING;
+}
