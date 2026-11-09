@@ -81,7 +81,7 @@ describe('account.* commands', () => {
 
   it('Account settings opens User settings', () => {
     const command = getCommand('account.settings')!;
-    expect(command.label).toBe('Account: Account settings');
+    expect(command.label).toBe('Account: View profile');
     expect(command.category).toBe('Account');
     void command.run(context);
     expect(useUiStore.getState().preferences).toEqual({ open: true, area: 'user', section: undefined });

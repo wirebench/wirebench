@@ -355,7 +355,8 @@ export const COMMAND_CATALOG: Readonly<Record<CommandId, CommandCatalogEntry>> =
   },
   'view.showSettings': {
     id: 'view.showSettings',
-    label: 'Show Settings',
+    // The account menu's name for it (#904).
+    label: 'App settings',
     category: 'View',
     shortcut: 'Mod+Comma',
   },
@@ -371,8 +372,10 @@ export const COMMAND_CATALOG: Readonly<Record<CommandId, CommandCatalogEntry>> =
   },
   'preferences.open': {
     id: 'preferences.open',
-    label: 'Open Preferences',
+    label: 'App settings',
     category: 'General',
+    // The same page as App settings (view.showSettings), which the palette lists (#904).
+    paletteHidden: true,
   },
   'preferences.keyboardShortcuts': {
     id: 'preferences.keyboardShortcuts',
@@ -1165,7 +1168,7 @@ export const COMMAND_CATALOG: Readonly<Record<CommandId, CommandCatalogEntry>> =
   },
   'account.settings': {
     id: 'account.settings',
-    label: 'Account: Account settings',
+    label: 'Account: View profile',
     category: 'Account',
     aliases: ['profile', 'display name', 'password', 'devices', 'user settings'],
   },

@@ -190,7 +190,7 @@ test('User settings shows your profile and renames you', async () => {
   await expect(settings()).toHaveCount(0);
   await expect(page).not.toHaveURL(/panel=team/);
 
-  await runCommand(page, 'Account: Account settings');
+  await runCommand(page, 'Account: View profile');
   const user = page.getByTestId('user-settings');
   await expect(user).toBeVisible({ timeout: 20_000 });
   await expect(user.getByTestId('user-profile-email')).toHaveValue(seed.email);
@@ -203,7 +203,7 @@ test('User settings shows your profile and renames you', async () => {
   // The server kept it: a fresh read after leaving and coming back shows the new name.
   await page.keyboard.press('Escape');
   await expect(user).toHaveCount(0);
-  await runCommand(page, 'Account: Account settings');
+  await runCommand(page, 'Account: View profile');
   await expect(page.getByTestId('user-profile-name')).toHaveValue('Browser E2E renamed', { timeout: 20_000 });
   await page.keyboard.press('Escape');
 });
