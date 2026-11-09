@@ -738,20 +738,24 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
         aria-hidden="true"
         data-testid="explorer-empty-hint"
         style={{ paddingLeft: indent + ROW_PADDING_LEFT + EMPTY_HINT_OFFSET }}
-        className="flex h-5 items-center gap-1 text-xs text-fg-subtle"
+        className="flex h-5 min-w-0 items-center gap-1 overflow-hidden pr-2 text-xs whitespace-nowrap text-fg-subtle"
         onClick={(event) => event.stopPropagation()}
         onDoubleClick={(event) => event.stopPropagation()}
         onMouseDown={(event) => event.stopPropagation()}
       >
-        <span>{hint.text}</span>
+        <span className="min-w-0 truncate" title={hint.text}>
+          {hint.text}
+        </span>
         {hint.action !== undefined && (
           <>
-            <span aria-hidden="true">·</span>
+            <span aria-hidden="true" className="shrink-0">
+              ·
+            </span>
             <button
               type="button"
               tabIndex={-1}
               data-testid="explorer-empty-hint-action"
-              className="rounded text-accent hover:underline"
+              className="shrink-0 rounded text-accent hover:underline"
               onClick={() => hint.action?.run()}
             >
               {hint.action.label}
