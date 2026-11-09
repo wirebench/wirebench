@@ -189,7 +189,7 @@ test.describe('Update Definition, Export and Documentation', () => {
   });
 
   test('generates HTML documentation and exports the definition folder', async () => {
-    // Export Definition picks a folder; the docs' temp folder doubles as its (pinned) answer.
+    // Export API… picks a folder; the docs' temp folder doubles as its (pinned) answer.
     const exportDir = join(docsPath, '..');
     launched = await launchApp({
       folderDialogPath: exportDir,
@@ -209,7 +209,7 @@ test.describe('Update Definition, Export and Documentation', () => {
     expect(html).toContain('VersionedService');
 
     // The folder picker is pinned to the export folder, which is where the export lands.
-    await interfaceMenu(page, 'Export Definition…');
+    await interfaceMenu(page, 'Export API…');
     await expect
       .poll(() => readdirSync(exportDir).filter((name) => name.endsWith('.wsdl')).length, { timeout: 20_000 })
       .toBeGreaterThan(0);

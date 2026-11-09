@@ -147,6 +147,28 @@ describe('explorerActions for REST nodes', () => {
     expect(addRestRequest).toHaveBeenCalledWith('api-1', 'folder-1');
   });
 
+  it('duplicates an API and opens the copy', async () => {
+    const duplicateApi = vi.fn().mockResolvedValue('api-copy');
+    useProjectStore.setState({
+      duplicateApi,
+      apis: { 'api-copy': restApiWire({ id: 'api-copy', name: 'Petstore copy' }) },
+    });
+
+    explorerActions.duplicateApi('api-1');
+    await vi.waitFor(() => {
+      expect(useEditorsStore.getState().tabs.map((tab) => tab.id)).toEqual(['api:api-copy']);
+    });
+    expect(duplicateApi).toHaveBeenCalledWith('api-1');
+  });
+
+  it('exports an API’s definition through its own channel', async () => {
+    const exportDefinition = vi.fn().mockResolvedValue({ ok: true, value: { cancelled: false, files: ['a', 'b'] } });
+    installWirebenchApi({ api: { exportDefinition } });
+
+    explorerActions.exportApi('api-1');
+    await vi.waitFor(() => expect(exportDefinition).toHaveBeenCalledWith({ apiId: 'api-1' }));
+  });
+
   it('duplicates a request and opens the copy', async () => {
     const cloneRestRequest = vi.fn().mockResolvedValue('rest-copy');
     useProjectStore.setState({

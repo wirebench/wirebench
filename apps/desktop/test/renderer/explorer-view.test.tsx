@@ -898,7 +898,7 @@ describe('ExplorerView with APIs', () => {
     mount();
 
     fireEvent.contextMenu(screen.getByText('Demo').closest('[data-tree-id]')!);
-    fireEvent.click(await screen.findByRole('menuitem', { name: 'Rename' }));
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Rename…' }));
 
     expect(useUiStore.getState().selection).toMatchObject({ kind: 'project', id: 'p1' });
     expect(useEditorsStore.getState().tabs.some((tab) => tab.kind === 'project')).toBe(false);

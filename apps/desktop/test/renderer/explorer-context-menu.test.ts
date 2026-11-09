@@ -42,16 +42,17 @@ describe('explorerMenuItems', () => {
     const items = explorerMenuItems(node({ kind: 'project', id: 'proj:p1', projectId: 'p1' }));
 
     expect(items.map((item) => item.label)).toEqual([
-      'Import…',
-      'New',
+      'Open',
       'Run…',
+      'New',
+      'Import…',
+      'Rename…',
+      'Move to workspace…',
       'Settings…',
       REVEAL,
       'Export project…',
       'Export as Postman Collection…',
       'Export as OpenCollection…',
-      'Move to workspace…',
-      'Rename',
       'Remove from workspace',
     ]);
   });
@@ -82,17 +83,18 @@ describe('explorerMenuItems', () => {
     // The one difference between the two menus: only a linked project has environments of its
     // own — an internal project's environments are the workspace's, edited in the grid.
     expect(linked.map((item) => item.label)).toEqual([
-      'Import…',
-      'New',
+      'Open',
       'Run…',
+      'New',
+      'Import…',
+      'Rename…',
+      'Move to workspace…',
       'Settings…',
       'Project environments (linked project)',
       REVEAL,
       'Export project…',
       'Export as Postman Collection…',
       'Export as OpenCollection…',
-      'Move to workspace…',
-      'Rename',
       'Remove from workspace',
     ]);
     expect(internal.some((item) => item.key === 'project-environments')).toBe(false);
@@ -117,15 +119,15 @@ describe('explorerMenuItems', () => {
     expect(explorerMenuItems(node({ kind: 'interface', interfaceId: 'i1' })).map((item) => item.label)).toEqual([
       'Show Interface Viewer',
       'Run…',
+      'New Mock',
+      'Import another WSDL…',
+      'Copy definition URL',
       'Update Definition…',
-      'Export Definition…',
+      'Check WSDL WS-I compliance',
+      'Export API…',
       'Export as Postman Collection…',
       'Export as OpenCollection…',
       'Generate Documentation…',
-      'Check WSDL WS-I compliance',
-      'Copy definition URL',
-      'Import another WSDL…',
-      'New Mock',
       'Remove interface',
     ]);
     expect(explorerMenuItems(node({ kind: 'operation' })).map((item) => item.label)).toEqual([
@@ -133,11 +135,12 @@ describe('explorerMenuItems', () => {
       'Copy SOAPAction',
     ]);
     expect(explorerMenuItems(node({ kind: 'request', requestId: 'r1' })).map((item) => item.label)).toEqual([
+      'Open',
       'Send',
-      'Copy as cURL',
       'Recreate from definition',
       'Create empty',
-      'Clone',
+      'Copy as cURL',
+      'Duplicate',
       'Rename…',
       'Delete',
     ]);
@@ -148,14 +151,15 @@ describe('explorerMenuItems', () => {
     expect(explorerMenuItems(node({ kind: 'operations' }))).toHaveLength(0);
   });
 
-  it('groups a request menu so recreating and naming are each their own block, with no Open', () => {
+  it('groups a request menu so opening, recreating, copying and naming are each their own block', () => {
     expect(
       explorerMenuGroups(node({ kind: 'request', requestId: 'r1' })).map((group) => group.map((i) => i.key)),
     ).toEqual([
-      // No 'open': a single click on the row already opens the request.
-      ['send', 'copy-curl'],
+      ['open', 'send'],
       ['recreate-from-definition', 'recreate-empty'],
-      ['clone', 'rename', 'delete'],
+      ['copy-curl'],
+      ['duplicate', 'rename'],
+      ['delete'],
     ]);
   });
 
@@ -175,15 +179,17 @@ describe('explorerMenuItems', () => {
 
     expect(internal.every((group) => group.length > 0)).toBe(true);
     expect(internal.map((group) => group.map((i) => i.key))).toEqual([
-      ['import', 'new'],
+      ['open'],
       ['runner'],
+      ['new'],
+      ['import'],
+      ['rename', 'move-to-workspace'],
       ['settings'],
       ['reveal', 'export', 'export-postman', 'export-opencollection'],
-      ['move-to-workspace'],
-      ['rename', 'remove'],
+      ['remove'],
     ]);
-    // Only the third group differs — the linked project's own environments join Settings.
-    expect(linked[2]?.map((i) => i.key)).toEqual(['settings', 'project-environments']);
+    // Only the Settings group differs — the linked project's own environments join it.
+    expect(linked[5]?.map((i) => i.key)).toEqual(['settings', 'project-environments']);
   });
 
   it('Import… selects the project first, so the dialog opens on it', () => {
@@ -203,9 +209,8 @@ describe('explorerMenuItems', () => {
 });
 
 /**
- * The REST rows. The point of each case is what the menu does *not* offer: an API row has no
- * *Recreate* (there is no definition to recreate from), a folder has nothing to open, and a request
- * row has no *Open* because a single click already opens it.
+ * The REST rows, each in the menu's one order: Open, Run, New, Import, Copy, Duplicate/Rename/Move,
+ * Settings, Export, and Delete last. An API row has no *Recreate*: there is no definition to recreate from.
  */
 describe('explorerMenuItems on a REST row', () => {
   it('offers an API its containers and its own lifecycle', () => {
@@ -213,15 +218,16 @@ describe('explorerMenuItems on a REST row', () => {
 
     expect(items.map((item) => item.label)).toEqual([
       'Open',
+      'Run…',
       'New folder',
       'New request',
       'New GraphQL request',
       'Import cURL…',
-      'Run…',
-      'Export as Postman Collection…',
-      'Export as OpenCollection…',
+      'Duplicate API',
       'Rename…',
       'Move to project…',
+      'Export as Postman Collection…',
+      'Export as OpenCollection…',
       'Delete',
     ]);
   });
@@ -241,11 +247,13 @@ describe('explorerMenuItems on a REST row', () => {
   it('offers Update Definition… only on an API that records a definition', () => {
     const imported = explorerMenuGroups(node({ kind: 'api', id: 'api:a1', apiId: 'a1', hasDefinition: true }));
     expect(imported.map((group) => group.map((item) => item.label))).toEqual([
-      ['Open', 'New folder', 'New request', 'New GraphQL request', 'Import cURL…'],
+      ['Open'],
       ['Run…'],
-      ['Update Definition…', 'Import webhooks…', 'New Mock', 'Lint Definition'],
-      ['Export as Postman Collection…', 'Export as OpenCollection…'],
-      ['Rename…', 'Move to project…'],
+      ['New folder', 'New request', 'New GraphQL request', 'New Mock'],
+      ['Import cURL…', 'Import webhooks…'],
+      ['Duplicate API', 'Rename…', 'Move to project…'],
+      ['Update Definition…', 'Lint Definition'],
+      ['Export API…', 'Export as Postman Collection…', 'Export as OpenCollection…'],
       ['Delete'],
     ]);
     const byHand = explorerMenuItems(node({ kind: 'api', id: 'api:a1', apiId: 'a1' }));
@@ -254,21 +262,22 @@ describe('explorerMenuItems on a REST row', () => {
     expect(byHand.map((item) => item.label)).not.toContain('Lint Definition');
   });
 
-  it('offers Import webhooks… right after Update Definition…', () => {
+  it('offers Import webhooks… right after Import cURL…', () => {
     const labels = explorerMenuItems(node({ kind: 'api', id: 'api:a1', apiId: 'a1', hasDefinition: true })).map(
       (item) => item.label,
     );
-    expect(labels.indexOf('Import webhooks…')).toBe(labels.indexOf('Update Definition…') + 1);
+    expect(labels.indexOf('Import webhooks…')).toBe(labels.indexOf('Import cURL…') + 1);
   });
 
   it('offers a folder the two creators, a rename, its credentials and a delete', () => {
     const items = explorerMenuItems(node({ kind: 'folder', id: 'folder:f1', apiId: 'a1', folderId: 'f1' }));
 
     expect(items.map((item) => item.label)).toEqual([
+      'Open',
+      'Run…',
       'New folder',
       'New request',
       'Import cURL…',
-      'Run…',
       'Rename…',
       'Auth…',
       'Scripts…',
@@ -303,13 +312,14 @@ describe('explorerMenuItems on a REST row', () => {
     expect(useUiStore.getState().folderAuthId).toBeUndefined();
   });
 
-  it('offers a REST request send, copy, run, move, duplicate, rename and delete, and no Open', () => {
+  it('offers a REST request open, send, run, copy, duplicate, rename, move and delete', () => {
     const groups = explorerMenuGroups(node({ kind: 'rest-request', id: 'rest:r1', apiId: 'a1', requestId: 'r1' }));
 
     expect(groups.map((group) => group.map((item) => item.label))).toEqual([
-      ['Send', 'Copy as cURL', 'Copy URL'],
+      ['Open', 'Send'],
       ['Run…'],
-      ['Duplicate', 'Move to…', 'Rename…'],
+      ['Copy as cURL', 'Copy URL'],
+      ['Duplicate', 'Rename…', 'Move to…'],
       ['Delete'],
     ]);
   });
@@ -348,13 +358,13 @@ describe('explorerMenuItems on a gRPC row', () => {
 
     expect(items.map((item) => item.label)).toEqual([
       'Open',
+      'Run…',
       'New folder',
       'New request',
-      'Run…',
-      'Export as Postman Collection…',
-      'Export as OpenCollection…',
       'Rename…',
       'Move to project…',
+      'Export as Postman Collection…',
+      'Export as OpenCollection…',
       'Delete',
     ]);
   });
@@ -365,9 +375,10 @@ describe('explorerMenuItems on a gRPC row', () => {
     );
 
     expect(items.map((item) => item.label)).toEqual([
+      'Open',
+      'Run…',
       'New folder',
       'New request',
-      'Run…',
       'Rename…',
       'Auth…',
       'Scripts…',
@@ -375,10 +386,10 @@ describe('explorerMenuItems on a gRPC row', () => {
     ]);
   });
 
-  it('offers a gRPC request duplicate, rename and delete, and no Open', () => {
+  it('offers a gRPC request open, duplicate, rename and delete', () => {
     const items = explorerMenuItems(node({ kind: 'grpc-request', id: 'grpc:r1', apiId: 'g1', requestId: 'r1' }));
 
-    expect(items.map((item) => item.label)).toEqual(['Duplicate', 'Rename…', 'Delete']);
+    expect(items.map((item) => item.label)).toEqual(['Open', 'Duplicate', 'Rename…', 'Delete']);
     expect(
       explorerMenuGroups(node({ kind: 'grpc-request', id: 'grpc:r1', apiId: 'g1', requestId: 'r1' })).at(-1),
     ).toHaveLength(1);
@@ -396,13 +407,13 @@ describe('explorerMenuItems on a WebSocket row', () => {
 
     expect(items.map((item) => item.label)).toEqual([
       'Open',
+      'Run…',
       'New folder',
       'New request',
-      'Run…',
-      'Export as Postman Collection…',
-      'Export as OpenCollection…',
       'Rename…',
       'Move to project…',
+      'Export as Postman Collection…',
+      'Export as OpenCollection…',
       'Delete',
     ]);
   });
@@ -413,19 +424,20 @@ describe('explorerMenuItems on a WebSocket row', () => {
     );
 
     expect(items.map((item) => item.label)).toEqual([
+      'Open',
+      'Run…',
       'New folder',
       'New request',
-      'Run…',
       'Rename…',
       'Auth…',
       'Delete',
     ]);
   });
 
-  it('offers a WebSocket request duplicate, rename and delete, and no Open', () => {
+  it('offers a WebSocket request open, duplicate, rename and delete', () => {
     const items = explorerMenuItems(node({ kind: 'ws-request', id: 'ws:r1', apiId: 'w1', requestId: 'r1' }));
 
-    expect(items.map((item) => item.label)).toEqual(['Duplicate', 'Rename…', 'Delete']);
+    expect(items.map((item) => item.label)).toEqual(['Open', 'Duplicate', 'Rename…', 'Delete']);
     expect(
       explorerMenuGroups(node({ kind: 'ws-request', id: 'ws:r1', apiId: 'w1', requestId: 'r1' })).at(-1),
     ).toHaveLength(1);
@@ -448,8 +460,8 @@ describe('explorerMenuItems on a WebSocket row', () => {
       explorerMenuGroups(node({ kind: 'catch-url', hookId: 'h1', canEdit })).map((group) =>
         group.map((item) => item.label).join(', '),
       );
-    expect(labels(false)).toEqual(['Copy URL, Settings…']);
-    expect(labels(true)).toEqual(['Copy URL, Settings…', 'Rotate URL…, Clear captures', 'Delete']);
+    expect(labels(false)).toEqual(['Open', 'Copy URL', 'Settings…']);
+    expect(labels(true)).toEqual(['Open', 'Copy URL', 'Settings…, Rotate URL…, Clear captures', 'Delete']);
   });
 });
 
@@ -472,12 +484,12 @@ describe('explorerMenuItems on a project’s webhook collection (openapi-webhook
       explorerMenuItems(node({ kind: 'webhook-folder', id: 'webhook-folder:f1', projectId: 'p1', folderId: 'f1' })).map(
         (item) => item.label,
       ),
-    ).toEqual(['New Webhook…', 'New Folder', 'Settings…', 'Rename…', 'Auth…', 'Delete']);
+    ).toEqual(['New Webhook…', 'New Folder', 'Rename…', 'Settings…', 'Auth…', 'Delete']);
     expect(
       explorerMenuItems(
         node({ kind: 'webhook-request', id: 'webhook-request:r1', projectId: 'p1', requestId: 'r1' }),
       ).map((item) => item.label),
-    ).toEqual(['Duplicate', 'Rename…', 'Delete']);
+    ).toEqual(['Open', 'Duplicate', 'Rename…', 'Delete']);
   });
 
   it('offers nothing for a webhook row whose ids are missing', () => {
@@ -510,7 +522,7 @@ describe('explorerMenuItems on a mock row (#59)', () => {
   it('offers a stopped mock Start and its lifecycle', () => {
     expect(
       explorerMenuGroups(node({ kind: 'mock', id: 'mock:m1', mockId: 'm1' })).map((group) => group.map((i) => i.label)),
-    ).toEqual([['Open', 'Start', 'Duplicate'], ['Rename…'], ['Delete']]);
+    ).toEqual([['Open', 'Start'], ['Duplicate', 'Rename…'], ['Delete']]);
   });
 
   it('offers a running mock Stop', () => {

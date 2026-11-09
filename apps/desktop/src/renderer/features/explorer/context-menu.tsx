@@ -2,12 +2,28 @@ import { Fragment, useRef, type ReactNode } from 'react';
 import * as ContextMenu from '@radix-ui/react-context-menu';
 import { useMockRunsStore } from '../../state/mock-runs.js';
 import { explorerActions } from './explorer-actions.js';
-import { exportItems, groups, type ExplorerMenuGroup, type ExplorerMenuItem } from './menu-items.js';
+import {
+  DESTRUCTIVE_KEYS,
+  destructiveLast,
+  exportItems,
+  groups,
+  menuRank,
+  type ExplorerMenuGroup,
+  type ExplorerMenuItem,
+} from './menu-items.js';
+import type { CommandId } from '@shared/commands.js';
+import { copyLinkItems } from './copy-link.js';
+import { openProjectTab } from './project-actions.js';
+import { openCatchUrlTab } from '../webhooks/webhooks-actions.js';
+import { effectiveShortcutFor, shortcutFor } from '../../lib/keybindings.js';
+import { detectPlatform } from '../../lib/platform.js';
 import { explorerRole, kindExplorer } from '../../kinds/index.js';
 import { projectRowActions } from './project-actions.js';
 import { hasCapability } from '../../lib/capabilities.js';
 import { levelIdOf, type ExplorerNode } from './tree-nodes.js';
 import {
+  canDeleteByKey,
+  canRenameInline,
   deleteExplorerNodes,
   DUPLICABLE_KINDS,
   duplicateExplorerNodes,
@@ -34,6 +50,36 @@ const REVEAL_LABEL = /mac/i.test(navigator.userAgent)
 const ITEM_CLASS =
   'flex cursor-pointer items-center rounded px-2 py-1.5 text-sm text-fg-default outline-none data-[highlighted]:bg-accent-muted';
 
+/** A destructive entry: the danger colour, and the danger fill while highlighted. */
+const DANGER_ITEM_CLASS =
+  'flex cursor-pointer items-center rounded px-2 py-1.5 text-sm text-status-danger outline-none data-[highlighted]:bg-status-danger data-[highlighted]:text-fg-on-accent';
+
+/** An entry's label, and at the right the key its command is bound to now (a rebind shows), if any. */
+function ItemLabel({ item }: { readonly item: ExplorerMenuItem }) {
+  const key = item.command === undefined ? undefined : shortcutFor(item.command, detectPlatform());
+  return (
+    <>
+      <span className="flex-1">{item.label}</span>
+      {key !== undefined && (
+        <span aria-hidden="true" data-testid="explorer-menu-shortcut" className="pl-6 font-mono text-xs opacity-70">
+          {key}
+        </span>
+      )}
+    </>
+  );
+}
+
+/** The ARIA spelling of the key an entry's command is bound to, for `aria-keyshortcuts`. */
+function ariaKeys(item: ExplorerMenuItem): { 'aria-keyshortcuts'?: string } {
+  const chord = item.command === undefined ? undefined : effectiveShortcutFor(item.command);
+  if (chord === undefined) return {};
+  const aria = chord
+    .split('+')
+    .map((part) => (part === 'Mod' ? (detectPlatform() === 'mac' ? 'Meta' : 'Control') : part))
+    .join('+');
+  return { 'aria-keyshortcuts': aria };
+}
+
 export type { ExplorerMenuGroup, ExplorerMenuItem } from './menu-items.js';
 
 export interface ExplorerContextMenuProps {
@@ -57,7 +103,27 @@ export interface ExplorerContextMenuProps {
  * same handlers the `explorer.*` / `workspace.*` palette commands run.
  */
 export function explorerMenuGroups(node: ExplorerNode): readonly ExplorerMenuGroup[] {
-  return withScriptsGroup(node, menuGroupsOf(node));
+  return withShortcuts(node, destructiveLast(withScriptsGroup(node, menuGroupsOf(node))));
+}
+
+/**
+ * Names the command behind each entry whose key does the same to this row — F2 renames, Delete deletes, the
+ * Duplicate command's key (when one is bound) copies — so the menu can show the key. Only where the key works on
+ * this row: a row that does not rename inline shows no F2 beside a Rename… that opens something else.
+ */
+function withShortcuts(node: ExplorerNode, menu: readonly ExplorerMenuGroup[]): readonly ExplorerMenuGroup[] {
+  const commandOf = (key: string): CommandId | undefined => {
+    if (key === 'rename') return canRenameInline(node.kind) ? 'explorer.rename' : undefined;
+    if (DESTRUCTIVE_KEYS.has(key)) return canDeleteByKey(node) ? 'explorer.delete' : undefined;
+    if (key === 'duplicate') return DUPLICABLE_KINDS.has(node.kind) ? 'explorer.duplicate' : undefined;
+    return undefined;
+  };
+  return menu.map((group) =>
+    group.map((item) => {
+      const command = commandOf(item.key);
+      return command === undefined ? item : { ...item, command };
+    }),
+  );
 }
 
 /**
@@ -79,8 +145,14 @@ function withScriptsGroup(node: ExplorerNode, menu: readonly ExplorerMenuGroup[]
   if (items.length === 0) {
     return menu;
   }
-  return [...menu.slice(0, 1), items, ...menu.slice(1)];
+  // With the settings, in the menu's one order: before Settings…, Export… and what deletes.
+  const at = menu.findIndex((group) => group.some((item) => (menuRank(item.key) ?? 0) >= SETTINGS_RANK));
+  const index = at === -1 ? menu.length : at;
+  return [...menu.slice(0, index), items, ...menu.slice(index)];
 }
+
+/** Where Settings… and the entries like it sit in the menu's order (see `menuRank`). */
+const SETTINGS_RANK = 6;
 
 /** **Run…**: opens the Runner tab for `targetId` (#336). */
 function runItem(targetId: string, label: string): ExplorerMenuItem {
@@ -129,18 +201,21 @@ function menuGroupsOf(node: ExplorerNode): readonly ExplorerMenuGroup[] {
   if (node.kind === 'project' && node.projectId !== undefined) {
     const projectId = node.projectId;
     return groups(
+      [{ key: 'open', label: 'Open', run: () => openProjectTab(projectId) }],
+      [runItem(projectId, node.label), ...scheduleItems(projectId, node.linked === true)],
+      // §3.1 puts the creators on the project row: an API is created in a project, and this is the
+      // only row that names one. They sit under one New submenu, so the menu stays short (#686 E18).
+      [{ key: 'new', label: 'New', run: () => undefined, children: projectCreators(projectId) }],
+      [{ key: 'import', label: 'Import…', run: () => projectRowActions.importInto(projectId) }],
+      copyLinkItems(node),
       [
-        { key: 'import', label: 'Import…', run: () => projectRowActions.importInto(projectId) },
-        // §3.1 puts the creators on the project row: an API is created in a project, and this is the
-        // only row that names one. They sit under one New submenu, so the menu stays short (#686 E18).
+        { key: 'rename', label: 'Rename…', run: () => projectRowActions.rename(projectId) },
         {
-          key: 'new',
-          label: 'New',
-          run: () => undefined,
-          children: projectCreators(projectId),
+          key: 'move-to-workspace',
+          label: 'Move to workspace…',
+          run: () => projectRowActions.moveToWorkspace(projectId),
         },
       ],
-      [runItem(projectId, node.label), ...scheduleItems(projectId, node.linked === true)],
       [
         { key: 'settings', label: 'Settings…', run: () => projectRowActions.settings(projectId) },
         // Only a linked project has environments of its own; an internal project's environments
@@ -167,17 +242,7 @@ function menuGroupsOf(node: ExplorerNode): readonly ExplorerMenuGroup[] {
           : []),
         ...exportItems({ projectId }),
       ],
-      [
-        {
-          key: 'move-to-workspace',
-          label: 'Move to workspace…',
-          run: () => projectRowActions.moveToWorkspace(projectId),
-        },
-      ],
-      [
-        { key: 'rename', label: 'Rename', run: () => projectRowActions.rename(projectId) },
-        { key: 'remove', label: 'Remove from workspace', run: () => projectRowActions.remove(projectId) },
-      ],
+      [{ key: 'remove', label: 'Remove from workspace', run: () => projectRowActions.remove(projectId) }],
     );
   }
 
@@ -204,18 +269,19 @@ function menuGroupsOf(node: ExplorerNode): readonly ExplorerMenuGroup[] {
     const newRequestIn = owner?.newRequestIn;
     const importCurlIn = owner?.importCurlIn;
     return groups(
+      [{ key: 'open', label: 'Open', run: () => openFolderTab(folderId) }],
+      [runItem(folderId, node.label)],
       [
         { key: 'new-folder', label: 'New folder', run: () => explorerActions.newFolder(apiId, folderId) },
         ...(newRequestIn === undefined
           ? []
           : [{ key: 'new-request', label: 'New request', run: () => newRequestIn(apiId, folderId) }]),
-        ...(importCurlIn === undefined
-          ? []
-          : [{ key: 'import-curl', label: 'Import cURL…', run: () => importCurlIn(apiId, folderId) }]),
       ],
-      [runItem(folderId, node.label)],
+      importCurlIn === undefined
+        ? []
+        : [{ key: 'import-curl', label: 'Import cURL…', run: () => importCurlIn(apiId, folderId) }],
+      [{ key: 'rename', label: 'Rename…', run: () => explorerActions.renameNode('folder', folderId) }],
       [
-        { key: 'rename', label: 'Rename…', run: () => explorerActions.renameNode('folder', folderId) },
         // Both open the folder's page on their tab.
         { key: 'auth', label: 'Auth…', run: () => openFolderTab(folderId, 'auth') },
         // Scripts run around a REST or gRPC request (#334); a WebSocket folder has none.
@@ -249,9 +315,9 @@ function menuGroupsOf(node: ExplorerNode): readonly ExplorerMenuGroup[] {
         { key: 'new-webhook', label: 'New Webhook…', run: () => explorerActions.newWebhook(projectId, folderId) },
         { key: 'new-folder', label: 'New Folder', run: () => explorerActions.newWebhookFolder(projectId, folderId) },
       ],
+      [{ key: 'rename', label: 'Rename…', run: () => explorerActions.renameNode('webhook-folder', folderId) }],
       [
         { key: 'settings', label: 'Settings…', run: () => explorerActions.openWebhookSettings(projectId, folderId) },
-        { key: 'rename', label: 'Rename…', run: () => explorerActions.renameNode('webhook-folder', folderId) },
         { key: 'auth', label: 'Auth…', run: () => explorerActions.editFolderAuth(folderId) },
       ],
       [{ key: 'delete', label: 'Delete', run: () => explorerActions.removeFolder(folderId) }],
@@ -261,6 +327,7 @@ function menuGroupsOf(node: ExplorerNode): readonly ExplorerMenuGroup[] {
   if (node.kind === 'webhook-request' && node.requestId !== undefined) {
     const requestId = node.requestId;
     return groups(
+      [{ key: 'open', label: 'Open', run: () => explorerActions.openRestRequest(requestId) }],
       [
         { key: 'duplicate', label: 'Duplicate', run: () => explorerActions.duplicateRestRequest(requestId) },
         { key: 'rename', label: 'Rename…', run: () => explorerActions.renameNode('webhook-request', requestId) },
@@ -288,9 +355,11 @@ function menuGroupsOf(node: ExplorerNode): readonly ExplorerMenuGroup[] {
         ...(hasCapability('listen')
           ? [{ key: 'toggle', label: running ? 'Stop' : 'Start', run: () => explorerActions.toggleMock(mockId) }]
           : []),
-        { key: 'duplicate', label: 'Duplicate', run: () => explorerActions.duplicateMock(mockId) },
       ],
-      [{ key: 'rename', label: 'Rename…', run: () => explorerActions.renameNode('mock', mockId) }],
+      [
+        { key: 'duplicate', label: 'Duplicate', run: () => explorerActions.duplicateMock(mockId) },
+        { key: 'rename', label: 'Rename…', run: () => explorerActions.renameNode('mock', mockId) },
+      ],
       [{ key: 'delete', label: 'Delete', run: () => explorerActions.removeMock(mockId) }],
     );
   }
@@ -303,9 +372,11 @@ function menuGroupsOf(node: ExplorerNode): readonly ExplorerMenuGroup[] {
         { key: 'run', label: 'Run', run: () => explorerActions.runSequence(sequenceId) },
         runItem(sequenceId, node.label),
         ...scheduleItems(sequenceId),
-        { key: 'duplicate', label: 'Duplicate', run: () => explorerActions.duplicateSequence(sequenceId) },
       ],
-      [{ key: 'rename', label: 'Rename…', run: () => explorerActions.renameNode('sequence', sequenceId) }],
+      [
+        { key: 'duplicate', label: 'Duplicate', run: () => explorerActions.duplicateSequence(sequenceId) },
+        { key: 'rename', label: 'Rename…', run: () => explorerActions.renameNode('sequence', sequenceId) },
+      ],
       [{ key: 'delete', label: 'Delete', run: () => explorerActions.removeSequence(sequenceId) }],
     );
   }
@@ -323,16 +394,17 @@ function menuGroupsOf(node: ExplorerNode): readonly ExplorerMenuGroup[] {
     const hookId = node.hookId;
     const editor = node.canEdit === true;
     return groups(
+      [{ key: 'open', label: 'Open', run: () => openCatchUrlTab(hookId) }],
+      [{ key: 'copy-url', label: 'Copy URL', run: () => void webhooksActions.copyUrl(hookId) }],
       [
-        { key: 'copy-url', label: 'Copy URL', run: () => void webhooksActions.copyUrl(hookId) },
         { key: 'settings', label: 'Settings…', run: () => webhooksActions.openSettings(hookId) },
+        ...(editor
+          ? [
+              { key: 'rotate', label: 'Rotate URL…', run: () => webhooksActions.confirm('rotate', hookId) },
+              { key: 'clear', label: 'Clear captures', run: () => webhooksActions.confirm('clear', hookId) },
+            ]
+          : []),
       ],
-      editor
-        ? [
-            { key: 'rotate', label: 'Rotate URL…', run: () => webhooksActions.confirm('rotate', hookId) },
-            { key: 'clear', label: 'Clear captures', run: () => webhooksActions.confirm('clear', hookId) },
-          ]
-        : [],
       editor ? [{ key: 'delete', label: 'Delete', run: () => webhooksActions.confirm('delete', hookId) }] : [],
     );
   }
@@ -360,6 +432,10 @@ function menuGroupsOf(node: ExplorerNode): readonly ExplorerMenuGroup[] {
               label: paused ? 'Resume' : 'Pause',
               run: () => void schedulesActions.setEnabled(scheduleId, paused),
             },
+          ]
+        : [],
+      admin
+        ? [
             { key: 'edit', label: 'Edit…', run: () => schedulesActions.edit(scheduleId) },
             { key: 'secrets', label: 'Secrets…', run: () => schedulesActions.secrets(scheduleId) },
           ]
@@ -393,13 +469,24 @@ export function explorerMultiMenuGroups(nodes: readonly ExplorerNode[]): readonl
   return groups(
     [
       ...(oneApi ? [{ key: 'move', label: 'Move to…', run: () => useMoveRequestStore.getState().open(restIds) }] : []),
-      ...(duplicable ? [{ key: 'duplicate', label: 'Duplicate', run: () => duplicateExplorerNodes(nodes) }] : []),
+      ...(duplicable
+        ? [
+            {
+              key: 'duplicate',
+              label: 'Duplicate',
+              command: 'explorer.duplicate' as const,
+              run: () => duplicateExplorerNodes(nodes),
+            },
+          ]
+        : []),
     ],
     deletable.length > 0
       ? [
           {
             key: 'delete',
             label: `Delete ${String(deletable.length)} ${requests ? 'requests' : 'items'}…`,
+            destructive: true,
+            command: 'explorer.delete' as const,
             run: () => deleteExplorerNodes(deletable),
           },
         ]
@@ -483,7 +570,9 @@ export function ExplorerContextMenu({ node, children, selection, onOpenChange, o
                 ) : (
                   <ContextMenu.Item
                     key={item.key}
-                    className={ITEM_CLASS}
+                    className={item.destructive === true ? DANGER_ITEM_CLASS : ITEM_CLASS}
+                    {...(item.destructive === true ? { 'data-destructive': 'true' } : {})}
+                    {...ariaKeys(item)}
                     onSelect={() => {
                       if (RENAMING_ITEMS.has(item.key)) {
                         isRenamingRef.current = true;
@@ -491,7 +580,7 @@ export function ExplorerContextMenu({ node, children, selection, onOpenChange, o
                       run(item);
                     }}
                   >
-                    {item.label}
+                    <ItemLabel item={item} />
                   </ContextMenu.Item>
                 ),
               )}

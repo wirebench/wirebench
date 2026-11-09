@@ -8,7 +8,8 @@ import { restSendBlocked } from '../../features/rest-editor/send-blocked.js';
 import { useExchangesStore } from '../../state/exchanges.js';
 import { featureOn, useUiStore } from '../../state/ui.js';
 import { explorerActions } from '../../features/explorer/explorer-actions.js';
-import { exportItems, groups, reportRenameFailure } from '../../features/explorer/menu-items.js';
+import { exportApiItems, exportItems, groups, reportRenameFailure } from '../../features/explorer/menu-items.js';
+import { copyLinkItems } from '../../features/explorer/copy-link.js';
 import type { ExplorerNode } from '../../features/explorer/tree-nodes.js';
 import { MethodBadge } from '../../features/rest-api/method-badge.js';
 import { requestDisplayName } from '../../features/rest-api/request-display-name.js';
@@ -80,9 +81,12 @@ export const restExplorer: KindExplorer = {
       menu: (node) => {
         if (node.apiId === undefined) return [];
         const apiId = node.apiId;
+        // Only an API imported from a definition has one to read again, export, and import webhooks
+        // and callbacks from.
+        const defined = node.hasDefinition === true;
         return groups(
+          [{ key: 'open', label: 'Open', run: () => explorerActions.openApi(apiId) }],
           [
-            { key: 'open', label: 'Open', run: () => explorerActions.openApi(apiId) },
             { key: 'new-folder', label: 'New folder', run: () => explorerActions.newFolder(apiId) },
             { key: 'new-request', label: 'New request', run: () => explorerActions.newRestRequest(apiId) },
             // Offered while the GraphQL switch is on (phase 6 spec §3.4).
@@ -95,22 +99,36 @@ export const restExplorer: KindExplorer = {
                   },
                 ]
               : []),
-            { key: 'import-curl', label: 'Import cURL…', run: () => explorerActions.importCurlInto(apiId) },
+            // A mock is a listener on the machine's network.
+            ...(defined && hasCapability('listen')
+              ? [{ key: 'new-mock', label: 'New Mock', run: () => explorerActions.newMock(apiId) }]
+              : []),
           ],
-          // Only an API imported from a definition has one to read again, and one to import webhooks
-          // and callbacks from.
-          node.hasDefinition === true
+          [
+            { key: 'import-curl', label: 'Import cURL…', run: () => explorerActions.importCurlInto(apiId) },
+            ...(defined
+              ? [
+                  {
+                    key: 'import-webhooks',
+                    label: 'Import webhooks…',
+                    run: () => explorerActions.importWebhooks(apiId),
+                  },
+                ]
+              : []),
+          ],
+          copyLinkItems(node),
+          [
+            { key: 'duplicate-api', label: 'Duplicate API', run: () => explorerActions.duplicateApi(apiId) },
+            { key: 'rename', label: 'Rename…', run: () => explorerActions.renameNode('api', apiId) },
+            { key: 'move-to-project', label: 'Move to project…', run: () => useMoveApiStore.getState().open(apiId) },
+          ],
+          defined
             ? [
                 {
                   key: 'update-definition',
                   label: 'Update Definition…',
                   run: () => explorerActions.updateRestDefinition(apiId),
                 },
-                { key: 'import-webhooks', label: 'Import webhooks…', run: () => explorerActions.importWebhooks(apiId) },
-                // A mock is a listener on the machine's network.
-                ...(hasCapability('listen')
-                  ? [{ key: 'new-mock', label: 'New Mock', run: () => explorerActions.newMock(apiId) }]
-                  : []),
                 {
                   key: 'lint-definition',
                   label: 'Lint Definition',
@@ -118,11 +136,7 @@ export const restExplorer: KindExplorer = {
                 },
               ]
             : [],
-          exportItems({ containerId: apiId }),
-          [
-            { key: 'rename', label: 'Rename…', run: () => explorerActions.renameNode('api', apiId) },
-            { key: 'move-to-project', label: 'Move to project…', run: () => useMoveApiStore.getState().open(apiId) },
-          ],
+          [...exportApiItems(apiId, defined), ...exportItems({ containerId: apiId })],
           [{ key: 'delete', label: 'Delete', run: () => explorerActions.removeApi(apiId) }],
         );
       },
@@ -144,11 +158,14 @@ export const restExplorer: KindExplorer = {
       menu: (node) => {
         if (node.requestId === undefined) return [];
         const requestId = node.requestId;
-        // No *Open*, for the same reason a SOAP request row has none: a single click already opens it.
         // Run… follows the first group (see `runTarget`).
         return groups(
           [
+            { key: 'open', label: 'Open', run: () => explorerActions.openRestRequest(requestId) },
             { key: 'send', label: 'Send', run: () => sendFromRow(requestId) },
+          ],
+          [
+            ...copyLinkItems(node),
             {
               key: 'copy-curl',
               label: 'Copy as cURL',
@@ -158,8 +175,8 @@ export const restExplorer: KindExplorer = {
           ],
           [
             { key: 'duplicate', label: 'Duplicate', run: () => explorerActions.duplicateRestRequest(requestId) },
-            { key: 'move', label: 'Move to…', run: () => useMoveRequestStore.getState().open(requestId) },
             { key: 'rename', label: 'Rename…', run: () => explorerActions.renameNode('rest-request', requestId) },
+            { key: 'move', label: 'Move to…', run: () => useMoveRequestStore.getState().open(requestId) },
           ],
           [{ key: 'delete', label: 'Delete', run: () => explorerActions.deleteRestRequest(requestId) }],
         );

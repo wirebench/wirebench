@@ -1,6 +1,7 @@
 import { Cable } from 'lucide-react';
 import { explorerActions } from '../../features/explorer/explorer-actions.js';
 import { exportItems, groups, reportRenameFailure } from '../../features/explorer/menu-items.js';
+import { copyLinkItems } from '../../features/explorer/copy-link.js';
 import { WsBadge } from '../../features/ws-editor/badge.js';
 import { useProjectStore } from '../../state/project.js';
 import type { KindExplorer } from '../renderer-kind.js';
@@ -32,16 +33,17 @@ export const wsExplorer: KindExplorer = {
         if (node.apiId === undefined) return [];
         const apiId = node.apiId;
         return groups(
+          [{ key: 'open', label: 'Open', run: () => explorerActions.openWsApi(apiId) }],
           [
-            { key: 'open', label: 'Open', run: () => explorerActions.openWsApi(apiId) },
             { key: 'new-folder', label: 'New folder', run: () => explorerActions.newFolder(apiId) },
             { key: 'new-request', label: 'New request', run: () => explorerActions.newWsRequest(apiId) },
           ],
-          exportItems({ containerId: apiId }),
+          copyLinkItems(node),
           [
             { key: 'rename', label: 'Rename…', run: () => explorerActions.renameNode('ws-api', apiId) },
             { key: 'move-to-project', label: 'Move to project…', run: () => useMoveApiStore.getState().open(apiId) },
           ],
+          exportItems({ containerId: apiId }),
           [{ key: 'delete', label: 'Delete', run: () => explorerActions.removeWsApi(apiId) }],
         );
       },
@@ -62,6 +64,8 @@ export const wsExplorer: KindExplorer = {
         if (node.requestId === undefined) return [];
         const requestId = node.requestId;
         return groups(
+          [{ key: 'open', label: 'Open', run: () => explorerActions.openWsRequest(requestId) }],
+          copyLinkItems(node),
           [
             { key: 'duplicate', label: 'Duplicate', run: () => explorerActions.duplicateWsRequest(requestId) },
             { key: 'rename', label: 'Rename…', run: () => explorerActions.renameNode('ws-request', requestId) },

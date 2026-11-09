@@ -13,6 +13,7 @@ import {
   createApi,
   createFolder,
   createRestRequest,
+  generateId,
   nextApiOrder,
   ProjectError,
   restApisOf,
@@ -416,6 +417,46 @@ export function addApi(
   return {
     project: { ...project, containers: { ...project.containers, rest: [...restApisOf(project), api] } },
     createdId: api.id,
+  };
+}
+
+/** `value` without `keys`, which the copy leaves out rather than sets to `undefined`. */
+function without<T extends object, K extends keyof T>(value: T, ...keys: readonly K[]): Omit<T, K> {
+  const copy = { ...value };
+  for (const key of keys) Reflect.deleteProperty(copy, key);
+  return copy;
+}
+
+/**
+ * Copies an API, with everything in it, as a new API after the project's last container, named
+ * "<name> copy". Every folder and request gets a fresh id; slugs inside are kept, since they only have to
+ * be unique within their own container and the copy's container is new. What ties the original to a
+ * definition — the cached document, a GraphQL schema, a request's webhook `hook` — stays behind, so
+ * *Update definition* and the schema refresh only ever touch the API they were set up on.
+ */
+export function duplicateApi(project: Project, apiId: string, newId: () => string = generateId): RestMutationResult {
+  const original = requireApi(project, apiId);
+  const copyRequest = (request: RestRequestDef): RestRequestDef => ({ ...without(request, 'hook'), id: newId() });
+  const copyFolder = (folder: RestFolder): RestFolder => ({
+    ...folder,
+    id: newId(),
+    folders: folder.folders.map(copyFolder),
+    requests: folder.requests.map(copyRequest),
+  });
+  const kept = without(original, 'definition', 'graphqlSchema');
+  const name = `${original.name} copy`;
+  const copy: RestApi = {
+    ...kept,
+    id: newId(),
+    name,
+    slug: uniqueSlug(name, takenApiSlugs(project)),
+    order: nextApiOrder(project),
+    folders: original.folders.map(copyFolder),
+    requests: original.requests.map(copyRequest),
+  };
+  return {
+    project: { ...project, containers: { ...project.containers, rest: [...restApisOf(project), copy] } },
+    createdId: copy.id,
   };
 }
 
@@ -872,6 +913,7 @@ function clamp(index: number, length: number): number {
 export const restMutations: KindMutations = {
   'add-api': (project, change) => addApi(project, { name: change.name, baseUrl: change.baseUrl }),
   'update-api': (project, change) => updateApi(project, change.apiId, change.patch),
+  'duplicate-api': (project, change) => duplicateApi(project, change.apiId),
   'remove-api': (project, change) => {
     return removeApi(project, change.apiId);
 

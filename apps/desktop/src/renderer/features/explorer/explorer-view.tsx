@@ -69,6 +69,7 @@ import { COMMAND_CATALOG } from '@shared/command-catalog.js';
 import { detectPlatform } from '../../lib/platform.js';
 import {
   activeTabTreeNodeId,
+  canRenameInline,
   deleteExplorerNodes,
   expandExplorerAll,
   REQUEST_ROW_KINDS,
@@ -1027,13 +1028,7 @@ export function ExplorerView() {
                   setExplorerOpen(workspaceId, id, tree.isOpen(id));
                 }
               }}
-              disableEdit={(node) =>
-                explorerRole(node.kind)?.rename === undefined &&
-                node.kind !== 'project' &&
-                node.kind !== 'folder' &&
-                node.kind !== 'sequence' &&
-                node.kind !== 'mock'
-              }
+              disableEdit={(node) => !canRenameInline(node.kind)}
               disableDrag={(node) =>
                 explorerRole(node.kind)?.movable !== true &&
                 explorerRole(node.kind)?.container !== true &&
