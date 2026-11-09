@@ -22,6 +22,31 @@ import {
   ui,
 } from './command-helpers.js';
 
+/** Whether the tab in front is a request kind with its own Save. */
+function hasOwnSave(): boolean {
+  return (
+    activeRequestId() !== undefined ||
+    activeRestRequestId() !== undefined ||
+    activeGrpcRequestId() !== undefined ||
+    activeWsRequestId() !== undefined ||
+    activeMcpRequestId() !== undefined
+  );
+}
+
+function hasProjects(): boolean {
+  return Object.keys(useProjectStore.getState().projects).length > 0;
+}
+
+/** Save All: writes every project. */
+function saveAllProjects(): void {
+  // Flush first: the envelope edit the user is mid-way through typing is still sitting on
+  // the pane's debounce, and a save is the moment they asked for everything to be written.
+  // Autosave used to cover this by firing again once the debounce landed; with saving
+  // manual, skipping it writes the model without the very edit that prompted the save.
+  getActiveRequestPaneHandle()?.flush();
+  void projectActions.save();
+}
+
 /** Registers the Project, Definition, Environment, Secrets and application commands. */
 export function registerProjectCommands(): void {
   // No shortcut, and no `when`: checking for updates is always available and never urgent.
@@ -41,14 +66,15 @@ export function registerProjectCommands(): void {
   // manual saves, so both review the project for plain-text secrets before writing.
   registerCommand({
     ...catalogEntry('item.save'),
-    when: () =>
-      activeRequestId() !== undefined ||
-      activeRestRequestId() !== undefined ||
-      activeGrpcRequestId() !== undefined ||
-      activeWsRequestId() !== undefined ||
-      activeMcpRequestId() !== undefined,
+    // A tab with nothing of its own to save (Start, a History entry, …) saves every project, as
+    // Save All does: a habitual Mod+S must not leave pending deletes unwritten in silence (#917).
+    when: () => hasOwnSave() || hasProjects(),
     whenScope: 'project',
     run: () => {
+      if (!hasOwnSave()) {
+        saveAllProjects();
+        return;
+      }
       const mcpRequestId = activeMcpRequestId();
       if (mcpRequestId !== undefined) {
         void useProjectStore.getState().saveMcpRequest(mcpRequestId, { manual: true });
@@ -90,16 +116,9 @@ export function registerProjectCommands(): void {
 
   registerCommand({
     ...catalogEntry('project.save'),
-    when: () => Object.keys(useProjectStore.getState().projects).length > 0,
+    when: hasProjects,
     whenScope: 'project',
-    run: () => {
-      // Flush first: the envelope edit the user is mid-way through typing is still sitting on
-      // the pane's debounce, and a save is the moment they asked for everything to be written.
-      // Autosave used to cover this by firing again once the debounce landed; with saving
-      // manual, skipping it writes the model without the very edit that prompted the save.
-      getActiveRequestPaneHandle()?.flush();
-      void projectActions.save();
-    },
+    run: saveAllProjects,
   });
 
   registerCommand({
