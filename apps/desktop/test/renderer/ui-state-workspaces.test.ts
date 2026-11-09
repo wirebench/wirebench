@@ -172,6 +172,8 @@ describe('per-workspace UI state', () => {
         { kind: 'interface', id: 'i1' },
         { kind: 'environment', id: 'e1' },
       ],
+      // The diff in front does not survive; the nearest tab that does is remembered in its place (#907).
+      activeId: 'e1',
       sidebarView: 'explorer',
       console: {
         visible: useUiStore.getState().console.visible,
@@ -212,6 +214,31 @@ describe('per-workspace UI state', () => {
     expect(tabs.map((tab) => tab.title)).toEqual(['Add', 'Calculator', 'Dev']);
     expect(activeId).toBe(interfaceTabId('i1'));
     expect(useUiStore.getState().sidebar.view).toBe('wss');
+  });
+
+  it('brings back the request beside a Run tab that was in front, not the Start tab (#907)', () => {
+    const editors = useEditorsStore.getState();
+    editors.open({ id: 'request:r1', kind: 'request', title: 'Add', requestId: 'r1' });
+    editors.open({ id: 'request:r2', kind: 'request', title: 'Subtract', requestId: 'r2' });
+    editors.open({ id: 'runner:api1', kind: 'runner', title: 'Run Calculator', runnerTargetId: 'api1' });
+    editors.activate('request:r1');
+    editors.activate('runner:api1');
+
+    saveWorkspaceTabs('w1');
+    expect(useUiStore.getState().workspaces['w1']?.activeId).toBe('r2');
+
+    useEditorsStore.getState().reset();
+    useProjectStore.setState({
+      requests: { r1: { id: 'r1', name: 'Add' }, r2: { id: 'r2', name: 'Subtract' } },
+    } as never);
+    restoreWorkspaceTabs('w1');
+    expect(useEditorsStore.getState().activeId).toBe('request:r2');
+  });
+
+  it('remembers no tab in front when nothing on the strip survives', () => {
+    useEditorsStore.getState().open({ id: 'history:h1', kind: 'history', title: 'Sent', historyId: 'h1' });
+    saveWorkspaceTabs('w1');
+    expect(useUiStore.getState().workspaces['w1']?.activeId).toBeUndefined();
   });
 
   it('shows the Start tab when the remembered active tab is gone', () => {
