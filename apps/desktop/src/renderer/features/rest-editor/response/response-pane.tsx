@@ -31,6 +31,7 @@ import { CookiesView } from './cookies-view.js';
 import { RedirectsView } from './redirects-view.js';
 import { ResponseHeadersView } from './headers-view.js';
 import { StatusLine } from './status-line.js';
+import { LastRecordedResponse } from './last-recorded-response.js';
 import { responseHeadersBadge } from '../tab-counts.js';
 import { ExampleResponse, ExamplesMenu } from './examples-menu.js';
 import { SnapshotPanel } from '../../snapshot/snapshot-panel.js';
@@ -266,7 +267,8 @@ export function RestResponsePane({
             )}
           </div>
         ) : (
-          <p className="p-3 text-sm text-fg-subtle">Send the request to see its response.</p>
+          // Nothing sent from this tab yet: after a reload or relaunch, the last response History holds.
+          <LastRecordedResponse requestId={requestId} />
         )
       ) : (
         <div data-testid="rest-response-view" className="flex min-h-0 flex-1 flex-col">
