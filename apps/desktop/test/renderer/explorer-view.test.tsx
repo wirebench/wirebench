@@ -331,6 +331,12 @@ describe('ExplorerView', () => {
     const operationRow = await screen.findByText('Add');
     // The interface unfolded, but its operation and Endpoints did not: their rows are the request level.
     expect(screen.getByText('Endpoints').closest('[role="treeitem"]')?.getAttribute('aria-expanded')).toBe('false');
+    // Endpoints wears a port of its own, not the folder the Operations group wears.
+    const endpointsGutter = screen
+      .getByText('Endpoints')
+      .closest('[data-tree-id]')
+      ?.querySelector('[data-testid="explorer-row-gutter"] svg');
+    expect(endpointsGutter?.getAttribute('class')).toContain('lucide-ethernet-port');
     expect(screen.queryByText(/example\.test/)).toBeNull();
     // With no request yet, the operation is a leaf (an empty twisty) and a click makes the first one.
     const twisty = operationRow.closest('[data-tree-id]')?.querySelector('[data-testid="explorer-row-twisty"]');
@@ -608,6 +614,45 @@ describe('ExplorerView with APIs', () => {
 
     expect(screen.getByText('/echo').getAttribute('title')).toBe('/echo');
     expect(screen.queryByText('POST /echo')).toBeNull();
+  });
+
+  it('puts aria-expanded on rows that fold, and none on a leaf', () => {
+    seedRest();
+    mount();
+
+    const treeItem = (element: Element): Element | null => element.closest('[role="treeitem"]');
+    expect(treeItem(screen.getByTestId('api-row'))?.getAttribute('aria-expanded')).toBe('true');
+    expect(treeItem(screen.getByTestId('folder-row'))?.getAttribute('aria-expanded')).toBe('true');
+    for (const row of screen.getAllByTestId('rest-request-row')) {
+      expect(treeItem(row)?.hasAttribute('aria-expanded')).toBe(false);
+      // The rest of the default row is kept: the level, the selection and the roving tab index.
+      expect(treeItem(row)?.getAttribute('aria-level')).not.toBeNull();
+      expect(treeItem(row)?.getAttribute('aria-selected')).toBe('false');
+      expect(treeItem(row)?.getAttribute('tabindex')).toBe('-1');
+    }
+  });
+
+  it('lets a row’s grey detail give way before its name, and titles the row with both', () => {
+    openWorkspace([
+      wireProject({ id: 'p1', name: 'Shop', dir: '/work/one/Shop' }),
+      wireProject({ id: 'p2', name: 'Shop', dir: '/work/two/Shop-2' }),
+    ]);
+    mount();
+
+    const [first] = screen.getAllByTestId('explorer-project-row');
+    const name = first!.querySelector('[data-testid="explorer-row-name"]');
+    const detail = first!.querySelector('[data-testid="explorer-row-suffix"]');
+    expect(name?.textContent).toBe('Shop');
+    expect(detail?.textContent).toBe('· Shop');
+    // The name keeps a floor and shrinks only after the detail has; the detail goes on a narrow row.
+    expect(name?.className).toContain('min-w-[4ch]');
+    expect(name?.className).not.toContain('flex-1');
+    expect(detail?.className).toContain('shrink-[999]');
+    expect(detail?.className).toContain('@max-[200px]:hidden');
+    expect(first!.className).toContain('@container');
+    // Whatever is cut, the tooltip says in full.
+    expect(name?.getAttribute('title')).toBe('Shop · Shop');
+    expect(detail?.getAttribute('title')).toBe('Shop · Shop');
   });
 
   it('opens a project tab on a single click and leaves the project unfolded (#680)', () => {

@@ -3,25 +3,41 @@
  * in the request editor's breadcrumbs and responses.
  *
  * Compact coloured text aligned to a fixed column, with no bulky filled background, keeping the
- * explorer tree clean and readable.
+ * explorer tree clean and readable. Three tints by what the method does (read, write, delete), so
+ * the colour says how much a request changes while the text says which method it is.
  * An optional `variant="chip"` renders the filled pill badge if needed.
  */
 
-/** The six colours §7.1 fixes, by uppercased method name. */
-const METHOD_TEXT_CLASS: Readonly<Record<string, string>> = {
-  GET: 'text-method-get',
-  POST: 'text-method-post',
-  PUT: 'text-method-put',
-  PATCH: 'text-method-patch',
-  DELETE: 'text-method-delete',
+/** What a method does, which is what its badge is tinted by: a read, a write, a delete, or none of those. */
+export type MethodTint = 'read' | 'write' | 'delete' | 'other';
+
+const METHOD_TINT: Readonly<Record<string, MethodTint>> = {
+  GET: 'read',
+  HEAD: 'read',
+  OPTIONS: 'read',
+  POST: 'write',
+  PUT: 'write',
+  PATCH: 'write',
+  DELETE: 'delete',
 };
 
-const METHOD_CHIP_CLASS: Readonly<Record<string, string>> = {
-  GET: 'bg-method-get',
-  POST: 'bg-method-post',
-  PUT: 'bg-method-put',
-  PATCH: 'bg-method-patch',
-  DELETE: 'bg-method-delete',
+/** The tint of one method, by its uppercased name; a custom method is `other`. */
+export function methodTint(method: string): MethodTint {
+  return METHOD_TINT[method.toUpperCase()] ?? 'other';
+}
+
+const TINT_TEXT_CLASS: Readonly<Record<MethodTint, string>> = {
+  read: 'text-method-read',
+  write: 'text-method-write',
+  delete: 'text-method-delete',
+  other: 'text-method-other',
+};
+
+const TINT_CHIP_CLASS: Readonly<Record<MethodTint, string>> = {
+  read: 'bg-method-read',
+  write: 'bg-method-write',
+  delete: 'bg-method-delete',
+  other: 'bg-method-other',
 };
 
 /** How much of a custom method the badge shows before it is cut short. */
@@ -70,12 +86,12 @@ export interface MethodBadgeProps {
 
 /** The colour class for one method, exported so the tests can pin the mapping without the DOM. */
 export function methodColorClass(method: string): string {
-  return METHOD_TEXT_CLASS[method.toUpperCase()] ?? 'text-method-other';
+  return TINT_TEXT_CLASS[methodTint(method)];
 }
 
 /** The chip background class for one method. */
 export function methodChipClass(method: string): string {
-  return METHOD_CHIP_CLASS[method.toUpperCase()] ?? 'bg-method-other';
+  return TINT_CHIP_CLASS[methodTint(method)];
 }
 
 /** One method badge. */
@@ -92,6 +108,7 @@ export function MethodBadge({ method, title, className, variant = 'text', compac
       <span
         data-testid="method-badge"
         data-method={label}
+        data-tint={methodTint(method)}
         {...(title !== undefined ? { title } : {})}
         className={`shrink-0 rounded px-1 font-mono text-xs leading-tight text-fg-on-accent ${methodChipClass(method)} ${className ?? ''}`}
       >
@@ -104,6 +121,7 @@ export function MethodBadge({ method, title, className, variant = 'text', compac
     <span
       data-testid="method-badge"
       data-method={label}
+      data-tint={methodTint(method)}
       {...(title !== undefined ? { title } : {})}
       className={`shrink-0 font-mono ${compact ? COMPACT_CLASS : 'text-xs'} font-bold leading-none ${methodColorClass(method)} ${className ?? ''}`}
     >

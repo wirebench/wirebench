@@ -1,4 +1,4 @@
-import { FileCode2, Folder, Link2, Network, Plug, Workflow } from 'lucide-react';
+import { EthernetPort, FileCode2, Folder, Link2, Network, Plug, Workflow } from 'lucide-react';
 import { copyAsCurl, recreateRequest, type RecreateMode } from '../../features/request-editor/request-actions.js';
 import { useExchangesStore } from '../../state/exchanges.js';
 import { explorerActions } from '../../features/explorer/explorer-actions.js';
@@ -136,7 +136,8 @@ export const soapExplorer: KindExplorer = {
       remove: (node) => useUiStore.getState().requestRemoveInterface(node.interfaceId),
       menu: interfaceMenu,
     },
-    endpoints: { icon: Folder },
+    // The group of an interface's ports wears a port rather than a folder: nothing is filed in it.
+    endpoints: { icon: EthernetPort },
     // Operation, request and endpoint rows have icons of their own, as a REST request has its method (#731 X20).
     endpoint: {
       icon: Link2,

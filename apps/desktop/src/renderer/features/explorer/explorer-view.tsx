@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { NodeApi, NodeRendererProps } from 'react-arborist';
+import type { NodeApi, NodeRendererProps, RowRendererProps } from 'react-arborist';
 import { forwardRef } from 'react';
 import { ListOuterElement, Tree } from 'react-arborist';
 import {
@@ -186,6 +186,31 @@ const ROW_PADDING_LEFT = 6;
 const ROW_HEIGHT = 26;
 const MISSING_ROW_HEIGHT = 46;
 
+/** A row's tooltip: its name, and the muted detail after it when it has one. */
+function rowTitle(label: string, detail: string | undefined): string {
+  return detail === undefined ? label : `${label} · ${detail}`;
+}
+
+/**
+ * react-arborist's row wrapper, the `treeitem`, as its default draws it but for `aria-expanded`: the default
+ * sets it on every row, `false` on a leaf, which tells a screen reader a request can be unfolded. Only a row
+ * with children carries it here.
+ */
+function ExplorerRowWrapper({ node, attrs, innerRef, children }: RowRendererProps<ExplorerNode>) {
+  const { 'aria-expanded': expanded, ...rest } = attrs;
+  return (
+    <div
+      {...rest}
+      {...(node.isInternal ? { 'aria-expanded': expanded } : {})}
+      ref={innerRef}
+      onFocus={(event) => event.stopPropagation()}
+      onClick={node.handleClick}
+    >
+      {children}
+    </div>
+  );
+}
+
 /** A mock row's marker while it runs: where it listens, as its tooltip. */
 function MockRunningBadge({ mockId }: { readonly mockId: string }) {
   const state = useMockRunsStore((s) => s.states[mockId]);
@@ -235,6 +260,8 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
   const indent = typeof style.paddingLeft === 'number' ? style.paddingLeft : 0;
   const rowStyle = { ...style, paddingLeft: indent + ROW_PADDING_LEFT };
   const label = requestDisplayName(node.data.label, node.data.method);
+  // The muted text after the name: a row's suffix, or when a schedule runs.
+  const detail = node.data.suffix ?? (node.data.kind === 'schedule' ? node.data.when : undefined);
   // The row the context menu was opened on wears an outline while the menu is up (#680): the menu acts on
   // the row under the pointer, not on the selection, and the two can differ.
   const [menuOpen, setMenuOpen] = useState(false);
@@ -317,7 +344,7 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
           node.activate();
         }}
         {...(node.willReceiveDrop ? { 'data-drop-target': 'true' } : {})}
-        className={`flex h-full items-center pr-1 text-sm ${
+        className={`@container flex h-full items-center pr-1 text-sm ${
           node.willReceiveDrop
             ? 'bg-accent-muted text-fg-default ring-1 ring-accent ring-inset'
             : node.isSelected
@@ -419,23 +446,29 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
             }}
           />
         ) : (
-          <span
-            className={`min-w-0 flex-1 truncate pl-1 ${node.data.kind === 'placeholder' ? 'text-fg-faint' : ''}`}
-            title={node.data.kind === 'placeholder' ? node.data.message : label}
-          >
-            {label}
+          // The name and its grey detail share what the badges leave. The detail gives way first — it shrinks
+          // before the name does, and goes altogether on a row under 200px wide — so a narrow sidebar cuts
+          // "· SOAP 1.1 · 1.2", not "Multiply". The name keeps a floor of four characters; both are in its title.
+          <span className="flex min-w-0 flex-1 items-baseline" data-testid="explorer-row-label">
+            <span
+              data-testid="explorer-row-name"
+              className={`min-w-[4ch] shrink truncate pl-1 ${node.data.kind === 'placeholder' ? 'text-fg-faint' : ''}`}
+              title={node.data.kind === 'placeholder' ? node.data.message : rowTitle(label, detail)}
+            >
+              {label}
+            </span>
+            {detail !== undefined && (
+              <span
+                className="min-w-0 shrink-[999] truncate pl-1 text-xs text-fg-subtle @max-[200px]:hidden"
+                data-testid={node.data.suffix !== undefined ? 'explorer-row-suffix' : 'explorer-row-detail'}
+                title={rowTitle(label, detail)}
+              >
+                {node.data.suffix !== undefined ? `· ${detail}` : detail}
+              </span>
+            )}
           </span>
         )}
         {node.data.kind === 'mock' && node.data.mockId !== undefined && <MockRunningBadge mockId={node.data.mockId} />}
-        {node.data.suffix !== undefined && (
-          <span
-            className="min-w-0 max-w-[50%] shrink truncate pl-1 text-xs text-fg-subtle"
-            data-testid="explorer-row-suffix"
-            title={node.data.suffix}
-          >
-            · {node.data.suffix}
-          </span>
-        )}
         {node.data.kind === 'placeholder' && node.data.placeholderKind !== undefined && (
           <span
             data-testid="explorer-placeholder-badge"
@@ -513,9 +546,6 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
           >
             off
           </span>
-        )}
-        {node.data.kind === 'schedule' && node.data.when !== undefined && (
-          <span className="min-w-0 shrink truncate text-xs text-fg-subtle">{node.data.when}</span>
         )}
         {(node.data.kind === 'schedule' || node.data.kind === 'schedules') && (node.data.failing ?? 0) > 0 && (
           <span
@@ -764,6 +794,7 @@ export function ExplorerView() {
               // folder › request — marching a request off to the right.
               indent={12}
               outerElementType={FocusableListOuter}
+              renderRow={ExplorerRowWrapper}
               // The tree never scrolls sideways: react-arborist lets a row grow to its content
               // (`min-width: max-content`), which at a narrow sidebar pushed a long name such as
               // "DELETE /pets/{id}" past the edge behind a horizontal scrollbar. Held to the
