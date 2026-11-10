@@ -1,37 +1,39 @@
 /**
  * The method chip. The mapping is the contract: the explorer, history and the URL bar all render
- * this one component, and `pnpm contrast:check` gates the six colours it names.
+ * this one component, and `pnpm contrast:check` gates the four tints it names.
  */
 import { describe, expect, it } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach } from 'vitest';
-import { MethodBadge, methodColorClass } from '../../src/renderer/features/rest-api/method-badge.js';
+import { MethodBadge, methodColorClass, methodTint } from '../../src/renderer/features/rest-api/method-badge.js';
 
 afterEach(() => {
   cleanup();
 });
 
 describe('methodColorClass', () => {
-  it('gives each of the six documented methods its own colour', () => {
-    const classes = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].map(methodColorClass);
-    expect(classes).toEqual([
-      'text-method-get',
-      'text-method-post',
-      'text-method-put',
-      'text-method-patch',
-      'text-method-delete',
+  it('tints a method by what it does: reads, writes and deletes', () => {
+    expect(['GET', 'HEAD', 'OPTIONS'].map(methodColorClass)).toEqual([
+      'text-method-read',
+      'text-method-read',
+      'text-method-read',
     ]);
-    expect(new Set(classes).size).toBe(5);
+    expect(['POST', 'PUT', 'PATCH'].map(methodColorClass)).toEqual([
+      'text-method-write',
+      'text-method-write',
+      'text-method-write',
+    ]);
+    expect(methodColorClass('DELETE')).toBe('text-method-delete');
   });
 
-  it('falls back to the neutral colour for anything else, including a custom method', () => {
-    expect(methodColorClass('HEAD')).toBe('text-method-other');
-    expect(methodColorClass('OPTIONS')).toBe('text-method-other');
+  it('falls back to the neutral colour for a custom method', () => {
     expect(methodColorClass('PURGE')).toBe('text-method-other');
+    expect(methodColorClass('PROPFIND')).toBe('text-method-other');
+    expect(methodTint('TRACE')).toBe('other');
   });
 
   it('does not care how the method was typed', () => {
-    expect(methodColorClass('get')).toBe('text-method-get');
+    expect(methodColorClass('get')).toBe('text-method-read');
     expect(methodColorClass('Delete')).toBe('text-method-delete');
   });
 });
@@ -43,7 +45,8 @@ describe('MethodBadge', () => {
     const badge = screen.getByTestId('method-badge');
     expect(badge.textContent).toBe('POST');
     expect(badge.getAttribute('data-method')).toBe('POST');
-    expect(badge.className).toContain('text-method-post');
+    expect(badge.getAttribute('data-tint')).toBe('write');
+    expect(badge.className).toContain('text-method-write');
   });
 
   it('renders a method this build has never heard of rather than hiding it', () => {
@@ -100,7 +103,7 @@ describe('MethodBadge', () => {
 
     const badge = screen.getByTestId('method-badge');
     expect(badge.textContent).toBe('POST');
-    expect(badge.className).toContain('bg-method-post');
+    expect(badge.className).toContain('bg-method-write');
     expect(badge.className).toContain('text-fg-on-accent');
   });
 });

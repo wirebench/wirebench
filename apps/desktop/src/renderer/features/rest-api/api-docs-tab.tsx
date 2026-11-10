@@ -15,6 +15,7 @@ import { useProjectStore } from '../../state/project.js';
 import type { RestApiWire, RestRequestWire } from '@shared/kinds/rest/wire.js';
 import type { RestFolderWire } from '@shared/wire-base.js';
 import { hasCapability } from '../../lib/capabilities.js';
+import { methodColorClass } from './method-badge.js';
 
 /** How many lines of an example's body show before Show all. */
 export const EXAMPLE_PREVIEW_LINES = 12;
@@ -44,18 +45,8 @@ export function docsTree(
   return { folders: folderOf(undefined), requests: ownRequests.filter((request) => request.folderId === undefined) };
 }
 
-const METHOD_CLASS: Readonly<Record<string, string>> = {
-  GET: 'text-method-get',
-  POST: 'text-method-post',
-  PUT: 'text-method-put',
-  PATCH: 'text-method-patch',
-  DELETE: 'text-method-delete',
-};
-
 function Method({ method }: { readonly method: string }) {
-  return (
-    <span className={`font-mono text-xs font-semibold ${METHOD_CLASS[method] ?? 'text-method-other'}`}>{method}</span>
-  );
+  return <span className={`font-mono text-xs font-semibold ${methodColorClass(method)}`}>{method}</span>;
 }
 
 function ParamTable({ title, rows }: { readonly title: string; readonly rows: readonly DocParam[] }) {

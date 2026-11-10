@@ -1,4 +1,7 @@
-import { Breadcrumb } from '../../components/breadcrumb.js';
+import { Breadcrumb, type TrailSegment } from '../../components/breadcrumb.js';
+import { explorerActions } from '../explorer/explorer-actions.js';
+import { openProjectTab } from '../explorer/project-actions.js';
+import { openAndReveal } from '../explorer/request-trail.js';
 import { useProjectStore } from '../../state/project.js';
 
 export interface RequestBreadcrumbProps {
@@ -16,10 +19,10 @@ export interface RequestBreadcrumbProps {
  */
 export function RequestBreadcrumb({ requestId }: RequestBreadcrumbProps) {
   const draft = useProjectStore((state) => state.requests[requestId]);
-  const projectName = useProjectStore((state) => {
-    const projectId = state.projectOf[requestId];
-    return projectId === undefined ? undefined : state.projects[projectId]?.name;
-  });
+  const projectId = useProjectStore((state) => state.projectOf[requestId]);
+  const projectName = useProjectStore((state) =>
+    projectId === undefined ? undefined : state.projects[projectId]?.name,
+  );
   const interfaceName = useProjectStore((state) =>
     draft === undefined ? undefined : state.interfaces[draft.interfaceId]?.name,
   );
@@ -28,9 +31,24 @@ export function RequestBreadcrumb({ requestId }: RequestBreadcrumbProps) {
     return null;
   }
 
-  const trail = [projectName, interfaceName, draft.operationName].filter(
-    (segment): segment is string => segment !== undefined && segment.length > 0,
-  );
+  // Each part opens its tab, or for the operation, which has none, shows its row in the Explorer.
+  const { interfaceId, bindingName, operationName } = draft;
+  const parts: (TrailSegment | undefined)[] = [
+    projectName === undefined || projectId === undefined
+      ? undefined
+      : { text: projectName, open: openAndReveal(() => openProjectTab(projectId), `proj:${projectId}`) },
+    interfaceName === undefined
+      ? undefined
+      : {
+          text: interfaceName,
+          open: openAndReveal(() => explorerActions.showInterface(interfaceId), `iface:${interfaceId}`),
+        },
+    {
+      text: operationName,
+      open: openAndReveal(() => undefined, `op:${interfaceId}:${bindingName}:${operationName}`),
+    },
+  ];
+  const trail = parts.filter((segment): segment is TrailSegment => segment !== undefined && segment.text.length > 0);
 
   const soapAction = draft.soapAction !== undefined && draft.soapAction.length > 0 ? draft.soapAction : 'no SOAPAction';
 

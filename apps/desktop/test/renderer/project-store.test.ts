@@ -1066,6 +1066,12 @@ describe('useProjectStore with REST data', () => {
       change: { kind: 'clone-rest-request', requestId: 'rest-1' },
     });
 
+    await useProjectStore.getState().duplicateApi('api-1');
+    expect(mutate).toHaveBeenLastCalledWith({
+      projectId: 'proj-1',
+      change: { kind: 'duplicate-api', apiId: 'api-1' },
+    });
+
     await useProjectStore.getState().moveNode('rest-1', 'folder-1', 2);
     expect(mutate).toHaveBeenLastCalledWith({
       projectId: 'proj-1',

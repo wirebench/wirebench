@@ -12,6 +12,7 @@ import {
   addRestRequest,
   authChainFor,
   cloneRestRequest,
+  duplicateApi,
   findRestFolder,
   findRestRequest,
   moveNode,
@@ -68,6 +69,75 @@ describe('add-api', () => {
   it('never gives an API a slug an interface or another API already uses', () => {
     const first = addApi(seeded(), { name: 'Petstore', baseUrl: 'x' });
     expect(restApisOf(first.project).at(-1)!.slug).toBe('Petstore-2');
+  });
+});
+
+describe('duplicate-api', () => {
+  it('copies the API and everything in it, with fresh ids, as a new API named after it', () => {
+    let next = 0;
+    const source = seeded();
+    const { project, createdId } = duplicateApi(source, 'api-1', () => `id-${String((next += 1))}`);
+
+    expect(restApisOf(project)).toHaveLength(2);
+    const copy = restApisOf(project).find((entry) => entry.id === createdId)!;
+    expect(copy).toMatchObject({ name: 'Petstore copy', slug: 'Petstore copy', baseUrl: 'https://petstore.test' });
+    expect(copy.auth).toEqual(api(source).auth);
+    expect(copy.order).toBeGreaterThan(api(source).order);
+    // The same tree, every id new.
+    expect(copy.requests.map((request) => request.name)).toEqual(['Health']);
+    expect(copy.folders[0]?.name).toBe('Pets');
+    expect(copy.folders[0]?.requests.map((request) => request.name)).toEqual(['List pets', 'Create pet']);
+    expect(copy.folders[0]?.folders[0]?.auth).toEqual({ type: 'basic', username: 'root', passwordRef: 'sec_a' });
+    const ids = (container: Pick<RestApi, 'folders' | 'requests'>): string[] => [
+      ...container.requests.map((request) => request.id),
+      ...container.folders.flatMap((folder) => [folder.id, ...ids(folder)]),
+    ];
+    const originalIds = new Set([api(source).id, ...ids(api(source))]);
+    for (const id of [copy.id, ...ids(copy)]) expect(originalIds.has(id)).toBe(false);
+    // The original is untouched.
+    expect(api(project)).toEqual(api(source));
+  });
+
+  it('leaves the definition and a request’s webhook link with the original', () => {
+    const source = seeded();
+    const linked: RestApi = {
+      ...api(source),
+      definition: { source: 'https://petstore.test/openapi.json', cache: true, version: '3.1.0' },
+      requests: [{ ...api(source).requests[0]!, hook: { key: 'petCreated' } as never }],
+    };
+    const withLinks: Project = { ...source, containers: { rest: [linked] } };
+    const { project, createdId } = duplicateApi(withLinks, 'api-1');
+    const copy = restApisOf(project).find((entry) => entry.id === createdId)!;
+    expect(copy.definition).toBeUndefined();
+    expect(copy.requests[0]?.hook).toBeUndefined();
+  });
+
+  it('gives the copy the original’s project environment overrides, and drops a stale orphaned mark', () => {
+    const source = seeded();
+    const orphan: RestApi = { ...api(source), requests: [{ ...api(source).requests[0]!, orphaned: true }] };
+    const environment = {
+      id: 'e1',
+      name: 'dev',
+      endpoints: { Petstore: 'https://dev.test' },
+    } as unknown as Project['environments'][number];
+    const withEnv: Project = { ...source, environments: [environment], containers: { rest: [orphan] } };
+    const { project, createdId } = duplicateApi(withEnv, 'api-1');
+    const copy = restApisOf(project).find((entry) => entry.id === createdId)!;
+    expect(project.environments[0]?.endpoints).toEqual({
+      Petstore: 'https://dev.test',
+      'Petstore copy': 'https://dev.test',
+    });
+    expect(copy.requests[0]?.orphaned).toBeUndefined();
+  });
+
+  it('gives a second copy a slug of its own', () => {
+    const once = duplicateApi(seeded(), 'api-1').project;
+    const twice = duplicateApi(once, 'api-1').project;
+    expect(new Set(restApisOf(twice).map((entry) => entry.slug)).size).toBe(3);
+  });
+
+  it('refuses an API that is not there', () => {
+    expect(() => duplicateApi(seeded(), 'nope')).toThrow(ProjectError);
   });
 });
 

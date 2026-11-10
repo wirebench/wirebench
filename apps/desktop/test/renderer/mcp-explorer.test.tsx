@@ -122,11 +122,12 @@ describe('MCP menus', () => {
   it('offers a server its requests, its catalogue and its own lifecycle', () => {
     const groups = explorerMenuGroups(node({ kind: 'mcp-api', id: 'mcp-api:s1', apiId: 's1' }));
     expect(groups.map((group) => group.map((item) => item.label))).toEqual([
-      ['Open', 'New folder', 'New request', 'New request from tool…'],
+      ['Open'],
       ['Run…'],
+      ['New folder', 'New request', 'New request from tool…'],
+      ['Rename…', 'Move to project…'],
       ['Refresh catalogue'],
       ['Export as Postman Collection…', 'Export as OpenCollection…'],
-      ['Rename…', 'Move to project…'],
       ['Delete'],
     ]);
   });
@@ -136,7 +137,7 @@ describe('MCP menus', () => {
       explorerMenuItems(node({ kind: 'mcp-request', id: 'mcp:r1', apiId: 's1', requestId: 'r1' })).map(
         (item) => item.label,
       ),
-    ).toEqual(['Duplicate', 'Rename…', 'Delete']);
+    ).toEqual(['Open', 'Duplicate', 'Rename…', 'Delete']);
     expect(explorerMenuItems(node({ kind: 'mcp-api' }))).toEqual([]);
     expect(explorerMenuItems(node({ kind: 'mcp-request', apiId: 's1' }))).toEqual([]);
   });

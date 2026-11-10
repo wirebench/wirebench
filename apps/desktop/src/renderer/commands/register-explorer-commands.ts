@@ -2,6 +2,7 @@ import { catalogEntry } from '@shared/command-catalog.js';
 import type { KindId } from '@shared/kinds/kind-module.js';
 import { explorerActions } from '../features/explorer/explorer-actions.js';
 import { getExplorerTree } from '../features/explorer/explorer-api.js';
+import { showExplorerFilter } from '../features/explorer/explorer-filter.js';
 import {
   activeTabTreeNodeId,
   deleteExplorerNodes,
@@ -128,6 +129,14 @@ function registerTreeCommands(): void {
     whenScope: 'explorer',
     run: () => {
       focusExplorer();
+    },
+  });
+  registerCommand({
+    ...catalogEntry('explorer.filter'),
+    when: () => getExplorerTree() !== null,
+    whenScope: 'explorer',
+    run: () => {
+      showExplorerFilter();
     },
   });
   registerCommand({

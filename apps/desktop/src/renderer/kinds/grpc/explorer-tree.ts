@@ -28,6 +28,8 @@ function grpcApiNode(
     kind: 'grpc-api',
     label: api.name,
     apiId: api.id,
+    // A cached descriptor set is what Export API… writes.
+    ...(api.definition?.cache === true ? { hasDefinition: true } : {}),
     children: containerChildren(api.id, 'grpc', undefined, folders, requests, (request) =>
       grpcRequestNode(api, request),
     ),

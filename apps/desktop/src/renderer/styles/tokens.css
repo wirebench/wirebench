@@ -86,13 +86,12 @@
   --wb-status-info: #7fa6dd;
 
   /* HTTP method badges. A filled chip carrying `--wb-fg-on-accent`, like the orphaned badge, so
-     each colour answers for one contrast pair rather than one per row surface. Read-only methods
-     are calm, writes are warm, a delete is the danger red, and anything else is grey: the colour
-     is there to say how much a request changes, not to decorate the tree. */
-  --wb-method-get: #b4dec5;
-  --wb-method-post: #ecd19e;
-  --wb-method-put: #c4d6ef;
-  --wb-method-patch: #ddcff0;
+     each colour answers for one contrast pair rather than one per row surface. Three tints by what a
+     method does: reads (GET, HEAD, OPTIONS) are calm, writes (POST, PUT, PATCH) are warm, a delete is
+     the danger red, and anything else is grey. The colour says how much a request changes; the
+     method's text says which one it is. */
+  --wb-method-read: #b4dec5;
+  --wb-method-write: #ecd19e;
   --wb-method-delete: #f4cbc8;
   --wb-method-other: #d7d4d0;
 
@@ -187,10 +186,8 @@
   --wb-status-danger: #b23b33;
   --wb-status-info: #3d6ba8;
 
-  --wb-method-get: #1d4e35;
-  --wb-method-post: #5d400b;
-  --wb-method-put: #294770;
-  --wb-method-patch: #51387a;
+  --wb-method-read: #1d4e35;
+  --wb-method-write: #5d400b;
   --wb-method-delete: #7c2924;
   --wb-method-other: #4a453f;
 

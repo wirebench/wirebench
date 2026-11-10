@@ -26,6 +26,8 @@ export interface PathPart {
   readonly label: string;
   /** Opens the part's page; absent for the page the path is on. */
   readonly open?: () => void;
+  /** The part's row in the Explorer. */
+  readonly rowId?: string;
 }
 
 type PathState = Pick<
@@ -35,18 +37,21 @@ type PathState = Pick<
 
 function apiPart(apiId: string, state: PathState): PathPart | undefined {
   const rest = state.apis[apiId];
-  if (rest !== undefined) return { label: rest.name, open: () => openApiTab(apiId) };
+  if (rest !== undefined) return { label: rest.name, open: () => openApiTab(apiId), rowId: `api:${apiId}` };
   const grpc = state.grpcApis[apiId];
-  if (grpc !== undefined) return { label: grpc.name, open: () => openGrpcApiTab(apiId) };
+  if (grpc !== undefined) return { label: grpc.name, open: () => openGrpcApiTab(apiId), rowId: `grpc-api:${apiId}` };
   const ws = state.wsApis[apiId];
-  if (ws !== undefined) return { label: ws.name, open: () => openWsApiTab(apiId) };
+  if (ws !== undefined) return { label: ws.name, open: () => openWsApiTab(apiId), rowId: `ws-api:${apiId}` };
   const mcp = state.mcpServers[apiId];
-  if (mcp !== undefined) return { label: mcp.name, open: () => openMcpApiTab(apiId) };
+  if (mcp !== undefined) return { label: mcp.name, open: () => openMcpApiTab(apiId), rowId: `mcp-api:${apiId}` };
   return undefined;
 }
 
-/** The parts of the path to the page `props` names, outermost first; the last one does not open. */
-export function pathParts(props: PagePathProps, state: PathState): PathPart[] {
+/**
+ * The parts of the path to the page `props` names, outermost first. The last one does not open, being the page
+ * the path is on, unless `openLast`: a request's path line names the request after them, so all of them open.
+ */
+export function pathParts(props: PagePathProps, state: PathState, { openLast = false } = {}): PathPart[] {
   const parts: PathPart[] = [];
   const folders: PathPart[] = [];
   let apiId = props.apiId;
@@ -58,7 +63,7 @@ export function pathParts(props: PagePathProps, state: PathState): PathPart[] {
       const folder: (typeof state.folders)[string] | undefined = state.folders[id];
       if (folder === undefined) break;
       const folderId = id;
-      folders.unshift({ label: folder.name, open: () => openFolderTab(folderId) });
+      folders.unshift({ label: folder.name, open: () => openFolderTab(folderId), rowId: `folder:${folderId}` });
       apiId = folder.apiId;
       id = folder.parentId;
     }
@@ -66,7 +71,7 @@ export function pathParts(props: PagePathProps, state: PathState): PathPart[] {
   const projectId = props.projectId ?? (apiId === undefined ? undefined : state.projectOf[apiId]);
   const project = projectId === undefined ? undefined : state.projects[projectId];
   if (project !== undefined && projectId !== undefined) {
-    parts.push({ label: project.name, open: () => openProjectTab(projectId) });
+    parts.push({ label: project.name, open: () => openProjectTab(projectId), rowId: `proj:${projectId}` });
   }
   if (apiId !== undefined) {
     const api = apiPart(apiId, state);
@@ -74,7 +79,7 @@ export function pathParts(props: PagePathProps, state: PathState): PathPart[] {
   }
   parts.push(...folders);
   const last = parts.at(-1);
-  if (last !== undefined) parts[parts.length - 1] = { label: last.label };
+  if (last !== undefined && !openLast) parts[parts.length - 1] = { label: last.label };
   return parts;
 }
 

@@ -13,6 +13,14 @@
  * `<workspace>` is the team workspace's id for a server workspace, so the same link opens the same workspace for a
  * teammate; the local id for any other.
  */
+import type { WorkspaceWire } from '@shared/wire-base.js';
+
+/** The id a workspace has in the address: its team workspace's for a server workspace, else its own. */
+export function workspaceKey(workspace: Pick<WorkspaceWire, 'id' | 'share'> | null | undefined): string | undefined {
+  if (workspace === null || workspace === undefined) return undefined;
+  const server = workspace.share?.kind === 'server' ? workspace.share.server : undefined;
+  return server?.workspaceId ?? workspace.id;
+}
 
 /** A tab the address names: its kind and the id of its entity. */
 export interface AddressTab {

@@ -94,6 +94,39 @@ function reportDeleteFailure(error: unknown): void {
   showToast(error instanceof Error ? error.message : 'Delete failed');
 }
 
+/** The core row kinds that rename inline; a protocol kind's rows do when their role says how. */
+const INLINE_RENAME_KINDS: ReadonlySet<ExplorerNode['kind']> = new Set<ExplorerNode['kind']>([
+  'project',
+  'folder',
+  'sequence',
+  'mock',
+]);
+
+/** Whether a row of `kind` renames in place: what F2 and Enter start on it. */
+export function canRenameInline(kind: ExplorerNode['kind']): boolean {
+  return explorerRole(kind)?.rename !== undefined || INLINE_RENAME_KINDS.has(kind);
+}
+
+/** Whether the Delete key does anything to `node`: the rows {@link deleteExplorerNodes} has a way to delete. */
+export function canDeleteByKey(node: ExplorerNode): boolean {
+  const role = explorerRole(node.kind);
+  if (role !== undefined) return role.remove !== undefined;
+  switch (node.kind) {
+    case 'project':
+    case 'folder':
+    case 'webhook-folder':
+    case 'webhook-request':
+    case 'sequence':
+    case 'mock':
+      return true;
+    case 'catch-url':
+    case 'schedule':
+      return node.canEdit === true;
+    default:
+      return false;
+  }
+}
+
 /** Asks to delete one row the way its kind does: its own confirm, or none when Settings turned confirms off. */
 function deleteOne(node: ExplorerNode): void {
   const role = explorerRole(node.kind);

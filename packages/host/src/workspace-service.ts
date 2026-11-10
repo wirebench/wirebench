@@ -26,6 +26,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { z } from 'zod';
 import {
   activeEnvironmentFor,
+  allContainers,
   assertBranchName,
   assertEnvironmentInScope,
   assertPathSegment,
@@ -120,7 +121,7 @@ import type { HistoryService } from './history-service.js';
 import type { PreferencesService } from './preferences.js';
 import { isWorkspaceManagedDir, isWorkspaceManagedPath, ProjectWatcher, SELF_WRITE_TTL_MS } from './project-watch.js';
 import { ProjectHost } from './project-host.js';
-import { rekeyEndpoints, renamedContainerSlugs } from './endpoint-renames.js';
+import { copyEndpointKey, rekeyEndpoints, renamedContainerSlugs } from './endpoint-renames.js';
 import { checkCertificates } from './certificate-expiry.js';
 import type { KindRouters } from './kinds/kind-main.js';
 import { KIND_ENTITY_IDS, KIND_ROUTES, type KindEntityIds } from './kinds/kind-routes.js';
@@ -3103,6 +3104,28 @@ export class WorkspaceService implements ProjectRouter {
   }
 
   /**
+   * Copies the workspace environments' endpoint override for one of a project's containers, keyed
+   * `<projectSlug>/<from>`, to `<projectSlug>/<to>`. Saves only when one was copied.
+   */
+  private async copyWorkspaceEndpoint(projectSlug: string, from: string, to: string): Promise<void> {
+    const open = this.requireOpen();
+    await this.enqueueWorkspaceOp(async () => {
+      this.requireStillOpen(open);
+      const previousWorkspace = open.workspace;
+      let copied = false;
+      const environments = open.workspace.environments.map((environment) => {
+        const endpoints = copyEndpointKey(environment.endpoints, from, to, `${projectSlug}/`);
+        if (endpoints === environment.endpoints) return environment;
+        copied = true;
+        return { ...environment, endpoints };
+      });
+      if (!copied) return;
+      open.workspace = { ...open.workspace, environments };
+      await this.saveChangedWorkspace(open, previousWorkspace);
+    });
+  }
+
+  /**
    * Moves the workspace environments' endpoint overrides for a project's renamed interfaces and
    * APIs, keyed `<projectSlug>/<slug>`, to their new slugs (#477). Saves only when a key moved.
    */
@@ -3532,6 +3555,14 @@ export class WorkspaceService implements ProjectRouter {
     const slug = this.current?.entries.find((entry) => entry.projectId === projectId)?.ref.slug;
     if (renames.size > 0 && slug !== undefined) {
       await this.rekeyWorkspaceEndpoints(slug, renames);
+    }
+    // A duplicated API starts with the original's base-URL overrides in the workspace environments too.
+    if (change.kind === 'duplicate-api' && result.createdId !== undefined && slug !== undefined) {
+      const slugOf = (project: typeof before, id: string): string | undefined =>
+        project === undefined ? undefined : allContainers(project).find((container) => container.id === id)?.slug;
+      const from = slugOf(before, change.apiId);
+      const to = slugOf(after, result.createdId);
+      if (from !== undefined && to !== undefined) await this.copyWorkspaceEndpoint(slug, from, to);
     }
     return result;
   }

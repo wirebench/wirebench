@@ -1,8 +1,9 @@
-import { FileCode2, Folder, Link2, Network, Plug, Workflow } from 'lucide-react';
+import { EthernetPort, FileCode2, Folder, Link2, Network, Plug, Workflow } from 'lucide-react';
 import { copyAsCurl, recreateRequest, type RecreateMode } from '../../features/request-editor/request-actions.js';
 import { useExchangesStore } from '../../state/exchanges.js';
 import { explorerActions } from '../../features/explorer/explorer-actions.js';
 import { exportItems, groups, type ExplorerMenuGroup } from '../../features/explorer/menu-items.js';
+import { copyLinkItems } from '../../features/explorer/copy-link.js';
 import type { ExplorerNode } from '../../features/explorer/tree-nodes.js';
 import { useProjectStore } from '../../state/project.js';
 import { useUiStore } from '../../state/ui.js';
@@ -18,18 +19,37 @@ function interfaceMenu(node: ExplorerNode): readonly ExplorerMenuGroup[] {
         run: () => explorerActions.showInterface(node.interfaceId),
       },
     ],
+    // A mock is a listener on the machine's network.
+    hasCapability('listen')
+      ? [{ key: 'new-mock', label: 'New Mock', run: () => explorerActions.newMock(node.interfaceId) }]
+      : [],
+    [{ key: 'import-another', label: 'Import another WSDL…', run: () => explorerActions.importAnother() }],
+    [
+      {
+        key: 'copy-url',
+        label: 'Copy definition URL',
+        run: () => explorerActions.copyDefinitionUrl(node.interfaceId),
+      },
+    ],
     [
       {
         key: 'update-definition',
         label: 'Update Definition…',
         run: () => explorerActions.updateDefinition(node.interfaceId),
       },
-      // Both write to a folder or file picked in a native dialog.
+      {
+        key: 'check-wsi',
+        label: 'Check WSDL WS-I compliance',
+        run: () => explorerActions.checkWsiWsdl(node.interfaceId),
+      },
+    ],
+    [
+      // Each writes to a folder or file picked in a native dialog. A SOAP API's own export is its WSDL.
       ...(hasCapability('dialogs')
         ? [
             {
               key: 'export-definition',
-              label: 'Export Definition…',
+              label: 'Export API…',
               run: () => explorerActions.exportDefinition(node.interfaceId),
             },
           ]
@@ -44,30 +64,7 @@ function interfaceMenu(node: ExplorerNode): readonly ExplorerMenuGroup[] {
             },
           ]
         : []),
-      {
-        key: 'check-wsi',
-        label: 'Check WSDL WS-I compliance',
-        run: () => explorerActions.checkWsiWsdl(node.interfaceId),
-      },
     ],
-    [
-      {
-        key: 'copy-url',
-        label: 'Copy definition URL',
-        run: () => explorerActions.copyDefinitionUrl(node.interfaceId),
-      },
-      { key: 'import-another', label: 'Import another WSDL…', run: () => explorerActions.importAnother() },
-    ],
-    // A mock is a listener on the machine's network.
-    hasCapability('listen')
-      ? [
-          {
-            key: 'new-mock',
-            label: 'New Mock',
-            run: () => explorerActions.newMock(node.interfaceId),
-          },
-        ]
-      : [],
     [{ key: 'remove', label: 'Remove interface', run: () => explorerActions.removeInterface(node.interfaceId) }],
   );
 }
@@ -80,14 +77,13 @@ function requestMenu(node: ExplorerNode): readonly ExplorerMenuGroup[] {
       void recreateRequest(node.requestId, mode);
     }
   };
-  // No *Open*: a single click on the row already opens it, so the entry only restated what
-  // the row's own default does.
   const requestId = node.requestId;
   return groups(
-    // Send and Copy as cURL from the tree, as the editor's own menu offers them (#731 X22).
+    // Open, and Send as the editor's own menu offers it (#731 X22).
     requestId === undefined
       ? []
       : [
+          { key: 'open', label: 'Open', run: () => explorerActions.openRequest(requestId) },
           {
             key: 'send',
             label: 'Send',
@@ -96,7 +92,6 @@ function requestMenu(node: ExplorerNode): readonly ExplorerMenuGroup[] {
               void useExchangesStore.getState().send(requestId);
             },
           },
-          { key: 'copy-curl', label: 'Copy as cURL', run: () => void copyAsCurl(requestId, 'posix') },
         ],
     [
       {
@@ -114,13 +109,17 @@ function requestMenu(node: ExplorerNode): readonly ExplorerMenuGroup[] {
       },
       { key: 'recreate-empty', label: 'Create empty', run: recreate('empty') },
     ],
-    // Clone sits with Rename and Delete: all three are about this request as a thing you
-    // name, copy or throw away, rather than about the envelope inside it.
     [
-      { key: 'clone', label: 'Clone', run: () => explorerActions.cloneRequest(node.requestId) },
-      { key: 'rename', label: 'Rename…', run: () => explorerActions.renameRequest(node.requestId) },
-      { key: 'delete', label: 'Delete', run: () => explorerActions.deleteRequest(node.requestId) },
+      ...copyLinkItems(node),
+      ...(requestId === undefined
+        ? []
+        : [{ key: 'copy-curl', label: 'Copy as cURL', run: () => void copyAsCurl(requestId, 'posix') }]),
     ],
+    [
+      { key: 'duplicate', label: 'Duplicate', run: () => explorerActions.cloneRequest(node.requestId) },
+      { key: 'rename', label: 'Rename…', run: () => explorerActions.renameRequest(node.requestId) },
+    ],
+    [{ key: 'delete', label: 'Delete', run: () => explorerActions.deleteRequest(node.requestId) }],
   );
 }
 
@@ -136,7 +135,8 @@ export const soapExplorer: KindExplorer = {
       remove: (node) => useUiStore.getState().requestRemoveInterface(node.interfaceId),
       menu: interfaceMenu,
     },
-    endpoints: { icon: Folder },
+    // The group of an interface's ports wears a port rather than a folder: nothing is filed in it.
+    endpoints: { icon: EthernetPort },
     // Operation, request and endpoint rows have icons of their own, as a REST request has its method (#731 X20).
     endpoint: {
       icon: Link2,

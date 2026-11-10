@@ -111,6 +111,40 @@ files become the workspace's own copy.
 The picker also remembers project folders you opened before Wirebench had workspaces, listed
 under **Project folders you opened before** — click one to import it the same way.
 
+## Find your way in the Explorer
+
+- **Filter.** Click the magnifier in the Explorer's header, or press <kbd>⌘⇧F</kbd> (<kbd>Ctrl+Shift+F</kbd>)
+  with focus in the tree. The tree keeps the rows whose names contain what you type, and the rows above
+  them, with the matching letters marked. <kbd>Esc</kbd> empties the field and puts you back in the tree;
+  <kbd>↓</kbd> moves into the rows.
+- **Type to jump.** With focus in the tree, type the first letters of a name to move to the next row that
+  starts with them. The search wraps round to the top.
+- **New request** in the header makes a request in the API you have selected, or the API of the request
+  you have selected or open. With none of those it lists your APIs to choose from.
+- **Row actions.** Hover a project, API, folder or the Webhook inbox (or move to it with the keyboard) for
+  a **+**, which runs its first New item, and a **⋯**, which opens its menu.
+- **Empty containers** say what they are missing under their row, such as *No requests yet · New
+  request*; click the action to run it.
+- **Narrow sidebar.** A row's grey detail (a SOAP version, a folder name) gives way before its name and is
+  hidden on a very narrow row; hover the row to read both in full.
+- **Methods** are tinted by what they do: reads (GET, HEAD, OPTIONS), writes (POST, PUT, PATCH) and
+  DELETE.
+- **The path above a request** (project, API, folders) is a way back: click a part to open its tab and show
+  its row in the Explorer.
+
+Every row's right-click menu follows one order: Open · Send or Run · New… · Import… · Copy… · Duplicate,
+Rename…, Move… · Settings… · Export… · and, last and in red, Delete or Remove from workspace. Where a key
+does the same to the row (<kbd>F2</kbd> renames, <kbd>Delete</kbd> deletes), the menu shows it at the
+right, as you have it bound in Keyboard shortcuts.
+
+**Copy link** on a project, API or request copies the address of its tab in the browser client, so a
+teammate can open the same tab of the same workspace. It is offered in a browser tab, and on the desktop for
+a workspace shared to a server; if that server has no browser client, Wirebench says so instead.
+
+A REST API's menu has **Duplicate API**, which copies it with all its folders and requests (*Petstore*
+becomes *Petstore copy*; the copy keeps no link to the definition it came from), and **Export API…**, which writes the OpenAPI
+document it was imported from. A gRPC API exports its descriptor set, and a SOAP interface its WSDL.
+
 ## Export a project
 
 Right-click a project and choose **Export Project…** to write it out to a folder you pick,

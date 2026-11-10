@@ -3,7 +3,8 @@ import { openRequestTab, recreateRequest } from '../request-editor/request-actio
 import { usePreferencesStore } from '../../state/preferences.js';
 import { useProjectStore } from '../../state/project.js';
 import { useUiStore } from '../../state/ui.js';
-import { startRenamingNode, startRenamingRequest, type RenamableNodeKind } from './explorer-api.js';
+import { revealNode, startRenamingNode, startRenamingRequest, type RenamableNodeKind } from './explorer-api.js';
+import { ipc } from '../../state/ipc-client.js';
 import { openRestRequestTab } from '../rest-editor/rest-actions.js';
 import { openApiTab, updateRestDefinition } from '../rest-api/api-actions.js';
 import { openGrpcRequestTab } from '../grpc-editor/grpc-actions.js';
@@ -272,6 +273,44 @@ export const explorerActions = {
     if (apiId !== undefined) {
       openApiTab(apiId);
     }
+  },
+
+  /** **Duplicate API**: copies a REST API with everything in it, then opens the copy and shows its row. */
+  duplicateApi(apiId: string | undefined): void {
+    if (apiId === undefined) {
+      return;
+    }
+    void useProjectStore
+      .getState()
+      .duplicateApi(apiId)
+      .then((copyId) => {
+        openApiTab(copyId);
+        revealNode(`api:${copyId}`);
+      })
+      .catch((error: unknown) => {
+        showToast(error instanceof Error ? error.message : 'Duplicate API failed');
+      });
+  },
+
+  /** **Export API…**: writes an API's cached definition (OpenAPI, a descriptor set) to a folder picked in a dialog. */
+  exportApi(apiId: string | undefined): void {
+    if (apiId === undefined) {
+      return;
+    }
+    void ipc()
+      .api.exportDefinition({ apiId })
+      .then((result) => {
+        if (!result.ok) {
+          showToast(result.error.message);
+          return;
+        }
+        if (result.value.cancelled) return;
+        const count = result.value.files.length;
+        showToast(`Exported ${String(count)} ${count === 1 ? 'file' : 'files'}`);
+      })
+      .catch((error: unknown) => {
+        showToast(error instanceof Error ? error.message : 'Export failed');
+      });
   },
 
   /** Copies a REST request beside the original and opens the copy. */

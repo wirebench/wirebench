@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
-import type { NodeApi, NodeRendererProps } from 'react-arborist';
+import { Fragment, useEffect, useRef, useState } from 'react';
+import type { NodeApi, NodeRendererProps, RowRendererProps } from 'react-arborist';
 import { forwardRef } from 'react';
 import { ListOuterElement, Tree } from 'react-arborist';
 import {
@@ -18,6 +18,9 @@ import {
   Link,
   Link2,
   Loader2,
+  MoreHorizontal,
+  Plus,
+  Search,
   UnfoldVertical,
   Webhook,
   XCircle,
@@ -48,7 +51,25 @@ import { isContainerRow, isDropDisabled, planContainerDrop, planMoves } from './
 import { dropApiOnProject } from './move-api-dialog.js';
 import { getExplorerTree, registerExplorerTree, revealNode } from './explorer-api.js';
 import {
+  countMatches,
+  createTypeAhead,
+  highlightParts,
+  isTypeAheadKey,
+  matchesFilter,
+  rowName,
+  showExplorerFilter,
+  typeAheadIndex,
+  useExplorerFilterStore,
+} from './explorer-filter.js';
+import { ExplorerFilterField } from './filter-field.js';
+import { NewRequestButton } from './new-request-button.js';
+import { emptyHint, isCreatingContainer, primaryNewItem, type EmptyHint } from './row-actions.js';
+import { keybindingOverrides, matchesEvent, parseKeybinding, shortcutFor } from '../../lib/keybindings.js';
+import { COMMAND_CATALOG } from '@shared/command-catalog.js';
+import { detectPlatform } from '../../lib/platform.js';
+import {
   activeTabTreeNodeId,
+  canRenameInline,
   deleteExplorerNodes,
   expandExplorerAll,
   REQUEST_ROW_KINDS,
@@ -119,6 +140,43 @@ const NODE_ICON: Partial<Record<ExplorerNode['kind'], React.ComponentType<{ size
  * focusable generic sitting between the `tree` and its `treeitem`s, and `group` is a child the
  * `tree` role is allowed to own.
  */
+/** The letters typed into the tree in one go, for type-ahead. */
+const typeAhead = createTypeAhead();
+
+/** Whether a keystroke is the chord the filter command is bound to now, rebinds included. */
+function isFilterChord(event: React.KeyboardEvent): boolean {
+  // Read off the catalog and the overrides rather than the registry, so the tree answers to it however early.
+  const override = keybindingOverrides()['explorer.filter'];
+  const chord =
+    override === undefined ? COMMAND_CATALOG['explorer.filter'].shortcut : override === '' ? undefined : override;
+  if (chord === undefined) return false;
+  try {
+    return matchesEvent(parseKeybinding(chord), event.nativeEvent, detectPlatform());
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Type-ahead: focus moves to the next shown row, wrapping round, whose name starts with the letters typed within
+ * half a second of each other. Space, the arrows, Enter, F2 and Delete keep their meaning; they never reach here.
+ */
+function typeAheadTo(key: string): boolean {
+  const tree = getExplorerTree();
+  if (tree === null) return false;
+  const rows = tree.visibleNodes;
+  const current = tree.focusedNode === null ? -1 : rows.findIndex((row) => row.id === tree.focusedNode?.id);
+  const index = typeAheadIndex(
+    rows.map((row) => rowName(row.data)),
+    current,
+    typeAhead(key),
+  );
+  const target = index === undefined ? undefined : rows[index];
+  if (target === undefined) return false;
+  tree.focus(target, { scroll: true });
+  return true;
+}
+
 const FocusableListOuter = forwardRef<HTMLDivElement, React.ComponentProps<typeof ListOuterElement>>(
   function FocusableListOuter(props, ref) {
     return (
@@ -133,10 +191,27 @@ const FocusableListOuter = forwardRef<HTMLDivElement, React.ComponentProps<typeo
         // a-time Backspace never runs as well; the window's keybindings see none of it either, which keeps the
         // `explorer.delete` command's own Delete key the only one they dispatch.
         onKeyDown={(event) => {
-          if (event.key !== 'Backspace' || event.altKey || event.shiftKey) return;
           const target = event.target;
+          // React bubbles keys from portalled content (a row's open context menu) through here too; only keys
+          // pressed in the tree itself are the tree's.
+          if (!(target instanceof Node) || !event.currentTarget.contains(target)) return;
           if (target instanceof Element && target.closest('input, textarea, select, [contenteditable]') !== null)
             return;
+          // The filter's chord is Format Document's elsewhere: taken here, the window's keybindings never see it.
+          if (isFilterChord(event)) {
+            event.preventDefault();
+            event.stopPropagation();
+            showExplorerFilter();
+            return;
+          }
+          if (isTypeAheadKey(event)) {
+            if (typeAheadTo(event.key)) {
+              event.preventDefault();
+              event.stopPropagation();
+            }
+            return;
+          }
+          if (event.key !== 'Backspace' || event.altKey || event.shiftKey) return;
           const tree = getExplorerTree();
           if (tree === null || tree.selectedIds.size === 0) return;
           event.preventDefault();
@@ -185,6 +260,69 @@ const ROW_PADDING_LEFT = 6;
 /** A row's height, and the two-line height of the row that says a linked project's folder is gone (#685 E17). */
 const ROW_HEIGHT = 26;
 const MISSING_ROW_HEIGHT = 46;
+/** An unfolded container with nothing in it: its row, and the line under it that names the next step. */
+const EMPTY_ROW_HEIGHT = ROW_HEIGHT + 20;
+
+/** The line an empty container shows under itself while unfolded; none while the tree is filtered. */
+function openEmptyHint(node: NodeApi<ExplorerNode>): EmptyHint | undefined {
+  return node.isOpen && !node.tree.isFiltered ? emptyHint(node.data) : undefined;
+}
+
+/** Opens a row's context menu from a button inside it, where the button is, as a right-click there would. */
+function openRowMenu(button: HTMLElement): void {
+  const box = button.getBoundingClientRect();
+  button.dispatchEvent(
+    new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: box.left, clientY: box.bottom }),
+  );
+}
+
+const ROW_ACTION_CLASS =
+  'inline-flex size-5 items-center justify-center rounded text-fg-subtle hover:bg-surface-hover hover:text-fg-default';
+
+/** A row's name with the letters the filter matched in a `<mark>`. */
+function FilterMarks({ name, term }: { readonly name: string; readonly term: string }) {
+  return (
+    <>
+      {highlightParts(name, term).map((part, index) =>
+        part.match ? (
+          <mark key={index} data-testid="explorer-filter-mark" className="rounded-sm bg-accent-muted text-fg-default">
+            {part.text}
+          </mark>
+        ) : (
+          <Fragment key={index}>{part.text}</Fragment>
+        ),
+      )}
+    </>
+  );
+}
+
+/** A row's tooltip: its name, and the muted detail after it when it has one. */
+function rowTitle(label: string, detail: string | undefined): string {
+  return detail === undefined ? label : `${label} · ${detail}`;
+}
+
+/**
+ * react-arborist's row wrapper, the `treeitem`, as its default draws it but for `aria-expanded`: the default
+ * sets it on every row, `false` on a leaf, which tells a screen reader a request can be unfolded. Only a row
+ * with children carries it here.
+ */
+function ExplorerRowWrapper({ node, attrs, innerRef, children }: RowRendererProps<ExplorerNode>) {
+  const { 'aria-expanded': expanded, ...rest } = attrs;
+  return (
+    <div
+      {...rest}
+      {...(node.isInternal ? { 'aria-expanded': expanded } : {})}
+      ref={innerRef}
+      onFocus={(event) => event.stopPropagation()}
+      onClick={node.handleClick}
+    >
+      {children}
+    </div>
+  );
+}
+
+/** Lines an empty container's hint up under its children's names: past the chevron, the gutter and a level. */
+const EMPTY_HINT_OFFSET = 10 + 24 + 12 + 4;
 
 /** A mock row's marker while it runs: where it listens, as its tooltip. */
 function MockRunningBadge({ mockId }: { readonly mockId: string }) {
@@ -235,6 +373,8 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
   const indent = typeof style.paddingLeft === 'number' ? style.paddingLeft : 0;
   const rowStyle = { ...style, paddingLeft: indent + ROW_PADDING_LEFT };
   const label = requestDisplayName(node.data.label, node.data.method);
+  // The muted text after the name: a row's suffix, or when a schedule runs.
+  const detail = node.data.suffix ?? (node.data.kind === 'schedule' ? node.data.when : undefined);
   // The row the context menu was opened on wears an outline while the menu is up (#680): the menu acts on
   // the row under the pointer, not on the selection, and the two can differ.
   const [menuOpen, setMenuOpen] = useState(false);
@@ -251,7 +391,9 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
     node.data.kind === 'schedule' ||
     node.data.kind === 'sequence' ||
     node.data.kind === 'mock';
-  return (
+  const hint = openEmptyHint(node);
+  const primary = isCreatingContainer(node.data) ? primaryNewItem(node.data) : undefined;
+  const row = (
     <ExplorerContextMenu
       node={node.data}
       // A right-click on one of several selected rows gets the selection's menu (#681).
@@ -317,7 +459,7 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
           node.activate();
         }}
         {...(node.willReceiveDrop ? { 'data-drop-target': 'true' } : {})}
-        className={`flex h-full items-center pr-1 text-sm ${
+        className={`@container relative flex ${hint === undefined ? 'h-full' : 'h-[26px]'} items-center pr-1 text-sm ${
           node.willReceiveDrop
             ? 'bg-accent-muted text-fg-default ring-1 ring-accent ring-inset'
             : node.isSelected
@@ -419,23 +561,29 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
             }}
           />
         ) : (
-          <span
-            className={`min-w-0 flex-1 truncate pl-1 ${node.data.kind === 'placeholder' ? 'text-fg-faint' : ''}`}
-            title={node.data.kind === 'placeholder' ? node.data.message : label}
-          >
-            {label}
+          // The name and its grey detail share what the badges leave. The detail gives way first — it shrinks
+          // before the name does, and goes altogether on a row under 200px wide — so a narrow sidebar cuts
+          // "· SOAP 1.1 · 1.2", not "Multiply". The name keeps a floor of four characters; both are in its title.
+          <span className="flex min-w-0 flex-1 items-baseline" data-testid="explorer-row-label">
+            <span
+              data-testid="explorer-row-name"
+              className={`min-w-[4ch] shrink truncate pl-1 ${node.data.kind === 'placeholder' ? 'text-fg-faint' : ''}`}
+              title={node.data.kind === 'placeholder' ? node.data.message : rowTitle(label, detail)}
+            >
+              <FilterMarks name={label} term={node.tree.searchTerm} />
+            </span>
+            {detail !== undefined && (
+              <span
+                className="min-w-0 shrink-[999] truncate pl-1 text-xs text-fg-subtle @max-[200px]:hidden"
+                data-testid={node.data.suffix !== undefined ? 'explorer-row-suffix' : 'explorer-row-detail'}
+                title={rowTitle(label, detail)}
+              >
+                {node.data.suffix !== undefined ? `· ${detail}` : detail}
+              </span>
+            )}
           </span>
         )}
         {node.data.kind === 'mock' && node.data.mockId !== undefined && <MockRunningBadge mockId={node.data.mockId} />}
-        {node.data.suffix !== undefined && (
-          <span
-            className="min-w-0 max-w-[50%] shrink truncate pl-1 text-xs text-fg-subtle"
-            data-testid="explorer-row-suffix"
-            title={node.data.suffix}
-          >
-            · {node.data.suffix}
-          </span>
-        )}
         {node.data.kind === 'placeholder' && node.data.placeholderKind !== undefined && (
           <span
             data-testid="explorer-placeholder-badge"
@@ -514,9 +662,6 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
             off
           </span>
         )}
-        {node.data.kind === 'schedule' && node.data.when !== undefined && (
-          <span className="min-w-0 shrink truncate text-xs text-fg-subtle">{node.data.when}</span>
-        )}
         {(node.data.kind === 'schedule' || node.data.kind === 'schedules') && (node.data.failing ?? 0) > 0 && (
           <span
             data-testid="schedule-failing"
@@ -536,8 +681,89 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
             {`${String(node.data.unseen)}${node.data.unseenMore === true ? '+' : ''}`}
           </span>
         )}
+        {/* A container's own New and its menu, on hover and while the row has keyboard focus. Clicks stop
+            here: they must not open or fold the row. */}
+        {isCreatingContainer(node.data) && !node.isEditing && (
+          <span
+            data-testid="explorer-row-actions"
+            className={`absolute top-1/2 right-1 hidden -translate-y-1/2 items-center gap-0.5 rounded group-hover/row:flex group-focus/row:flex ${
+              node.isSelected ? 'bg-accent-muted' : 'bg-surface-raised'
+            }`}
+            onMouseDown={(event) => event.stopPropagation()}
+            onClick={(event) => event.stopPropagation()}
+            onDoubleClick={(event) => event.stopPropagation()}
+          >
+            {primary !== undefined && (
+              <button
+                type="button"
+                tabIndex={-1}
+                aria-label={primary.label}
+                title={primary.label}
+                data-testid="explorer-row-new"
+                className={ROW_ACTION_CLASS}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  primary.run();
+                }}
+              >
+                <Plus size={12} aria-hidden="true" />
+              </button>
+            )}
+            <button
+              type="button"
+              tabIndex={-1}
+              aria-label={`More actions for ${label}`}
+              title="More actions"
+              data-testid="explorer-row-more"
+              className={ROW_ACTION_CLASS}
+              onClick={(event) => {
+                event.stopPropagation();
+                openRowMenu(event.currentTarget);
+              }}
+            >
+              <MoreHorizontal size={12} aria-hidden="true" />
+            </button>
+          </span>
+        )}
       </div>
     </ExplorerContextMenu>
+  );
+  if (hint === undefined) return row;
+  return (
+    <>
+      {row}
+      {/* Under the row's treeitem rather than a row of its own, so the arrow keys pass over it. */}
+      {/* Hidden from assistive tech so its text does not join the row's name; the row's menu offers the same New. */}
+      <div
+        aria-hidden="true"
+        data-testid="explorer-empty-hint"
+        style={{ paddingLeft: indent + ROW_PADDING_LEFT + EMPTY_HINT_OFFSET }}
+        className="flex h-5 min-w-0 items-center gap-1 overflow-hidden pr-2 text-xs whitespace-nowrap text-fg-subtle"
+        onClick={(event) => event.stopPropagation()}
+        onDoubleClick={(event) => event.stopPropagation()}
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <span className="min-w-0 truncate" title={hint.text}>
+          {hint.text}
+        </span>
+        {hint.action !== undefined && (
+          <>
+            <span aria-hidden="true" className="shrink-0">
+              ·
+            </span>
+            <button
+              type="button"
+              tabIndex={-1}
+              data-testid="explorer-empty-hint-action"
+              className="shrink-0 rounded text-accent hover:underline"
+              onClick={() => hint.action?.run()}
+            >
+              {hint.action.label}
+            </button>
+          </>
+        )}
+      </div>
+    </>
   );
 }
 
@@ -583,6 +809,7 @@ export function ExplorerView() {
   const schedulesError = useSchedulesStore((state) => state.error);
   const scheduleList = useSchedulesStore((state) => state.schedules);
 
+  const filter = useExplorerFilterStore((state) => state.text);
   const [containerRef, size] = useElementSize<HTMLDivElement>();
   const [treeRef, setTreeRef] = useState<import('react-arborist').TreeApi<ExplorerNode> | null | undefined>(undefined);
 
@@ -646,6 +873,11 @@ export function ExplorerView() {
   );
   const data = schedules === undefined ? tree : [...tree, schedulesNode(schedules)];
 
+  // The filter belongs to the workspace it was typed in: another workspace's tree starts unfiltered.
+  useEffect(() => {
+    useExplorerFilterStore.getState().forWorkspace(workspaceId);
+  }, [workspaceId]);
+
   useEffect(() => {
     registerExplorerTree(treeRef ?? null);
     return () => registerExplorerTree(null);
@@ -684,6 +916,8 @@ export function ExplorerView() {
     // `storedOpen` reads the store directly; it is deliberately not a dependency.
   }, [treeRef, rootIds]);
 
+  const noMatches = filter.trim() !== '' && countMatches(data, filter) === 0;
+
   const requestPendingDeletion = confirmDeleteRequestId !== undefined ? requests[confirmDeleteRequestId] : undefined;
 
   return (
@@ -698,6 +932,7 @@ export function ExplorerView() {
         >
           <FolderPlus size={14} aria-hidden="true" />
         </IconButton>
+        <NewRequestButton />
         <IconButton label="Import…" onClick={() => openImportDialog()}>
           <FileDown size={14} aria-hidden="true" />
         </IconButton>
@@ -718,6 +953,14 @@ export function ExplorerView() {
             <Link2 size={14} aria-hidden="true" />
           </IconButton>
         )}
+        <IconButton
+          data-testid="explorer-filter-button"
+          label="Filter"
+          shortcut={shortcutLabel('explorer.filter')}
+          onClick={() => showExplorerFilter()}
+        >
+          <Search size={14} aria-hidden="true" />
+        </IconButton>
         <IconButton label="Expand all" onClick={() => expandExplorerAll()}>
           <UnfoldVertical size={14} aria-hidden="true" />
         </IconButton>
@@ -728,7 +971,17 @@ export function ExplorerView() {
             offers Reload; a button that re-read every project would discard unsaved edits for nothing. */}
       </div>
 
-      <div ref={containerRef} className="min-h-0 flex-1">
+      <ExplorerFilterField />
+
+      <div ref={containerRef} className="relative min-h-0 flex-1">
+        {noMatches && (
+          <p
+            data-testid="explorer-no-matches"
+            className="absolute inset-x-0 top-3 px-4 text-center text-sm text-fg-subtle"
+          >
+            No matches
+          </p>
+        )}
         {data.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-2 px-4 text-center">
             <p className="text-md text-fg-muted">No projects yet</p>
@@ -758,33 +1011,39 @@ export function ExplorerView() {
               width={size.width}
               height={size.height}
               // A missing linked project's row takes two lines (#685 E17); every other row one.
-              rowHeight={(node) => (node.data.kind === 'project-missing' ? MISSING_ROW_HEIGHT : ROW_HEIGHT)}
+              // An unfolded empty container takes two lines too: its row, and the next step under it.
+              rowHeight={(node) =>
+                node.data.kind === 'project-missing'
+                  ? MISSING_ROW_HEIGHT
+                  : openEmptyHint(node) === undefined
+                    ? ROW_HEIGHT
+                    : EMPTY_ROW_HEIGHT
+              }
               // Half react-arborist's 24px default: enough that a subfolder reads as sitting inside
               // its folder at a glance, without the four levels of this tree — project › API ›
               // folder › request — marching a request off to the right.
               indent={12}
               outerElementType={FocusableListOuter}
+              renderRow={ExplorerRowWrapper}
               // The tree never scrolls sideways: react-arborist lets a row grow to its content
               // (`min-width: max-content`), which at a narrow sidebar pushed a long name such as
               // "DELETE /pets/{id}" past the edge behind a horizontal scrollbar. Held to the
               // tree's width, a row's name truncates with an ellipsis and its title says it in full.
               className="overflow-x-hidden!"
-              rowClassName="min-w-0!"
+              rowClassName="group/row min-w-0!"
               openByDefault={false}
               initialOpenState={{ ...Object.fromEntries(data.map((root) => [root.id, true])), ...storedOpen() }}
+              // Matching rows and the rows above them stay; react-arborist keeps the ancestors and unfolds them.
+              searchTerm={filter}
+              searchMatch={(node, term) => matchesFilter(node.data, term)}
               onToggle={(id) => {
                 const tree = getExplorerTree();
-                if (workspaceId !== undefined && tree !== null) {
+                // What is unfolded while filtering is the filter's, not the user's: it is not remembered.
+                if (workspaceId !== undefined && tree !== null && !tree.isFiltered) {
                   setExplorerOpen(workspaceId, id, tree.isOpen(id));
                 }
               }}
-              disableEdit={(node) =>
-                explorerRole(node.kind)?.rename === undefined &&
-                node.kind !== 'project' &&
-                node.kind !== 'folder' &&
-                node.kind !== 'sequence' &&
-                node.kind !== 'mock'
-              }
+              disableEdit={(node) => !canRenameInline(node.kind)}
               disableDrag={(node) =>
                 explorerRole(node.kind)?.movable !== true &&
                 explorerRole(node.kind)?.container !== true &&
@@ -1120,6 +1379,11 @@ export function ExplorerView() {
       />
     </div>
   );
+}
+
+/** A command's bound chord as this platform spells it, for a tooltip; `undefined` while it is unbound. */
+function shortcutLabel(id: 'explorer.filter'): string | undefined {
+  return shortcutFor(id, detectPlatform());
 }
 
 function flatten(node: ExplorerNode): ExplorerNode[] {

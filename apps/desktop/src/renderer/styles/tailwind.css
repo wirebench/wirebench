@@ -42,10 +42,8 @@
   --color-status-danger: var(--wb-status-danger);
   --color-status-info: var(--wb-status-info);
 
-  --color-method-get: var(--wb-method-get);
-  --color-method-post: var(--wb-method-post);
-  --color-method-put: var(--wb-method-put);
-  --color-method-patch: var(--wb-method-patch);
+  --color-method-read: var(--wb-method-read);
+  --color-method-write: var(--wb-method-write);
   --color-method-delete: var(--wb-method-delete);
   --color-method-other: var(--wb-method-other);
 

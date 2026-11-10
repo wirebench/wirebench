@@ -381,6 +381,8 @@ export const projectChangeSchema = z.discriminatedUnion('kind', [
     auth: soapOwnerAuthWireSchema.nullable(),
   }),
   z.object({ kind: z.literal('add-api'), name: z.string(), baseUrl: z.string() }),
+  /** Copies a REST API and everything in it as a new API, named "<name> copy". */
+  z.object({ kind: z.literal('duplicate-api'), apiId: z.string() }),
   z.object({ kind: z.literal('update-api'), apiId: z.string(), patch: apiPatchSchema }),
   z.object({ kind: z.literal('remove-api'), apiId: z.string() }),
   z.object({

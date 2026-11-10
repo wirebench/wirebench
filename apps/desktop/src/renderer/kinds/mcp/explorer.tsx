@@ -1,6 +1,7 @@
 import { Plug } from 'lucide-react';
 import { explorerActions } from '../../features/explorer/explorer-actions.js';
 import { exportItems, groups, reportRenameFailure } from '../../features/explorer/menu-items.js';
+import { copyLinkItems } from '../../features/explorer/copy-link.js';
 import type { ExplorerNode } from '../../features/explorer/tree-nodes.js';
 import { McpBadge } from '../../features/mcp-editor/badge.js';
 import { NewMcpServerDialog } from '../../features/mcp-api/new-server-dialog.js';
@@ -44,8 +45,8 @@ export const mcpExplorer: KindExplorer = {
         if (node.apiId === undefined) return [];
         const apiId = node.apiId;
         return groups(
+          [{ key: 'open', label: 'Open', run: () => explorerActions.openMcpApi(apiId) }],
           [
-            { key: 'open', label: 'Open', run: () => explorerActions.openMcpApi(apiId) },
             { key: 'new-folder', label: 'New folder', run: () => explorerActions.newFolder(apiId) },
             { key: 'new-request', label: 'New request', run: () => explorerActions.newMcpRequest(apiId) },
             {
@@ -53,6 +54,11 @@ export const mcpExplorer: KindExplorer = {
               label: 'New request from tool…',
               run: () => explorerActions.newMcpRequestFromTool(apiId),
             },
+          ],
+          copyLinkItems(node),
+          [
+            { key: 'rename', label: 'Rename…', run: () => explorerActions.renameNode('mcp-api', apiId) },
+            { key: 'move-to-project', label: 'Move to project…', run: () => useMoveApiStore.getState().open(apiId) },
           ],
           [
             {
@@ -62,10 +68,6 @@ export const mcpExplorer: KindExplorer = {
             },
           ],
           exportItems({ containerId: apiId }),
-          [
-            { key: 'rename', label: 'Rename…', run: () => explorerActions.renameNode('mcp-api', apiId) },
-            { key: 'move-to-project', label: 'Move to project…', run: () => useMoveApiStore.getState().open(apiId) },
-          ],
           [{ key: 'delete', label: 'Delete', run: () => explorerActions.removeMcpApi(apiId) }],
         );
       },
@@ -86,6 +88,8 @@ export const mcpExplorer: KindExplorer = {
         if (node.requestId === undefined) return [];
         const requestId = node.requestId;
         return groups(
+          [{ key: 'open', label: 'Open', run: () => explorerActions.openMcpRequest(requestId) }],
+          copyLinkItems(node),
           [
             { key: 'duplicate', label: 'Duplicate', run: () => explorerActions.duplicateMcpRequest(requestId) },
             { key: 'rename', label: 'Rename…', run: () => explorerActions.renameNode('mcp-request', requestId) },

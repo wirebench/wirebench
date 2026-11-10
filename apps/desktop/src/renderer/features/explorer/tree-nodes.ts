@@ -130,7 +130,7 @@ export interface ExplorerNode {
    * which ones no longer correspond to anything the service offers.
    */
   readonly orphaned?: boolean;
-  /** Set on `api` nodes whose API records the definition it was imported from (Update Definition). */
+  /** Set on `api` and `grpc-api` nodes whose API keeps the definition it came from (Update Definition, Export API…). */
   readonly hasDefinition?: boolean;
   /**
    * Set on `project` and `request` nodes an unresolved sync conflict touches (Task 11):

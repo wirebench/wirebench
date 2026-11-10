@@ -338,6 +338,8 @@ export interface ProjectStore extends ProjectSnapshot {
     request: ApiImportAsyncApiRequest,
   ) => Promise<{ readonly apiId: string; readonly projectId: string; readonly summary: AsyncApiImportSummaryWire }>;
   readonly updateApi: (apiId: string, patch: ApiPatchWire) => Promise<void>;
+  /** Copies a REST API and everything in it as a new API after the project's last one; returns the copy's id. */
+  readonly duplicateApi: (apiId: string) => Promise<string>;
   /** Deletes an API with everything inside it, and closes the tabs that named any of it. */
   readonly removeApi: (apiId: string) => Promise<void>;
   /** Adds a folder at an API's root, or inside `parentId`. Returns the new folder's id. */
@@ -1703,6 +1705,14 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
 
     updateApi: async (apiId, patch) => {
       await mutateEntity(apiId, { kind: 'update-api', apiId, patch });
+    },
+
+    duplicateApi: async (apiId) => {
+      const { createdId } = await mutateEntity(apiId, { kind: 'duplicate-api', apiId });
+      if (createdId === undefined) {
+        throw new Error('duplicate-api did not return an API id');
+      }
+      return createdId;
     },
 
     removeApi: async (apiId) => {

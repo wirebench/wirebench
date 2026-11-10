@@ -8,6 +8,24 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **Explorer rows read better in a narrow sidebar.** A row's grey detail gives way before its name and is
+  hidden on a very narrow row, with both in the tooltip; method badges are tinted by what a method does
+  (reads, writes, DELETE); the Endpoints group has its own icon; and leaf rows no longer tell screen readers
+  they can be unfolded.
+- **Filter the Explorer, and type to jump.** A filter field (header button, or ⌘⇧F / Ctrl+Shift+F in the tree)
+  keeps the matching rows and their parents and marks the matched letters; Esc clears it. Typing a name's
+  first letters in the tree moves to the next row that starts with them.
+- **Empty containers say what to do next, and containers have + and ⋯.** An unfolded empty API, folder,
+  project or Webhook inbox shows a line such as *No requests yet · New request*. Hovering or focusing a
+  container shows a + for its New and a ⋯ for its menu. The Explorer header gains *New request*.
+- **One menu order everywhere, with keys, danger last, Copy link, Duplicate API and Export API….** Every row's
+  menu reads Open · Send/Run · New… · Import… · Copy… · Duplicate, Rename…, Move… · Settings… · Export… ·
+  Delete; request rows gain Open; bound keys (F2, Delete) show at the right; Delete and Remove from workspace
+  come last in red. *Copy link* copies a project's, API's or request's browser-client address. REST APIs gain
+  *Duplicate API*, and APIs with a cached definition *Export API…* (a SOAP interface's *Export Definition…* is
+  now *Export API…*).
+- **The path above a request opens what it names.** Each part of a request's path line opens that project's,
+  API's or folder's tab (or, for a SOAP operation, its row) and reveals it in the Explorer.
 - **Picking a team opens its Overview.** The team switcher in Team settings, *New team…*, *Manage team…* and, in a
   browser tab, the title bar's team switcher all land on the team's Overview, and a team picked in Team settings
   becomes the team you work in. The Overview now shows the team at a glance: your role, tiles for its people,

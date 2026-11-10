@@ -478,6 +478,34 @@ describe('WorkspaceService manifest operations', () => {
     await service.close();
   }, 60_000);
 
+  it("gives a duplicated API the original's workspace environment overrides", async () => {
+    const bootstrap = newService();
+    const created = await bootstrap.create('Copies');
+    await bootstrap.close();
+    const dir = workspaceDir(root, created.id);
+    const shop = await seedProject(dir, 'shop', 'Shop');
+    await registerProjects(dir, [shop]);
+
+    const service = newService();
+    await service.open(created.id);
+    const added = await service.projectMutate(shop.id, { kind: 'add-api', name: 'Orders', baseUrl: 'https://o.test' });
+    const environmentId = (await service.mutate({ kind: 'add-workspace-environment', name: 'dev' }))
+      .createdEnvironmentId!;
+    await service.mutate({
+      kind: 'update-workspace-environment',
+      environmentId,
+      patch: { endpoints: { 'shop/Orders': 'https://dev.o.test' } },
+    });
+
+    await service.projectMutate(shop.id, { kind: 'duplicate-api', apiId: added.createdId! });
+
+    expect(service.snapshot()!.environments[0]?.endpoints).toEqual({
+      'shop/Orders': 'https://dev.o.test',
+      'shop/Orders copy': 'https://dev.o.test',
+    });
+    await service.close();
+  }, 60_000);
+
   it('refuses a workspace id that is not a folder name', async () => {
     const service = newService({ trash: () => Promise.resolve() });
     // The picker's row id is the one workspace value that comes from the renderer: a traversal

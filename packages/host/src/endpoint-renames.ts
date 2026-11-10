@@ -58,3 +58,17 @@ export function rekeyProjectEnvironments(project: Project, renames: ReadonlyMap<
   });
   return moved ? { ...project, environments } : project;
 }
+
+/**
+ * `endpoints` with the override keyed `<prefix><from>` copied to `<prefix><to>` as well, or `endpoints` itself
+ * when there is none to copy: a duplicated container starts with the addresses its original has.
+ */
+export function copyEndpointKey(
+  endpoints: Readonly<Record<string, string>>,
+  from: string,
+  to: string,
+  prefix = '',
+): Readonly<Record<string, string>> {
+  const url = endpoints[`${prefix}${from}`];
+  return url === undefined ? endpoints : { ...endpoints, [`${prefix}${to}`]: url };
+}

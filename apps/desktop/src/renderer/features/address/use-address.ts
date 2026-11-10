@@ -5,7 +5,6 @@
  * replaces the address. The desktop has no address bar, so this does nothing there.
  */
 import { useEffect } from 'react';
-import type { WorkspaceWire } from '@shared/wire-base.js';
 import { showToast } from '../../components/toast.js';
 import { isBrowserTab } from '../../lib/capabilities.js';
 import { activeAccount, useAccountStore } from '../../state/account.js';
@@ -19,18 +18,13 @@ import { USER_PAGES, type UserSettingsPageId } from '../preferences/user-setting
 import { readTeamDeepLink } from '../team/team-link.js';
 import { isTeamSettingsPage } from '../team/team-settings-model.js';
 import { workspaceActions } from '../workspace/workspace-actions.js';
-import { formatAddress, isNewPlace, parseAddress, type Address, type AddressTab } from './address.js';
+import { formatAddress, isNewPlace, parseAddress, workspaceKey, type Address, type AddressTab } from './address.js';
 import { useSettingsPlaceStore } from './settings-place.js';
 
 /** How long a just-opened workspace's tab restore may take before the address stops waiting for it. */
 const RESTORE_WAIT_MS = 5_000;
 
-/** The id a workspace has in the address: its team workspace's for a server workspace, else its own. */
-export function workspaceKey(workspace: Pick<WorkspaceWire, 'id' | 'share'> | null | undefined): string | undefined {
-  if (workspace === null || workspace === undefined) return undefined;
-  const server = workspace.share?.kind === 'server' ? workspace.share.server : undefined;
-  return server?.workspaceId ?? workspace.id;
-}
+export { workspaceKey } from './address.js';
 
 function sameOrigin(a: string, b: string): boolean {
   try {

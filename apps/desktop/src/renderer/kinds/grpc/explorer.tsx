@@ -1,6 +1,7 @@
 import { Radio } from 'lucide-react';
 import { explorerActions } from '../../features/explorer/explorer-actions.js';
-import { exportItems, groups, reportRenameFailure } from '../../features/explorer/menu-items.js';
+import { exportApiItems, exportItems, groups, reportRenameFailure } from '../../features/explorer/menu-items.js';
+import { copyLinkItems } from '../../features/explorer/copy-link.js';
 import type { ExplorerNode } from '../../features/explorer/tree-nodes.js';
 import { MethodKindBadge } from '../../features/grpc-editor/method-kind-badge.js';
 import { useProjectStore } from '../../state/project.js';
@@ -33,16 +34,17 @@ export const grpcExplorer: KindExplorer = {
         if (node.apiId === undefined) return [];
         const apiId = node.apiId;
         return groups(
+          [{ key: 'open', label: 'Open', run: () => explorerActions.openGrpcApi(apiId) }],
           [
-            { key: 'open', label: 'Open', run: () => explorerActions.openGrpcApi(apiId) },
             { key: 'new-folder', label: 'New folder', run: () => explorerActions.newFolder(apiId) },
             { key: 'new-request', label: 'New request', run: () => explorerActions.newGrpcRequest(apiId) },
           ],
-          exportItems({ containerId: apiId }),
+          copyLinkItems(node),
           [
             { key: 'rename', label: 'Rename…', run: () => explorerActions.renameNode('grpc-api', apiId) },
             { key: 'move-to-project', label: 'Move to project…', run: () => useMoveApiStore.getState().open(apiId) },
           ],
+          [...exportApiItems(apiId, node.hasDefinition === true), ...exportItems({ containerId: apiId })],
           [{ key: 'delete', label: 'Delete', run: () => explorerActions.removeGrpcApi(apiId) }],
         );
       },
@@ -63,6 +65,8 @@ export const grpcExplorer: KindExplorer = {
         if (node.requestId === undefined) return [];
         const requestId = node.requestId;
         return groups(
+          [{ key: 'open', label: 'Open', run: () => explorerActions.openGrpcRequest(requestId) }],
+          copyLinkItems(node),
           [
             { key: 'duplicate', label: 'Duplicate', run: () => explorerActions.duplicateGrpcRequest(requestId) },
             { key: 'rename', label: 'Rename…', run: () => explorerActions.renameNode('grpc-request', requestId) },

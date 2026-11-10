@@ -569,6 +569,14 @@ export const COMMAND_CATALOG: Readonly<Record<CommandId, CommandCatalogEntry>> =
     label: 'Explorer: Focus Explorer',
     category: 'Explorer',
   },
+  'explorer.filter': {
+    id: 'explorer.filter',
+    label: 'Explorer: Filter',
+    category: 'Explorer',
+    // Format Document's chord elsewhere; with focus in the tree it filters the tree, which the tree takes first.
+    shortcut: 'Mod+Shift+F',
+    keyScope: EXPLORER_TREE,
+  },
   'explorer.rename': {
     id: 'explorer.rename',
     label: 'Explorer: Rename',
