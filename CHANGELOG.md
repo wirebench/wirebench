@@ -16,8 +16,8 @@ All notable changes to this project are documented here. The format follows
 - **Each workspace has an overview in Team settings.** Workspace rows, on Overview and on Workspaces, show when and
   by whom the workspace was made, its default access and how many have a grant; a row opens the workspace's
   overview, with its settings, *Delete* and who can open it. Its address names it (`page=workspace&workspace=…`).
-- **The title bar's workspace menu lists the team's workspaces not opened here yet**, under *Not opened yet*; picking
-  one opens it from the server.
+- **The title bar's workspace menu and the start screen list the team's workspaces not opened here yet**, under
+  *Not opened yet*; picking one opens it from the server. Switching team shows the new team's at once.
 
 ### Fixed
 

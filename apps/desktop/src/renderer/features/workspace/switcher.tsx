@@ -38,7 +38,7 @@ export function notOpenedYet(
 }
 
 /** Opens a team workspace from the server; one already here opens, and a refusal is a toast. */
-async function openFromServer(url: string, workspaceId: string): Promise<void> {
+export async function openFromServer(url: string, workspaceId: string): Promise<void> {
   const outcome = await workspaceActions.joinFromServer(url, workspaceId);
   if (outcome === true) return;
   if ('workspaceId' in outcome) await workspaceActions.open(outcome.workspaceId);

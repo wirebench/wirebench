@@ -146,6 +146,30 @@ describe('the active team', () => {
     );
     expect(ids).toEqual(['w1', 'l1']);
   });
+
+  it('after a team switch the start screen offers that team’s workspaces not opened here, and opens one', async () => {
+    await useActiveTeamStore.getState().load({ url: URL_A, userId: USER });
+    const joinFromServer = vi.fn().mockResolvedValue(undefined);
+    useWorkspaceStore.setState({
+      workspace: null,
+      workspaces: [serverRow('w1', 'wtest1', 's1')],
+      list: vi.fn().mockResolvedValue(undefined),
+      joinFromServer,
+    });
+    render(<WorkspacePicker />);
+    expect(screen.queryByTestId('workspace-picker-not-opened')).toBeNull();
+
+    await switchTeam('t2');
+    const rows = await screen.findAllByTestId('workspace-picker-not-opened');
+    expect(rows.map((row) => row.textContent)).toEqual(['billingOpen']);
+    expect(screen.queryAllByTestId('workspace-picker-row')).toHaveLength(0);
+    expect(screen.getByTestId('workspace-picker-empty').textContent).toBe(
+      'None of CaaS’s workspaces is open here yet.',
+    );
+
+    await userEvent.click(rows[0]!);
+    await vi.waitFor(() => expect(joinFromServer).toHaveBeenCalledWith(URL_A, 's2'));
+  });
 });
 
 describe('the start screen in a browser tab (#898)', () => {
@@ -182,7 +206,7 @@ describe('the start screen in a browser tab (#898)', () => {
     useUiStore.getState().setPreferencesOpen(false);
   });
 
-  it('says how many of the active team’s workspaces can be opened, and where, when none is open here', async () => {
+  it('lists the active team’s workspaces not opened here when none is open here', async () => {
     await useActiveTeamStore.getState().load({ url: URL_A, userId: USER });
     useActiveTeamStore.getState().setTeam('t2');
     useWorkspaceStore.setState({
@@ -193,8 +217,11 @@ describe('the start screen in a browser tab (#898)', () => {
     render(<WorkspacePicker />);
 
     expect((await screen.findByTestId('workspace-picker-empty')).textContent).toBe(
-      'CaaS has 1 workspace you can open. Open it with Open a team workspace… above.',
+      'None of CaaS’s workspaces is open here yet.',
     );
+    expect(
+      screen.getAllByTestId('workspace-picker-not-opened').map((row) => row.getAttribute('data-workspace-id')),
+    ).toEqual(['s2']);
   });
 
   it('says so when the active team has none', async () => {
