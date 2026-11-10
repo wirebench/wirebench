@@ -56,6 +56,7 @@ const WIRE = {
     workspaceId: id.optional(),
     teamId: id.optional(),
     userId: id.optional(),
+    settings: z.literal(true).optional(),
   }),
   sessionEnded: z.union([
     z.strictObject({ ...envelope, kind: z.literal('sessionEnded'), tenantId, tokenId: id }),
@@ -142,7 +143,7 @@ const WIRE = {
 /** The fields of each kind that go on the wire, beside `v`, `from`, `at` and `kind`. */
 const FIELDS: { readonly [K in AnnouncementKind]: readonly string[] } = {
   headMoved: ['tenantId', 'workspaceId', 'head', 'tokenId'],
-  accessChanged: ['tenantId', 'workspaceId', 'teamId', 'userId'],
+  accessChanged: ['tenantId', 'workspaceId', 'teamId', 'userId', 'settings'],
   sessionEnded: ['tenantId', 'tokenId', 'userId', 'exceptTokenId'],
   captureReceived: ['tenantId', 'workspaceId', 'hookId', 'captureId'],
   hooksChanged: ['tenantId', 'workspaceId'],

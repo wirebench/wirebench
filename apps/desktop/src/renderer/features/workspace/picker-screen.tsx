@@ -9,6 +9,7 @@ import { useUiStore } from '../../state/ui.js';
 import { useWorkspaceStore } from '../../state/workspace.js';
 import { hasCapability } from '../../lib/capabilities.js';
 import type { WorkspaceShareWire } from '@shared/wire-base.js';
+import { notOpenedYet, openFromServer } from './switcher.js';
 import { workspaceActions } from './workspace-actions.js';
 
 /** The kind glyph plus the least a row may say about a share, never the full URL. */
@@ -81,6 +82,9 @@ export function WorkspacePicker() {
   const teamState = useActiveTeamStore(useShallow(pickActive));
   const team = activeTeam(teamState);
   const shown = workspaces.filter((workspace) => !ofOtherTeam(teamState, workspace));
+  // The active team's workspaces with no copy here yet, so a team switch shows that team's workspaces at once.
+  const notOpened = notOpenedYet(teamState, workspaces);
+  const serverUrl = teamState.url;
 
   useEffect(() => {
     void list();
@@ -96,18 +100,13 @@ export function WorkspacePicker() {
   };
 
   /**
-   * Why the list is empty. A browser tab lists only the workspaces opened in it, so with none of the active team's
-   * here it says how many that team has to open and where; the desktop keeps its wording for its local list.
+   * Why the list is empty. With some of the active team's workspaces not opened here, the *Not opened yet* list
+   * below offers them; a browser tab, which lists only the workspaces opened in it, says when the team has none.
    */
   const emptyMessage = (): string => {
     if (team === undefined) return 'No workspaces yet.';
-    if (!localFiles) {
-      const openable = teamState.workspaces.filter((workspace) => workspace.teamId === team.id).length;
-      if (openable === 0) return `${team.name} has no workspaces yet.`;
-      return openable === 1
-        ? `${team.name} has 1 workspace you can open. Open it with Open a team workspace… above.`
-        : `${team.name} has ${String(openable)} workspaces you can open. Open one with Open a team workspace… above.`;
-    }
+    if (notOpened.length > 0) return `None of ${team.name}’s workspaces is open here yet.`;
+    if (!localFiles) return `${team.name} has no workspaces yet.`;
     return workspaces.length > 0
       ? `No workspaces of ${team.name} here yet. Switch team in the title bar to see the others.`
       : 'No workspaces yet.';
@@ -260,6 +259,32 @@ export function WorkspacePicker() {
               );
             })}
           </ul>
+        )}
+
+        {team !== undefined && serverUrl !== undefined && notOpened.length > 0 && (
+          <>
+            <h2 className="mt-8 text-sm font-medium text-fg-muted">Not opened yet · {team.name}</h2>
+            <ul className="mt-1 flex flex-col">
+              {notOpened.map((row) => (
+                <li key={row.id}>
+                  <button
+                    type="button"
+                    data-testid="workspace-picker-not-opened"
+                    data-workspace-id={row.id}
+                    onClick={() => {
+                      void openFromServer(serverUrl, row.id);
+                    }}
+                    className="flex w-full items-baseline gap-2 rounded px-2 py-1 text-left hover:bg-surface-raised"
+                  >
+                    <span className="min-w-0 truncate text-sm text-fg-default">{row.name}</span>
+                    <Server size={12} aria-hidden="true" className="shrink-0 self-center text-fg-subtle" />
+                    <span className="flex-1" />
+                    <span className="shrink-0 text-xs text-accent">Open</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </>
         )}
 
         {localFiles && suggestions.length > 0 && (

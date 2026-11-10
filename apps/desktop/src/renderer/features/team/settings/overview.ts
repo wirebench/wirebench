@@ -38,6 +38,27 @@ export function peopleDetail(counts: TeamCounts): string {
   return counts.invitations > 0 ? `${joined} · ${String(counts.invitations)} waiting` : joined;
 }
 
+const DEFAULT_ACCESS: Readonly<Record<'none' | 'viewer' | 'editor', string>> = {
+  none: 'No access by default',
+  viewer: 'Viewer by default',
+  editor: 'Editor by default',
+};
+
+/** `Viewer by default`, and `· 2 with a grant` when the server counted grants. */
+export function accessSummary(defaultRole: 'none' | 'viewer' | 'editor', grantCount: number | undefined): string {
+  const base = DEFAULT_ACCESS[defaultRole];
+  return grantCount === undefined ? base : `${base} · ${String(grantCount)} with a grant`;
+}
+
+/** `Created 7 Nov 2026 by Dana`, `Created today`; the name only when the server knows it. */
+export function createdSummary(createdAt: string, createdByName: string | null | undefined, now: Date): string {
+  const when = createdLabel(createdAt, now);
+  const by =
+    createdByName === null || createdByName === undefined || createdByName === '' ? '' : ` by ${createdByName}`;
+  if (when === '') return by === '' ? '' : `Created${by}`;
+  return `Created ${when}${by}`;
+}
+
 /** `today`, or the date in the reader's locale. */
 export function createdLabel(createdAt: string, now: Date): string {
   const created = new Date(createdAt);

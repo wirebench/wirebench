@@ -267,6 +267,25 @@ describeDb('announcements from server-sync and teams-access (§3.2)', () => {
     expect((await viewer.next('head')).head).toBe(pushed.body.head);
   });
 
+  it('a rename sends access to every subscriber, though no role changed, so each re-reads the name', async () => {
+    const admin = await connect(c, c.admin);
+    const editor = await connect(c, c.editor);
+    const viewer = await connect(c, c.viewer);
+    await subscribeAll(c.workspaceId, [
+      [admin, c.admin],
+      [editor, c.editor],
+      [viewer, c.viewer],
+    ]);
+
+    const res = await call(c.h, c.admin, 'PATCH', `/workspaces/${c.workspaceId}`, { name: 'Staging EU' });
+    expect(res.status).toBe(200);
+    for (const client of [admin, editor, viewer]) {
+      expect(await client.next('access')).toEqual({ type: 'access', workspaceId: c.workspaceId });
+    }
+    await Promise.all([settled(admin), settled(editor), settled(viewer)]);
+    expect(count(admin, 'access') + count(editor, 'access') + count(viewer, 'access')).toBe(3);
+  });
+
   it('removing a member drops their subscription and updates everyone else’s presence (§3.1)', async () => {
     const admin = await connect(c, c.admin);
     const editor = await connect(c, c.editor);
@@ -333,7 +352,7 @@ describeDb('announcements from server-sync and teams-access (§3.2)', () => {
     expect(c.heard.take()).toEqual([{ hook: 'accessChanged', event: { ...inTenant(c), workspaceId: c.workspaceId } }]);
   });
 
-  it('each teams-access site announces its scope once and only on success; a rename announces nothing (§3.2)', async () => {
+  it('each teams-access site announces its scope once and only on success; a rename announces too, so clients re-read the name (§3.2)', async () => {
     const ws = c.workspaceId;
     const newcomer = await signedInUser(c.h, { email: 'newcomer@example.com' });
     const byWorkspace: AccessChanged = { workspaceId: ws };
@@ -354,7 +373,9 @@ describeDb('announcements from server-sync and teams-access (§3.2)', () => {
       byWorkspace,
     ]);
     await expectHeard(byAdmin('DELETE', `/workspaces/${ws}/access/${c.viewer.user.id}`), 204, [byWorkspace]);
-    await expectHeard(byAdmin('PATCH', `/workspaces/${ws}`, { name: 'Staging 2' }), 200, []);
+    await expectHeard(byAdmin('PATCH', `/workspaces/${ws}`, { name: 'Staging 2' }), 200, [
+      { ...byWorkspace, settings: true },
+    ]);
     await expectHeard(byAdmin('PATCH', `/workspaces/${ws}`, { defaultRole: 'none' }), 200, [byWorkspace]);
     const add = { email: 'newcomer@example.com', role: 'member' };
     await expectHeard(byAdmin('POST', `/teams/${c.teamId}/members`, add), 201, [newcomerScope]);

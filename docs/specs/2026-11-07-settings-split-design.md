@@ -56,8 +56,8 @@ Settings page of #396 (its Account and Server groups move out) · Plan: `docs/pl
   role and the date it was created.
 - Tiles that open their page: People (joined and waiting), Workspaces, and for a server admin the server's seats
   (`GET /api/v1/license`).
-- The team's workspaces with your role on each and an *Open now* mark on the open one; no Open button (owner
-  ruling): opening stays with the workspace list.
+- The team's workspaces as rows (§3.4) with an *Open now* mark on the open one; no Open button (owner ruling):
+  opening stays with the workspace list and the title bar.
 - Team admins: *Add people*, *New workspace…*, the invitations still waiting with *New link*, and — until the team has
   a second person (joined or invited) and a workspace — a three-step setup list.
 - *Delete this team* in a danger zone at the bottom, server admins only, behind a confirm dialog that
@@ -80,7 +80,13 @@ Settings page of #396 (its Account and Server groups move out) · Plan: `docs/pl
 
 ### 3.4 Workspaces and roles
 
-- *Workspaces* is today's Workspaces tab with its access panel, as a page.
+- *Workspaces* lists the team's workspaces as rows, the same rows as Overview: name, "Created <date> by <name>",
+  the default access and how many have a grant (`createdByName` and `grantCount` on the team workspace, optional
+  for an older server), your role. *New workspace…* sits above. (2026-11-09 owner ruling: one row style.)
+- A row opens the workspace's overview (`page=workspace&workspace=<id>`, under *Workspaces* in the menu): a
+  breadcrumb back, today's workspace card (name, role, *Access…*, *Delete*, default access, recording, features),
+  when and by whom it was made, and *Who can open it* (the access panel inline) for those who may share it. The
+  desktop's fallback Team dialog keeps the cards.
 - *What roles can do* is a read-only table of Viewer, Editor and Admin against what each may do (read,
   send, edit, share, manage people, manage workspaces), plus a line on server admins. It is built from the
   renderer's `roles.ts`, so the table and the checks cannot drift.

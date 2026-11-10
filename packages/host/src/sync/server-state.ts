@@ -65,6 +65,10 @@ export interface ServerStateDoc {
   readonly recordSessionLogs?: boolean;
   /** The feature ids the workspace's team policy switches off (ADR-0029), as the last fetch reported them. */
   readonly disabledFeatures?: readonly string[];
+  /** The workspace's name on the server, as the last fetch reported it; absent from an older server. */
+  readonly name?: string;
+  /** The owning team's name, as the last fetch reported it; absent from an older server. */
+  readonly teamName?: string;
   /** Local display only; the server attributes commits to the signed-in user (§3.1). */
   readonly identity?: { readonly name: string; readonly email: string };
   readonly lastSyncAt?: string;
@@ -120,6 +124,8 @@ const stateDocSchema = z.object({
   recordDesktopActivity: z.boolean().optional(),
   recordSessionLogs: z.boolean().optional(),
   disabledFeatures: z.array(z.string()).optional(),
+  name: z.string().min(1).optional(),
+  teamName: z.string().min(1).optional(),
   identity: z.object({ name: z.string().min(1), email: z.string().min(1) }).optional(),
   lastSyncAt: z.string().optional(),
   userId: z.string().min(1).optional(),
@@ -261,6 +267,8 @@ function toDoc(parsed: z.infer<typeof stateDocSchema>): ServerStateDoc {
     ...(parsed.recordDesktopActivity !== undefined ? { recordDesktopActivity: parsed.recordDesktopActivity } : {}),
     ...(parsed.recordSessionLogs !== undefined ? { recordSessionLogs: parsed.recordSessionLogs } : {}),
     ...(parsed.disabledFeatures !== undefined ? { disabledFeatures: parsed.disabledFeatures } : {}),
+    ...(parsed.name !== undefined ? { name: parsed.name } : {}),
+    ...(parsed.teamName !== undefined ? { teamName: parsed.teamName } : {}),
     ...(parsed.identity !== undefined
       ? { identity: { name: parsed.identity.name, email: parsed.identity.email } }
       : {}),
@@ -283,16 +291,26 @@ export interface ServerHeadFlags {
   readonly sessionLogs: boolean;
   /** The team policy's list (phase 4 spec §6.2); empty when unknown. */
   readonly disabledFeatures: readonly string[];
+  /** The workspace's and its team's names on the server; absent when no fetch has reported them. */
+  readonly name?: string;
+  readonly teamName?: string;
+  /** Who on the server this copy syncs as, once a sync has recorded it. */
+  readonly userId?: string;
 }
 
 /** The settings of the last fetched head under `dir`: false and empty when there is no state yet, or it cannot be read. */
 export async function readRecordingFlags(dir: string): Promise<ServerHeadFlags> {
   try {
     const parsed = stateDocSchema.safeParse(parseYaml(await readFile(join(dir, STATE_FILE), 'utf8')));
+    if (!parsed.success) return { desktopActivity: false, sessionLogs: false, disabledFeatures: [] };
+    const { data } = parsed;
     return {
-      desktopActivity: parsed.success && parsed.data.recordDesktopActivity === true,
-      sessionLogs: parsed.success && parsed.data.recordSessionLogs === true,
-      disabledFeatures: parsed.success ? (parsed.data.disabledFeatures ?? []) : [],
+      desktopActivity: data.recordDesktopActivity === true,
+      sessionLogs: data.recordSessionLogs === true,
+      disabledFeatures: data.disabledFeatures ?? [],
+      ...(data.name !== undefined ? { name: data.name } : {}),
+      ...(data.teamName !== undefined ? { teamName: data.teamName } : {}),
+      ...(data.userId !== undefined ? { userId: data.userId } : {}),
     };
   } catch {
     return { desktopActivity: false, sessionLogs: false, disabledFeatures: [] };

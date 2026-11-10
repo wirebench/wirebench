@@ -104,6 +104,16 @@ test('picking a team lands on its Overview, the title bar follows, and the addre
   await expect(settings().getByTestId('team-settings-nav-overview')).toHaveAttribute('aria-current', 'page');
   await expect(page).toHaveURL(new RegExp(`[?&]team=${seed.teamId}&page=overview`));
 
+  // A workspace row opens its overview, which the address names; the breadcrumb goes back to Workspaces.
+  await settings().getByTestId('team-workspace-row').filter({ hasText: seed.workspaceName }).click();
+  await expect(settings().getByTestId('workspace-page')).toBeVisible();
+  await expect(settings().getByTestId('team-settings-nav-workspaces')).toHaveAttribute('aria-current', 'page');
+  await expect(page).toHaveURL(/[?&]page=workspace&workspace=[A-Za-z0-9_-]+/);
+  await expect(settings().getByTestId('access-panel')).toBeVisible();
+  await settings().getByTestId('workspace-page-back').click();
+  await expect(page).toHaveURL(new RegExp(`[?&]team=${seed.teamId}&page=workspaces`));
+  await settings().getByTestId('team-settings-nav-overview').click();
+
   // A tile opens its page; People for the steps that follow.
   await settings().getByTestId('team-overview-members').click();
   await expect(settings().getByTestId('team-settings-nav-people')).toHaveAttribute('aria-current', 'page');

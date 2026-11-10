@@ -3,6 +3,9 @@ import { useTeamStore } from '../../state/team.js';
 import type { AccessEntryWire, WorkspaceRoleWire } from '@shared/wire-base.js';
 import { ROLE_LABELS, SELECT_CLASS, WORKSPACE_ROLES, roleWithSource } from './roles.js';
 
+/** A stable empty list: a new `[]` per read would rerender the panel without end while nothing is loaded. */
+const NO_ENTRIES: readonly AccessEntryWire[] = [];
+
 /** A grant can neither lower nor raise these; the select says so by being disabled. */
 const FIXED_SOURCES = new Set(['team-admin', 'server-admin']);
 
@@ -16,20 +19,29 @@ function effectiveLabel(entry: AccessEntryWire): string {
  * *Access…* for one workspace (teams-access §3.5): every team member, the role they end up with and
  * why, and a grant select. *Use default* clears the grant, so the member falls back to the default role.
  */
-export function AccessPanel({ workspaceName }: { readonly workspaceName: string }) {
-  const entries = useTeamStore((state) => state.access?.entries ?? []);
+export function AccessPanel({
+  workspaceName,
+  embedded = false,
+}: {
+  readonly workspaceName: string;
+  /** Inside a Workspace overview: no back button or title of its own. */
+  readonly embedded?: boolean;
+}) {
+  const entries = useTeamStore((state) => state.access?.entries ?? NO_ENTRIES);
   const closeAccess = useTeamStore((state) => state.closeAccess);
   const setAccess = useTeamStore((state) => state.setAccess);
   const clearAccess = useTeamStore((state) => state.clearAccess);
 
   return (
     <div data-testid="access-panel" className="flex flex-col gap-3">
-      <div className="flex items-center gap-2">
-        <Button variant="ghost" data-testid="access-back" onClick={closeAccess}>
-          ← Workspaces
-        </Button>
-        <span className="text-sm font-medium text-fg-default">Access to {workspaceName}</span>
-      </div>
+      {!embedded && (
+        <div className="flex items-center gap-2">
+          <Button variant="ghost" data-testid="access-back" onClick={closeAccess}>
+            ← Workspaces
+          </Button>
+          <span className="text-sm font-medium text-fg-default">Access to {workspaceName}</span>
+        </div>
+      )}
       <ul className="divide-y divide-hairline">
         {entries.map((entry) => {
           const fixed = entry.source !== undefined && FIXED_SOURCES.has(entry.source);

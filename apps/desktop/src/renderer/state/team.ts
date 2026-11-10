@@ -18,8 +18,9 @@ import type {
   WorkspaceRoleWire,
 } from '@shared/wire-base.js';
 import { showToast } from '../components/toast.js';
-import { activeTeamIdOn } from './active-team.js';
+import { activeTeamIdOn, useActiveTeamStore } from './active-team.js';
 import { ipc } from './ipc-client.js';
+import { useWorkspaceStore } from './workspace.js';
 import { DEFAULT_TEAM_PAGE, resolveTeamPage, type TeamSettingsPageId } from '../features/team/team-settings-model.js';
 import type { TeamSettingsTarget } from './ui.js';
 
@@ -39,6 +40,8 @@ export interface TeamState {
   readonly teamId: string | undefined;
   /** Team settings' page; `undefined` before the first load, and for a caller with no team and no page asked. */
   readonly page: TeamSettingsPageId | undefined;
+  /** The workspace the Workspace overview page (`page: 'workspace'`) shows. */
+  readonly workspaceId: string | undefined;
   readonly members: readonly TeamMemberWire[];
   readonly invitations: readonly TeamInvitationWire[];
   /** Every workspace the caller can open on `url`, across teams; {@link teamWorkspaces} narrows it. */
@@ -66,6 +69,8 @@ export interface TeamStore extends TeamState {
   readonly refresh: () => Promise<void>;
   readonly selectTeam: (teamId: string) => Promise<void>;
   readonly setPage: (page: TeamSettingsPageId) => void;
+  /** Shows one workspace's overview page. */
+  readonly openWorkspacePage: (workspaceId: string) => void;
   readonly createTeam: (name: string) => Promise<boolean>;
   readonly renameTeam: (name: string) => Promise<boolean>;
   readonly deleteTeam: () => Promise<boolean>;
@@ -106,6 +111,7 @@ const INITIAL: TeamState = {
   teams: [],
   teamId: undefined,
   page: undefined,
+  workspaceId: undefined,
   members: [],
   invitations: [],
   workspaces: [],
@@ -144,6 +150,25 @@ function settledPage(state: TeamState, page: TeamSettingsPageId | undefined): Te
   });
 }
 
+function sameOrigin(a: string, b: string): boolean {
+  try {
+    return new URL(a).origin === new URL(b).origin;
+  } catch {
+    return a === b;
+  }
+}
+
+/**
+ * After a change in Team settings, the title bar's teams and workspaces and the workspace list reload, so a
+ * workspace renamed, added or deleted shows there at once. Only when `url` is the active account's server: the
+ * title bar shows no other.
+ */
+async function refreshTitleBar(url: string): Promise<void> {
+  const active = useActiveTeamStore.getState();
+  if (active.url === undefined || active.userId === undefined || !sameOrigin(active.url, url)) return;
+  await Promise.all([active.load({ url: active.url, userId: active.userId }), useWorkspaceStore.getState().list()]);
+}
+
 export const useTeamStore = create<TeamStore>((set, get) => {
   /** The team `open` was asked to show, until the first load after it has used it. */
   let preferred: TeamSettingsTarget | undefined;
@@ -162,7 +187,10 @@ export const useTeamStore = create<TeamStore>((set, get) => {
     const url = get().url;
     if (url === undefined) return undefined;
     const value = await run(what, () => call(url));
-    if (value !== undefined) await get().refresh();
+    if (value !== undefined) {
+      await get().refresh();
+      await refreshTitleBar(url);
+    }
     return value;
   };
 
@@ -240,7 +268,13 @@ export const useTeamStore = create<TeamStore>((set, get) => {
     ...INITIAL,
 
     open: async (url, target) => {
-      set({ ...INITIAL, url, loading: true, page: target?.page });
+      set({
+        ...INITIAL,
+        url,
+        loading: true,
+        page: target?.page,
+        workspaceId: target?.page === 'workspace' ? target.workspaceId : undefined,
+      });
       preferred = target;
       await get().refresh();
     },
@@ -288,13 +322,17 @@ export const useTeamStore = create<TeamStore>((set, get) => {
 
     selectTeam: async (teamId) => {
       // A team picked lands on its Overview (whichever page was showing).
-      set({ teamId, members: [], invitations: [], access: undefined });
+      set({ teamId, workspaceId: undefined, members: [], invitations: [], access: undefined });
       set({ page: settledPage(get(), DEFAULT_TEAM_PAGE) });
       await loadTeam();
     },
 
     setPage: (page) => {
-      set({ page, access: undefined });
+      set({ page, access: undefined, ...(page === 'workspace' ? {} : { workspaceId: undefined }) });
+    },
+
+    openWorkspacePage: (workspaceId) => {
+      set({ page: 'workspace', workspaceId, access: undefined });
     },
 
     createTeam: async (name) => {

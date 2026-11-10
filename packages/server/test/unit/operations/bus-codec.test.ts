@@ -19,7 +19,7 @@ const USER = '01J8ZC5Q0V7R3T9XK2M4N6P8QB';
 /** One event of every kind, as a module announces it (scopes included), less the bus's own `resync`. */
 const EVENTS: { readonly [K in AnnouncementKind]: AnnouncementEvents[K] } = {
   headMoved: { tenantId, workspaceId: WS, head: 'a'.repeat(40), tokenId: USER },
-  accessChanged: { tenantId, tenant: TENANT, teamId: WS, userId: USER },
+  accessChanged: { tenantId, tenant: TENANT, workspaceId: WS, teamId: WS, userId: USER, settings: true },
   sessionEnded: { tenantId, userId: USER, exceptTokenId: WS },
   captureReceived: { tenantId, workspaceId: WS, hookId: USER, captureId: WS },
   hooksChanged: { tenantId, workspaceId: WS },

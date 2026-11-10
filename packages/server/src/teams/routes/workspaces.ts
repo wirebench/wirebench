@@ -42,6 +42,9 @@ export function toWorkspace(row: repo.WorkspaceRow, myRole: WorkspaceRole, sourc
     recordDesktopActivity: row.recordDesktopActivity,
     recordSessionLogs: row.recordSessionLogs,
     disabledFeatures: [...row.disabledFeatures],
+    createdBy: row.createdBy,
+    ...(row.createdByName !== undefined ? { createdByName: row.createdByName } : {}),
+    ...(row.grantCount !== undefined ? { grantCount: row.grantCount } : {}),
     createdAt: row.createdAt,
   };
 }
@@ -246,16 +249,20 @@ export const workspaceRoutes =
             }
           })
           .catch(conflictOr);
-        // The default role moves every member on it; a rename moves no one (§3.2). The recording flag,
-        // the session-log flag and the feature policy reach the desktops through the same nudge, so
-        // they re-read the workspace.
-        if (
-          body.defaultRole !== undefined ||
+        // The default role moves every member on it, and the hub tells those whose role changed. The
+        // name, the recording flag, the session-log flag and the feature policy are the same for
+        // everyone, and every client shows them, so `settings` tells every subscriber to re-read them.
+        const settings =
+          name !== undefined ||
           body.recordDesktopActivity !== undefined ||
           body.recordSessionLogs !== undefined ||
-          body.disabledFeatures !== undefined
-        )
-          announce(env.ctx.hooks.accessChanged, { ...tenantOf(request), workspaceId: access.workspaceId }, request.log);
+          body.disabledFeatures !== undefined;
+        if (settings || body.defaultRole !== undefined)
+          announce(
+            env.ctx.hooks.accessChanged,
+            { ...tenantOf(request), workspaceId: access.workspaceId, ...(settings ? { settings: true as const } : {}) },
+            request.log,
+          );
         return toWorkspace((await repo.workspaceById(tdb(request), access.workspaceId))!, access.role, access.source);
       },
     );

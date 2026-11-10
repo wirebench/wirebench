@@ -46,7 +46,8 @@ import {
   type TeamNavFacts,
   type TeamSettingsPageId,
 } from '../team-settings-model.js';
-import { WorkspacesTab } from '../workspaces-tab.js';
+import { WorkspacePage } from './workspace-page.js';
+import { WorkspacesPage } from './workspaces-page.js';
 import { OverviewPage } from './overview-page.js';
 import { PeoplePage } from './people-page.js';
 import { RolesPage } from './roles-page.js';
@@ -70,6 +71,7 @@ const ICONS: Readonly<Record<TeamSettingsPageId, LucideIcon>> = {
   export: Download,
   billing: CreditCard,
   'close-account': Trash2,
+  workspace: FolderKanban,
 };
 
 const SUBTITLES: Readonly<Partial<Record<TeamSettingsPageId, string>>> = {
@@ -77,6 +79,7 @@ const SUBTITLES: Readonly<Partial<Record<TeamSettingsPageId, string>>> = {
   people: 'Everyone on the team, and the invitations still open.',
   workspaces: 'The team’s workspaces and who can open them.',
   roles: 'What Viewer, Editor and Admin may do in a workspace.',
+  workspace: 'One workspace: its settings and who can open it.',
   audit: 'What happened, who did it and when.',
 };
 
@@ -96,7 +99,9 @@ function PageBody({
     case 'people':
       return <PeoplePage />;
     case 'workspaces':
-      return <WorkspacesTab />;
+      return <WorkspacesPage />;
+    case 'workspace':
+      return <WorkspacePage />;
     case 'roles':
       return <RolesPage />;
     case 'audit':
@@ -198,7 +203,7 @@ export function TeamSettings({ target }: { readonly target: TeamSettingsTarget }
   useEffect(() => {
     if (ready && shown !== undefined && shown !== store.page) useTeamStore.getState().setPage(shown);
   }, [ready, shown, store.page]);
-  useTeamAddress(store.teamId, ready ? shown : undefined);
+  useTeamAddress(store.teamId, ready ? shown : undefined, store.workspaceId);
 
   const leave = (): void => {
     useUiStore.getState().setPreferencesOpen(false);
@@ -211,7 +216,8 @@ export function TeamSettings({ target }: { readonly target: TeamSettingsTarget }
           key={page}
           label={TEAM_PAGE_LABELS[page]}
           icon={ICONS[page]}
-          current={ready && page === shown}
+          // A workspace's overview sits under Workspaces.
+          current={ready && (page === shown || (page === 'workspaces' && shown === 'workspace'))}
           danger={page === 'close-account'}
           testId={`team-settings-nav-${page}`}
           onSelect={() => {

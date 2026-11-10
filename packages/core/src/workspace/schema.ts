@@ -141,12 +141,14 @@ const SERVER_ORIGIN_PATTERN = /^https?:\/\/[^/?#]+$/;
  * `share.yaml`'s `server` block (server-sync spec §4.1). The three sync settings default to the
  * values in `DEFAULT_SYNC_SETTINGS` (`share.ts`, which imports this file, so they are literals
  * here; a test pins that the two agree). `workspaceId` is the server's ULID and equals
- * `workspace.yaml`'s id; `teamName` is for display only.
+ * `workspace.yaml`'s id; `teamName` and `name` are for display only: the server's names, which
+ * the app shows in place of the tree's `workspace.yaml` name.
  */
 const serverShareSettingsSchema = z.object({
   url: z.string().regex(SERVER_ORIGIN_PATTERN, 'url must be an http(s) origin, with no path'),
   workspaceId: z.string().regex(TEAMS_ID_PATTERN, 'workspaceId must be a ULID'),
   teamName: nonEmpty.optional(),
+  name: nonEmpty.optional(),
   autoFetchSeconds: z.number().int().min(0).default(60),
   commitOnSave: z.boolean().default(true),
   pushOnSave: z.boolean().default(true),

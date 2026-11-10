@@ -41,6 +41,10 @@ export interface WorkspaceRow {
   /** The feature ids off for everyone on the workspace (ADR-0029), sorted and without duplicates. */
   readonly disabledFeatures: readonly string[];
   readonly createdBy: string | null;
+  /** The creator's display name, where the query joins it. */
+  readonly createdByName?: string | null;
+  /** People with a grant of their own, where the query counts them. */
+  readonly grantCount?: number;
   readonly createdAt: string;
 }
 /** What `resolveRole` needs about one user and one workspace; `null` where there is no row. */
@@ -386,9 +390,12 @@ export async function visibleWorkspaces(
       `select w.id, w.name, w.team_id as "teamId", t.name as "teamName", w.default_role as "defaultRole",
               w.record_desktop_activity as "recordDesktopActivity", w.record_session_logs as "recordSessionLogs",
               w.disabled_features as "disabledFeatures",
-              w.created_by as "createdBy", w.created_at as "createdAt", m.role as "teamRole", g.role as "grant"
+              w.created_by as "createdBy", cu.display_name as "createdByName",
+              (select count(*)::int from workspace_grants gc where gc.workspace_id = w.id) as "grantCount",
+              w.created_at as "createdAt", m.role as "teamRole", g.role as "grant"
        from workspaces w
        join teams t on t.id = w.team_id
+       left join users cu on cu.id = w.created_by
        left join team_members m on m.team_id = w.team_id and m.user_id = $1
        left join workspace_grants g on g.workspace_id = w.id and g.user_id = $1
        where $2 or m.user_id is not null

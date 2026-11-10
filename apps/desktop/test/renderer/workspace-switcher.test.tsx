@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { WorkspaceSwitcher } from '../../src/renderer/features/workspace/switcher.js';
+import { notOpenedYet, WorkspaceSwitcher } from '../../src/renderer/features/workspace/switcher.js';
+import { useActiveTeamStore } from '../../src/renderer/state/active-team.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
 import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
 import type { WorkspaceSummaryWire } from '@wirebench/wire/wire-base';
@@ -25,6 +26,52 @@ const ROWS: readonly WorkspaceSummaryWire[] = [
   summary({ id: 'w2', name: 'Billing' }),
   summary({ id: 'w3', name: 'Broken', unreadable: true }),
 ];
+
+describe('the menu’s Not opened yet group', () => {
+  const team = (id: string, name: string, teamId = 'T1') =>
+    ({
+      id,
+      name,
+      teamId,
+      teamName: 'Platform',
+      defaultRole: 'viewer',
+      myRole: 'admin',
+      source: 'grant',
+      createdAt: '',
+      recordDesktopActivity: false,
+    }) as const;
+  const state = {
+    url: 'https://wb.test',
+    userId: 'u1',
+    teams: [],
+    workspaces: [team('S2', 'zeta'), team('S1', 'Alpha'), team('S3', 'other team', 'T2')],
+    teamId: 'T1',
+  };
+  const opened = summary({
+    id: 'local-1',
+    name: 'Alpha',
+    share: { kind: 'server', managed: true, server: { url: 'https://wb.test', workspaceId: 'S1', recording: false } },
+  });
+
+  it('lists the active team’s workspaces with no copy here, by name', () => {
+    expect(notOpenedYet(state, [opened]).map((row) => row.id)).toEqual(['S2']);
+    expect(notOpenedYet(state, []).map((row) => row.id)).toEqual(['S1', 'S2']);
+    expect(notOpenedYet({ ...state, teamId: undefined }, [])).toEqual([]);
+  });
+
+  it('shows them in the menu under Not opened yet', async () => {
+    installWirebenchApi();
+    useActiveTeamStore.setState(state);
+    useWorkspaceStore.setState({ workspace: workspaceWire(), workspaces: [opened] });
+    render(<WorkspaceSwitcher />);
+    await userEvent.click(screen.getByTestId('workspace-switcher'));
+    expect(await screen.findByText('Not opened yet')).toBeTruthy();
+    expect(screen.getAllByTestId('workspace-switcher-not-opened').map((item) => item.textContent)).toEqual(['zeta']);
+    cleanup();
+    useActiveTeamStore.setState({ url: undefined, userId: undefined, teams: [], workspaces: [], teamId: undefined });
+    useWorkspaceStore.setState({ workspace: null, workspaces: [] });
+  });
+});
 
 describe('WorkspaceSwitcher', () => {
   beforeEach(() => {

@@ -6,7 +6,14 @@
 import { useReportSettingsPlace } from '../../address/settings-place.js';
 import type { TeamSettingsPageId } from '../team-settings-model.js';
 
-/** Reports `teamId` and `page` while Team settings is open; nothing while there is no page yet. */
-export function useTeamAddress(teamId: string | undefined, page: TeamSettingsPageId | undefined): void {
-  useReportSettingsPlace(page, page === undefined ? undefined : teamId);
+/**
+ * Reports `teamId` and `page` while Team settings is open, and `workspaceId` on a Workspace overview; nothing while
+ * there is no page yet.
+ */
+export function useTeamAddress(
+  teamId: string | undefined,
+  page: TeamSettingsPageId | undefined,
+  workspaceId?: string,
+): void {
+  useReportSettingsPlace(page, page === undefined ? undefined : teamId, page === 'workspace' ? workspaceId : undefined);
 }
